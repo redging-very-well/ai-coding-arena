@@ -1,0 +1,101 @@
+# Pixel Clash Claude box: one container per seat (plan §11.1).
+#
+#   cp .env.example .env    # then edit PIXEL_CLASH_URL and the four TTYD_PASS_N words
+#   docker compose up -d --build
+#
+# Seat N's terminal is http://<claude-box>:768N (basic auth: kid / TTYD_PASS_N).
+# See README.md for the pre-event login, resets and the wipe.
+
+name: pixel-clash-seats
+
+x-seat: &seat
+  build:
+    # Repo root, so packages/starter-kit is in the build context. The builder
+    # only receives what sessions/Dockerfile.dockerignore allows.
+    context: ..
+    dockerfile: sessions/Dockerfile
+  image: pixel-clash-seat:local
+  init: true # tini as PID 1: reaps the claude processes ttyd spawns
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  mem_limit: 2g
+  memswap_limit: 2g
+  cpus: 1.5
+  pids_limit: 512
+  stop_grace_period: 5s
+
+x-seat-env: &seat-env
+  PIXEL_CLASH_URL: ${PIXEL_CLASH_URL:?set PIXEL_CLASH_URL in sessions/.env}
+  TTYD_USER: kid
+  CLAUDE_PERMISSION_MODE: ${CLAUDE_PERMISSION_MODE:-}
+  CLAUDE_CONTINUE: ${CLAUDE_CONTINUE:-1}
+
+services:
+  seat1:
+    <<: *seat
+    hostname: seat1
+    environment:
+      <<: *seat-env
+      SEAT: "1"
+      TTYD_PASS: ${TTYD_PASS_1:?set TTYD_PASS_1 in sessions/.env}
+    ports: ["7681:7681"]
+    volumes:
+      - kit1:/kit
+      - claude1:/home/kid/.claude
+
+  seat2:
+    <<: *seat
+    hostname: seat2
+    environment:
+      <<: *seat-env
+      SEAT: "2"
+      TTYD_PASS: ${TTYD_PASS_2:?set TTYD_PASS_2 in sessions/.env}
+    ports: ["7682:7681"]
+    volumes:
+      - kit2:/kit
+      - claude2:/home/kid/.claude
+
+  seat3:
+    <<: *seat
+    hostname: seat3
+    environment:
+      <<: *seat-env
+      SEAT: "3"
+      TTYD_PASS: ${TTYD_PASS_3:?set TTYD_PASS_3 in sessions/.env}
+    ports: ["7683:7681"]
+    volumes:
+      - kit3:/kit
+      - claude3:/home/kid/.claude
+
+  seat4:
+    <<: *seat
+    hostname: seat4
+    environment:
+      <<: *seat-env
+      SEAT: "4"
+      TTYD_PASS: ${TTYD_PASS_4:?set TTYD_PASS_4 in sessions/.env}
+    ports: ["7684:7681"]
+    volumes:
+      - kit4:/kit
+      - claude4:/home/kid/.claude
+
+networks:
+  default:
+    # A fixed Linux bridge name, so the optional egress firewall in README.md
+    # can match "-i pcseats". Ignored by Docker Desktop.
+    driver_opts:
+      com.docker.network.bridge.name: pcseats
+
+# Named volumes only: no host paths, no Docker socket.
+# `docker compose down -v` deletes them all (kits, keys, chat history, logins).
+volumes:
+  kit1:
+  kit2:
+  kit3:
+  kit4:
+  claude1:
+  claude2:
+  claude3:
+  claude4:

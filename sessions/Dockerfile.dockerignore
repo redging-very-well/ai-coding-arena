@@ -1,0 +1,5 @@
+# The build context is the repo root (docker-compose.yml). Send the builder
+# only what sessions/Dockerfile copies: no node_modules, data/ or .env files.
+**
+!packages/starter-kit/**
+!sessions/entrypoint.sh

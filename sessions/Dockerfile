@@ -1,0 +1,102 @@
+# syntax=docker/dockerfile:1
+#
+# Pixel Clash "Claude box" seat image (plan §11.1).
+#
+# One container per seat runs ttyd, which starts Claude Code straight in the
+# seat's kit folder (/kit). The terminal opens straight into Claude, but that
+# is not a shell barrier (Claude Code's `!` prefix runs commands): the
+# container is the boundary.
+#
+# Build context is the REPO ROOT (see docker-compose.yml) so the starter-kit
+# templates in packages/starter-kit can be copied in. Only the files allowed by
+# Dockerfile.dockerignore (next to this file) are sent to the builder.
+#
+# Everything is pinned. To bump a version, change the ARG and rebuild:
+#   docker compose build --no-cache
+
+# Node 22 LTS, pinned by exact version tag (released 2026-09-23).
+# For a fully reproducible build, also pin the digest: node:22.23.3-slim@sha256:...
+FROM node:22.23.3-slim
+
+# Claude Code from npm, pinned (2.1.290, released 2026-10-05: >= 2 weeks old on
+# 2026-10-20). The npm package installs a native per-platform binary.
+ARG CLAUDE_CODE_VERSION=2.1.290
+
+# ttyd static binary from the official GitHub release, verified by SHA-256
+# (values from the release's SHA256SUMS file).
+ARG TTYD_VERSION=1.7.7
+ARG TTYD_SHA256_AMD64=8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55
+ARG TTYD_SHA256_ARM64=b38acadd89d1d396a0f5649aa52c539edbad07f4bc7348b27b4f4b7219dd4165
+
+# Set automatically by BuildKit (amd64 or arm64).
+ARG TARGETARCH
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+# curl: health check, the CLAUDE.md curl fallback, and the ttyd download.
+# ca-certificates: HTTPS to Anthropic and GitHub.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN set -eu; \
+    case "${TARGETARCH:-}" in \
+      amd64) ttyd_arch=x86_64;  ttyd_sha="${TTYD_SHA256_AMD64}" ;; \
+      arm64) ttyd_arch=aarch64; ttyd_sha="${TTYD_SHA256_ARM64}" ;; \
+      *) echo "Unsupported TARGETARCH '${TARGETARCH:-}' (need amd64 or arm64; build with BuildKit)" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL --retry 3 -o /usr/local/bin/ttyd \
+      "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.${ttyd_arch}"; \
+    echo "${ttyd_sha}  /usr/local/bin/ttyd" | sha256sum -c -; \
+    chmod 0755 /usr/local/bin/ttyd; \
+    ttyd --version
+
+RUN npm install -g --no-fund --no-audit "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+ && npm cache clean --force \
+ && claude --version
+
+# Non-root user. /kit and the Claude config dir are created here and owned by
+# "kid" so the named volumes mounted on them start with the right owner.
+RUN useradd --create-home --uid 10001 --user-group --shell /bin/bash kid \
+ && mkdir -p /kit /home/kid/.claude \
+ && chown kid:kid /kit /home/kid/.claude
+
+# Managed settings (root-owned, so kid-writable user/project settings can't
+# widen them): no bypassPermissions mode, and Claude may not read the login.
+RUN mkdir -p /etc/claude-code \
+ && printf '%s\n' '{' \
+      '  "permissions": {' \
+      '    "disableBypassPermissionsMode": "disable",' \
+      '    "deny": ["Read(//home/kid/.claude/.credentials.json)", "Edit(//home/kid/.claude/**)", "Edit(//kit/.claude/**)"]' \
+      '  }' \
+      '}' >/etc/claude-code/managed-settings.json \
+ && chmod 0644 /etc/claude-code/managed-settings.json
+
+# Kit templates (read-only, owned by root) and the entrypoint.
+COPY packages/starter-kit/ /opt/pixel-clash/starter-kit/
+COPY sessions/entrypoint.sh /usr/local/bin/pixel-clash-seat
+RUN chmod -R a+rX,go-w /opt/pixel-clash \
+ && chmod 0755 /usr/local/bin/pixel-clash-seat
+
+# CLAUDE_CONFIG_DIR keeps ALL Claude Code state (login, trust, .claude.json,
+# chat history) inside the claudeN volume. DISABLE_AUTOUPDATER keeps the
+# pinned version.
+ENV HOME=/home/kid \
+    SHELL=/bin/bash \
+    CLAUDE_CONFIG_DIR=/home/kid/.claude \
+    DISABLE_AUTOUPDATER=1 \
+    PC_KIT_DIR=/kit \
+    PC_TEMPLATE_DIR=/opt/pixel-clash/starter-kit
+
+USER kid
+WORKDIR /kit
+EXPOSE 7681
+
+# ttyd answers 401 without the basic-auth word; any HTTP answer means it is up.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7681/)" && [ "$code" = 200 ] || [ "$code" = 401 ]
+
+ENTRYPOINT ["/usr/local/bin/pixel-clash-seat"]
+CMD ["serve"]
