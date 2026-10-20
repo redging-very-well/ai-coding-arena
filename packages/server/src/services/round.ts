@@ -1,0 +1,257 @@
+// Round (plan §3, §9): selection (PLAN), selection lock + fallback rules,
+// per-round zone assignment, placement validation (PLACEMENT), Ready, and
+// auto-place at lock.
+
+import {
+  assignZones,
+  fail,
+  isArmoryUnitId,
+  isValidCell,
+  ok,
+  type Corner,
+  type PlacementDTO,
+  type PlacementResponse,
+  type Result,
+} from '@pixel-clash/shared';
+import { autoPlace } from '../sim/autoPlace.js';
+import { ArmoryService } from './armory.js';
+import type { Game } from './game.js';
+import { newRoundState, type LockedUnit, type PlayerRoundState } from './store.js';
+import { UnitsService } from './units.js';
+
+/** A locked design resolved to its version record. */
+export interface LockedDesign extends LockedUnit {
+  name: string;
+  cost: number;
+}
+
+export class RoundService {
+  constructor(private readonly game: Game) {}
+
+  stateOf(playerId: string): PlayerRoundState {
+    const m = this.game.store.match;
+    let rs = m.perPlayer[playerId];
+    if (!rs) {
+      rs = newRoundState();
+      m.perPlayer[playerId] = rs;
+    }
+    return rs;
+  }
+
+  zoneOf(playerId: string): Corner | null {
+    return this.game.store.match.zones[playerId] ?? null;
+  }
+
+  /**
+   * The locked designs with their (lock-time) version and current cost.
+   * Borrowed Armory units (`armory:<id>`, §9.1) resolve to their entry and are
+   * named "Ogre (Ninja Sam)".
+   */
+  lockedDesigns(playerId: string): LockedDesign[] {
+    const rs = this.stateOf(playerId);
+    const out: LockedDesign[] = [];
+    for (const l of rs.locked ?? []) {
+      if (isArmoryUnitId(l.unitId)) {
+        const e = this.game.armory.forUnitId(l.unitId);
+        if (e) out.push({ ...l, name: ArmoryService.displayName(e), cost: e.cost });
+        continue;
+      }
+      const v = this.game.units.versionOf(playerId, l.unitId, l.version);
+      if (v) out.push({ ...l, name: v.stats.name, cost: v.cost });
+    }
+    return out;
+  }
+
+  spent(playerId: string): number {
+    const costs = new Map(this.lockedDesigns(playerId).map((d) => [d.unitId, d.cost]));
+    return this.stateOf(playerId).placements.reduce((s, p) => s + (costs.get(p.unitId) ?? 0), 0);
+  }
+
+  // -------------------------------------------------------------------------
+  // PLAN: selection
+  // -------------------------------------------------------------------------
+
+  setSelection(playerId: string, unitIds: unknown): Result<{ selection: string[] }> {
+    const gate = this.game.match.gate('selection');
+    if (gate) return gate;
+    if (!Array.isArray(unitIds) || unitIds.some((u) => typeof u !== 'string')) {
+      return fail('BAD_REQUEST', 'unitIds must be an array of unitId strings.');
+    }
+    const ids = [...new Set(unitIds as string[])];
+    const max = this.game.config.caps.maxTypes;
+    if (ids.length > max) {
+      return fail('TOO_MANY_TYPES', `You can pick at most ${max} unit types per round.`, { details: { max } });
+    }
+    for (const id of ids) {
+      if (isArmoryUnitId(id)) {
+        const e = this.game.armory.checkSelectable(playerId, id);
+        if (!e.ok) return e;
+        continue;
+      }
+      const d = this.game.units.design(playerId, id);
+      if (!d) return fail('NOT_FOUND', `You have no unit "${id}".`);
+      if (!UnitsService.latestValid(d)) {
+        return fail('UNIT_INVALID', `${UnitsService.latest(d).stats.name} is not valid right now, so it can't be picked.`, {
+          hint: 'Ask Claude to fix it (list_my_units shows the error).',
+        });
+      }
+    }
+    const rs = this.stateOf(playerId);
+    rs.selection = ids;
+    this.game.store.save();
+    this.game.notifier.privateChanged(playerId);
+    this.game.notifier.stateChanged();
+    return ok({ selection: ids });
+  }
+
+  /**
+   * Lock every active player's selection at the end of PLAN (§3): each unitId
+   * resolves to its latest valid version; invalid ones are dropped. Empty →
+   * the previous round's selection if all still valid → the 3 most recently
+   * submitted valid units → the templates.
+   */
+  lockSelections(): void {
+    const max = this.game.config.caps.maxTypes;
+    for (const p of this.game.players.active()) {
+      const rs = this.stateOf(p.id);
+      const resolve = (ids: readonly string[]): LockedUnit[] => {
+        const out: LockedUnit[] = [];
+        for (const id of ids) {
+          if (isArmoryUnitId(id)) {
+            // A borrowed Armory unit: the frozen entry, if still selectable (§9.1).
+            const e = this.game.armory.checkSelectable(p.id, id);
+            if (e.ok) out.push({ unitId: id, version: e.data.version });
+            continue;
+          }
+          const d = this.game.units.design(p.id, id);
+          const v = d ? UnitsService.latestValid(d) : undefined;
+          if (v) out.push({ unitId: id, version: v.version });
+        }
+        return out.slice(0, max);
+      };
+      let locked = resolve(rs.selection);
+      if (locked.length === 0 && rs.prevSelection && rs.prevSelection.length > 0) {
+        const prev = resolve(rs.prevSelection);
+        if (prev.length === rs.prevSelection.length) locked = prev;
+      }
+      if (locked.length === 0) {
+        const recent = this.game.units
+          .designs(p.id)
+          .filter((d) => !d.isTemplate && UnitsService.latestValid(d))
+          .sort((a, b) => UnitsService.latestValid(b)!.createdAt - UnitsService.latestValid(a)!.createdAt)
+          .map((d) => d.unitId);
+        locked = resolve(recent);
+      }
+      if (locked.length === 0) locked = resolve(this.game.units.templateIds());
+      rs.locked = locked;
+      rs.selection = locked.map((l) => l.unitId);
+      rs.prevSelection = rs.selection.slice();
+      rs.placements = [];
+      rs.ready = false;
+    }
+  }
+
+  /** Assign this round's zones (§9): active players in join order get zoneSet[(i + round) % n]. */
+  assignZones(): void {
+    const m = this.game.store.match;
+    const ids = this.game.players.active().map((p) => p.id);
+    m.zones = ids.length > 0 ? Object.fromEntries(assignZones(ids, m.round)) : {};
+  }
+
+  // -------------------------------------------------------------------------
+  // PLACEMENT
+  // -------------------------------------------------------------------------
+
+  /** Validate a full placement list against the locked selection, cells, copies and budget. */
+  checkPlacements(playerId: string, input: unknown): Result<PlacementResponse> {
+    if (!Array.isArray(input)) return fail('BAD_REQUEST', 'placements must be an array of {unitId, col, row}.');
+    const caps = this.game.config.caps;
+    const costs = new Map(this.lockedDesigns(playerId).map((d) => [d.unitId, d.cost]));
+    const placements: PlacementDTO[] = [];
+    const cells = new Set<string>();
+    let spent = 0;
+    for (const raw of input as unknown[]) {
+      const p = raw as Partial<PlacementDTO> | null;
+      if (!p || typeof p !== 'object' || typeof p.unitId !== 'string' || typeof p.col !== 'number' || typeof p.row !== 'number') {
+        return fail('BAD_REQUEST', 'Each placement needs {unitId, col, row}.');
+      }
+      if (!isValidCell(p.col, p.row)) {
+        return fail('CELL_OUT_OF_ZONE', `Cell (${p.col}, ${p.row}) is outside your zone (col and row are 0-5).`, {
+          details: { col: p.col, row: p.row },
+        });
+      }
+      const key = `${p.col},${p.row}`;
+      if (cells.has(key)) {
+        return fail('CELL_TAKEN', `Cell (${p.col}, ${p.row}) already has a unit.`, { details: { col: p.col, row: p.row } });
+      }
+      cells.add(key);
+      const cost = costs.get(p.unitId);
+      if (cost === undefined) {
+        return fail('NOT_SELECTED', `"${p.unitId}" is not one of your units for this round.`, { details: { unitId: p.unitId } });
+      }
+      spent += cost;
+      placements.push({ unitId: p.unitId, col: p.col, row: p.row });
+    }
+    if (placements.length > caps.maxCopies) {
+      return fail('TOO_MANY_COPIES', `You can place at most ${caps.maxCopies} units.`, { details: { max: caps.maxCopies } });
+    }
+    if (spent > caps.budget) {
+      return fail('OVER_BUDGET', `That army costs $${spent} but your budget is $${caps.budget}.`, {
+        details: { spent, budget: caps.budget },
+      });
+    }
+    return ok({ placements, spent, remaining: caps.budget - spent });
+  }
+
+  setPlacements(playerId: string, input: unknown): Result<PlacementResponse> {
+    const gate = this.game.match.gate('placement');
+    if (gate) return gate;
+    if (!this.game.players.isActive(this.game.players.get(playerId)!)) {
+      return fail('PHASE_CLOSED', "You're in from the next round.", { details: { phase: this.game.store.match.phase } });
+    }
+    const checked = this.checkPlacements(playerId, input);
+    if (!checked.ok) return checked;
+    const rs = this.stateOf(playerId);
+    rs.placements = checked.data.placements;
+    this.game.store.save();
+    this.game.notifier.privateChanged(playerId);
+    return checked;
+  }
+
+  setReady(playerId: string, ready: unknown): Result<{ ready: boolean }> {
+    const gate = this.game.match.gate('ready');
+    if (gate) return gate;
+    if (typeof ready !== 'boolean') return fail('BAD_REQUEST', 'ready must be true or false.');
+    const rs = this.stateOf(playerId);
+    rs.ready = ready;
+    this.game.store.save();
+    this.game.notifier.privateChanged(playerId);
+    this.game.notifier.stateChanged();
+    return ok({ ready });
+  }
+
+  allReady(): boolean {
+    return this.game.players.active().every((p) => this.stateOf(p.id).ready);
+  }
+
+  /**
+   * Auto-place (§9) at lock for every active player with zero placements.
+   * Returns the names of the auto-placed players.
+   */
+  autoPlaceEmpty(): string[] {
+    const caps = this.game.config.caps;
+    const names: string[] = [];
+    for (const p of this.game.players.active()) {
+      const rs = this.stateOf(p.id);
+      if (rs.placements.length > 0) continue;
+      const res = autoPlace({
+        available: this.lockedDesigns(p.id).map((d) => ({ unitId: d.unitId, cost: d.cost })),
+        lastLayout: rs.lastLayout,
+        caps: { budget: caps.budget, maxCopies: caps.maxCopies, maxTypes: caps.maxTypes },
+      });
+      rs.placements = res.placements;
+      if (res.placements.length > 0) names.push(p.name);
+    }
+    return names;
+  }
+}

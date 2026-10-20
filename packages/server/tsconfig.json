@@ -1,0 +1,11 @@
+{
+  // Build config: resolves @pixel-clash/shared through its built dist/*.d.ts,
+  // so build shared first (the root `build` script does).
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": ["node"]
+  },
+  "include": ["src"]
+}

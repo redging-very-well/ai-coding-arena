@@ -1,0 +1,428 @@
+// The authoritative game state machine (plan §3) with phase timers, the
+// phase gates (§10.2) and the facilitator's controls (§10.3 admin).
+//
+//   LOBBY → PLAN → PLACEMENT → BATTLE → RESULTS → PLAN … → MATCH_RESULTS → LOBBY
+//
+// PLAN auto-advances when its timer ends; PLACEMENT never auto-starts (the
+// timer just runs out and shows "Waiting for host START"). BATTLE → RESULTS
+// follows the PLAYBACK clock (services/battle.ts releases the result).
+
+import { fail, ok, type Phase, type Result, type TimerDTO } from '@pixel-clash/shared';
+import { log } from '../util/log.js';
+import type { Game } from './game.js';
+import type { RoundResultRecord } from './store.js';
+
+export type GatedOp = 'submit' | 'retire' | 'selection' | 'placement' | 'ready' | 'adminSubmit';
+
+/** §10.2: the phases in which each operation is open (validate is always open). */
+export const PHASE_GATES: Record<GatedOp, readonly Phase[]> = {
+  submit: ['PLAN'],
+  retire: ['PLAN'],
+  selection: ['PLAN'],
+  placement: ['PLACEMENT'],
+  ready: ['PLACEMENT'],
+  adminSubmit: ['PLAN'],
+};
+
+const OP_TEXT: Record<GatedOp, string> = {
+  submit: 'Submitting units',
+  retire: 'Deleting units',
+  selection: 'Picking units',
+  placement: 'Placing units',
+  ready: 'Getting ready',
+  adminSubmit: 'Submitting on behalf',
+};
+
+const TICK_MS = 250;
+
+export class MatchService {
+  private ticker: NodeJS.Timeout | undefined;
+  private lastBroadcastSecond: number | null = null;
+
+  constructor(private readonly game: Game) {}
+
+  private get m() {
+    return this.game.store.match;
+  }
+
+  get phase(): Phase {
+    return this.m.phase;
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase gates (§10.2)
+  // -------------------------------------------------------------------------
+
+  /** null when `op` is open now, else a PHASE_CLOSED result. */
+  gate(op: GatedOp): Result<never> | null {
+    const open = PHASE_GATES[op];
+    const phase = this.m.phase;
+    if (open.includes(phase)) return null;
+    const opensIn = open[0]!;
+    const details: Record<string, unknown> = { phase, opensIn };
+    // Seconds until it opens, when the very next phase is the one that opens.
+    const next: Partial<Record<Phase, Phase>> = { PLAN: 'PLACEMENT' };
+    const secs = this.timerDTO().secondsLeft;
+    if (next[phase] === opensIn && secs !== null) details.secondsLeft = secs;
+    const hint =
+      op === 'submit'
+        ? "Tell the kid: we'll send it when the Plan phase starts. Keep the unit validated (validate_unit works any time) and submit it once get_game_state says submissionsOpen is true."
+        : `Wait for the ${opensIn} phase.`;
+    return fail('PHASE_CLOSED', `${OP_TEXT[op]} is closed right now (phase ${phase}). It opens in the ${opensIn} phase.`, {
+      hint,
+      details,
+    });
+  }
+
+  submissionsOpen(): boolean {
+    return this.m.phase === 'PLAN';
+  }
+
+  // -------------------------------------------------------------------------
+  // Timers
+  // -------------------------------------------------------------------------
+
+  private startTimer(seconds: number): void {
+    this.m.timer = { deadline: Date.now() + seconds * 1000, remainingMs: null, paused: false };
+  }
+
+  private clearTimer(): void {
+    this.m.timer = { deadline: null, remainingMs: null, paused: false };
+  }
+
+  private remainingMs(): number | null {
+    const t = this.m.timer;
+    if (t.paused) return t.remainingMs;
+    if (t.deadline === null) return null;
+    return Math.max(0, t.deadline - Date.now());
+  }
+
+  timerDTO(): TimerDTO {
+    if (this.m.phase === 'BATTLE') {
+      const pb = this.game.battle.playback();
+      const total = this.game.config.timers.battleTicks;
+      const tps = this.game.config.timers.ticksPerSecond;
+      const left = pb ? Math.max(0, Math.ceil((total - pb.tick) / tps)) : Math.ceil(total / tps);
+      return { secondsLeft: left, paused: pb?.paused ?? false };
+    }
+    const rem = this.remainingMs();
+    const dto: TimerDTO = { secondsLeft: rem === null ? null : Math.ceil(rem / 1000), paused: this.m.timer.paused };
+    if (this.m.timer.expired) {
+      dto.expired = true;
+      dto.secondsLeft = 0;
+    }
+    return dto;
+  }
+
+  /** Admin timer controls: set, add (may be negative) and pause/resume. */
+  adjustTimer(body: { setSeconds?: unknown; addSeconds?: unknown; paused?: unknown }): Result<TimerDTO> {
+    const phase = this.m.phase;
+    if (phase === 'BATTLE') {
+      if (typeof body.paused === 'boolean') this.game.battle.setPlayback({ paused: body.paused });
+      return ok(this.timerDTO());
+    }
+    if (phase !== 'PLAN' && phase !== 'PLACEMENT') {
+      return fail('BAD_REQUEST', `There is no timer in ${phase}.`);
+    }
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+    const set = num(body.setSeconds);
+    const add = num(body.addSeconds);
+    if (body.setSeconds !== undefined && (set === undefined || set < 0)) return fail('BAD_REQUEST', 'setSeconds must be a number >= 0.');
+    if (body.addSeconds !== undefined && add === undefined) return fail('BAD_REQUEST', 'addSeconds must be a number.');
+    let rem = this.remainingMs() ?? 0;
+    if (set !== undefined) rem = set * 1000;
+    if (add !== undefined) rem = Math.max(0, rem + add * 1000);
+    const paused = typeof body.paused === 'boolean' ? body.paused : this.m.timer.paused;
+    if (set !== undefined || add !== undefined || paused !== this.m.timer.paused) {
+      this.m.timer = paused
+        ? { deadline: null, remainingMs: rem, paused: true }
+        : { deadline: Date.now() + rem, remainingMs: null, paused: false };
+      if (rem > 0) delete this.m.timer.expired;
+    }
+    this.changed();
+    return ok(this.timerDTO());
+  }
+
+  /** Start the 4 Hz ticker: timer expiry and 1 Hz state pushes. */
+  startTicker(): void {
+    if (this.ticker) return;
+    this.ticker = setInterval(() => this.tick(), TICK_MS);
+    this.ticker.unref?.();
+  }
+
+  stopTimers(): void {
+    if (this.ticker) clearInterval(this.ticker);
+    this.ticker = undefined;
+  }
+
+  private tick(): void {
+    const phase = this.m.phase;
+    if (phase === 'BATTLE') return; // the battle service pushes its own clock
+    const rem = this.remainingMs();
+    if (rem === null || this.m.timer.expired) {
+      this.lastBroadcastSecond = null;
+      return;
+    }
+    if (rem <= 0 && !this.m.timer.paused) {
+      this.onTimerEnd();
+      return;
+    }
+    const sec = Math.ceil(rem / 1000);
+    if (sec !== this.lastBroadcastSecond) {
+      this.lastBroadcastSecond = sec;
+      this.game.notifier.stateChanged();
+    }
+  }
+
+  private onTimerEnd(): void {
+    if (this.m.phase === 'PLAN') {
+      log.info(`round ${this.m.round}: PLAN timer ended`);
+      this.enterPlacement();
+    } else if (this.m.phase === 'PLACEMENT') {
+      // No auto-start: wait for the host's START.
+      this.m.timer = { deadline: null, remainingMs: null, paused: false, expired: true };
+      this.game.notifier.toast({ all: true }, 'info', 'Time is up! Waiting for the host to press START.');
+      this.changed();
+    }
+  }
+
+  private changed(): void {
+    this.game.store.save();
+    this.game.notifier.stateChanged();
+  }
+
+  private allPrivateChanged(): void {
+    for (const p of this.game.players.list()) this.game.notifier.privateChanged(p.id);
+  }
+
+  // -------------------------------------------------------------------------
+  // Transitions
+  // -------------------------------------------------------------------------
+
+  /** LOBBY → PLAN (needs ≥ 2 players). `armoryIn` switches Open Armory on for the whole match (§9.1). */
+  startMatch(roundsIn?: unknown, armoryIn?: unknown): Result<true> {
+    if (this.m.phase !== 'LOBBY') return fail('PHASE_CLOSED', 'A match is already running.', { details: { phase: this.m.phase } });
+    const rounds = roundsIn === undefined || roundsIn === null ? this.game.config.timers.defaultRounds : roundsIn;
+    if (typeof rounds !== 'number' || !Number.isInteger(rounds) || rounds < 1 || rounds > 10) {
+      return fail('BAD_REQUEST', 'rounds must be a whole number from 1 to 10.');
+    }
+    if (armoryIn !== undefined && armoryIn !== null && typeof armoryIn !== 'boolean') {
+      return fail('BAD_REQUEST', 'armory must be true or false.');
+    }
+    const players = this.game.players.list();
+    if (players.length < 2) {
+      return fail('NOT_ENOUGH_PLAYERS', 'A match needs at least 2 players.', { details: { players: players.length } });
+    }
+    for (const p of players) p.activeFromRound = 1;
+    this.m.rounds = rounds;
+    this.m.round = 1;
+    this.m.results = [];
+    this.m.points = Object.fromEntries(players.map((p) => [p.id, 0]));
+    this.m.damage = {};
+    this.m.badges = {};
+    this.game.armory.reset(armoryIn === true);
+    log.info(`match started: ${rounds} rounds, ${players.length} players${armoryIn === true ? ', Open Armory on' : ''}`);
+    this.enterPlan();
+    return ok(true);
+  }
+
+  private enterPlan(): void {
+    const m = this.m;
+    m.phase = 'PLAN';
+    m.zones = {};
+    // Entries of creators deleted during PLACEMENT go now (§9.1 Lifecycle).
+    this.game.armory.applyPendingRemovals();
+    for (const p of this.game.players.list()) {
+      const rs = this.game.round.stateOf(p.id);
+      rs.submittedThisPlan = false;
+      rs.ready = false;
+      rs.placements = [];
+      rs.locked = null;
+      m.points[p.id] ??= 0;
+    }
+    const t = this.game.config.timers;
+    this.startTimer(m.round === 1 ? t.planFirstRoundSec : t.planLaterRoundsSec);
+    this.game.notifier.toast({ all: true }, 'info', `Round ${m.round}: Plan time! Ask Claude for new units.`);
+    this.changed();
+    this.allPrivateChanged();
+  }
+
+  private enterPlacement(): void {
+    const m = this.m;
+    this.game.round.lockSelections();
+    this.game.round.assignZones();
+    m.phase = 'PLACEMENT';
+    this.startTimer(this.game.config.timers.placementSec);
+    this.game.notifier.toast({ all: true }, 'info', 'Place your army!');
+    this.changed();
+    this.allPrivateChanged();
+  }
+
+  /** PLACEMENT → BATTLE. Without force everyone must be Ready (§10.3). */
+  start(force: boolean): Result<true> {
+    if (this.m.phase !== 'PLACEMENT') {
+      return fail('PHASE_CLOSED', 'START works only in PLACEMENT.', { details: { phase: this.m.phase, opensIn: 'PLACEMENT' } });
+    }
+    if (!force && !this.game.round.allReady()) {
+      const notReady = this.game.players
+        .active()
+        .filter((p) => !this.game.round.stateOf(p.id).ready)
+        .map((p) => p.name);
+      return fail('NOT_ALL_READY', `Not everyone is ready: ${notReady.join(', ')}.`, {
+        hint: 'Wait for everyone, or use Force start.',
+        details: { notReady },
+      });
+    }
+    // A kick since PLACEMENT began changes the zone set (§9 Zones: per active count).
+    const activeIds = this.game.players.active().map((p) => p.id);
+    const zoned = Object.keys(this.m.zones);
+    if (activeIds.length !== zoned.length || activeIds.some((id) => !this.m.zones[id])) this.game.round.assignZones();
+    const auto = this.game.round.autoPlaceEmpty();
+    for (const name of auto) this.game.notifier.toast({ all: true }, 'info', `Auto-placed for ${name}`);
+    for (const p of this.game.players.active()) {
+      const rs = this.game.round.stateOf(p.id);
+      if (rs.placements.length > 0) rs.lastLayout = rs.placements.map((x) => ({ ...x }));
+    }
+    this.m.phase = 'BATTLE';
+    this.clearTimer();
+    this.changed();
+    this.allPrivateChanged();
+    this.game.battle.start();
+    return ok(true);
+  }
+
+  /** The battle service could not start the battle: back to PLACEMENT. */
+  battleFailed(message: string): void {
+    if (this.m.phase !== 'BATTLE') return;
+    this.m.phase = 'PLACEMENT';
+    for (const p of this.game.players.active()) this.game.round.stateOf(p.id).ready = false;
+    this.m.timer = { deadline: null, remainingMs: null, paused: false, expired: true };
+    this.game.notifier.toast({ admin: true }, 'error', `The battle could not run: ${message}`);
+    this.changed();
+    this.allPrivateChanged();
+  }
+
+  /** Called by the battle service when playback reached the end (or Skip). */
+  battleReleased(result: RoundResultRecord): void {
+    const m = this.m;
+    // Round points, match damage (standings tie-break) and badge counts (§9).
+    for (const r of result.end.ranking) {
+      m.points[r.playerId] = (m.points[r.playerId] ?? 0) + r.pointsGained;
+      m.damage[r.playerId] = (m.damage[r.playerId] ?? 0) + r.damage;
+      const badges = (m.badges[r.playerId] ??= {});
+      for (const b of r.badges) badges[b] = (badges[b] ?? 0) + 1;
+    }
+    // Players kicked during this battle leave the scoreboard with it (§4).
+    const leaving = new Set(m.pendingKicks);
+    result.end.scoreboard = this.game.visibility.scoreboard(leaving);
+    m.results.push(result);
+    m.phase = 'RESULTS';
+    this.clearTimer();
+    this.game.players.applyPendingKicks();
+    this.changed();
+    this.allPrivateChanged();
+  }
+
+  /** Admin Next: advance one in-round step. */
+  next(): Result<true> {
+    switch (this.m.phase) {
+      case 'LOBBY':
+        return this.startMatch();
+      case 'PLAN':
+        this.enterPlacement();
+        return ok(true);
+      case 'PLACEMENT':
+        return this.start(false);
+      case 'BATTLE':
+        return fail('BAD_REQUEST', 'The battle is running. Use Skip to end it now.');
+      case 'RESULTS':
+        return this.afterResults();
+      case 'MATCH_RESULTS':
+        return this.resetToLobby();
+    }
+  }
+
+  /** Admin Skip: end the current phase now. */
+  async skip(): Promise<Result<true>> {
+    switch (this.m.phase) {
+      case 'LOBBY':
+        return fail('BAD_REQUEST', 'Nothing to skip in the lobby. Start the match instead.');
+      case 'PLAN':
+        this.enterPlacement();
+        return ok(true);
+      case 'PLACEMENT':
+        return this.start(true);
+      case 'BATTLE':
+        await this.game.battle.skip();
+        return ok(true);
+      case 'RESULTS':
+        return this.afterResults();
+      case 'MATCH_RESULTS':
+        return this.resetToLobby();
+    }
+  }
+
+  private afterResults(): Result<true> {
+    if (this.m.round < this.m.rounds) {
+      this.m.round += 1;
+      this.enterPlan();
+    } else {
+      this.m.phase = 'MATCH_RESULTS';
+      this.clearTimer();
+      this.game.notifier.toast({ all: true }, 'info', 'The match is over!');
+      this.changed();
+    }
+    return ok(true);
+  }
+
+  /**
+   * Admin "New match" (§10.3): → LOBBY. From MATCH_RESULTS this is the normal
+   * step; from any other phase it is the host's (confirmed) escape hatch that
+   * throws the running match away. A running battle is aborted first, and
+   * kicks queued during it are applied (they would otherwise be lost).
+   */
+  async newMatch(): Promise<Result<true>> {
+    if (this.m.phase === 'BATTLE') await this.game.battle.abort();
+    return this.resetToLobby();
+  }
+
+  /** → LOBBY: resets round, points, damage, badges and the Armory (§9.1); keeps players and units. */
+  private resetToLobby(): Result<true> {
+    const m = this.m;
+    this.game.players.applyPendingKicks();
+    m.phase = 'LOBBY';
+    m.round = 0;
+    m.results = [];
+    m.damage = {};
+    m.badges = {};
+    m.zones = {};
+    this.game.armory.reset(false);
+    this.clearTimer();
+    for (const p of this.game.players.list()) {
+      p.activeFromRound = 1;
+      m.points[p.id] = 0;
+      const rs = this.game.round.stateOf(p.id);
+      rs.locked = null;
+      rs.placements = [];
+      rs.ready = false;
+      rs.lastLayout = null;
+      rs.prevSelection = null;
+      rs.submittedThisPlan = false;
+    }
+    this.changed();
+    this.allPrivateChanged();
+    return ok(true);
+  }
+
+  /** After a restart: a running battle is reset to PLACEMENT (§13). */
+  recover(): void {
+    if (this.m.phase === 'BATTLE') {
+      log.warn(`a battle was running when the server stopped; round ${this.m.round} is back in PLACEMENT`);
+      this.m.phase = 'PLACEMENT';
+      this.game.players.applyPendingKicks();
+      for (const p of this.game.players.active()) this.game.round.stateOf(p.id).ready = false;
+      this.m.timer = { deadline: null, remainingMs: null, paused: false, expired: true };
+    }
+    this.startTicker();
+  }
+}
