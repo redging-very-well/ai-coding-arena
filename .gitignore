@@ -1,0 +1,9 @@
+node_modules/
+dist/
+data/
+*.log
+.DS_Store
+coverage/
+
+# Claude box seat settings (contains the seat terminal passwords)
+sessions/.env

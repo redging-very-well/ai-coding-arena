@@ -1,0 +1,19 @@
+{
+  // Root type-check project (no emit): shared + server + tests + scripts.
+  // The "source" condition makes `@pixel-clash/shared` resolve to its TS sources,
+  // so nothing needs building before typecheck/test. The client has its own
+  // tsconfig (DOM lib) and is checked separately by `npm run typecheck`.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "customConditions": ["source"],
+    "types": ["node"]
+  },
+  "include": [
+    "packages/shared/src",
+    "packages/server/src",
+    "tests",
+    "scripts",
+    "vitest.config.ts"
+  ]
+}

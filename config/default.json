@@ -1,0 +1,110 @@
+{
+  "cost": {
+    "base": 10,
+    "hp": 0.25,
+    "damage": 1.5,
+    "range": 0.2,
+    "speed": 12,
+    "size": 0.5,
+    "referenceCooldown": 60,
+    "curveK": 2
+  },
+  "stats": {
+    "bounds": {
+      "nameLength": {
+        "min": 1,
+        "max": 24
+      },
+      "maxHealth": {
+        "min": 10,
+        "max": 500
+      },
+      "damage": {
+        "min": 0,
+        "max": 60
+      },
+      "range": {
+        "min": 20,
+        "max": 300
+      },
+      "soldierSpeed": {
+        "min": 0.5,
+        "max": 5
+      },
+      "attackCooldown": {
+        "min": 10,
+        "max": 600
+      },
+      "size": {
+        "min": 6,
+        "max": 20
+      }
+    }
+  },
+  "caps": {
+    "unitCost": 500,
+    "budget": 1000,
+    "maxDesigns": 8,
+    "maxTypes": 3,
+    "maxCopies": 12,
+    "maxSourceBytes": 65536
+  },
+  "timers": {
+    "defaultRounds": 3,
+    "planFirstRoundSec": 900,
+    "planLaterRoundsSec": 480,
+    "placementSec": 180,
+    "battleTicks": 5400,
+    "ticksPerSecond": 60
+  },
+  "scoring": {
+    "placePoints": [
+      3,
+      2,
+      1,
+      0
+    ],
+    "damageBonusMax": 2,
+    "valueBonusMax": 1
+  },
+  "suddenDeath": {
+    "startTick": 3600,
+    "endTick": 5400,
+    "startRadius": 570,
+    "endRadius": 60,
+    "damagePctPerSecond": 4
+  },
+  "sim": {
+    "meleeMaxRange": 50,
+    "projectileSpeed": 10,
+    "rangeTolerance": 0.5,
+    "separationPasses": 2,
+    "frameEveryTicks": 2
+  },
+  "sandbox": {
+    "mode": "ivm",
+    "memoryLimitMb": 32,
+    "validation": {
+      "evalBudgetMs": 1000,
+      "constructTimeoutMs": 50,
+      "dryRunCallTimeoutMs": 20,
+      "slowUpdateWarnMs": 2
+    },
+    "battle": {
+      "hardTimeoutMs": 12,
+      "softTimeoutMs": 6,
+      "disposeGraceMs": 10,
+      "culpritProbeTimeoutMs": 5,
+      "unitStrikeLimit": 30,
+      "timeoutsToDisable": 2,
+      "timeoutsInARowLimit": 3,
+      "timeoutsTotalLimit": 5,
+      "slowStrikeLimit": 30
+    }
+  },
+  "rateLimits": {
+    "loginPerMinute": 5,
+    "validatePerSecond": 1,
+    "submitMinIntervalMs": 3000
+  }
+}
