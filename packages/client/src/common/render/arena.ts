@@ -1,0 +1,790 @@
+// The isometric battle renderer (plan §12): floor, tinted zones, edge props,
+// safe-zone ellipse, ground rings, depth-sorted sprite billboards, HP bars,
+// projectile arcs with trails and the napping bubble. Interpolates between
+// buffered frames at display rate (60 fps).
+//
+// Used by /screen (live + replay), the /play battle mini-view and replays:
+//
+//   const arena = new ArenaRenderer(canvas, { highlightSeat: mySeat });
+//   arena.start();
+//   ws.on('battle:reveal', (m) => arena.setReveal(m.data));
+//   ws.on('battle:frames', (m) => arena.pushFrames(m.frames, m.playback));
+//   // replay:  arena.loadReplay(replay); arena.setPlayback({ speed: 2 });
+//   // lobby:   arena.setZones([{ corner: 'TL', seat: 0 }, …]);
+//
+// The canvas should be sized by CSS; the renderer follows its box (HiDPI).
+
+import {
+  ARENA,
+  CENTER,
+  FRAME_FLAGS,
+  type BattleRevealDTO,
+  type Corner,
+  type FrameDTO,
+  type FrameEvent,
+  type PlaybackDTO,
+  type ReplayDTO,
+  type RevealedUnitDTO,
+  type SpriteSpec,
+  type StatsSnapshot,
+} from '@pixel-clash/shared';
+import { fitCanvasToBox, pixelContext, pixelsToCanvas, type Bitmap } from './canvas.js';
+import {
+  FLOOR_K,
+  PROP_SPRITES,
+  billboardWidth,
+  depthSort,
+  edgeProps,
+  fitIso,
+  isoEllipse,
+  renderFloor,
+  toScreen,
+  type EdgeProp,
+  type FitOptions,
+  type IsoView,
+  type ScreenPoint,
+} from './iso.js';
+import { FrameBuffer, LIVE_SNAP_TICKS, PlaybackClock, type FrameSample, type SampledUnit } from './playback.js';
+import { SpriteCache, UnitAnimator, chooseBakeScale, resolveSprite, type BakedSprite } from './sprites.js';
+import { rgba, seatStyle } from '../seats.js';
+
+export interface ArenaZone {
+  corner: Corner;
+  seat: number;
+}
+
+export interface ArenaOptions {
+  /** Seat whose units get a highlighted ring and marker (own units on /play). */
+  highlightSeat?: number | null;
+  /** Canvas background; null leaves it transparent. Default '#0D0F1A'. */
+  background?: string | null;
+  /** Fit options (margins, headroom, pixel snapping). */
+  fit?: FitOptions;
+  /** Draw HP bars (default true). */
+  hpBars?: boolean;
+  /** Animate units dropping into their zones on reveal (default true). */
+  dropIn?: boolean;
+  /** Called for each battle event as playback passes it (fx, sound, toasts). */
+  onEvent?: (event: FrameEvent, arena: ArenaRenderer) => void;
+  /** Extra drawing after the units (fx layer: damage numbers, particles…). */
+  overlay?: (ctx: CanvasRenderingContext2D, view: IsoView, arena: ArenaRenderer, now: number) => void;
+}
+
+/** What the renderer knows about one placed copy. */
+export interface ArenaInstance {
+  instanceId: string;
+  unitId: string;
+  playerId: string;
+  seat: number;
+  name: string;
+  stats: StatsSnapshot;
+  spec: SpriteSpec;
+  /** Cache key of the spec. */
+  specKey: string;
+  /** Spawn position (reveal). */
+  x0: number;
+  y0: number;
+}
+
+interface InstanceState {
+  info: ArenaInstance;
+  anim: UnitAnimator;
+  x: number;
+  y: number;
+  hp: number;
+  flags: number;
+  /** Present in the current sample. */
+  alive: boolean;
+}
+
+interface ProjectileState {
+  startX: number;
+  startY: number;
+  /** Arena distance from start to the target when first seen. */
+  dist: number;
+  color: string;
+  trail: ScreenPoint[];
+}
+
+const HP_COLORS = { good: '#4ADE80', mid: '#FACC15', low: '#F87171', back: '#14121F', border: '#05040A' };
+export const DROP_MS = 450;
+export const DROP_STAGGER_MS = 35;
+/** A first frame later than this means we joined mid-battle: no drop-in. */
+const DROP_MAX_FIRST_T = 6;
+/** Floor bitmaps kept per zone combination. */
+const FLOOR_MEMO = 8;
+
+/** 32-bit FNV-1a of a string, as 8 hex digits. */
+export function fnv1a(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * The resolved sprite of a revealed design and its bake-cache key. The key
+ * hashes the spec's CONTENT: unitId is stable across revisions (§7), so a
+ * redrawn sprite must not hit the old bake.
+ */
+export function revealedSprite(playerId: string, u: Pick<RevealedUnitDTO, 'unitId' | 'sprite' | 'spriteHidden' | 'stats'>): {
+  spec: SpriteSpec;
+  key: string;
+} {
+  const spec = resolveSprite(u);
+  return { spec, key: `${playerId}/${u.unitId}/${fnv1a(JSON.stringify(spec))}` };
+}
+
+/**
+ * Whether the reveal drop-in animation is still playing: within its time
+ * window after the reveal, and while playback has not moved past the first
+ * frame (gated on time and playback position, not on an empty buffer: the
+ * t=0 frame arrives right with the reveal).
+ */
+export function dropInActive(o: { now: number; revealAt: number; units: number; bufferLength: number; tick: number; firstT: number }): boolean {
+  if (o.now - o.revealAt >= DROP_MS + o.units * DROP_STAGGER_MS) return false;
+  return o.bufferLength === 0 || o.tick <= o.firstT + DROP_MAX_FIRST_T;
+}
+
+export class ArenaRenderer {
+  readonly buffer = new FrameBuffer();
+  readonly clock = new PlaybackClock();
+  private readonly ctx: CanvasRenderingContext2D;
+  private readonly sprites = new SpriteCache<Bitmap>(pixelsToCanvas);
+  private readonly props: EdgeProp[] = edgeProps();
+  private view: IsoView;
+  private cssSize = { width: 1, height: 1, dpr: 1 };
+  private zones: ArenaZone[] = [];
+  private floors = new Map<string, { bitmap: Bitmap; originX: number; originY: number }>();
+  private instances = new Map<string, InstanceState>();
+  private projectiles = new Map<number, ProjectileState>();
+  private lastFireByTarget = new Map<string, string>();
+  private totalTicks = 0;
+  private endT: number | null = null;
+  private revealAt = Number.NEGATIVE_INFINITY;
+  private lastTick = 0;
+  private lastNow = 0;
+  private raf = 0;
+  private running = false;
+  private resizeObserver: ResizeObserver | null = null;
+  private sample: FrameSample | null = null;
+
+  constructor(
+    readonly canvas: HTMLCanvasElement,
+    private options: ArenaOptions = {},
+  ) {
+    this.ctx = pixelContext(canvas);
+    this.view = fitIso(1, 1, options.fit);
+    this.resize(true);
+  }
+
+  // -------------------------------------------------------------------------
+  // Inputs
+  // -------------------------------------------------------------------------
+
+  setOptions(patch: Partial<ArenaOptions>): void {
+    this.options = { ...this.options, ...patch };
+    if (patch.fit) this.resize(true);
+  }
+
+  /** Tint the corner bases (pre-battle lobby view; also set by reveal). */
+  setZones(zones: readonly ArenaZone[]): void {
+    this.zones = [...zones];
+  }
+
+  /** Forget the battle (back to an empty, tinted arena). */
+  clearBattle(): void {
+    this.buffer.clear();
+    this.instances.clear();
+    this.projectiles.clear();
+    this.lastFireByTarget.clear();
+    this.sample = null;
+    this.endT = null;
+    this.totalTicks = 0;
+    this.clock.seek(0);
+    this.lastTick = 0;
+  }
+
+  /** START: the fielded units of every player. Resets the battle state. */
+  setReveal(reveal: BattleRevealDTO): void {
+    this.clearBattle();
+    this.totalTicks = reveal.totalTicks;
+    this.zones = reveal.players.map((p) => ({ corner: p.zone, seat: p.seat }));
+    for (const p of reveal.players) {
+      const designs = new Map(p.units.map((u) => [u.unitId, u]));
+      for (const inst of p.instances) {
+        const u = designs.get(inst.unitId);
+        if (!u) continue;
+        const sprite = revealedSprite(p.playerId, u);
+        const info: ArenaInstance = {
+          instanceId: inst.instanceId,
+          unitId: u.unitId,
+          playerId: p.playerId,
+          seat: p.seat,
+          name: u.name,
+          stats: u.stats,
+          spec: sprite.spec,
+          specKey: sprite.key,
+          x0: inst.x,
+          y0: inst.y,
+        };
+        this.instances.set(inst.instanceId, {
+          info,
+          anim: new UnitAnimator(inst.instanceId),
+          x: inst.x,
+          y: inst.y,
+          hp: u.stats.maxHealth,
+          flags: 0,
+          alive: true,
+        });
+      }
+    }
+    this.revealAt = performance.now();
+    this.clock.mode = 'live';
+  }
+
+  /**
+   * Do the expensive work for `reveal` ahead of time (during the 3-2-1
+   * countdown): its floor bitmap and every fielded design's sprite bake at the
+   * current scale, so the drop-in itself doesn't drop frames.
+   */
+  prewarm(reveal: BattleRevealDTO): void {
+    this.floorFor(reveal.players.map((p) => ({ corner: p.zone, seat: p.seat })));
+    for (const p of reveal.players) {
+      const color = seatStyle(p.seat).color;
+      for (const u of p.units) {
+        const { spec, key } = revealedSprite(p.playerId, u);
+        const width = billboardWidth(u.stats.size, this.view);
+        this.sprites.get(key, spec, color, chooseBakeScale(spec.grid, width * this.cssSize.dpr));
+      }
+    }
+  }
+
+  /** Live frames from 'battle:frames'. */
+  pushFrames(frames: readonly FrameDTO[], playback?: PlaybackDTO): void {
+    this.clock.mode = 'live';
+    if (playback) {
+      this.clock.speed = playback.speed;
+      this.clock.paused = playback.paused;
+      if (playback.totalTicks) this.totalTicks = playback.totalTicks;
+    }
+    const wasEmpty = this.buffer.length === 0;
+    this.buffer.push(frames);
+    if (wasEmpty && this.buffer.length > 0) {
+      // Joined mid-battle (reconnect, late join): no drop-in.
+      if (this.buffer.firstT > DROP_MAX_FIRST_T) this.revealAt = Number.NEGATIVE_INFINITY;
+      // Start near the newest frame, without replaying events.
+      this.clock.seek(Math.max(this.buffer.firstT, this.buffer.latestT - 6));
+      this.lastTick = this.clock.tick;
+      this.resyncDeaths();
+    }
+    // Keep memory bounded in live mode (≈ 4 s of frames behind the clock).
+    this.buffer.trimBefore(this.clock.tick - 240);
+  }
+
+  /** The battle is over: playback may run to (and stop at) this tick. */
+  setEnd(endTick: number): void {
+    this.endT = endTick;
+  }
+
+  /** A stored battle; plays from the start in replay mode (paused = false). */
+  loadReplay(replay: ReplayDTO): void {
+    this.setReveal(replay.reveal);
+    this.revealAt = Number.NEGATIVE_INFINITY;
+    this.buffer.push(replay.frames);
+    this.endT = replay.end.endTick;
+    this.clock.mode = 'replay';
+    this.clock.paused = false;
+    this.clock.seek(this.buffer.firstT);
+    this.lastTick = this.clock.tick;
+  }
+
+  setPlayback(p: { speed?: 1 | 2; paused?: boolean }): void {
+    if (p.speed) this.clock.speed = p.speed;
+    if (p.paused !== undefined) this.clock.paused = p.paused;
+  }
+
+  /** Replay: jump to a tick (events in between are not replayed). */
+  seek(tick: number): void {
+    this.clock.seek(Math.min(this.endTick, Math.max(this.buffer.firstT, tick)));
+    this.lastTick = this.clock.tick;
+    this.projectiles.clear();
+    this.resyncDeaths();
+  }
+
+  get tick(): number {
+    return this.clock.tick;
+  }
+  get endTick(): number {
+    return this.endT ?? (this.totalTicks || this.buffer.latestT);
+  }
+  get currentView(): IsoView {
+    return this.view;
+  }
+  get instanceIds(): string[] {
+    return [...this.instances.keys()];
+  }
+  instance(id: string): ArenaInstance | undefined {
+    return this.instances.get(id)?.info;
+  }
+
+  /** Canvas position (CSS px) of an instance's feet, or null. */
+  screenPosOf(instanceId: string): ScreenPoint | null {
+    const s = this.instances.get(instanceId);
+    return s ? toScreen(this.view, s.x, s.y) : null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Loop
+  // -------------------------------------------------------------------------
+
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => this.resize());
+      this.resizeObserver.observe(this.canvas);
+    }
+    this.lastNow = performance.now();
+    const loop = (now: number) => {
+      if (!this.running) return;
+      this.render(now);
+      this.raf = requestAnimationFrame(loop);
+    };
+    this.raf = requestAnimationFrame(loop);
+  }
+
+  stop(): void {
+    this.running = false;
+    cancelAnimationFrame(this.raf);
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+  }
+
+  /** Re-fit to the canvas's CSS box (called automatically while running). */
+  resize(force = false): void {
+    const size = fitCanvasToBox(this.canvas, this.ctx, force);
+    if (!size) return;
+    this.cssSize = size;
+    this.view = fitIso(size.width, size.height, this.options.fit);
+  }
+
+  /** Advance the clock to `now` (ms, performance.now()) and draw one frame. */
+  render(now: number = performance.now()): void {
+    const dt = now - this.lastNow;
+    this.lastNow = now;
+    // While running, the ResizeObserver handles box changes; a per-frame
+    // getBoundingClientRect would force a layout. Only a DPR change is polled.
+    if (!this.resizeObserver || this.dprChanged()) this.resize();
+    this.step(dt, now);
+    this.draw(now);
+  }
+
+  private dprChanged(): boolean {
+    const dpr = typeof window === 'undefined' ? 1 : Math.min(3, window.devicePixelRatio || 1);
+    return dpr !== this.cssSize.dpr;
+  }
+
+  // -------------------------------------------------------------------------
+  // Simulation of the view
+  // -------------------------------------------------------------------------
+
+  private step(dt: number, now: number): void {
+    if (this.buffer.length === 0) {
+      this.sample = null;
+      return;
+    }
+    const end = Math.min(this.endTick || this.buffer.latestT, this.buffer.latestT);
+    const prev = this.lastTick;
+    const t = this.clock.advance(dt, this.buffer.firstT, end);
+    if (t < prev || t - prev > LIVE_SNAP_TICKS) {
+      // Backwards, or a big jump (snap after a background tab, seek): don't
+      // replay many seconds of events at once (every flash, death and toast).
+      this.projectiles.clear();
+      this.resyncDeaths();
+    } else if (t > prev) {
+      for (const { event } of this.buffer.eventsBetween(prev, t)) this.applyEvent(event, now);
+    }
+    this.lastTick = t;
+    this.sample = this.buffer.sample(t);
+    if (!this.sample) return;
+    const seen = new Set<string>();
+    for (const u of this.sample.units) {
+      seen.add(u.id);
+      const s = this.instances.get(u.id) ?? this.adoptUnknown(u);
+      s.x = u.x;
+      s.y = u.y;
+      s.hp = u.hp;
+      s.flags = u.flags;
+      s.alive = true;
+      s.anim.update(u.flags, now);
+    }
+    for (const s of this.instances.values()) {
+      if (seen.has(s.info.instanceId) || !s.alive) continue;
+      s.alive = false;
+      if (!s.anim.dead) s.anim.onEvent({ type: 'death', instanceId: s.info.instanceId }, now);
+    }
+    this.trackProjectiles();
+  }
+
+  private applyEvent(event: FrameEvent, now: number): void {
+    if (event.type === 'fire' && !event.melee) this.lastFireByTarget.set(event.targetId, event.instanceId);
+    const ids = event.type === 'hit' ? [event.targetId, event.instanceId] : [event.instanceId];
+    for (const id of ids) this.instances.get(id)?.anim.onEvent(event, now);
+    this.options.onEvent?.(event, this);
+  }
+
+  /** After a seek or a mid-battle join: units missing from the frame are long dead. */
+  private resyncDeaths(): void {
+    const s = this.buffer.sample(this.clock.tick);
+    const alive = new Set(s?.units.map((u) => u.id) ?? []);
+    for (const st of this.instances.values()) {
+      st.anim.reset();
+      st.alive = alive.has(st.info.instanceId);
+      if (!st.alive) st.anim.onEvent({ type: 'death', instanceId: st.info.instanceId }, Number.NEGATIVE_INFINITY);
+    }
+  }
+
+  /** A unit in the frames that the reveal didn't mention (should not happen): draw a fallback. */
+  private adoptUnknown(u: SampledUnit): InstanceState {
+    const seat = Number.parseInt(u.id, 10);
+    const stats: StatsSnapshot = {
+      name: '?',
+      type: 'soldier',
+      maxHealth: Math.max(1, u.hp),
+      damage: 0,
+      range: 0,
+      speed: 0,
+      attackCooldown: 1,
+      color: '#9AA0AA',
+      size: 10,
+      shape: 'circle',
+    };
+    const st: InstanceState = {
+      info: {
+        instanceId: u.id,
+        unitId: '?',
+        playerId: '?',
+        seat: Number.isInteger(seat) ? seat : -1,
+        name: '?',
+        stats,
+        spec: resolveSprite({ sprite: null, stats }),
+        specKey: 'unknown',
+        x0: u.x,
+        y0: u.y,
+      },
+      anim: new UnitAnimator(u.id),
+      x: u.x,
+      y: u.y,
+      hp: u.hp,
+      flags: u.flags,
+      alive: true,
+    };
+    this.instances.set(u.id, st);
+    return st;
+  }
+
+  private trackProjectiles(): void {
+    const live = new Set<number>();
+    for (const p of this.sample?.projectiles ?? []) {
+      live.add(p.id);
+      if (this.projectiles.has(p.id)) continue;
+      const target = this.instances.get(p.targetId);
+      const shooterId = this.lastFireByTarget.get(p.targetId);
+      const shooter = shooterId ? this.instances.get(shooterId) : undefined;
+      const dist = target ? Math.hypot(target.x - p.x, target.y - p.y) : 0;
+      this.projectiles.set(p.id, {
+        startX: p.x,
+        startY: p.y,
+        dist: Math.max(1, dist),
+        color: shooter?.info.stats.color ?? '#FFFFFF',
+        trail: [],
+      });
+    }
+    for (const id of this.projectiles.keys()) if (!live.has(id)) this.projectiles.delete(id);
+  }
+
+  // -------------------------------------------------------------------------
+  // Drawing
+  // -------------------------------------------------------------------------
+
+  private draw(now: number): void {
+    const { ctx, view } = this;
+    const { width, height } = this.cssSize;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    if (this.options.background === null) ctx.clearRect(0, 0, width, height);
+    else {
+      ctx.fillStyle = this.options.background ?? '#0D0F1A';
+      ctx.fillRect(0, 0, width, height);
+    }
+    this.drawFloor();
+    this.drawSafeZone(now);
+    this.drawRings(now);
+    this.drawBillboards(now);
+    this.drawProjectiles();
+    this.options.overlay?.(ctx, view, this, now);
+    ctx.restore();
+  }
+
+  /** The floor bitmap for a zone set (memoised: only a few combinations occur). */
+  private floorFor(zones: readonly ArenaZone[]): { bitmap: Bitmap; originX: number; originY: number } {
+    const key = zones.map((z) => `${z.corner}:${z.seat}`).join(',');
+    let f = this.floors.get(key);
+    if (f) {
+      this.floors.delete(key);
+    } else {
+      const bmp = renderFloor({ zones: zones.map((z) => ({ corner: z.corner, color: seatStyle(z.seat).color })) });
+      f = { bitmap: pixelsToCanvas(bmp.image), originX: bmp.originX, originY: bmp.originY };
+    }
+    this.floors.set(key, f);
+    while (this.floors.size > FLOOR_MEMO) this.floors.delete(this.floors.keys().next().value!);
+    return f;
+  }
+
+  private drawFloor(): void {
+    const s = this.view.k / FLOOR_K;
+    const f = this.floorFor(this.zones);
+    this.ctx.drawImage(
+      f.bitmap,
+      Math.round(this.view.originX - f.originX * s),
+      Math.round(this.view.originY - f.originY * s),
+      f.bitmap.width * s,
+      f.bitmap.height * s,
+    );
+  }
+
+  private diamondPath(): void {
+    const { ctx, view } = this;
+    const a = toScreen(view, 0, 0);
+    const b = toScreen(view, ARENA.width, 0);
+    const c = toScreen(view, ARENA.width, ARENA.height);
+    const d = toScreen(view, 0, ARENA.height);
+    ctx.moveTo(a.sx, a.sy);
+    ctx.lineTo(b.sx, b.sy);
+    ctx.lineTo(c.sx, c.sy);
+    ctx.lineTo(d.sx, d.sy);
+    ctx.closePath();
+  }
+
+  /** Sudden death: darken outside the safe circle and outline it (an ellipse on the ground). */
+  private drawSafeZone(now: number): void {
+    const r = this.sample?.safeZoneRadius;
+    // The circle covers the whole arena until it shrinks below the half-diagonal.
+    if (r === undefined || r >= Math.hypot(CENTER.x, CENTER.y)) return;
+    const { ctx, view } = this;
+    const c = toScreen(view, CENTER.x, CENTER.y);
+    const { rx, ry } = isoEllipse(r, view.k);
+    ctx.save();
+    ctx.beginPath();
+    this.diamondPath();
+    ctx.ellipse(c.sx, c.sy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(220, 38, 38, 0.22)';
+    ctx.fill('evenodd');
+    const pulse = 0.65 + 0.35 * Math.sin(now / 180);
+    ctx.beginPath();
+    ctx.ellipse(c.sx, c.sy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(2, view.k * 3);
+    ctx.setLineDash([Math.max(4, view.k * 10), Math.max(3, view.k * 6)]);
+    ctx.lineDashOffset = -now / 40;
+    ctx.strokeStyle = `rgba(255, 90, 90, ${pulse})`;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Units in drawing order, with drop-in offsets applied. */
+  private visibleUnits(now: number): Array<InstanceState & { lift: number }> {
+    const out: Array<InstanceState & { lift: number }> = [];
+    const drop =
+      this.options.dropIn !== false &&
+      dropInActive({
+        now,
+        revealAt: this.revealAt,
+        units: this.instances.size,
+        bufferLength: this.buffer.length,
+        tick: this.clock.tick,
+        firstT: this.buffer.firstT,
+      });
+    let i = 0;
+    for (const s of this.instances.values()) {
+      let lift = 0;
+      if (drop) {
+        const t = (now - this.revealAt - i * DROP_STAGGER_MS) / DROP_MS;
+        if (t < 0) {
+          i++;
+          continue;
+        }
+        if (t < 1) lift = (1 - t) * (1 - t) * 260;
+      }
+      i++;
+      out.push({ ...s, lift });
+    }
+    return out;
+  }
+
+  private drawRings(now: number): void {
+    const { ctx, view } = this;
+    for (const s of this.instances.values()) {
+      if (!s.alive) continue;
+      const seat = seatStyle(s.info.seat);
+      const p = toScreen(view, s.x, s.y);
+      const { rx, ry } = isoEllipse(s.info.stats.size, view.k);
+      const mine = this.options.highlightSeat !== undefined && this.options.highlightSeat !== null && s.info.seat === this.options.highlightSeat;
+      const danger = (s.flags & FRAME_FLAGS.OUTSIDE_SAFE_ZONE) !== 0 && Math.sin(now / 90) > 0;
+      ctx.beginPath();
+      ctx.ellipse(p.sx, p.sy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fillStyle = rgba(seat.color, mine ? 0.35 : 0.22);
+      ctx.fill();
+      ctx.lineWidth = Math.max(1, view.zoom * (mine ? 2 : 1.2));
+      ctx.strokeStyle = danger ? '#FF5A5A' : mine ? seat.light : seat.color;
+      ctx.stroke();
+    }
+  }
+
+  private bakedFor(s: InstanceState, width: number): BakedSprite<Bitmap> {
+    const scale = chooseBakeScale(s.info.spec.grid, width * this.cssSize.dpr);
+    return this.sprites.get(s.info.specKey, s.info.spec, seatStyle(s.info.seat).color, scale);
+  }
+
+  private drawBillboards(now: number): void {
+    type Item = { x: number; y: number; key: string; draw: () => void };
+    const items: Item[] = [];
+    for (const prop of this.props) {
+      items.push({ x: prop.x, y: prop.y, key: prop.key, draw: () => this.drawProp(prop, now) });
+    }
+    for (const s of this.visibleUnits(now)) {
+      items.push({ x: s.x, y: s.y, key: s.info.instanceId, draw: () => this.drawUnit(s, s.lift, now) });
+    }
+    for (const it of depthSort(items)) it.draw();
+  }
+
+  private drawProp(prop: EdgeProp, now: number): void {
+    const width = billboardWidth(prop.size, this.view);
+    const spec = PROP_SPRITES[prop.kind];
+    const scale = chooseBakeScale(spec.grid, width * this.cssSize.dpr);
+    const baked = this.sprites.get(`prop:${prop.kind}`, spec, null, scale);
+    const frame = Math.floor((now + prop.x * 7) / 500) % baked.frameCount('idle');
+    const p = toScreen(this.view, prop.x, prop.y);
+    this.blit(baked.frame('idle', frame, false), baked, p, width, 0, 1);
+  }
+
+  /** Draw a baked bitmap with the inner grid `width` wide and its bottom at the feet. */
+  private blit(bmp: Bitmap, baked: BakedSprite<Bitmap>, feet: ScreenPoint, width: number, lift: number, alpha: number): number {
+    const inner = baked.grid * baked.scale;
+    const k = width / inner;
+    const size = baked.size * k;
+    const { ry } = isoEllipse(width / 2 / this.view.zoom, this.view.k);
+    const bottom = feet.sy + ry * 0.35 - lift;
+    const top = bottom - (inner + baked.pad) * k;
+    const left = feet.sx - size / 2;
+    this.ctx.globalAlpha = alpha;
+    this.ctx.drawImage(bmp, Math.round(left), Math.round(top), Math.round(size), Math.round(size));
+    this.ctx.globalAlpha = 1;
+    return top + baked.pad * k;
+  }
+
+  private drawUnit(s: InstanceState, lift: number, now: number): void {
+    const { ctx, view } = this;
+    const width = billboardWidth(s.info.stats.size, view);
+    const baked = this.bakedFor(s, width);
+    const pose = s.anim.pose(now, baked.frameCount, baked.fadeOnlyDeath);
+    if (pose.gone) return;
+    const feet = toScreen(view, s.x, s.y);
+    const top = this.blit(baked.frame(pose.state, pose.frame, pose.mirror), baked, feet, width, lift, pose.alpha * (pose.napping ? 0.75 : 1));
+    if (!s.alive || lift > 0) return;
+
+    // HP bar.
+    let y = top - Math.max(4, 3 * view.zoom);
+    if (this.options.hpBars !== false) {
+      const frac = Math.max(0, Math.min(1, s.hp / s.info.stats.maxHealth));
+      const bw = Math.max(14, Math.round(width * 0.9));
+      const bh = Math.max(3, Math.round(2.2 * view.zoom));
+      const bx = Math.round(feet.sx - bw / 2);
+      const by = Math.round(y - bh);
+      ctx.fillStyle = HP_COLORS.border;
+      ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
+      ctx.fillStyle = HP_COLORS.back;
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.fillStyle = frac > 0.5 ? HP_COLORS.good : frac > 0.25 ? HP_COLORS.mid : HP_COLORS.low;
+      ctx.fillRect(bx, by, Math.max(frac > 0 ? 1 : 0, Math.round(bw * frac)), bh);
+      y = by - 2;
+    }
+    // Own-unit marker: a small seat-coloured arrow.
+    if (this.options.highlightSeat !== undefined && this.options.highlightSeat !== null && s.info.seat === this.options.highlightSeat) {
+      const a = Math.max(3, 2.5 * view.zoom);
+      const bob = Math.sin(now / 200) * a * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(feet.sx - a, y - a * 1.6 + bob);
+      ctx.lineTo(feet.sx + a, y - a * 1.6 + bob);
+      ctx.lineTo(feet.sx, y - a * 0.4 + bob);
+      ctx.closePath();
+      ctx.fillStyle = seatStyle(s.info.seat).light;
+      ctx.fill();
+      y -= a * 1.8;
+    }
+    if (pose.napping) this.drawNapBubble(feet.sx + width * 0.35, y, now);
+  }
+
+  /** "Zz" speech bubble for a disabled (napping) unit. */
+  private drawNapBubble(x: number, y: number, now: number): void {
+    const { ctx, view } = this;
+    const h = Math.max(12, 7 * view.zoom);
+    const w = h * 1.6;
+    const bob = Math.sin(now / 300) * h * 0.12;
+    const bx = Math.round(x);
+    const by = Math.round(y - h + bob);
+    ctx.fillStyle = '#F5F3FF';
+    ctx.strokeStyle = '#1A1530';
+    ctx.lineWidth = Math.max(1, h / 10);
+    ctx.beginPath();
+    ctx.roundRect(bx, by, w, h, h * 0.3);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(bx + w * 0.2, by + h);
+    ctx.lineTo(bx + w * 0.1, by + h * 1.35);
+    ctx.lineTo(bx + w * 0.4, by + h);
+    ctx.fill();
+    ctx.fillStyle = '#4C3FA0';
+    ctx.font = `${Math.round(h * 0.55)}px "Press Start 2P", ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Zz', bx + w / 2, by + h / 2 + 1);
+  }
+
+  private drawProjectiles(): void {
+    const { ctx, view } = this;
+    const px = Math.max(2, Math.round(1.6 * view.zoom));
+    for (const p of this.sample?.projectiles ?? []) {
+      const st = this.projectiles.get(p.id);
+      if (!st) continue;
+      const target = this.instances.get(p.targetId);
+      const remaining = target ? Math.hypot(target.x - p.x, target.y - p.y) : 0;
+      const prog = Math.max(0, Math.min(1, 1 - remaining / st.dist));
+      // Visual height only: a parabola peaking mid-flight, plus chest height.
+      const arc = 4 * prog * (1 - prog) * Math.min(36, st.dist * 0.25);
+      const chest = 8;
+      const g = toScreen(view, p.x, p.y);
+      const pos = { sx: g.sx, sy: g.sy - (arc + chest) * view.zoom };
+      st.trail.push(pos);
+      if (st.trail.length > 6) st.trail.shift();
+      // Ground shadow.
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(Math.round(g.sx - px / 2), Math.round(g.sy - px / 4), px, Math.max(1, Math.round(px / 2)));
+      // Trail.
+      st.trail.forEach((t, i) => {
+        const a = (i + 1) / (st.trail.length + 1);
+        const sz = Math.max(1, Math.round(px * a));
+        ctx.fillStyle = rgba(st.color, a * 0.6);
+        ctx.fillRect(Math.round(t.sx - sz / 2), Math.round(t.sy - sz / 2), sz, sz);
+      });
+      ctx.fillStyle = st.color;
+      ctx.fillRect(Math.round(pos.sx - px / 2), Math.round(pos.sy - px / 2), px, px);
+      ctx.fillStyle = '#FFFFFF';
+      const core = Math.max(1, Math.round(px / 2));
+      ctx.fillRect(Math.round(pos.sx - core / 2), Math.round(pos.sy - core / 2), core, core);
+    }
+  }
+}

@@ -1,0 +1,441 @@
+// Pure /play logic (plan §12.1), DOM-free so tests/play.test.ts can run it:
+// zone grid orientation, placement edits with budget/copy/cell rules, "Copy
+// last layout", selection toggling, stat bars, cost breakdown rows, the
+// "Ask Claude" prompts and Claude-terminal links.
+
+import {
+  CELL_SIZE,
+  DEFAULT_CONFIG,
+  GRID_SIZE,
+  cellAt,
+  isValidCell,
+  sizeOf,
+  zoneRect,
+  type BadgeId,
+  type BattleReportDTO,
+  type BattleReportErrorDTO,
+  type CostBreakdown,
+  type Corner,
+  type PlacementDTO,
+  type RankingEntryDTO,
+  type StatBounds,
+  type StatsSnapshot,
+  type UnitCardDTO,
+} from '@pixel-clash/shared';
+
+// ---------------------------------------------------------------------------
+// Zone grid in its true (top-down) orientation
+// ---------------------------------------------------------------------------
+
+export interface GridCell {
+  /** Screen column/row of the drawn grid (0 = left / top). */
+  gx: number;
+  gy: number;
+  /** Zone-local cell (0,0 = nearest the arena centre, §9). */
+  col: number;
+  row: number;
+}
+
+/**
+ * The 36 cells of a corner zone in screen order (row-major, top-left first),
+ * each with its zone-local col/row. The grid is drawn exactly as the zone sits
+ * in the top-down arena, so (0,0) lands in the corner nearest the centre.
+ */
+export function zoneGrid(corner: Corner): GridCell[] {
+  const r = zoneRect(corner);
+  const out: GridCell[] = [];
+  for (let gy = 0; gy < GRID_SIZE; gy++) {
+    for (let gx = 0; gx < GRID_SIZE; gx++) {
+      const c = cellAt(corner, r.x + gx * CELL_SIZE + CELL_SIZE / 2, r.y + gy * CELL_SIZE + CELL_SIZE / 2)!;
+      out.push({ gx, gy, col: c.col, row: c.row });
+    }
+  }
+  return out;
+}
+
+/** Which grid corner faces the arena centre: arrow direction for the zone. */
+export function towardCentre(corner: Corner): { dx: 1 | -1; dy: 1 | -1; arrow: string } {
+  switch (corner) {
+    case 'TL':
+      return { dx: 1, dy: 1, arrow: '↘' };
+    case 'TR':
+      return { dx: -1, dy: 1, arrow: '↙' };
+    case 'BR':
+      return { dx: -1, dy: -1, arrow: '↖' };
+    case 'BL':
+      return { dx: 1, dy: -1, arrow: '↗' };
+  }
+}
+
+/** Kid words for a corner (top-down, matching the placement grid). */
+export const CORNER_WORDS: Readonly<Record<Corner, string>> = {
+  TL: 'top-left',
+  TR: 'top-right',
+  BR: 'bottom-right',
+  BL: 'bottom-left',
+};
+
+/** Drawn width of a unit in a grid cell, as a fraction of the cell (size 20 fills it). */
+export function cellFill(stats: Pick<StatsSnapshot, 'type' | 'size'>): number {
+  return Math.min(1, (2 * sizeOf(stats)) / CELL_SIZE);
+}
+
+// ---------------------------------------------------------------------------
+// Placement edits
+// ---------------------------------------------------------------------------
+
+export interface PlacementRules {
+  /** unitId → cost, for the units allowed this round (the palette). */
+  costs: ReadonlyMap<string, number>;
+  budget: number;
+  maxCopies: number;
+}
+
+export type PlaceResult =
+  | { ok: true; placements: PlacementDTO[]; removed?: boolean }
+  | { ok: false; code: 'OVER_BUDGET' | 'TOO_MANY_COPIES' | 'NOT_SELECTED' | 'CELL_OUT_OF_ZONE'; message: string };
+
+export function spentOf(placements: readonly PlacementDTO[], costs: ReadonlyMap<string, number>): number {
+  return placements.reduce((s, p) => s + (costs.get(p.unitId) ?? 0), 0);
+}
+
+export function placementAt(placements: readonly PlacementDTO[], col: number, row: number): PlacementDTO | undefined {
+  return placements.find((p) => p.col === col && p.row === row);
+}
+
+export function removeAt(placements: readonly PlacementDTO[], col: number, row: number): PlacementDTO[] {
+  return placements.filter((p) => p.col !== col || p.row !== row);
+}
+
+/**
+ * Tap a cell with `unitId` chosen in the palette (null = nothing chosen).
+ *  - Empty cell + chosen unit → place it (if budget and copies allow).
+ *  - Occupied cell → remove it, whatever is chosen (§12.1 "Tap a placed unit
+ *    to remove it"; the hint on the page says the same).
+ */
+export function tapCell(
+  placements: readonly PlacementDTO[],
+  col: number,
+  row: number,
+  unitId: string | null,
+  rules: PlacementRules,
+): PlaceResult {
+  if (!isValidCell(col, row)) return { ok: false, code: 'CELL_OUT_OF_ZONE', message: 'That square is outside your corner.' };
+  if (placementAt(placements, col, row)) {
+    return { ok: true, placements: removeAt(placements, col, row), removed: true };
+  }
+  if (unitId === null) return { ok: false, code: 'NOT_SELECTED', message: 'Tap a unit at the bottom first, then tap a square.' };
+  const cost = rules.costs.get(unitId);
+  if (cost === undefined) return { ok: false, code: 'NOT_SELECTED', message: "That unit isn't in your army this round." };
+  const without = placements.slice();
+  if (without.length >= rules.maxCopies) {
+    return { ok: false, code: 'TOO_MANY_COPIES', message: `That's the most units you can place (${rules.maxCopies}).` };
+  }
+  const spent = spentOf(without, rules.costs) + cost;
+  if (spent > rules.budget) {
+    const left = rules.budget - spentOf(without, rules.costs);
+    return {
+      ok: false,
+      code: 'OVER_BUDGET',
+      message: `Not enough money! It costs $${cost} but you only have $${Math.max(0, left)} left.`,
+    };
+  }
+  return { ok: true, placements: [...without, { unitId, col, row }] };
+}
+
+/**
+ * "Copy last layout": keep the old placements whose unit is in this round's
+ * palette, in order, while the budget and copy cap allow. Returns what was
+ * kept and how many were dropped.
+ */
+export function copyLastLayout(
+  lastLayout: readonly PlacementDTO[] | null,
+  rules: PlacementRules,
+): { placements: PlacementDTO[]; dropped: number } {
+  const out: PlacementDTO[] = [];
+  let dropped = 0;
+  let spent = 0;
+  const cells = new Set<string>();
+  for (const p of lastLayout ?? []) {
+    const cost = rules.costs.get(p.unitId);
+    const key = `${p.col},${p.row}`;
+    if (cost === undefined || !isValidCell(p.col, p.row) || cells.has(key) || out.length >= rules.maxCopies || spent + cost > rules.budget) {
+      dropped++;
+      continue;
+    }
+    cells.add(key);
+    spent += cost;
+    out.push({ unitId: p.unitId, col: p.col, row: p.row });
+  }
+  return { placements: out, dropped };
+}
+
+/** Copies per unitId. */
+export function copiesOf(placements: readonly PlacementDTO[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const p of placements) m.set(p.unitId, (m.get(p.unitId) ?? 0) + 1);
+  return m;
+}
+
+/** "$937 / $1,000 — 63 left" pieces. */
+export function budgetText(spent: number, budget: number): string {
+  const f = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
+  const left = budget - spent;
+  return left >= 0 ? `${f(spent)} / ${f(budget)} — ${f(left)} left` : `${f(spent)} / ${f(budget)} — ${f(-left)} too much!`;
+}
+
+// ---------------------------------------------------------------------------
+// Selection (PLAN)
+// ---------------------------------------------------------------------------
+
+export type ToggleResult = { ok: true; selection: string[] } | { ok: false; reason: 'full' | 'invalid' };
+
+/** Tap a roster card: select/deselect, at most `max` types; invalid units can't be picked. */
+export function toggleSelection(selection: readonly string[], unit: Pick<UnitCardDTO, 'unitId' | 'status'>, max: number): ToggleResult {
+  if (selection.includes(unit.unitId)) return { ok: true, selection: selection.filter((id) => id !== unit.unitId) };
+  if (unit.status !== 'valid') return { ok: false, reason: 'invalid' };
+  if (selection.length >= max) return { ok: false, reason: 'full' };
+  return { ok: true, selection: [...selection, unit.unitId] };
+}
+
+// ---------------------------------------------------------------------------
+// Stat bars and cost breakdown
+// ---------------------------------------------------------------------------
+
+export interface StatBar {
+  key: string;
+  label: string;
+  /** Text shown next to the bar. */
+  display: string;
+  /** 0-1 fill. */
+  frac: number;
+}
+
+const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
+const frac = (v: number, min: number, max: number) => (max > min ? clamp01((v - min) / (max - min)) : 0);
+const num = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+
+/** Stat bars for a unit card. Attack speed is attacks per second (60 / cooldown). */
+export function statBars(stats: StatsSnapshot, bounds: StatBounds = DEFAULT_CONFIG.stats.bounds): StatBar[] {
+  const perSec = 60 / stats.attackCooldown;
+  const maxPerSec = 60 / bounds.attackCooldown.min;
+  const size = sizeOf(stats);
+  return [
+    { key: 'hp', label: 'Health', display: num(stats.maxHealth), frac: frac(stats.maxHealth, 0, bounds.maxHealth.max) },
+    { key: 'damage', label: 'Damage', display: num(stats.damage), frac: frac(stats.damage, 0, bounds.damage.max) },
+    { key: 'range', label: 'Range', display: num(stats.range), frac: frac(stats.range, 0, bounds.range.max) },
+    {
+      key: 'speed',
+      label: 'Speed',
+      display: stats.type === 'tower' ? 'tower' : num(stats.speed),
+      frac: frac(stats.speed, 0, bounds.soldierSpeed.max),
+    },
+    {
+      key: 'rate',
+      label: 'Attacks',
+      display: `${perSec >= 10 ? Math.round(perSec) : perSec.toFixed(perSec >= 1 && Number.isInteger(perSec) ? 0 : 1)}/s`,
+      frac: frac(perSec, 0, maxPerSec),
+    },
+    { key: 'size', label: 'Size', display: num(size), frac: frac(size, 0, bounds.size.max) },
+  ];
+}
+
+export interface BreakdownRow {
+  label: string;
+  value: string;
+}
+
+const money = (n: number) => (Math.abs(n - Math.round(n)) < 1e-9 ? String(Math.round(n)) : n.toFixed(2).replace(/0$/, ''));
+
+/** Rows of the "cost breakdown" pop-up: each term, the sum, the factor, the total. */
+export function breakdownRows(b: CostBreakdown): BreakdownRow[] {
+  const t = b.terms;
+  const rows: BreakdownRow[] = [
+    { label: 'Base', value: money(t.base) },
+    { label: 'Health', value: money(t.maxHealth) },
+    { label: 'Damage', value: money(t.damage) },
+    { label: 'Range', value: money(t.range) },
+    { label: 'Speed', value: money(t.speed) },
+    { label: 'Size', value: money(t.size) },
+    { label: 'Sum', value: money(b.sum) },
+  ];
+  rows.push({ label: 'Fast-attack ×', value: b.factor === 1 ? '×1' : `×${b.factor.toFixed(2).replace(/\.?0+$/, '')}` });
+  rows.push({ label: 'Cost', value: `$${b.cost}` });
+  return rows;
+}
+
+// ---------------------------------------------------------------------------
+// "Ask Claude" prompts (RESULTS, §12.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * One prompt per battle error: "My unit X had an error at line N: '…'. Please fix it."
+ * A borrowed Open Armory unit can't be fixed (§9.1): ask for an own version instead.
+ */
+export function errorPrompt(e: Pick<BattleReportErrorDTO, 'unitName' | 'line' | 'message' | 'borrowedFrom'>): string {
+  const where = e.line !== undefined ? ` at line ${e.line}` : '';
+  const msg = e.message.replace(/\s+/g, ' ').trim().slice(0, 200);
+  if (e.borrowedFrom !== undefined) {
+    return `My borrowed unit ${e.unitName} (borrowed from ${e.borrowedFrom}) had an error${where}: '${msg}'. Borrowed units can't be changed, so please build me my own improved version.`;
+  }
+  return `My unit ${e.unitName} had an error${where}: '${msg}'. Please fix it.`;
+}
+
+/** The same unit/line/message reported many times collapses into one prompt (with a count). */
+export function groupErrors(errors: readonly BattleReportErrorDTO[]): Array<{ error: BattleReportErrorDTO; count: number; prompt: string }> {
+  const groups = new Map<string, { error: BattleReportErrorDTO; count: number; prompt: string }>();
+  for (const e of errors) {
+    const key = `${e.unitId}|${e.line ?? ''}|${e.message}`;
+    const g = groups.get(key);
+    if (g) g.count++;
+    else groups.set(key, { error: e, count: 1, prompt: errorPrompt(e) });
+  }
+  return [...groups.values()];
+}
+
+/** Extra prompts for units that napped (disabled) or never did damage. */
+export function unitPrompts(roster: readonly UnitCardDTO[], round: number, report: BattleReportDTO | null): string[] {
+  const out: string[] = [];
+  const errored = new Set(report?.errors.map((e) => e.unitId) ?? []);
+  for (const u of roster) {
+    const lb = u.lastBattle;
+    if (!lb || lb.round !== round) continue;
+    if (lb.disabled > 0 && !errored.has(u.unitId)) {
+      out.push(`My unit ${u.name} fell asleep in the last battle (too many errors or too slow). Please call get_battle_report and fix it.`);
+    } else if (lb.damageDealt === 0 && u.stats.damage > 0) {
+      out.push(`My unit ${u.name} did no damage last battle. Can you make it find and attack enemies better?`);
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Claude terminal links (§11.1)
+// ---------------------------------------------------------------------------
+
+export const TTYD_BASE_PORT = 7680;
+export const CLAUDE_SEATS = 4;
+
+/** Host part of a Claude box address ("192.168.8.20", "http://box:8080/x" → "box"). */
+export function claudeBoxHost(address: string | null | undefined): string | null {
+  if (!address) return null;
+  let s = address.trim();
+  if (!s) return null;
+  s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
+  s = s.split(/[/?#]/)[0] ?? '';
+  // [ipv6]:port or host:port
+  const v6 = /^\[([^\]]+)\]/.exec(s);
+  if (v6) return `[${v6[1]}]`;
+  s = s.replace(/:\d+$/, '');
+  return /^[a-z0-9.-]+$/i.test(s) ? s : null;
+}
+
+/** `http://<box>:768N` for Claude seat 1-4. */
+export function claudeTerminalUrl(address: string | null | undefined, claudeSeat: number): string | null {
+  const host = claudeBoxHost(address);
+  if (!host || !Number.isInteger(claudeSeat) || claudeSeat < 1 || claudeSeat > CLAUDE_SEATS) return null;
+  return `http://${host}:${TTYD_BASE_PORT + claudeSeat}`;
+}
+
+// ---------------------------------------------------------------------------
+// Join form
+// ---------------------------------------------------------------------------
+
+export const NAME_RE = /^[A-Za-z0-9 _-]{1,16}$/;
+export const PIN_RE = /^\d{4}$/;
+
+/** Kid-friendly problem with a name, or null when it's fine. */
+export function nameProblem(name: string): string | null {
+  const n = name.trim();
+  if (!n) return 'Type your player name.';
+  if (n.length > 16) return 'That name is too long (16 letters max).';
+  if (!NAME_RE.test(n)) return 'Use only letters, numbers, spaces, - and _.';
+  return null;
+}
+
+/** Append a keypad digit / backspace to a PIN (max 4 digits). */
+export function pinKey(pin: string, key: string): string {
+  if (key === 'back') return pin.slice(0, -1);
+  if (key === 'clear') return '';
+  if (/^\d$/.test(key) && pin.length < 4) return pin + key;
+  return pin;
+}
+
+// ---------------------------------------------------------------------------
+// Round score in kid language (§9 Points, Badges; §12.4 kid language)
+// ---------------------------------------------------------------------------
+
+function pts(n: number): string {
+  return `+${n} point${n === 1 ? '' : 's'}`;
+}
+
+function nth(n: number): string {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return `${n}th`;
+  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
+}
+
+export interface ScoreLine {
+  icon: string;
+  text: string;
+  points: number;
+}
+
+type ScoreParts = Pick<RankingEntryDTO, 'place' | 'pointsGained' | 'placePoints' | 'damage' | 'damageBonus' | 'valueDestroyed' | 'valueBonus' | 'badges' | 'inventorUsedBy'>;
+
+/**
+ * A ranking entry with the scoring fields filled in. Results saved before the
+ * scoring metrics existed only carry place and pointsGained; they read as
+ * place points only (same fallbacks as /screen's model).
+ */
+export function scoreParts(entry: Pick<RankingEntryDTO, 'place'> & Partial<ScoreParts>): ScoreParts {
+  const placePoints = entry.placePoints ?? entry.pointsGained ?? 0;
+  const damageBonus = entry.damageBonus ?? 0;
+  const valueBonus = entry.valueBonus ?? 0;
+  return {
+    place: entry.place,
+    pointsGained: entry.pointsGained ?? placePoints + damageBonus + valueBonus,
+    placePoints,
+    damage: entry.damage ?? 0,
+    damageBonus,
+    valueDestroyed: entry.valueDestroyed ?? 0,
+    valueBonus,
+    badges: entry.badges ?? [],
+    ...(entry.inventorUsedBy !== undefined ? { inventorUsedBy: entry.inventorUsedBy } : {}),
+  };
+}
+
+/** One line per part of the round score: place, damage bonus, value bonus. */
+export function scoreLines(raw: Pick<RankingEntryDTO, 'place'> & Partial<ScoreParts>): ScoreLine[] {
+  const entry = scoreParts(raw);
+  const dmg = Math.round(entry.damage);
+  const value = `$${Math.round(entry.valueDestroyed).toLocaleString('en-US')}`;
+  return [
+    { icon: '🏅', text: `You came ${nth(entry.place)}: ${pts(entry.placePoints)}!`, points: entry.placePoints },
+    {
+      icon: '💥',
+      text:
+        dmg === 0
+          ? 'Your army did no damage this time: no damage points.'
+          : `You dealt ${dmg} damage: ${pts(entry.damageBonus)}${entry.damageBonus > 0 ? '!' : '. Hit harder for a bonus!'}`,
+      points: entry.damageBonus,
+    },
+    {
+      icon: '🗡️',
+      text:
+        entry.valueDestroyed === 0
+          ? 'You didn\'t knock out any enemy units: no KO points.'
+          : `You knocked out ${value} of enemy units: ${pts(entry.valueBonus)}${entry.valueBonus > 0 ? '!' : '.'}`,
+      points: entry.valueBonus,
+    },
+  ];
+}
+
+/** What each badge means, said to the kid who won it. */
+export const BADGE_KID_TEXT: Readonly<Record<BadgeId, string>> = {
+  lastStanding: 'You came 1st!',
+  biggestHitter: 'You dealt the most damage!',
+  giantSlayer: 'You knocked out the most enemy value!',
+  ironWall: 'You had the most army still standing!',
+  inventor: 'Another player borrowed your unit from the Open Armory!',
+};

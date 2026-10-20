@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pixel Clash – renderer demo</title>
+  </head>
+  <body>
+    <!-- Dev-only renderer harness (not part of the build). See demo.ts. -->
+    <header class="bar">
+      <h1>Renderer demo</h1>
+      <button id="play">Pause</button>
+      <button id="speed">1x</button>
+      <input id="scrub" type="range" min="0" max="1" value="0" step="1" />
+      <span id="time" class="pixel">0:00</span>
+      <label>Highlight <select id="seat"><option value="">none</option><option>0</option><option>1</option><option>2</option><option>3</option></select></label>
+      <label><input id="snap" type="checkbox" /> pixel snap</label>
+      <button id="reveal">Replay reveal</button>
+    </header>
+    <main>
+      <canvas id="arena" class="pixelated"></canvas>
+      <section id="sheet"></section>
+    </main>
+    <p id="msg"></p>
+    <script type="module" src="./demo.ts"></script>
+  </body>
+</html>

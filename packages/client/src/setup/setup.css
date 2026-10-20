@@ -1,0 +1,76 @@
+/* /setup (shares admin.css for panels and buttons). */
+
+.setup {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.setup-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.panel.join {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.qr.big {
+  width: min(320px, 80vw);
+  height: min(320px, 80vw);
+}
+.huge-url {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: clamp(22px, 4vw, 40px);
+  font-weight: 700;
+  word-break: break-all;
+  margin: 4px 0 12px;
+}
+a.btn {
+  text-decoration: none;
+  display: inline-block;
+}
+.seat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.seat-card {
+  border: 3px solid;
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-2);
+}
+.seat-card a {
+  color: var(--accent);
+  word-break: break-all;
+}
+.checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.checklist li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.checklist li.done label {
+  color: var(--text-dim);
+  text-decoration: line-through;
+}
+.cmd {
+  display: inline-block;
+  margin: 4px 0 0 26px;
+  background: var(--bg-2);
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: copy;
+}

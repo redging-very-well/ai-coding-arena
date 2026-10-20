@@ -1,0 +1,221 @@
+// Pure view-model helpers for the projector /screen (plan §12.2). DOM-free so
+// tests can import them.
+
+import {
+  BADGES,
+  BADGE_IDS,
+  type BadgeId,
+  type BattleRevealDTO,
+  type GameStateDTO,
+  type Phase,
+  type PlayerStatusDTO,
+  type ScoreboardEntryDTO,
+} from '@pixel-clash/shared';
+
+// ---------------------------------------------------------------------------
+// Timers
+// ---------------------------------------------------------------------------
+
+/** The phase timer between 1 Hz state pushes: counts down locally unless paused. */
+export function liveSecondsLeft(secondsLeft: number | null, receivedAt: number, paused: boolean, now: number): number | null {
+  if (secondsLeft === null) return null;
+  if (paused) return secondsLeft;
+  return Math.max(0, secondsLeft - (now - receivedAt) / 1000);
+}
+
+/** Battle countdown (seconds) from the playback tick. */
+export function battleSecondsLeft(tick: number, totalTicks: number, ticksPerSecond = 60): number {
+  return Math.max(0, (totalTicks - tick) / ticksPerSecond);
+}
+
+/** The countdown turns red in the last 10 seconds. */
+export const URGENT_SECONDS = 10;
+
+export function isUrgent(seconds: number | null): boolean {
+  return seconds !== null && seconds <= URGENT_SECONDS;
+}
+
+// ---------------------------------------------------------------------------
+// START reveal: "3-2-1 CLASH!"
+// ---------------------------------------------------------------------------
+
+/** One count step and the CLASH! word; drop-in starts with CLASH!. */
+export const REVEAL_STEP_MS = 650;
+export const REVEAL_STEPS = ['3', '2', '1', 'CLASH!'] as const;
+/** When the units start dropping in (ms after the reveal): on "1", so they land by CLASH!. */
+export const REVEAL_DROP_AT_MS = REVEAL_STEP_MS * 2;
+/** The overlay is gone after this. */
+export const REVEAL_TOTAL_MS = REVEAL_STEP_MS * 3 + 1000;
+
+/** The overlay text `ms` after the reveal, or null when it is over. */
+export function revealStep(ms: number): string | null {
+  if (ms < 0 || ms >= REVEAL_TOTAL_MS) return null;
+  return REVEAL_STEPS[Math.min(REVEAL_STEPS.length - 1, Math.floor(ms / REVEAL_STEP_MS))]!;
+}
+
+// ---------------------------------------------------------------------------
+// Army value bars
+// ---------------------------------------------------------------------------
+
+export interface ArmyValue {
+  playerId: string;
+  name: string;
+  seat: number;
+  /** Total cost of the units fielded at START. */
+  start: number;
+  /** Total cost of the units still alive. */
+  living: number;
+  aliveCount: number;
+  fieldedCount: number;
+}
+
+/** Per-player living army value from the reveal and the ids alive in the current frame. */
+export function armyValues(reveal: BattleRevealDTO, aliveIds: ReadonlySet<string> | null): ArmyValue[] {
+  return reveal.players.map((p) => {
+    const cost = new Map(p.units.map((u) => [u.unitId, u.cost]));
+    let start = 0;
+    let living = 0;
+    let aliveCount = 0;
+    for (const inst of p.instances) {
+      const c = cost.get(inst.unitId) ?? 0;
+      start += c;
+      if (!aliveIds || aliveIds.has(inst.instanceId)) {
+        living += c;
+        aliveCount++;
+      }
+    }
+    return { playerId: p.playerId, name: p.name, seat: p.seat, start, living, aliveCount, fieldedCount: p.instances.length };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Player tiles (status ticks only, §3: no unit data before START)
+// ---------------------------------------------------------------------------
+
+export interface StatusTick {
+  label: string;
+  done: boolean;
+}
+
+export function statusTicks(p: PlayerStatusDTO, phase: Phase): StatusTick[] {
+  if (!p.active && phase !== 'LOBBY') return [{ label: 'Joins next round', done: false }];
+  switch (phase) {
+    case 'LOBBY':
+      return [{ label: 'Joined', done: true }];
+    case 'PLAN':
+      return [
+        { label: 'New unit', done: p.submitted },
+        { label: 'Army picked', done: p.selected },
+      ];
+    case 'PLACEMENT':
+      return [
+        { label: 'Army picked', done: p.selected },
+        { label: 'Ready', done: p.ready },
+      ];
+    default:
+      return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Results / podium
+// ---------------------------------------------------------------------------
+
+export interface RankRow {
+  playerId: string;
+  name: string;
+  seat: number;
+  place: number;
+  /** Round points = placePoints + damageBonus + valueBonus. */
+  pointsGained: number;
+  placePoints: number;
+  damage: number;
+  damageBonus: number;
+  valueDestroyed: number;
+  valueBonus: number;
+  badges: BadgeId[];
+  /** 💡 Inventor: other players who fielded this player's Armory units (§9.1). */
+  inventorUsedBy?: number;
+  /** Match total after this round. */
+  total: number;
+  livingCost: number;
+  eliminatedAtTick: number | null;
+}
+
+/** The released ranking joined with names and totals. */
+export function rankRows(state: Pick<GameStateDTO, 'lastBattle' | 'players' | 'scoreboard'>): RankRow[] {
+  const lb = state.lastBattle;
+  if (!lb) return [];
+  const board = new Map<string, ScoreboardEntryDTO>(lb.scoreboard.map((s) => [s.playerId, s]));
+  const players = new Map(state.players.map((p) => [p.id, p]));
+  return [...lb.ranking]
+    .sort((a, b) => a.place - b.place)
+    .map((r) => {
+      const s = board.get(r.playerId);
+      const p = players.get(r.playerId);
+      return {
+        playerId: r.playerId,
+        name: s?.name ?? p?.name ?? '?',
+        seat: s?.seat ?? p?.seat ?? -1,
+        place: r.place,
+        pointsGained: r.pointsGained,
+        placePoints: r.placePoints ?? r.pointsGained,
+        damage: r.damage ?? 0,
+        damageBonus: r.damageBonus ?? 0,
+        valueDestroyed: r.valueDestroyed ?? 0,
+        valueBonus: r.valueBonus ?? 0,
+        badges: r.badges ?? [],
+        ...(r.inventorUsedBy !== undefined ? { inventorUsedBy: r.inventorUsedBy } : {}),
+        total: s?.points ?? p?.points ?? 0,
+        livingCost: r.livingCost,
+        eliminatedAtTick: r.eliminatedAtTick,
+      };
+    });
+}
+
+export type PodiumEntry = ScoreboardEntryDTO;
+
+/**
+ * Final standings (§9 Match standings): total points, then total match damage,
+ * then a shared place. Recomputed here so the order never depends on the
+ * payload's order.
+ */
+export function standings(scoreboard: readonly ScoreboardEntryDTO[]): PodiumEntry[] {
+  const cmp = (a: ScoreboardEntryDTO, b: ScoreboardEntryDTO) => b.points - a.points || (b.damage ?? 0) - (a.damage ?? 0);
+  const sorted = [...scoreboard].sort((a, b) => cmp(a, b) || a.seat - b.seat);
+  let place = 0;
+  return sorted.map((s, i) => {
+    if (i === 0 || cmp(sorted[i - 1]!, s) !== 0) place = i + 1;
+    return { ...s, place };
+  });
+}
+
+/** A badge's emoji and title ("💡 Inventor · used by 2 players" with a use count). */
+export function badgeLabel(id: BadgeId, usedBy?: number): string {
+  const b = BADGES[id];
+  const uses = id === 'inventor' && usedBy ? ` · used by ${usedBy} player${usedBy === 1 ? '' : 's'}` : '';
+  return `${b.emoji} ${b.title}${uses}`;
+}
+
+/** Badges won this match, as "🏆×2" chips (badges with a zero count are left out). */
+export function badgeCounts(entry: Pick<ScoreboardEntryDTO, 'badges'>): Array<{ id: BadgeId; emoji: string; title: string; count: number }> {
+  return BADGE_IDS.filter((id) => (entry.badges?.[id] ?? 0) > 0).map((id) => ({
+    id,
+    emoji: BADGES[id].emoji,
+    title: BADGES[id].title,
+    count: entry.badges[id],
+  }));
+}
+
+/** Podium column order: 2nd, 1st, 3rd (only those present). */
+export function podiumOrder<T>(top: readonly T[]): T[] {
+  const [a, b, c] = top;
+  return [b, a, c].filter((x): x is T => x !== undefined);
+}
+
+/** Count-up animation value: ease-out from 0 to `target` over `durationMs`. */
+export function countUp(target: number, elapsedMs: number, durationMs = 1200): number {
+  if (elapsedMs >= durationMs) return target;
+  const t = Math.max(0, elapsedMs / durationMs);
+  return Math.round(target * (1 - (1 - t) ** 3));
+}
