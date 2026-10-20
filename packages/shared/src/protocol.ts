@@ -1,0 +1,719 @@
+// REST / WebSocket / MCP data-transfer types (plan §10).
+//
+// Everything that reaches a client is built per recipient by
+// packages/server/src/services/visibility.ts (§3 privacy). Optional fields are
+// OMITTED, never filled with another player's data, before the reveal.
+//
+// ===========================================================================
+// Quick reference for client builders
+// ===========================================================================
+//
+// Auth
+//   * Web pages: POST /api/players or /api/login sets the httpOnly cookie
+//     `pc_session`; POST /api/admin/login sets `pc_admin`. Use
+//     `credentials: 'same-origin'` (the default for same-origin fetch).
+//   * Claude / curl: `Authorization: Bearer pc_…` (the player's apiKey).
+//
+// REST (JSON, prefix /api). Errors: HTTP 4xx/5xx with ApiErrorBody; a failed
+// unit validation is HTTP 422 with the §7 ValidationFailure body.
+//   GET    /health                    -> HealthDTO
+//   POST   /players      {name,pin}   -> LoginResponse (+ cookie)   NAME_TAKEN GAME_FULL BAD_PIN_FORMAT BAD_NAME_FORMAT
+//   POST   /login        {name,pin}   -> LoginResponse (+ cookie)   BAD_LOGIN RATE_LIMITED
+//   POST   /logout                    -> {ok:true}
+//   GET    /me                        -> MeResponse
+//   GET    /rules                     -> RulesDTO
+//   GET    /contract                  -> ContractDTO
+//   GET    /join                      -> JoinInfoDTO (join URL + QR SVG for /screen)
+//   GET    /state                     -> GameStateDTO (`me` only with a player session/key)
+//   POST   /units/validate {source,unitId?} -> ValidationResult (dry run; 422 on failure)
+//   POST   /units          {source,unitId?} -> SubmitUnitResponse (PLAN only)
+//   GET    /units                     -> UnitCardDTO[]
+//   GET    /units/:id                 -> UnitSourceDTO
+//   DELETE /units/:id                 -> {ok:true}  (PLAN only; templates refused)
+//   PUT    /round/selection {unitIds} -> {selection: string[]}            (PLAN only; own unitIds and
+//                                        `armory:<armoryId>` ids when Open Armory is on, ≤ 3 in total)
+//   PUT    /round/placement {placements} -> PlacementResponse            (PLACEMENT only)
+//   POST   /round/ready {ready}       -> {ready: boolean}                 (PLACEMENT only)
+//   GET    /battles/:round/report     -> BattleReportDTO  (own units; after playback ends)
+//   GET    /battles/:round/replay     -> ReplayDTO        (after playback ends)
+//   GET    /kit.zip                   -> personal kit zip (player)
+//   GET    /setup/kit.zip             -> generic kit zip (no auth)
+//   GET    /setup                     -> SetupInfoDTO (no auth: LAN/play URL + QR, seat terminal links)
+// Admin (cookie pc_admin):
+//   POST /admin/login {password}      -> {ok:true}
+//   POST /admin/logout                -> {ok:true}
+//   GET  /admin/session               -> {admin: boolean}
+//   POST /admin/match {rounds?, armory?} -> GameStateDTO (LOBBY -> PLAN, needs ≥ 2 players; armory = Open Armory, §9.1)
+//   POST /admin/match/new             -> GameStateDTO (MATCH_RESULTS -> LOBBY)
+//   POST /admin/phase/next            -> GameStateDTO
+//   POST /admin/phase/skip            -> GameStateDTO
+//   POST /admin/timer {setSeconds?,addSeconds?,paused?} -> TimerDTO
+//   POST /admin/start {force?}        -> GameStateDTO (PLACEMENT -> BATTLE)
+//   POST /admin/battle {paused?,speed?} -> PlaybackDTO
+//   POST /admin/players/:id/kick {deleteData?} -> {ok:true, effective:'now'|'after-battle'}
+//   POST /admin/players/:id/pin {pin} -> {ok:true}
+//   POST /admin/players/:id/rotate-key -> {apiKey}
+//   POST /admin/players/:id/units {source,unitId?,dryRun?} -> ValidationResult / SubmitUnitResponse
+//   POST /admin/units/:playerId/:unitId/sprite {hidden} -> {ok:true}
+//   GET  /admin/config                -> AdminConfigResponse
+//   PUT  /admin/config  DeepPartial<GameConfig> -> AdminConfigResponse
+//   GET  /admin/overview              -> AdminOverviewDTO
+//   POST /admin/wipe {confirm:'WIPE'} -> {ok:true}
+//   PUT  /admin/setup {claudeBoxHost?, preferredUrl?} (null clears) -> SetupInfoDTO
+//
+// WebSocket /ws: send ClientWsMessage `{type:'hello', role}` after open; the
+// cookie decides who you are (a 'player' hello without a valid session is
+// answered with a toast and treated as 'screen'). The server then pushes
+// ServerWsMessage values (see below). Battle frames arrive in batches every
+// ~50 ms at playback speed; clients interpolate between frames.
+//   * On hello the server replies 'hello' (granted role), then 'state', then
+//     'private' (players), and during BATTLE the 'battle:reveal' plus the
+//     current frame, so a reloaded page catches up.
+//   * At START: 'battle:reveal' at once, then playback holds ~3 s for the
+//     "3-2-1 CLASH!" animation before 'battle:frames' start flowing.
+//   * 'state' is pushed on every change and at 1 Hz while a timer (or the
+//     battle countdown) runs. In RESULTS/MATCH_RESULTS it carries `lastBattle`.
+//   * The 'admin' role receives the same 'state' as the projector; the admin
+//     page reads details from GET /api/admin/overview (refetch on 'state').
+//   * Instance ids are `${seat}-${row}-${col}`; colour by seat (0-3).
+//   * Phase gates (§10.2): submit/retire/selection only in PLAN; placement and
+//     ready only in PLACEMENT; validate always. A closed gate is HTTP 409
+//     PHASE_CLOSED with details {phase, opensIn, secondsLeft?}.
+// ===========================================================================
+
+import type { CostBreakdown } from './cost.js';
+import type { SpriteSpec, StatsSnapshot } from './contract.js';
+import type { ValidationError, ValidationResult, ValidationSuccess, ValidationWarning } from './errors.js';
+import type { Corner } from './geometry.js';
+
+export const PHASES = ['LOBBY', 'PLAN', 'PLACEMENT', 'BATTLE', 'RESULTS', 'MATCH_RESULTS'] as const;
+export type Phase = (typeof PHASES)[number];
+
+export type ViewerRole = 'player' | 'screen' | 'admin';
+
+export const SESSION_COOKIE = 'pc_session';
+export const ADMIN_COOKIE = 'pc_admin';
+
+// ---------------------------------------------------------------------------
+// Players
+// ---------------------------------------------------------------------------
+
+export interface PlayerDTO {
+  id: string;
+  name: string;
+  /** Player slot 0-3: fixes colour and instance-id prefix. Not a zone. */
+  seat: number;
+}
+
+/** Public status of a player (visible to everyone, §3 privacy table). */
+export interface PlayerStatusDTO extends PlayerDTO {
+  connected: boolean;
+  /** Submitted at least one unit during the current PLAN. */
+  submitted: boolean;
+  /** Has a (non-empty) selection for this round. */
+  selected: boolean;
+  /** Ready toggle during PLACEMENT. */
+  ready: boolean;
+  points: number;
+  /** False when the player joined mid-round: "you're in from the next round". */
+  active: boolean;
+  /** Kicked during BATTLE; removed when the battle ends. */
+  leaving?: boolean;
+}
+
+/** POST /players, POST /login, MCP login. */
+export interface LoginResponse {
+  player: PlayerDTO;
+  apiKey: string;
+}
+
+/** GET /me */
+export interface MeResponse {
+  player: PlayerDTO;
+  apiKey: string;
+  seat: number;
+  connected: boolean;
+  active: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Units
+// ---------------------------------------------------------------------------
+
+export type UnitStatus = 'valid' | 'invalid';
+
+export interface UnitCardDTO {
+  unitId: string;
+  name: string;
+  version: number;
+  stats: StatsSnapshot;
+  cost: number;
+  breakdown: CostBreakdown;
+  status: UnitStatus;
+  /** Present when status is 'invalid' (after a re-price or bounds change). */
+  error?: ValidationError;
+  warnings: ValidationWarning[];
+  isTemplate: boolean;
+  /** The unit's pixel-art sprite (owner only; null = draw the fallback from color+shape). */
+  sprite: SpriteSpec | null;
+  /** The facilitator hid this sprite (moderation): draw the fallback instead. */
+  spriteHidden: boolean;
+  /** In the current selection. */
+  selected: boolean;
+  /** ms epoch of the latest version. */
+  updatedAt: number;
+  lastBattle?: UnitBattleSummaryDTO;
+}
+
+export interface UnitSourceDTO extends UnitCardDTO {
+  source: string;
+}
+
+export interface UnitBattleSummaryDTO {
+  round: number;
+  /**
+   * The name the unit fought under ("Ogre (Ninja Sam)" for a borrowed one,
+   * §9.1). A later Armory replacement or revision may rename the live card.
+   */
+  name?: string;
+  survived: number;
+  fielded: number;
+  damageDealt: number;
+  kills: number;
+  valueDestroyed: number;
+  strikes: number;
+  disabled: number;
+}
+
+export interface ValidateUnitRequest {
+  source: string;
+  unitId?: string;
+}
+export type ValidateUnitResponse = ValidationResult;
+/**
+ * POST /units success body (HTTP 200): the §7 success result (with the stored
+ * unitId/version in `unit`) plus `unitId`/`version` at the top level.
+ * Failures are the §7 ValidationFailure (HTTP 422) or an ApiErrorBody.
+ */
+export type SubmitUnitResponse = ValidationSuccess & { unitId: string; version: number };
+
+// ---------------------------------------------------------------------------
+// Open Armory (§9.1)
+// ---------------------------------------------------------------------------
+
+/** Selection ids of borrowed units: `armory:<armoryId>`. */
+export const ARMORY_PREFIX = 'armory:';
+
+/** True for an `armory:<armoryId>` selection/placement id. */
+export function isArmoryUnitId(unitId: string): boolean {
+  return unitId.startsWith(ARMORY_PREFIX);
+}
+
+/** "Ogre (Ninja Sam)": how a borrowed unit type is named everywhere (§9.1). */
+export function armoryDisplayName(unitName: string, creatorName: string): string {
+  return `${unitName} (${creatorName})`;
+}
+
+/**
+ * A borrowable Armory unit, as a unit card: `unitId` is the selection id
+ * (`armory:<armoryId>`) and `name` the display name "Ogre (Ninja Sam)";
+ * `stats.name` stays the raw unit name. Never carries source code.
+ */
+export interface ArmoryCardDTO extends UnitCardDTO {
+  armoryId: string;
+  /** "<unit name> (<creator name>)" (same as `name`). */
+  displayName: string;
+  creatorId: string;
+  creatorName: string;
+  /** The round whose battle added (or last updated) this entry. */
+  roundAdded: number;
+}
+
+/** The match's Open Armory switch, in every game state (public). */
+export interface ArmoryInfoDTO {
+  /** Set in "Start match" and locked for the whole match. */
+  enabled: boolean;
+  /** Number of entries (entries exist only after their battle was released). */
+  entries: number;
+}
+
+// ---------------------------------------------------------------------------
+// Round: selection, placement
+// ---------------------------------------------------------------------------
+
+export interface PlacementDTO {
+  unitId: string;
+  /** Zone-local, mirrored so (0,0) is nearest the arena centre (§9). 0-5. */
+  col: number;
+  row: number;
+}
+
+export interface SelectionRequest {
+  unitIds: string[];
+}
+export interface PlacementRequest {
+  placements: PlacementDTO[];
+}
+export interface PlacementResponse {
+  placements: PlacementDTO[];
+  spent: number;
+  remaining: number;
+}
+
+// ---------------------------------------------------------------------------
+// Game state
+// ---------------------------------------------------------------------------
+
+export interface TimerDTO {
+  /** Seconds left in the current phase, or null when the phase has no timer. */
+  secondsLeft: number | null;
+  paused: boolean;
+  /** PLACEMENT only: the timer ran out; waiting for the host to press START. */
+  expired?: boolean;
+}
+
+/** Match standings row (§9 Match standings). */
+export interface ScoreboardEntryDTO {
+  playerId: string;
+  name: string;
+  seat: number;
+  /** Total round points this match. */
+  points: number;
+  /** Total effective damage dealt this match (the tie-break). */
+  damage: number;
+  /** 1-based match place: equal points AND equal damage share a place. */
+  place: number;
+  /** Badges won this match, by badge (0 when none). */
+  badges: Record<BadgeId, number>;
+}
+
+/** The visibility-filtered `me` block of GET /state (owner only). */
+export interface MyStateDTO {
+  playerId: string;
+  budget: number;
+  /** Credits spent by the current placement. */
+  spent: number;
+  /** PLAN: the chosen unitIds. From PLACEMENT on: the locked selection (palette). */
+  selection: string[];
+  placement: PlacementDTO[];
+  /** Only sent to the owner, from the start of PLACEMENT. */
+  myZone: Corner | null;
+  ready: boolean;
+  submissionsOpen: boolean;
+  /** False when joined mid-round ("you're in from the next round"). */
+  active: boolean;
+  /** "Copy last layout" is available (a previous layout exists). */
+  hasLastLayout: boolean;
+}
+
+/** Playback state of the current battle. */
+export interface PlaybackDTO {
+  /** Playback clock in sim ticks (60 per second of battle). */
+  tick: number;
+  speed: 1 | 2;
+  paused: boolean;
+  /** The sim is behind playback ("thinking…"). */
+  thinking: boolean;
+  /** Battle length in ticks (config timers.battleTicks). */
+  totalTicks: number;
+}
+
+export interface GameStateDTO {
+  phase: Phase;
+  round: number;
+  rounds: number;
+  timer: TimerDTO;
+  players: PlayerStatusDTO[];
+  /**
+   * Sorted by points (desc), then match damage (desc), then seat. Points are
+   * added only when a battle's playback ends.
+   */
+  scoreboard: ScoreboardEntryDTO[];
+  /** Sandbox mode; anything but 'ivm' shows a red banner (§12.3). */
+  sandboxMode: 'ivm' | 'process' | 'inproc-unsafe';
+  /** BATTLE only: playback clock. */
+  battle?: PlaybackDTO;
+  /** RESULTS / MATCH_RESULTS: the released ranking of the last battle. */
+  lastBattle?: BattleEndDTO;
+  /** Open Armory (§9.1): on/off for this match. */
+  armory: ArmoryInfoDTO;
+  /** Owner-only block. */
+  me?: MyStateDTO;
+}
+
+export interface HealthDTO {
+  ok: true;
+  version: string;
+  phase: Phase;
+}
+
+/** GET /join: where kids join (projector QR, §12.2). */
+export interface JoinInfoDTO {
+  /** `http://<lan-ip>:<port>/play` (the request's Host when it is not localhost). */
+  joinUrl: string;
+  /** Every LAN base URL of the server. */
+  lanUrls: string[];
+  /** QR code of `joinUrl` as an SVG document (black on white). */
+  qrSvg: string;
+}
+
+// ---------------------------------------------------------------------------
+// Rules / contract
+// ---------------------------------------------------------------------------
+
+/** GET /rules, MCP get_rules: the config plus explanations (shape is informative). */
+export interface RulesDTO {
+  phases: readonly Phase[];
+  timers: Record<string, number>;
+  budget: number;
+  caps: Record<string, number>;
+  costFormula: string;
+  coefficients: Record<string, number>;
+  bounds: Record<string, unknown>;
+  /** §9 Points: place points + damage bonus + value bonus, badges, standings. */
+  scoring: {
+    placePoints: number[];
+    damageBonusMax: number;
+    valueBonusMax: number;
+    [key: string]: unknown;
+  };
+  arena: Record<string, unknown>;
+  suddenDeath: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface ContractDTO {
+  typescript: string;
+  templates: { basic_soldier: string; basic_tower: string };
+  notes: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Battle
+// ---------------------------------------------------------------------------
+
+/** Frame flags bitmask for `FrameUnit[4]`. */
+export const FRAME_FLAGS = {
+  ATTACKING: 1,
+  MOVING: 2,
+  DISABLED: 4,
+  OUTSIDE_SAFE_ZONE: 8,
+  /**
+   * The sprite faces left on SCREEN (mirrored); sprites are drawn facing right
+   * (§5.1). Decided in isometric screen space (screenX ∝ x − y, §12), not by
+   * the arena x axis.
+   */
+  FACING_LEFT: 16,
+} as const;
+
+/** [instanceId, x, y, hp, flags] */
+export type FrameUnit = [string, number, number, number, number];
+
+export interface FrameProjectile {
+  id: number;
+  x: number;
+  y: number;
+  targetId: string;
+}
+
+export type FrameEvent =
+  | { type: 'spawn'; instanceId: string }
+  | { type: 'fire'; instanceId: string; targetId: string; melee: boolean }
+  | { type: 'hit'; instanceId: string; targetId: string; damage: number }
+  | { type: 'death'; instanceId: string }
+  | { type: 'disable'; instanceId: string; reason: string };
+
+/** One recorded frame: the state after `t` completed ticks (every 2nd tick). */
+export interface FrameDTO {
+  t: number;
+  units: FrameUnit[];
+  projectiles: FrameProjectile[];
+  safeZoneRadius: number;
+  events: FrameEvent[];
+}
+
+/** A fielded design as revealed at START (fielded types only, §3). */
+export interface RevealedUnitDTO {
+  unitId: string;
+  name: string;
+  stats: StatsSnapshot;
+  cost: number;
+  /** null when there is none or it is hidden: draw the fallback (color + shape). */
+  sprite: SpriteSpec | null;
+  spriteHidden: boolean;
+  /** A borrowed Armory unit (§9.1): `name` is then "Ogre (Ninja Sam)". */
+  borrowedFrom?: { armoryId: string; creatorId: string; creatorName: string };
+}
+
+/** Revealed at START: fielded types and placements of every player. */
+export interface BattleRevealDTO {
+  round: number;
+  /** Battle length in ticks. */
+  totalTicks: number;
+  players: Array<{
+    playerId: string;
+    name: string;
+    seat: number;
+    zone: Corner;
+    units: RevealedUnitDTO[];
+    instances: Array<{ instanceId: string; unitId: string; x: number; y: number }>;
+  }>;
+}
+
+// ---------------------------------------------------------------------------
+// Scoring (§9 Points, Damage metric, Value destroyed, Badges)
+// ---------------------------------------------------------------------------
+
+export const BADGE_IDS = ['lastStanding', 'biggestHitter', 'giantSlayer', 'ironWall', 'inventor'] as const;
+export type BadgeId = (typeof BADGE_IDS)[number];
+
+/** Badges are titles only: they give no points. */
+export const BADGES: Record<BadgeId, { emoji: string; title: string; rule: string }> = {
+  lastStanding: { emoji: '🏆', title: 'Last Standing', rule: '1st place' },
+  biggestHitter: { emoji: '💥', title: 'Biggest Hitter', rule: 'most damage dealt' },
+  giantSlayer: { emoji: '🗡️', title: 'Giant Slayer', rule: 'most enemy value destroyed' },
+  ironWall: { emoji: '🛡️', title: 'Iron Wall', rule: 'most army value still standing at the end' },
+  inventor: { emoji: '💡', title: 'Inventor', rule: 'Open Armory: another player fielded a unit you invented' },
+};
+
+/** A badge count per badge, all zero. */
+export function emptyBadgeCounts(): Record<BadgeId, number> {
+  return { lastStanding: 0, biggestHitter: 0, giantSlayer: 0, ironWall: 0, inventor: 0 };
+}
+
+/** One player's battle metrics (§9), as of the shown final frame. */
+export interface PlayerMetricsDTO {
+  playerId: string;
+  /** Effective damage dealt to enemy units (no overkill), rounded to a whole number. */
+  damage: number;
+  /** Full cost of the enemy units this player's hits finished off. */
+  valueDestroyed: number;
+  kills: number;
+  /** Full cost of this player's units still alive at the end. */
+  livingValue: number;
+}
+
+/** One player's round score: `total` = placePoints + damageBonus + valueBonus. */
+export interface RoundScoreDTO {
+  playerId: string;
+  place: number;
+  placePoints: number;
+  damage: number;
+  /** round-half-up(damageBonusMax × damage / top damage); 0 when the top is 0. */
+  damageBonus: number;
+  valueDestroyed: number;
+  /** round-half-up(valueBonusMax × valueDestroyed / top value destroyed); 0 when the top is 0. */
+  valueBonus: number;
+  total: number;
+  badges: BadgeId[];
+  /** 💡 Inventor (§9.1): how many other players fielded this player's Armory units this battle. */
+  inventorUsedBy?: number;
+}
+
+export interface RankingEntryDTO extends Omit<RoundScoreDTO, 'total'> {
+  /** Round points: placePoints + damageBonus + valueBonus. */
+  pointsGained: number;
+  kills: number;
+  /** Full cost of living units at the end (the timeout ranking value; Iron Wall). */
+  livingCost: number;
+  eliminatedAtTick: number | null;
+}
+
+/** Sent only when playback reaches the final frame (§9 Result release). */
+export interface BattleEndDTO {
+  round: number;
+  /** Tick of the final (shown) frame. */
+  endTick: number;
+  reason: 'elimination' | 'timeout' | 'skipped';
+  ranking: RankingEntryDTO[];
+  scoreboard: ScoreboardEntryDTO[];
+  /**
+   * Open Armory (§9.1): creators whose Armory units other players fielded in
+   * this battle (💡 Inventor, no points), with "used by N players".
+   */
+  inventors?: Array<{ playerId: string; name: string; usedBy: number; units: string[] }>;
+}
+
+export interface BattleReportErrorDTO {
+  unitId: string;
+  instanceId: string;
+  unitName: string;
+  tick: number;
+  message: string;
+  line?: number;
+  /** A borrowed Armory unit (§9.1): the creator's name ("borrowed from Ninja Sam"). */
+  borrowedFrom?: string;
+}
+
+/** Own units only (§10.3). */
+export interface BattleReportDTO {
+  round: number;
+  survived: number;
+  /** Effective damage (no overkill) summed over own units. */
+  damageDealt: number;
+  kills: number;
+  /** Full cost of the enemy units own units finished off. */
+  valueDestroyed: number;
+  /** Full cost of own units still alive at the end. */
+  livingValue: number;
+  /** This round's points and badges; null when not ranked (kicked during the battle). */
+  score: RoundScoreDTO | null;
+  strikes: number;
+  disabled: number;
+  errors: BattleReportErrorDTO[];
+}
+
+/** GET /battles/:round/replay */
+export interface ReplayDTO {
+  round: number;
+  reveal: BattleRevealDTO;
+  frames: FrameDTO[];
+  end: BattleEndDTO;
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket messages (§10.3)
+// ---------------------------------------------------------------------------
+
+export type ClientWsMessage = { type: 'hello'; role: ViewerRole } | { type: 'ping' };
+
+export interface PrivateStateDTO {
+  player: PlayerDTO;
+  /** All own designs (templates included), newest first. */
+  roster: UnitCardDTO[];
+  /** See MyStateDTO.selection. */
+  selection: string[];
+  placement: PlacementDTO[];
+  /** The layout used in the previous battle ("Copy last layout"), or null. */
+  lastLayout: PlacementDTO[] | null;
+  zone: Corner | null;
+  budget: number;
+  spent: number;
+  ready: boolean;
+  active: boolean;
+  /** Open Armory is on for this match (§9.1). */
+  armoryEnabled: boolean;
+  /** Borrowable Armory units (never your own; empty when Open Armory is off). */
+  armory: ArmoryCardDTO[];
+}
+
+/**
+ * Server → client messages.
+ *  - 'hello'         reply to hello: the role actually granted (+ player for 'player').
+ *  - 'state'         on every change, plus 1 Hz while a timer runs. Per recipient.
+ *  - 'private'       own data (players only): after submit/retire/re-price/selection/placement/phase changes.
+ *  - 'battle:reveal' at START, to everyone (and on connect during BATTLE).
+ *  - 'battle:frames' batched every ~50 ms at playback speed, to everyone.
+ *  - 'battle:end'    only when playback reaches the final frame (or Skip).
+ *  - 'toast'         short message for the recipient.
+ *  - 'kicked'        this player was removed; the session is gone.
+ */
+export type ServerWsMessage =
+  | { type: 'hello'; role: ViewerRole; player?: PlayerDTO }
+  | { type: 'state'; state: GameStateDTO }
+  | { type: 'private'; data: PrivateStateDTO }
+  | { type: 'battle:reveal'; data: BattleRevealDTO }
+  | { type: 'battle:frames'; frames: FrameDTO[]; playback: PlaybackDTO }
+  | { type: 'battle:end'; data: BattleEndDTO }
+  | { type: 'toast'; level: 'info' | 'warn' | 'error'; message: string }
+  | { type: 'kicked' }
+  | { type: 'pong' };
+
+// ---------------------------------------------------------------------------
+// Admin
+// ---------------------------------------------------------------------------
+
+export interface AdminPlayerDTO extends PlayerStatusDTO {
+  zone: Corner | null;
+  designs: number;
+  strikes: number;
+  activeFromRound: number;
+}
+
+export interface AdminOverviewDTO {
+  state: GameStateDTO;
+  players: Array<
+    AdminPlayerDTO & {
+      apiKey: string;
+      selection: string[];
+      placement: PlacementDTO[];
+      units: UnitSourceDTO[];
+    }
+  >;
+  lanUrls: string[];
+  sandboxMode: GameStateDTO['sandboxMode'];
+  /**
+   * Open Armory entries (§9.1) with their REAL sprites, so the facilitator can
+   * see and hide them, also for retired or deleted designs. Empty when off.
+   */
+  armory: AdminArmoryEntryDTO[];
+}
+
+/** One Open Armory entry in the admin overview (Hide sprite goes to the creator's design id). */
+export interface AdminArmoryEntryDTO {
+  /** The selection id, `armory:<armoryId>`. */
+  unitId: string;
+  armoryId: string;
+  /** "Ogre (Ninja Sam)". */
+  displayName: string;
+  creatorId: string;
+  creatorName: string;
+  sourceUnitId: string;
+  version: number;
+  stats: StatsSnapshot;
+  cost: number;
+  status: UnitStatus;
+  roundAdded: number;
+  /** The real sprite, even when hidden. */
+  sprite: SpriteSpec | null;
+  /** What everyone else sees: hidden on the entry or on the design. */
+  spriteHidden: boolean;
+}
+
+/** Facilitator settings for /setup (persisted; survive a wipe). */
+export interface SetupSettingsDTO {
+  /** Claude box host or IP (no scheme/port); seat N's ttyd is http://<host>:768N (§11.1). */
+  claudeBoxHost: string | null;
+  /** Preferred base URL (`http://ip:port`) for the join QR when there are several interfaces. */
+  preferredUrl: string | null;
+}
+
+export interface SeatTerminalDTO {
+  /** Seat 0-3 (shown as "Seat 1-4"). */
+  seat: number;
+  url: string;
+  /** QR code of `url` as an SVG document (server-generated). */
+  qrSvg: string;
+}
+
+/** GET /setup (public): what /setup, /screen and /play need to point people at the right place. */
+export interface SetupInfoDTO {
+  /** `http://<ip>:<port>` for every LAN IPv4 of the server. */
+  lanUrls: string[];
+  /** Base URL used for the QR: the preferred URL, else the request's Host (a LAN URL when opened via localhost). */
+  baseUrl: string;
+  /** `${baseUrl}/play` */
+  playUrl: string;
+  /** QR code of playUrl as an SVG document. */
+  playQrSvg: string;
+  settings: SetupSettingsDTO;
+  /** Empty until the facilitator sets the Claude box address. */
+  seatTerminals: SeatTerminalDTO[];
+  sandboxMode: GameStateDTO['sandboxMode'];
+}
+
+export interface AdminConfigResponse {
+  config: unknown;
+  /** "playerId/unitId" of units whose price changed. */
+  repriced: string[];
+  /** "playerId/unitId" of units that became invalid. */
+  invalidated: string[];
+}
+
+// ---------------------------------------------------------------------------
+// REST error body (§10.3)
+// ---------------------------------------------------------------------------
+
+export interface ApiErrorBody {
+  error: { code: string; message: string; hint?: string; details?: Record<string, unknown> };
+}
