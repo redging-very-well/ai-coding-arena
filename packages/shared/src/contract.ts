@@ -56,7 +56,7 @@ export interface WorldView {
   mapStyle: MapStyle;                   // §9.2
   myCorner: { x: number; y: number };   // centre of my start zone this round (name kept from the 4-corner map; a zone need not be a corner)
   center: { x: number; y: number };     // = { x: width / 2, y: height / 2 }
-  safeZone: { x: number; y: number; radius: number }; // centred on `center`; shrinks from tick 3600 (sudden death, §9)
+  safeZone: { x: number; y: number; radius: number }; // centred on `center`; shrinks from tick 3000 (sudden death, §9)
 }
 // teamId: free-for-all = the owner's seat (0-7), so every player is their own team.
 // Team mode = the team index (0-3). Same teamId = friend, different = enemy.

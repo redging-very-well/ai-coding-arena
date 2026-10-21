@@ -19,8 +19,8 @@
     "test": "vitest run && npm run test:perf",
     "test:perf": "node scripts/test-perf.mjs",
     "typecheck": "tsc -p tsconfig.json && tsc -p packages/client/tsconfig.json --noEmit",
-    "loadtest": "echo \"loadtest arrives in M6\" && exit 1",
-    "bots": "echo \"bots arrive in M6\" && exit 1",
+    "loadtest": "tsx --conditions=source tests/load/loadtest.ts",
+    "bots": "tsx --conditions=source scripts/bots.ts",
     "wipe": "node -e \"require('node:fs').rmSync('data',{recursive:true,force:true});console.log('data/ deleted')\""
   },
   "devDependencies": {

@@ -240,16 +240,16 @@ const FRIENDLY_FIELD: Record<string, string> = {
 const KID_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
   SOURCE_TOO_LARGE: 'That unit is HUGE! Ask Claude to make the code shorter.',
   EMPTY_SOURCE: "Oops, there's no code yet! Ask Claude to write your unit.",
-  SYNTAX_ERROR: 'Claude made a typo in the code. Ask Claude to fix it!',
-  IMPORT_NOT_ALLOWED: "Units can't bring in other code. Ask Claude to remove the import.",
-  NO_DEFAULT_EXPORT: "The game can't find your unit in the code. Ask Claude to export it.",
-  NOT_A_CLASS: 'The game needs your unit to be a class. Ask Claude to fix it.',
+  SYNTAX_ERROR: "There's a typo in the code. Ask Claude to fix it!",
+  IMPORT_NOT_ALLOWED: "Units can't use code from other files. Ask Claude to keep it all in one file.",
+  NO_DEFAULT_EXPORT: "The game can't find your unit in the code. Ask Claude to fix it!",
+  NOT_A_CLASS: "The code isn't shaped like a unit yet. Ask Claude to fix it!",
   EVAL_THREW: 'The code crashed when the game loaded it. Ask Claude to fix it!',
-  TIMEOUT: 'The code took too long to load. Ask Claude to look for an endless loop.',
+  TIMEOUT: 'The code took too long to load. Ask Claude to look for a loop that never ends.',
   CONSTRUCTOR_THREW: 'Your unit crashed while being built. Ask Claude to fix it!',
   STAT_MISSING: 'Your unit is missing its {field}! Ask Claude to add it.',
-  STAT_IS_GETTER: 'Your unit needs plain numbers for its stats. Ask Claude to fix the {field}.',
-  STAT_WRONG_TYPE: 'Your unit\'s {field} is the wrong kind of value. Ask Claude to fix it.',
+  STAT_IS_GETTER: 'Your unit needs plain numbers for its stats. Ask Claude to fix its {field}.',
+  STAT_WRONG_TYPE: "Your unit's {field} looks wrong. Ask Claude to fix it.",
   STAT_NOT_FINITE: "Your unit's {field} isn't a real number. Ask Claude to fix it.",
   STAT_OUT_OF_RANGE: "Your unit's {field} is too big or too small! Ask Claude to change it.",
   COOLDOWN_NOT_INTEGER: 'Attack speed must be a whole number. Ask Claude to fix it.',
@@ -258,25 +258,25 @@ const KID_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
   TOWER_CANNOT_MOVE: "Towers can't move! Ask Claude to set the tower's speed to 0.",
   STATS_NOT_STABLE: 'Your unit changes its stats every time. Ask Claude to use fixed numbers.',
   UNIT_TOO_EXPENSIVE: 'Your unit costs too much! Ask Claude to make it cheaper.',
-  SPRITE_THREW: 'Drawing your unit crashed. Ask Claude to fix its sprite()!',
-  SPRITE_BAD_GRID: 'Your unit\'s picture has the wrong size. Ask Claude to use grid 16.',
-  SPRITE_BAD_PALETTE: 'Your unit\'s picture has a bad colour. Ask Claude to fix the palette.',
-  SPRITE_BAD_FRAME: 'Your unit\'s picture has a mistake in it. Ask Claude to fix the sprite.',
-  SPRITE_TOO_MANY_FRAMES: 'Your unit has too many animation frames. Ask Claude to use fewer.',
-  SPRITE_EMPTY: 'Your unit\'s picture is empty! Ask Claude to draw it bigger.',
-  SPRITE_NOT_STABLE: 'Your unit\'s picture changes every time. Ask Claude to draw it the same way each time.',
-  UPDATE_MISSING: "Your unit doesn't know what to do in battle. Ask Claude to add update().",
+  SPRITE_THREW: "Drawing your unit's picture crashed. Ask Claude to fix it!",
+  SPRITE_BAD_GRID: "Your unit's picture is the wrong size. Ask Claude to fix it!",
+  SPRITE_BAD_PALETTE: "Your unit's picture uses a colour the game doesn't know. Ask Claude to fix it!",
+  SPRITE_BAD_FRAME: "Your unit's picture has a mistake in it. Ask Claude to fix it!",
+  SPRITE_TOO_MANY_FRAMES: "Your unit's animation is too long. Ask Claude to use fewer pictures.",
+  SPRITE_EMPTY: "Your unit's picture is blank! Ask Claude to draw something.",
+  SPRITE_NOT_STABLE: "Your unit's picture changes every time. Ask Claude to draw it the same way each time.",
+  UPDATE_MISSING: "Your unit doesn't know what to do in battle. Ask Claude to give it some moves!",
   UPDATE_THREW: 'Your unit crashed during a practice battle. Ask Claude to fix it!',
-  UPDATE_TIMEOUT: 'Your unit thinks too slowly. Ask Claude to make update() faster.',
-  BAD_ACTION: 'Your unit gave an order the game does not understand. Ask Claude to fix it.',
+  UPDATE_TIMEOUT: 'Your unit thinks too slowly. Ask Claude to help it think faster!',
+  BAD_ACTION: "Your unit gave an order the game doesn't understand. Ask Claude to fix it.",
   W_NO_SPRITE: 'Ask Claude to draw a pixel-art sprite for your unit!',
   W_NEVER_ATTACKS: "Heads up: your unit never attacks, even when an enemy is close!",
-  W_NEVER_MOVES: "Heads up: your soldier never moves.",
+  W_NEVER_MOVES: 'Heads up: your soldier never moves.',
   W_ZERO_DAMAGE: 'Heads up: your unit does 0 damage.',
-  W_RETURNS_NOTHING: "Heads up: your unit sometimes doesn't decide what to do.",
+  W_RETURNS_NOTHING: "Heads up: sometimes your unit can't decide what to do.",
   W_SLOW: 'Heads up: your unit thinks a bit slowly.',
   W_SLOW_NO_DISCOUNT:
-    "Tip: attacking slower than once per second doesn't make it cheaper. Ask Claude to set attackCooldown to 60.",
+    "Tip: attacking slower than once a second doesn't make it cheaper. Ask Claude to make it attack once a second.",
   W_STAT_NEAR_MAX: 'Tip: a maxed-out stat costs up to 3 times as much. Two medium units usually beat one giant one!',
 };
 
@@ -295,14 +295,28 @@ export function kidHintForIssue(issue: ValidationIssue): string {
   if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'shape') {
     return 'Your unit must be a circle, square, triangle or diamond. Ask Claude to fix its shape.';
   }
-  if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'damage' && typeof issue.value === 'number') {
-    const max = (issue.allowed as { max?: number } | undefined)?.max;
-    if (max !== undefined && issue.value > max) {
-      return 'Whoa, that unit hits WAY too hard! Ask Claude to lower its damage.';
-    }
+  const { min, max } = (issue.allowed ?? {}) as { min?: number; max?: number };
+  const value = typeof issue.value === 'number' && Number.isFinite(issue.value) ? issue.value : undefined;
+  const n = (v: number) => String(Math.round(v * 100) / 100);
+  if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'damage' && value !== undefined && max !== undefined && value > max) {
+    return 'Whoa, that unit hits WAY too hard! Ask Claude to lower its damage.';
+  }
+  // Attack speed is a cooldown: a small number means fast, so say it in words.
+  if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'attackCooldown' && value !== undefined) {
+    if (min !== undefined && value < min) return 'Your unit attacks too fast! Ask Claude to slow it down a little.';
+    if (max !== undefined && value > max) return 'Your unit attacks too slowly! Ask Claude to speed it up.';
+  }
+  // Concrete numbers: "Your unit's range is too big! (500, the max is 300)".
+  if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field && value !== undefined) {
+    const name = FRIENDLY_FIELD[issue.field] ?? issue.field;
+    if (max !== undefined && value > max) return `Your unit's ${name} is too big! (${n(value)}, the max is ${n(max)}) Ask Claude to lower it.`;
+    if (min !== undefined && value < min) return `Your unit's ${name} is too small! (${n(value)}, the min is ${n(min)}) Ask Claude to raise it.`;
+  }
+  if (issue.code === 'UNIT_TOO_EXPENSIVE' && value !== undefined && max !== undefined) {
+    return `Your unit costs too much! ($${value}, the max is $${max}) Ask Claude to make it cheaper.`;
   }
   return kidHintFor(issue.code, issue.field);
 }
 
 export const SUCCESS_KID_HINT =
-  'Your unit is ready! Select it and place it on the Pixel Clash page.';
+  'Your unit is ready! Find it in My Units on your Pixel Clash page.';

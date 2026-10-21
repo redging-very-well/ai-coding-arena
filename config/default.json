@@ -65,11 +65,11 @@
     "valueBonusMax": 1
   },
   "suddenDeath": {
-    "startTick": 3600,
+    "startTick": 3000,
     "endTick": 5400,
     "startRadius": 570,
     "endRadius": 60,
-    "damagePctPerSecond": 4
+    "damagePctPerSecond": 7
   },
   "sim": {
     "meleeMaxRange": 50,

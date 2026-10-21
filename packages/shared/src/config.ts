@@ -213,11 +213,13 @@ export const DEFAULT_CONFIG: GameConfig = {
     valueBonusMax: 1,
   },
   suddenDeath: {
-    startTick: 3600,
+    // Tuned in M6 against tests/balance.test.ts (docs/balance.md): from 50 s,
+    // 7% of max HP per second, so all-tower armies lose towers before 90 s.
+    startTick: 3000,
     endTick: 5400,
     startRadius: 570,
     endRadius: 60,
-    damagePctPerSecond: 4,
+    damagePctPerSecond: 7,
   },
   sim: {
     meleeMaxRange: 50,

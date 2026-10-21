@@ -519,6 +519,8 @@ export interface RulesDTO {
   };
   arena: Record<string, unknown>;
   suddenDeath: Record<string, unknown>;
+  /** Live seat limit (`config.match.maxPlayers`, 2-8); joining beyond it is GAME_FULL. */
+  maxPlayers: number;
   [key: string]: unknown;
 }
 
