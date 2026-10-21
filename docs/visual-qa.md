@@ -120,3 +120,118 @@ was needed.
   `UPDATE_TIMEOUT` (the validator's 20 ms practice battle). That was while 6 Chromium pages were
   rendering and another load test was running on the same host. Under heavy CPU load the dry-run
   deadline can reject a valid unit.
+
+## Polish (M7)
+
+Date: 2026-10-21. The same set-up (built production server, temp `DATA_DIR`, Playwright + headless
+Chromium outside the repo), driven by a second harness, `scratchpad/visual/polish.cjs` (not in the
+repo).
+
+### How it was run
+
+- **One 8-player Ring match** (free-for-all, 1 round, 30 s battle with sudden death from tick 900).
+  Seat 1 is "Ava", played over REST and watched on `/play` at 1366×768. She submits the `Pixel Bat`
+  privacy canary. Seats 2-8 are `npm run bots -- --players 7 --strategy swarm`, the §14 load shape
+  (3 cheap types × 12 copies), which puts **93 units** on the 1200 Ring arena.
+- `/screen` at 1920×1080 and `/admin` at 1440×900. The run was repeated with
+  `reducedMotion: 'reduce'` on `/screen` and `/play`.
+- An init script on every page counts each `OscillatorNode` / `AudioBufferSourceNode` start with its
+  first frequency and how far ahead it is scheduled. That shows which sound fired, without listening.
+  It also times the page's own `requestAnimationFrame` callbacks (arena draw + effects).
+- Phases captured: the locked-audio lobby, PLAN, PLACEMENT, the 3-2-1 CLASH reveal (10 frames, 330 ms
+  apart), the battle, an 8-frame effects burst, mid-battle, sudden death, results at 0.4 / 0.9 / 1.6 /
+  3.5 s, the poster (P), the replay through the `/admin` remote (1x, 2x, pause, click-to-seek, resume),
+  MATCH_RESULTS (the podium, a replay there, the poster from `/admin`), mute and its persistence, and
+  `/admin` with no `/screen` open.
+- The automatic checks from the earlier runs also ran here: console, page errors, failed requests,
+  bad text, the stage layout, privacy before START (the canary plus the bots' unit names on `/screen`
+  and in the anonymous `/state`), and the server log.
+
+### Frame rate (8-player Ring battle, 93 units, full effects)
+
+`requestAnimationFrame` intervals on `/screen`, 5 s windows. The same host was also running the
+server, the battle sim, 7 bots and 3 Chromium pages.
+
+| Window | Frames | Median | p95 | p99 | Max | Frames > 20 ms |
+|---|---|---|---|---|---|---|
+| Early battle (ticks 121-421, armies closing and first contact) | 300 | 16.7 ms | 16.8 ms | 16.8 ms | 16.8 ms | 0 |
+| Mid battle (from tick 600) | 300 | 16.7 ms | 16.8 ms | 16.8 ms | 16.8 ms | 0 |
+| Replay at 2x (3 s) | 180 | 16.7 ms | 16.7 ms | 16.8 ms | 16.8 ms | 0 |
+| Mid battle, reduced motion (another run) | 295 | 16.7 ms | 16.8 ms | 33.3 ms | 50.1 ms | 4 |
+
+- **Work per frame** (the page's own rAF callbacks): median 0.5-0.6 ms, p95 0.8-1.5 ms, max 4 ms.
+  So /screen holds 60 fps with lots of headroom.
+- **Hitches:** one of the three full-effects runs had a single 133 ms hitch (an 85 ms callback)
+  about 2 s into the battle. It did not happen again in the final run. The few 33-50 ms frames in the
+  reduced-motion run came with callbacks of at most 7 ms, so they were the busy host, not the page.
+
+### Checked and working
+
+- **Console and server:** no console errors or warnings, no page errors, no failed requests, and no
+  `ERROR`/`WARN` lines in the server log in any run.
+- **Privacy before START:** no `Pixel Bat` and no bot unit names on `/screen` or in the anonymous
+  `/state` during PLACEMENT.
+- **Sound triggers on /screen,** after one click:
+  - PLAN: a placement blip (660 Hz) each time a player picks.
+  - PLACEMENT: a ready chime (C5-E5-G5) for each player who readies.
+  - Reveal: 3 beeps (880 Hz), scheduled ahead, then CLASH (noise, 220 Hz sweep, 1047 Hz).
+  - Battle: about 30 sound-node starts per second with 93 units, so the rate limiter holds.
+  - Sudden death: the siren (600/900 Hz) once, at tick 900.
+  - The last 5 s of the battle: 5 beeps, one per second.
+  - RESULTS: the victory jingle, then 4 badge pops (990/1480 Hz) scheduled 1.6-2.6 s ahead to
+    match the badge animations.
+  - MATCH_RESULTS: the victory jingle.
+- **Sound on /play:** the page made no sound at all while muted (the default).
+- **Autoplay:** before any click, /screen shows "🔈 Click anywhere to enable sound". The first click
+  hides it (`pol-0-lobby-locked-screen.png`).
+- **Mute:**
+  - /screen: M gives 🔇 and stores `pixel-clash:screen-muted = 1`, which survives a reload.
+    The button turns sound back on (`0`).
+  - /play: starts 🔇 with nothing stored. The header button gives 🔊 and stores
+    `pixel-clash:play-muted = 0`, which survives a reload (`pol-10-play-unmuted-play0-laptop.png`).
+- **Reduced motion:** `matchMedia` reports it on /screen. Results show their final numbers at
+  0.4 s with no rise or count-up (`rm-5-results-0-screen.png`). The confetti stands still
+  (`rm-9-podium-a-screen.png`). The battle renders fine (`rm-4c-burst*`). Shake and bob can't be
+  measured from screenshots; `tests/polish.test.ts` covers them.
+- **Effects:** muzzle flashes, sparks, death pops and damage numbers show in `pol-4c-burst*`. The
+  3-2-1 CLASH overlay and drop-in show in `pol-4a-reveal0..9`.
+- **Replay:**
+  - The `/admin` remote starts it (`{"screens":1}`) and switches 1x/2x.
+  - Pause holds the bar (36.3% → 36.3% over 0.8 s), and a click at 75% jumps to 75.0%.
+  - The SUDDEN DEATH banner shows during the replay (`pol-8-replay-resumed-screen.png`).
+  - The podium hides during a MATCH_RESULTS replay (`pol-9-mr-replay-screen.png`).
+- **Poster:** P opens it, Esc closes it. From `/admin`, show and toggle both work
+  (`pol-7-poster-screen.png`, `pol-9-poster-admin-screen.png`).
+- **/admin remote errors:**
+  - An unknown command gets 400 `BAD_REQUEST`.
+  - A replay in LOBBY gets 409 `PHASE_CLOSED`.
+  - With no `/screen` open, the reply is `{"screens":0}` and `/admin` shows "No /screen page is open
+    right now." (`pol-11-admin-no-screen-admin.png`).
+
+### Bugs found and fixed
+
+| # | Where | Bug | Fix | Evidence (final) |
+|---|---|---|---|---|
+| 17 | /screen replay | The replay pause button and the "⏸ Replay 2x" chip showed only a **tiny dot**, because the pixel font has no ⏸ glyph. The battle's "⏸ PAUSED" and "2x ⏩" chips had the same problem. | These now use "II" and "»", which the pixel font has. The pause button gets a tooltip. | `pol-8-replay-2x-screen.png` |
+| 18 | /screen battle | Floating damage numbers were white digits, so in a melee they **looked like the seat-number badges** ("6", "7", "8" over seat 6, 7 and 8 units). | They are now drawn as "-6" in a light red. Big hits stay yellow. | `rm-4c-burst3-screen.png` |
+| 19 | /screen MATCH_RESULTS | Pressing Next while a RESULTS replay was playing **kept the replay running** and held back the podium until it ended. | Entering MATCH_RESULTS stops the replay on its last frame, or drops one still loading (`ReplayController.finish()`, with a test in `tests/polish.test.ts`). A replay started in MATCH_RESULTS still hides the podium. | `pol-9-podium-a-screen.png`: podium shown 1 s in |
+| 20 | /admin | The replay pause button was a lone, tiny ⏯. | It is labelled "Pause" and has a tooltip. It stays on the same row. | `pol-8-replay-1x-admin.png` |
+
+### Notes (not fixed)
+
+- **No final beep at the end of a timed-out battle.** The 5 countdown beeps play, but the long
+  "0" beep doesn't: RESULTS arrives first, and the victory jingle plays instead. This seems fine.
+- **Transient overlaps while things animate in:**
+  - At about 0.9 s into RESULTS (8 players, dense layout), the last ranking row is still rising, and
+    for a moment it sits on the "Scoreboard" heading (`pol-5-results-1-screen.png` in an earlier run).
+    It settles by 1.6 s.
+  - The podium's rising blocks make the layout check report a 3-9 px overflow while they animate
+    (`podium content overflow 398>390`). It is clean once they settle.
+- **The sound button and hint sit in the 1080 px stage's bottom margin,** under the side panel. They
+  are readable on the projector, but small.
+- **Bots picked up strikes** (1-3 for some swarm bots) during the battle. That was on the busy host,
+  and I didn't look into the cause. See the `UPDATE_TIMEOUT` note above.
+
+Screenshots and logs (`pol-*` and `rm-*`, plus `*-notes.txt` with the measured numbers):
+`/tmp/claude-1000/-workspaces-kidscodingday/9c9e875f-8be6-4b5a-93eb-d016b9d3d229/scratchpad/visual/final-polish/`
+and `.../visual/rm1/` (reduced motion).
