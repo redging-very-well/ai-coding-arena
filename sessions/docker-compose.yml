@@ -1,9 +1,10 @@
 # Pixel Clash Claude box: one container per seat (plan §11.1).
 #
-#   cp .env.example .env    # then edit PIXEL_CLASH_URL and the four TTYD_PASS_N words
-#   docker compose up -d --build
+#   cp .env.example .env    # then edit PIXEL_CLASH_URL and the eight TTYD_PASS_N words
+#   docker compose up -d --build                          # all 8 seats
+#   docker compose up -d --build seat1 seat2 seat3        # or only the seats in use
 #
-# Seat N's terminal is http://<claude-box>:768N (basic auth: kid / TTYD_PASS_N).
+# Seat N (1-8) is http://<claude-box>:768N (basic auth: kid / TTYD_PASS_N).
 # See README.md for the pre-event login, resets and the wipe.
 
 name: pixel-clash-seats
@@ -20,9 +21,12 @@ x-seat: &seat
   cap_drop: [ALL]
   security_opt:
     - no-new-privileges:true
-  mem_limit: 2g
-  memswap_limit: 2g
-  cpus: 1.5
+  # Limits, not reservations. One Claude Code process typically uses well
+  # under 1 GB and under 1 core; 8 seats x 1.5 GB still leaves ~4 GB for the
+  # host on a 16 GB box (README "Sizing").
+  mem_limit: 1536m
+  memswap_limit: 1536m
+  cpus: 1.0
   pids_limit: 512
   stop_grace_period: 5s
 
@@ -81,6 +85,54 @@ services:
       - kit4:/kit
       - claude4:/home/kid/.claude
 
+  seat5:
+    <<: *seat
+    hostname: seat5
+    environment:
+      <<: *seat-env
+      SEAT: "5"
+      TTYD_PASS: ${TTYD_PASS_5:?set TTYD_PASS_5 in sessions/.env}
+    ports: ["7685:7681"]
+    volumes:
+      - kit5:/kit
+      - claude5:/home/kid/.claude
+
+  seat6:
+    <<: *seat
+    hostname: seat6
+    environment:
+      <<: *seat-env
+      SEAT: "6"
+      TTYD_PASS: ${TTYD_PASS_6:?set TTYD_PASS_6 in sessions/.env}
+    ports: ["7686:7681"]
+    volumes:
+      - kit6:/kit
+      - claude6:/home/kid/.claude
+
+  seat7:
+    <<: *seat
+    hostname: seat7
+    environment:
+      <<: *seat-env
+      SEAT: "7"
+      TTYD_PASS: ${TTYD_PASS_7:?set TTYD_PASS_7 in sessions/.env}
+    ports: ["7687:7681"]
+    volumes:
+      - kit7:/kit
+      - claude7:/home/kid/.claude
+
+  seat8:
+    <<: *seat
+    hostname: seat8
+    environment:
+      <<: *seat-env
+      SEAT: "8"
+      TTYD_PASS: ${TTYD_PASS_8:?set TTYD_PASS_8 in sessions/.env}
+    ports: ["7688:7681"]
+    volumes:
+      - kit8:/kit
+      - claude8:/home/kid/.claude
+
 networks:
   default:
     # A fixed Linux bridge name, so the optional egress firewall in README.md
@@ -95,7 +147,15 @@ volumes:
   kit2:
   kit3:
   kit4:
+  kit5:
+  kit6:
+  kit7:
+  kit8:
   claude1:
   claude2:
   claude3:
   claude4:
+  claude5:
+  claude6:
+  claude7:
+  claude8:

@@ -10,10 +10,14 @@ One Docker container per seat (plan §11.1). Each container runs **ttyd**, which
 | 2 | `http://<claude-box>:7682` | `kid` / `TTYD_PASS_2` | `kit2`, `claude2` |
 | 3 | `http://<claude-box>:7683` | `kid` / `TTYD_PASS_3` | `kit3`, `claude3` |
 | 4 | `http://<claude-box>:7684` | `kid` / `TTYD_PASS_4` | `kit4`, `claude4` |
+| 5 | `http://<claude-box>:7685` | `kid` / `TTYD_PASS_5` | `kit5`, `claude5` |
+| 6 | `http://<claude-box>:7686` | `kid` / `TTYD_PASS_6` | `kit6`, `claude6` |
+| 7 | `http://<claude-box>:7687` | `kid` / `TTYD_PASS_7` | `kit7`, `claude7` |
+| 8 | `http://<claude-box>:7688` | `kid` / `TTYD_PASS_8` | `kit8`, `claude8` |
 
 - `kitN` → `/kit`: the rendered starter kit (CLAUDE.md, `.mcp.json`, `.claude/settings.json`, `units/`) plus `.pixel-clash/player.json` (the kid's apiKey, written by Claude after login).
 - `claudeN` → `/home/kid/.claude`: all Claude Code state (`CLAUDE_CONFIG_DIR`): the login, folder trust, `.claude.json` and chat history.
-- No host folders, no Docker socket, `cap_drop: ALL`, `no-new-privileges`, 2 GB RAM and 1.5 CPU per seat, runs as user `kid`.
+- No host folders, no Docker socket, `cap_drop: ALL`, `no-new-privileges`, at most 1.5 GB RAM and 1 CPU per seat, runs as user `kid`.
 
 Pinned versions (change the `ARG`s in `Dockerfile`): `node:22.23.3-slim`, Claude Code `2.1.290`, ttyd `1.7.7` (SHA-256 checked, amd64 and arm64).
 
@@ -21,23 +25,38 @@ All commands below run in this `sessions/` folder.
 
 ## 1. Set up (day before)
 
-Needs Docker with Compose v2 and BuildKit (any current Docker Engine or Docker Desktop). Sizing: about 4 cores and 8 GB RAM for 4 seats.
+Needs Docker with Compose v2 and BuildKit (any current Docker Engine or Docker Desktop).
+
+**Sizing.** Each seat runs one Claude Code process (more if a kid opens extra tabs). For all 8 seats plan on about **8 cores and 16 GB RAM**; 4 seats need about 4 cores / 8 GB, 2 seats about 2 cores / 4 GB. Each container is capped at 1.5 GB RAM and 1 CPU (limits, not reservations: a seat typically uses well under 1 GB and under 1 core), so 8 seats at their cap still leave ~4 GB for the host on a 16 GB box. On Docker Desktop, give the Docker VM that much memory and CPU in its settings.
 
 ```sh
 cp .env.example .env
 # Edit .env: PIXEL_CLASH_URL = the game server's LAN address (not localhost),
-# and one short word per seat for TTYD_PASS_1..4 (print them on the seat cards).
+# and one short word per seat for TTYD_PASS_1..8 (print them on the seat cards).
+# Set all 8 words even if you run fewer seats: compose checks every service.
 docker compose up -d --build
-docker compose ps        # all four seats "running (healthy)" after ~30 s
+docker compose ps        # all eight seats "running (healthy)" after ~30 s
 ```
 
-Allow inbound TCP 7681-7684 on the Claude box firewall. Turn off sleep.
+Allow inbound TCP 7681-7688 on the Claude box firewall. Turn off sleep.
+
+### Running fewer seats (games are 2-8 players)
+
+Name the seats you want; the others are never created and use no memory:
+
+```sh
+docker compose up -d --build seat1 seat2 seat3 seat4   # a 4-player game
+docker compose up -d seat5 seat6                        # add two seats later
+docker compose stop seat5 seat6                         # park them again (volumes, login and kit are kept)
+```
+
+A shortcut for "seats 1 to N" (here N = 6): `docker compose up -d $(seq -f seat%g 1 6)`. `docker compose ps` lists only the seats that exist. Seat numbers match game seats, so for a 3-player game use seats 1-3 and give those three laptops seat cards 1-3. You only need to log in (step 2) the seats you'll use, but logging in all 8 the day before means any seat can be started on the day.
 
 On start, each seat renders `/kit` from `packages/starter-kit/` with `{{HOST}}` taken from `PIXEL_CLASH_URL`. CLAUDE.md, `.mcp.json`, `.claude/settings.json` and PROMPTS.md are re-rendered on every start, and `.claude/settings.local.json` (where Claude Code saves "Yes, and don't ask again" approvals) is deleted, so the rendered template is the only allowlist; `.pixel-clash/player.json` and existing files in `units/` are never overwritten.
 
 ## 2. Log in each seat (adults, before the event)
 
-Do this for **each** seat, N = 1..4:
+Do this for **each** seat you'll use, N = 1..8:
 
 ```sh
 docker compose run --rm seatN claude
@@ -48,10 +67,10 @@ docker compose run --rm seatN claude
 3. Type: **"Are you connected to Pixel Clash?"** Claude should call `get_game_state` (or `get_rules`) without any approval prompt.
 4. Exit with `/exit` (or Ctrl+C twice).
 
-The login and trust are saved in the `claudeN` volume, so the running seat container picks them up. Then restart the seats so every terminal starts logged in:
+The login and trust are saved in the `claudeN` volume, so the running seat container picks them up. Then restart the running seats so every terminal starts logged in:
 
 ```sh
-docker compose restart
+docker compose restart          # every seat that is running; or name them: docker compose restart seat1 seat2
 ```
 
 ## 3. Check
@@ -87,14 +106,14 @@ Isolation check (dress rehearsal), so facilitators know what a kid can reach fro
 docker compose down -v
 ```
 
-Removes all 8 volumes: kit folders, apiKeys, chat history and the Claude logins. Kid laptops hold nothing. Deleting the volumes does **not** revoke the event account's login token on Anthropic's side (any seat could have read it): sign the event account out of all sessions (or change its password) after the event. Also run `npm run wipe` (or admin Wipe) on the game server. Optionally `docker image rm pixel-clash-seat:local`.
+Removes all 16 volumes (`kit1`..`kit8`, `claude1`..`claude8`): kit folders, apiKeys, chat history and the Claude logins. Kid laptops hold nothing. Deleting the volumes does **not** revoke the event account's login token on Anthropic's side (any seat could have read it): sign the event account out of all sessions (or change its password) after the event. Also run `npm run wipe` (or admin Wipe) on the game server. Optionally `docker image rm pixel-clash-seat:local`.
 
 ## 6. Options (`.env`)
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `PIXEL_CLASH_URL` | (required) | Game server base URL, `http://<ip>:<port>` |
-| `TTYD_PASS_1`..`4` | (required) | Basic-auth word per seat (user `kid`) |
+| `TTYD_PASS_1`..`8` | (required, all 8) | Basic-auth word per seat (user `kid`). Compose checks all 8 even when only some seats run. |
 | `CLAUDE_PERMISSION_MODE` | empty | `acceptEdits` or `plan` passes `--permission-mode` to claude. Decided in the M0 spike; `bypassPermissions` is refused. |
 | `CLAUDE_CONTINUE` | `1` | Reopen the last conversation after a restart or reload (`claude --continue`); `0` = always fresh |
 
@@ -118,7 +137,7 @@ sudo iptables -I DOCKER-USER 1 -i pcseats -p tcp --dport 53 -j ACCEPT
 sudo iptables -I DOCKER-USER 1 -i pcseats -d 192.168.8.10 -p tcp --dport 8080 -j ACCEPT  # game server
 sudo iptables -I DOCKER-USER 1 -i pcseats -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT  # replies (MUST end up first)
 # Seats talking to the Claude box itself (e.g. another seat's ttyd port):
-sudo iptables -I INPUT 1 -i pcseats -m conntrack --ctstate NEW -p tcp --dport 7681:7684 -j REJECT
+sudo iptables -I INPUT 1 -i pcseats -m conntrack --ctstate NEW -p tcp --dport 7681:7688 -j REJECT
 ```
 
 Check with `docker compose run --rm seat1 check` (game server and Anthropic must still be reachable). That only tests outbound traffic, so also check inbound: from a kid laptop, open `http://<claude-box>:7681`, log in with the seat word and type to Claude. `sudo iptables -L DOCKER-USER -n --line-numbers` must show the `ESTABLISHED,RELATED` rule as line 1. The rules disappear on reboot unless saved (`iptables-save`/`netfilter-persistent`). Allowing only `api.anthropic.com` and `claude.ai` by name needs an HTTPS proxy; port 443 to the internet is the practical middle ground. On Docker Desktop (macOS/Windows) these rules don't apply; rely on the router instead.
@@ -137,4 +156,4 @@ Check with `docker compose run --rm seat1 check` (game server and Anthropic must
 | `game server: NOT reachable` | Wrong IP in `.env`, the game server isn't running on `0.0.0.0`, or its firewall blocks 8080. Containers can't reach a game server that only listens on `localhost`. |
 | Build fails at `sha256sum` | The ttyd download changed or was corrupted: don't skip the check; retry, or re-pin `TTYD_VERSION` with the new release's `SHA256SUMS`. |
 | Build fails with `Unsupported TARGETARCH` | Use BuildKit (default in current Docker; or `DOCKER_BUILDKIT=1`). Only amd64 and arm64 are supported. |
-| Seat is slow / killed | `docker stats`: each seat is capped at 2 GB RAM and 1.5 CPU. Close extra tabs on that seat (each tab runs its own Claude). |
+| Seat is slow / killed | `docker stats`: each seat is capped at 1.5 GB RAM and 1 CPU. If one seat really needs more, raise `mem_limit`/`memswap_limit`/`cpus` in `x-seat` (all seats share it) and make sure the box still has room: seats running × limit, plus ~4 GB for the host. Also check the box isn't swapping (`free -h`) with all seats running; if it is, run fewer seats. Close extra tabs on that seat (each tab runs its own Claude). |
