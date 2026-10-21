@@ -78,12 +78,12 @@ export function Battle() {
               </ul>
               {napping.length > 0 && (
                 <p class="note small">
-                  💤 A napping unit had too many errors or was too slow. After the battle, ask Claude to check the battle report.
+                  💤 A unit takes a nap when its code keeps going wrong or thinks too slowly. After the battle, ask Claude to fix it!
                 </p>
               )}
             </>
           ) : (
-            <p class="dim">You're watching this battle. You're in from the next round!</p>
+            <p class="dim">You're watching this one. You're in from the next round!</p>
           )}
           <p class="dim small">Your units have a bouncing arrow over them. The big screen shows the battle too!</p>
         </aside>

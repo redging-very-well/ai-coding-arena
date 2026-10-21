@@ -82,6 +82,15 @@ export function styleOptions(players: number, mode: TeamMode = 'ffa'): Array<{ v
   ];
 }
 
+/**
+ * The dropdown value for a draft override: an override equal to the default
+ * (the server stores it as sent, e.g. a scripted `mapStyle: 'duel'`) or no
+ * longer valid for the count/mode shows as the "auto" entry, never a blank select.
+ */
+export function selectedStyleOption(options: ReadonlyArray<{ value: MapStyle | '' }>, override: MapStyle | null): MapStyle | '' {
+  return override !== null && options.some((o) => o.value === override) ? override : '';
+}
+
 /** Team mode choices for the dropdown ("Free-for-all", "2 teams (3v3)"…). */
 export function teamModeOptions(players: number): Array<{ value: TeamMode; label: string }> {
   const n = previewCount(players);

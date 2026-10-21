@@ -461,7 +461,7 @@ export class UnitsService {
           this.game.notifier.toast(
             { playerId },
             'warn',
-            `${dropped.join(', ')} ${dropped.length === 1 ? 'was' : 'were'} removed from your selection because the rules changed. Ask Claude to fix ${dropped.length === 1 ? 'it' : 'them'}!`,
+            `The rules changed, so ${dropped.join(', ')} ${dropped.length === 1 ? 'was' : 'were'} taken out of your army. Ask Claude to fix ${dropped.length === 1 ? 'it' : 'them'}!`,
           );
         }
         if (droppedBorrowed.length > 0) {
@@ -469,7 +469,7 @@ export class UnitsService {
           this.game.notifier.toast(
             { playerId },
             'warn',
-            `${droppedBorrowed.join(', ')} ${droppedBorrowed.length === 1 ? 'was' : 'were'} removed from your selection because the rules changed. Borrowed units can't be changed: pick another unit or ask Claude for your own version.`,
+            `The rules changed, so ${droppedBorrowed.join(', ')} ${droppedBorrowed.length === 1 ? 'was' : 'were'} taken out of your army. Borrowed units can't be changed: pick another one, or ask Claude for your own version!`,
           );
         }
       }

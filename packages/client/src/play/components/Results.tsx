@@ -90,7 +90,7 @@ export function Results() {
     setReportErr(null);
     api.report(last.round).then(
       (r) => !cancelled && setReport(r),
-      (err) => !cancelled && setReportErr(err instanceof ApiError && err.code === 'NOT_FOUND' ? null : 'Could not load your battle report.'),
+      (err) => !cancelled && setReportErr(err instanceof ApiError && err.code === 'NOT_FOUND' ? null : "Couldn't load your battle report. Try again in a moment."),
     );
     return () => {
       cancelled = true;
@@ -195,14 +195,14 @@ export function Results() {
           )}
         </>
       )}
-      {!final && last && !mine && <p class="dim">You didn't fight this round. You're in next round!</p>}
+      {!final && last && !mine && <p class="dim">You sat this round out. You're in next round!</p>}
       {!final && myInvention && !mine && (
         <p class="good-news">
           {BADGES.inventor.emoji} {BADGES.inventor.title}: {myInvention.units.join(', ')} used by {myInvention.usedBy} player
           {myInvention.usedBy === 1 ? '' : 's'}!
         </p>
       )}
-      {last?.reason === 'timeout' && !final && <p class="dim small">Time ran out, so armies were ranked by the value of their units still standing.</p>}
+      {last?.reason === 'timeout' && !final && <p class="dim small">Time ran out, so the army with the most $ still standing won.</p>}
 
       <div class="results-layout">
         <div>

@@ -112,7 +112,7 @@ export function Placement() {
           setSaving('error');
           // The phase just moved on (START): nothing to tell the kid.
           if (err instanceof ApiError && err.phaseClosed) return;
-          const msg = err instanceof ApiError ? err.kidMessage : 'Could not save.';
+          const msg = err instanceof ApiError ? err.kidMessage : "Couldn't save. Try again!";
           setNote({ text: msg, bad: true });
           store.toast(msg, 'error');
         }
@@ -148,7 +148,7 @@ export function Placement() {
     return (
       <section class="panel placement">
         <h2>Watch this round</h2>
-        <p>You joined in the middle of a round, so you're in from the next round. Ask Claude to make some units meanwhile!</p>
+        <p>You joined partway through, so you're in from the next round. Ask Claude to make some units while you wait!</p>
       </section>
     );
   }
@@ -180,7 +180,7 @@ export function Placement() {
     try {
       await api.setReady(!ready);
     } catch (err) {
-      store.toast(err instanceof ApiError ? err.kidMessage : 'Could not change Ready.', 'error');
+      store.toast(err instanceof ApiError ? err.kidMessage : "Couldn't change READY. Try again!", 'error');
     } finally {
       setReadyBusy(false);
     }
@@ -300,7 +300,7 @@ export function Placement() {
             commit(r.placements);
             setNote(
               r.placements.length === 0
-                ? { text: "None of last round's units are in your army this time.", bad: true }
+                ? { text: "None of last round's units are in your army this time. Place some new ones!", bad: true }
                 : r.dropped > 0
                   ? { text: `Copied ${r.placements.length} units (${r.dropped} didn't fit).`, bad: false }
                   : { text: `Copied ${r.placements.length} units from last round.`, bad: false },

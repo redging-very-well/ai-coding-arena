@@ -25,6 +25,8 @@ export interface Toast {
   id: number;
   level: 'info' | 'warn' | 'error' | 'good';
   message: string;
+  /** performance.now() when shown. */
+  at: number;
 }
 
 /** One of my fielded copies during BATTLE (for the unit list). */
@@ -113,8 +115,10 @@ export class PlayStore {
   }
 
   toast(message: string, level: Toast['level'] = 'info', ms = 5000): void {
-    const t: Toast = { id: ++this.toastSeq, level, message };
-    this.set({ toasts: [...this.state.toasts.slice(-3), t] });
+    const t: Toast = { id: ++this.toastSeq, level, message, at: performance.now() };
+    // The same message twice (server toast + a reconnect, double click) shows once; at most 3 at a time.
+    const others = this.state.toasts.filter((x) => x.message !== message);
+    this.set({ toasts: [...others.slice(-2), t] });
     setTimeout(() => this.dismiss(t.id), ms);
   }
 
@@ -260,9 +264,15 @@ export class PlayStore {
   }
 
   private onPhaseChange(from: string, to: string): void {
-    if (to === 'PLAN') this.toast('Plan time! Ask Claude for new units.', 'good');
-    else if (to === 'PLACEMENT') this.toast('Place your army!', 'good');
-    else if (to === 'BATTLE') this.toast('CLASH!', 'good', 2500);
+    // Last phase's toasts are stale now (the server's toast for the new phase arrives just before
+    // the state, so keep anything from the last second). PLAN and PLACEMENT are announced by that toast.
+    const fresh = performance.now() - 1000;
+    const kept = this.state.toasts.filter((t) => t.at >= fresh);
+    this.set({ toasts: kept });
+    // Missed the server's toast (socket was down when the phase changed): announce it ourselves.
+    if (kept.length === 0 && to === 'PLAN') this.toast('Plan time! Ask Claude for new units.', 'good');
+    else if (kept.length === 0 && to === 'PLACEMENT') this.toast('Place your army!', 'good');
+    if (to === 'BATTLE') this.toast('CLASH!', 'good', 2500);
     if (from === 'BATTLE' && this.battleTimer) {
       clearInterval(this.battleTimer);
       this.battleTimer = null;

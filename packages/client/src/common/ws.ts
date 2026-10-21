@@ -27,6 +27,21 @@ export interface GameSocketOptions {
 
 type Handler<T extends WsMessageType> = (msg: WsMessageOf<T>) => void;
 
+/**
+ * Close a socket we no longer want. One still CONNECTING is closed once it
+ * opens: closing it mid-handshake makes the browser log "WebSocket is closed
+ * before the connection is established" (e.g. the /play socket replaced at login).
+ */
+function shut(ws: WebSocket | null | undefined): void {
+  if (!ws) return;
+  try {
+    if (ws.readyState === WebSocket.CONNECTING) ws.onopen = () => ws.close();
+    else ws.close();
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Next reconnect delay: doubling backoff with ±20% jitter, capped. Pure (tested). */
 export function backoffDelay(attempt: number, minMs: number, maxMs: number, rand: () => number = Math.random): number {
   const base = Math.min(maxMs, minMs * 2 ** Math.max(0, attempt));
@@ -120,7 +135,7 @@ export class GameSocket {
   reconnect(): void {
     if (this.closed) return;
     this.attempt = 0;
-    this.ws?.close();
+    shut(this.ws);
     this.ws = null;
     this.clearTimers();
     this.connect();
@@ -137,7 +152,7 @@ export class GameSocket {
     this.clearTimers();
     window.removeEventListener('online', this.kick);
     document.removeEventListener('visibilitychange', this.kick);
-    this.ws?.close();
+    shut(this.ws);
     this.ws = null;
     if (this._status !== 'kicked') this.setStatus('closed');
   }
@@ -168,11 +183,7 @@ export class GameSocket {
     const ws = this.ws;
     this.ws = null;
     this.clearTimers();
-    try {
-      ws?.close();
-    } catch {
-      /* ignore */
-    }
+    shut(ws);
     if (this.closed) return;
     this.attempt = 0;
     this.scheduleReconnect();

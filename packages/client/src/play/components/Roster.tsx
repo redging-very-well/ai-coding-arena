@@ -95,9 +95,9 @@ export function Roster(props: { phase: Phase }) {
       doShake(
         u.unitId,
         r.reason === 'full'
-          ? `You can pick ${max} units. Tap a picked one to drop it first.`
+          ? `You can pick ${max} units. Tap a picked one to swap it out.`
           : 'armoryId' in u
-            ? `${u.name} doesn't fit the rules right now, so it can't be picked.`
+            ? `${u.name} doesn't fit the rules right now. Pick another one!`
             : `${u.name} needs fixing before you can pick it. Ask Claude!`,
       );
       return;
@@ -108,7 +108,7 @@ export function Roster(props: { phase: Phase }) {
       await api.setSelection(r.selection);
     } catch (err) {
       setPending(null);
-      const msg = err instanceof ApiError ? err.kidMessage : 'Could not save your pick.';
+      const msg = err instanceof ApiError ? err.kidMessage : "Your pick didn't save. Try again!";
       doShake(u.unitId, msg);
     }
   };
@@ -118,7 +118,7 @@ export function Roster(props: { phase: Phase }) {
       await api.retireUnit(u.unitId);
       store.toast(`${u.name} was removed.`);
     } catch (err) {
-      store.toast(err instanceof ApiError ? err.kidMessage : 'Could not remove it.', 'error');
+      store.toast(err instanceof ApiError ? err.kidMessage : "Couldn't remove it. Try again!", 'error');
     }
   };
 
@@ -164,9 +164,9 @@ export function Roster(props: { phase: Phase }) {
             <strong>Tap up to {max} units</strong> to use this round. Claude can send new units now!
           </>
         ) : props.phase === 'LOBBY' ? (
-          <>Waiting for the Plan phase to submit… Claude can already make and check units.</>
+          <>Claude can send new units at Plan time. It can already make and check them now!</>
         ) : (
-          <>Waiting for the Plan phase to submit…</>
+          <>Claude can send new units at Plan time.</>
         )}
       </p>
       {note && (

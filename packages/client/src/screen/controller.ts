@@ -6,6 +6,7 @@
 
 import {
   CORNERS,
+  MAX_PLAYERS,
   type BattleEndDTO,
   type MapDTO,
   type BattleRevealDTO,
@@ -52,6 +53,8 @@ export interface ScreenSnapshot {
   replay: ReplayView | null;
   suddenDeathTick: number;
   ticksPerSecond: number;
+  /** Live seat limit from GET /rules (config.match.maxPlayers); the join card hides at it. */
+  maxPlayers: number;
   /** performance.now() when sudden death began on screen (banner), or null. */
   suddenDeathAt: number | null;
 }
@@ -73,8 +76,9 @@ export class ScreenController {
     join: null,
     toasts: [],
     replay: null,
-    suddenDeathTick: 3600,
+    suddenDeathTick: 3000,
     ticksPerSecond: 60,
+    maxPlayers: MAX_PLAYERS,
     suddenDeathAt: null,
   };
   private readonly listeners = new Set<() => void>();
@@ -93,7 +97,7 @@ export class ScreenController {
         if (ev.type !== 'disable') return;
         const info = arena.instance(ev.instanceId);
         if (!info) return;
-        this.toast(`💤 ${info.name} is napping`, 'nap', info.seat);
+        this.toast(`💤 ${info.name} is taking a nap`, 'nap', info.seat);
       },
     });
     this.neutralZones();
@@ -149,7 +153,9 @@ export class ScreenController {
       const rules = await api.rules();
       const sd = rules.suddenDeath as { startTick?: unknown };
       const tps = rules.timers.ticksPerSecond;
+      const max = rules.maxPlayers;
       this.set({
+        ...(typeof max === 'number' && max >= 1 ? { maxPlayers: Math.min(max, MAX_PLAYERS) } : {}),
         ...(typeof sd.startTick === 'number' ? { suddenDeathTick: sd.startTick } : {}),
         ...(typeof tps === 'number' && tps > 0 ? { ticksPerSecond: tps } : {}),
       });
@@ -181,7 +187,11 @@ export class ScreenController {
       this.neutralZones(state.match?.map ?? null);
       Object.assign(patch, { reveal: null, revealAt: null, end: null, replay: null, playback: null, suddenDeathAt: null });
       if (phase !== 'PLACEMENT') void this.loadJoin();
+      // The host may have changed quick settings (seat limit, sudden death) since.
+      void this.loadRules();
     } else if (PRE_BATTLE.includes(phase)) {
+      // Someone joined or left: re-read the seat limit in case the host lowered it.
+      if (state.players.length !== this.snap.state?.players.length) void this.loadRules();
       // The map grows or changes style as players join or leave (§9.2).
       this.neutralZones(state.match?.map ?? null);
     }

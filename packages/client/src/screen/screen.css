@@ -41,9 +41,11 @@ body {
 
 .top {
   display: grid;
-  grid-template-columns: 420px 1fr 520px;
+  grid-template-columns: 300px 1fr 520px;
   align-items: center;
-  min-height: 150px;
+  /* Fixed height: a long title must never push the arena down mid-game. */
+  height: 150px;
+  flex: none;
   padding: 0 40px;
   border-bottom: 4px solid var(--border);
   background: linear-gradient(#1d2238, #12162a);
@@ -61,12 +63,14 @@ body {
 }
 .title {
   text-align: center;
+  min-width: 0;
 }
 .title h1 {
   margin: 0;
   font-size: 56px;
   color: var(--text);
   text-shadow: 5px 5px 0 #000;
+  white-space: nowrap;
 }
 .phase-battle .title h1 {
   color: #ff6b6b;
@@ -107,7 +111,7 @@ body {
   margin: 12px 0;
 }
 .timer {
-  font-size: 72px;
+  font-size: 66px;
   line-height: 1;
   color: var(--text);
   text-shadow: 5px 5px 0 #000;
@@ -187,8 +191,8 @@ canvas.arena {
 }
 .qr {
   flex: none;
-  width: 260px;
-  height: 260px;
+  width: 210px;
+  height: 210px;
   background: #fff;
   padding: 10px;
   image-rendering: pixelated;
@@ -202,18 +206,44 @@ canvas.arena {
 .qr-empty {
   background: repeating-linear-gradient(45deg, #262c48 0 12px, #1d2238 12px 24px);
 }
+.chip-ico {
+  font-family: var(--font-body, sans-serif);
+  font-size: 1.5em;
+  vertical-align: middle;
+}
+.nowrap {
+  white-space: nowrap;
+}
 .join-text p {
   margin: 0 0 12px;
 }
 .url {
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1.5;
   color: #fff;
-  word-break: break-all;
+  text-align: center;
+  overflow-wrap: anywhere;
   background: #0d0f1a;
   border: 3px solid var(--border);
-  padding: 12px;
+  padding: 10px 12px;
+  margin-top: 14px;
+}
+
+/* 5-7 players: a smaller QR so up to 4 rows of player tiles fit below. */
+.join.compact {
+  padding: 18px 28px;
+}
+.join.compact h2 {
   margin-bottom: 12px;
+}
+.join.compact .qr {
+  width: 150px;
+  height: 150px;
+  padding: 6px;
+}
+.join.compact .url {
+  margin-top: 12px;
+  padding: 8px 12px;
 }
 
 /* ---------------------------------------------------------------- players */
@@ -784,13 +814,13 @@ canvas.arena {
   animation-delay: 1.2s;
 }
 .step-1 .block {
-  height: 270px;
+  min-height: 270px;
 }
 .step-2 .block {
-  height: 210px;
+  min-height: 210px;
 }
 .step-3 .block {
-  height: 160px;
+  min-height: 160px;
 }
 .step-1 {
   animation-delay: 0.5s;
@@ -909,6 +939,19 @@ canvas.arena {
 .armies.compact .army-foot {
   font-size: 16px;
 }
+.armies.dense .army {
+  margin-bottom: 16px;
+}
+.armies.dense .bar {
+  height: 22px;
+  margin-top: 6px;
+}
+.armies.dense .cnt {
+  margin: 0 16px;
+  font-size: 17px;
+  font-weight: 400;
+  color: var(--text-dim);
+}
 .armies.teams .army-head {
   font-size: 26px;
 }
@@ -961,6 +1004,45 @@ canvas.arena {
 .ranking.compact .board-table td {
   padding: 4px 10px;
 }
+/* 7-8 players: one line per player. */
+.ranking.dense .rank .who small,
+.ranking.dense .rank .num small {
+  display: none;
+}
+.ranking.dense .rank .who {
+  white-space: nowrap;
+}
+.ranking.dense .rank td {
+  padding: 3px 8px;
+}
+.ranking.dense .board-table td {
+  padding: 2px 10px;
+}
+.ranking.dense .badges {
+  display: inline-flex;
+  margin: 0 0 0 10px;
+  gap: 2px;
+  vertical-align: middle;
+}
+.ranking.dense .badge,
+.ranking.dense.team-mode .badge {
+  padding: 0;
+  font-size: 18px;
+  background: none;
+  box-shadow: none;
+}
+.ranking.dense .rank .medal {
+  font-size: 24px;
+}
+.ranking.dense h2 {
+  margin-bottom: 10px;
+}
+.ranking.dense .board-title {
+  margin-top: 10px;
+}
+.ranking.dense .replay-controls {
+  margin-top: 12px;
+}
 .ranking.team-mode .badge {
   font-size: 13px;
   padding: 1px 6px;
@@ -982,6 +1064,47 @@ canvas.arena {
 }
 .podium-overlay.team-mode .podium {
   height: 440px;
+}
+.final .team-chip {
+  margin-left: 0.6em;
+}
+/* 5-8 players: a lower podium so the whole final table and the thanks line fit. */
+.podium-overlay.many {
+  padding-top: 28px;
+}
+.podium-overlay.many .champion {
+  margin-bottom: 16px;
+  font-size: 64px;
+}
+.podium-overlay.many .podium {
+  height: 390px;
+}
+.podium-overlay.many .step .medal {
+  font-size: 64px;
+  line-height: 1.15;
+}
+.podium-overlay.many .step .who {
+  margin: 4px 0 10px;
+  font-size: 34px;
+}
+.podium-overlay.many .step .block {
+  padding: 16px 0 12px;
+  gap: 10px;
+}
+.podium-overlay.many .step-1 .block {
+  min-height: 200px;
+}
+.podium-overlay.many .step-2 .block {
+  min-height: 155px;
+}
+.podium-overlay.many .step-3 .block {
+  min-height: 120px;
+}
+.podium-overlay.many .final {
+  margin-top: 16px;
+}
+.podium-overlay.many .thanks {
+  margin-top: 16px;
 }
 .step .block.pat-dashed {
   border-style: dashed;

@@ -3,7 +3,7 @@
 // warnings, and the invalid-unit error with an "Ask Claude" prompt.
 
 import { useState } from 'preact/hooks';
-import { sizeOf, type StatBounds, type UnitCardDTO } from '@pixel-clash/shared';
+import { kidHintFor, kidHintForIssue, sizeOf, type StatBounds, type UnitCardDTO } from '@pixel-clash/shared';
 import { resolveSprite } from '../../common/render/sprites.js';
 import { seatStyle } from '../../common/seats.js';
 import { cx, formatMoney } from '../../common/ui.js';
@@ -95,7 +95,7 @@ export function UnitCard(props: UnitCardProps) {
             )}
             {props.isNew && <span class="tag new">new!</span>}
             {u.warnings.length > 0 && (
-              <button class="tag warn" onClick={stop(() => setShowWarn((v) => !v))} aria-expanded={showWarn} title="Tips from the checker">
+              <button class="tag warn" onClick={stop(() => setShowWarn((v) => !v))} aria-expanded={showWarn} title="Tips for this unit">
                 ⚠️ {u.warnings.length}
               </button>
             )}
@@ -118,7 +118,9 @@ export function UnitCard(props: UnitCardProps) {
       {showWarn && (
         <ul class="warnings">
           {u.warnings.map((w, i) => (
-            <li key={i}>{w.message}</li>
+            <li key={i} title={w.message}>
+              {kidHintFor(w.code, w.field)}
+            </li>
           ))}
         </ul>
       )}
@@ -126,7 +128,7 @@ export function UnitCard(props: UnitCardProps) {
       {invalid && u.error && (
         <div class="unit-error">
           <p>
-            <strong>Can't use this one right now.</strong> {u.error.message}
+            <strong>Can't use this one right now.</strong> {kidHintForIssue(u.error)}
           </p>
           {props.borrowedRound === undefined && (
             <CopyButton text={`My unit ${u.name} is invalid: ${u.error.message} Please fix it.`} label="Copy “Ask Claude”" />

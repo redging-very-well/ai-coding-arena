@@ -7,7 +7,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { teamModeLabel, type GameStateDTO, type Phase } from '@pixel-clash/shared';
 import { api } from '../common/api.js';
 import { mapName } from '../common/maps.js';
-import { formatClock } from '../common/ui.js';
+import { formatClock, ordinal } from '../common/ui.js';
 import { useAdmin } from './context.js';
 import { MatchSetup } from './MatchSetup.js';
 
@@ -207,13 +207,14 @@ export function PhaseControls() {
       {s.lastBattle && (p === 'RESULTS' || p === 'MATCH_RESULTS') && (
         <div class="last-battle">
           <span class="label">Round {s.lastBattle.round}</span> ended by {s.lastBattle.reason} at {formatClock(s.lastBattle.endTick / 60)}.
-          <ol>
+          {/* The ranking's own place, not the list index: tied players and whole teams share a place. */}
+          <ul class="ranking-list">
             {s.lastBattle.ranking.map((r) => (
               <li key={r.playerId}>
-                {s.players.find((pl) => pl.id === r.playerId)?.name ?? r.playerId}: +{r.pointsGained} pts
+                {ordinal(r.place)} {s.players.find((pl) => pl.id === r.playerId)?.name ?? r.playerId}: +{r.pointsGained} pts
               </li>
             ))}
-          </ol>
+          </ul>
         </div>
       )}
 

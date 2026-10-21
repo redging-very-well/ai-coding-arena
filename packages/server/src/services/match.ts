@@ -182,7 +182,7 @@ export class MatchService {
     } else if (this.m.phase === 'PLACEMENT') {
       // No auto-start: wait for the host's START.
       this.m.timer = { deadline: null, remainingMs: null, paused: false, expired: true };
-      this.game.notifier.toast({ all: true }, 'info', 'Time is up! Waiting for the host to press START.');
+      this.game.notifier.toast({ all: true }, 'info', "Time's up! Waiting for the host to press START.");
       this.changed();
     }
   }
@@ -289,7 +289,7 @@ export class MatchService {
     const zoned = Object.keys(this.m.zones);
     if (activeIds.length !== zoned.length || activeIds.some((id) => !this.m.zones[id])) this.game.round.assignZones();
     const auto = this.game.round.autoPlaceEmpty();
-    for (const name of auto) this.game.notifier.toast({ all: true }, 'info', `Auto-placed for ${name}`);
+    for (const name of auto) this.game.notifier.toast({ all: true }, 'info', `${name}'s army was placed for them.`);
     for (const p of this.game.players.active()) {
       const rs = this.game.round.stateOf(p.id);
       if (rs.placements.length > 0) rs.lastLayout = rs.placements.map((x) => ({ ...x }));
@@ -383,7 +383,7 @@ export class MatchService {
     } else {
       this.m.phase = 'MATCH_RESULTS';
       this.clearTimer();
-      this.game.notifier.toast({ all: true }, 'info', 'The match is over!');
+      this.game.notifier.toast({ all: true }, 'info', 'Game over! Great battles, everyone!');
       this.changed();
     }
     return ok(true);

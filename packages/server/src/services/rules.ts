@@ -96,6 +96,7 @@ export function buildRules(config: GameConfig, armoryEnabled = false, match?: Ma
       defaultRounds: t.defaultRounds,
     },
     budget: config.caps.budget,
+    maxPlayers: config.match.maxPlayers,
     caps: { ...config.caps },
     costFormula:
       'each stat term = linear * (1 + c.curveK * (x / max)^2) with linear = maxHealth*c.hp (max 500), damage*c.damage (max 60), range*c.range (max 300), speed*c.speed (max 5), (size - 6)*c.size (max 14); ' +
@@ -216,12 +217,22 @@ export function curveTip(curveK: number): string {
   return `Maxing a stat costs ${fmtX(1 + curveK)}× its normal price (half its max costs ${fmtX(1 + curveK / 4)}×): spread your stats. Two or three medium units usually beat one giant one. 4-8 units per $1,000 is a good army.`;
 }
 
-/** Strategy tips; the cost-curve tip follows `curveK`. */
-export function strategyTips(curveK: number = DEFAULT_CONFIG.cost.curveK): string[] {
-  return STRATEGY_TIPS.map((t) => (t === CURVE_TIP_SLOT ? curveTip(curveK) : t));
+/** The sudden-death tip, with the start time and damage rate from config. */
+export function suddenDeathTip(config: GameConfig = DEFAULT_CONFIG): string {
+  const sd = config.suddenDeath;
+  const startS = Math.round((sd.startTick / config.timers.ticksPerSecond) * 10) / 10;
+  return `After ${startS} s a safe circle shrinks toward the centre; units outside it lose ${sd.damagePctPerSecond}% of max health per second. Towers far from the centre will suffer.`;
+}
+
+/** Strategy tips; the cost-curve and sudden-death tips follow the config. */
+export function strategyTips(config: GameConfig = DEFAULT_CONFIG): string[] {
+  return STRATEGY_TIPS.map((t) =>
+    t === CURVE_TIP_SLOT ? curveTip(config.cost.curveK) : t === SUDDEN_DEATH_TIP_SLOT ? suddenDeathTip(config) : t,
+  );
 }
 
 const CURVE_TIP_SLOT = '(curve tip)';
+const SUDDEN_DEATH_TIP_SLOT = '(sudden-death tip)';
 
 export const STRATEGY_TIPS = [
   'attackCooldown 60 is free; a faster cooldown multiplies the WHOLE cost (cooldown 30 = ×2).',
@@ -231,7 +242,7 @@ export const STRATEGY_TIPS = [
   'Points come from your place AND from damage (up to +2 with 4 players, more with more players) and enemy value destroyed (up to +1 with 4 players). Aggressive units score damage points even if they do not survive.',
   'The arena is 800, 1040 or 1200 px wide depending on the player count: use world.width, world.height and world.center, never 800 or 400.',
   "Tell friend from foe by teamId: allies include your teammates' units in team mode, and enemies are only the other teams' units.",
-  'After 60 s a safe circle shrinks toward the centre; units outside it lose health. Towers far from the centre will suffer.',
+  SUDDEN_DEATH_TIP_SLOT,
   'Add a sprite() method with pixel art (drawn facing right); without it the unit gets a plain fallback look.',
 ];
 
@@ -239,6 +250,6 @@ export function buildContract(config: GameConfig = DEFAULT_CONFIG): ContractDTO 
   return {
     typescript: contractTypescript(),
     templates: { basic_soldier: templateSource('basic_soldier'), basic_tower: templateSource('basic_tower') },
-    notes: [...ENGINE_RULES, ...strategyTips(config.cost.curveK).map((t) => `Tip: ${t}`)],
+    notes: [...ENGINE_RULES, ...strategyTips(config).map((t) => `Tip: ${t}`)],
   };
 }

@@ -46,6 +46,8 @@ export interface Notifier {
   playerRevoked(playerId: string): void;
   /** Number of open player sockets (for the `connected` flag). */
   isConnected(playerId: string): boolean;
+  /** Open WebSocket connections of any role (diagnostics, GET /admin/metrics). */
+  clientCount?(): number;
 }
 
 const NOOP_NOTIFIER: Notifier = {

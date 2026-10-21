@@ -31,7 +31,12 @@ function mcpJson(opts: KitOptions): string {
   return `${JSON.stringify({ mcpServers: { 'pixel-clash': server } }, null, 2)}\n`;
 }
 
-/** Fallback settings: curl is pre-approved only toward this game server's API. */
+/**
+ * Seat settings: only the MCP tools and the kit's own files are pre-approved.
+ * The curl fallback (CLAUDE.md §9) is deliberately not: a Bash prefix rule
+ * can't limit curl to this server's API (anything can follow the URL), and
+ * a curl prompt in a seat is a useful signal for an adult to come and look.
+ */
 function settingsJson(opts: KitOptions): string {
   const settings = {
     enableAllProjectMcpServers: true,
@@ -43,8 +48,6 @@ function settingsJson(opts: KitOptions): string {
         'Edit(./units/**)',
         'Read(./.pixel-clash/**)',
         'Edit(./.pixel-clash/**)',
-        `Bash(curl -sS -X POST http://${opts.host}/api/:*)`,
-        `Bash(curl -sS http://${opts.host}/api/:*)`,
       ],
     },
   };

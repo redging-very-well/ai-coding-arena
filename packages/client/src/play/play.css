@@ -376,12 +376,13 @@ main.join {
   pointer-events: none;
   text-shadow: 0 2px 0 #000;
 }
-.centre-arrow span { font-size: 30px; }
-.centre-arrow small { font-size: 1rem; color: var(--text-dim); }
-.centre-arrow.bottom { bottom: -18px; }
-.centre-arrow.top { top: -18px; }
-.centre-arrow.right { right: -18px; }
-.centre-arrow.left { left: -18px; }
+.centre-arrow span { font-size: 34px; font-weight: 800; }
+.centre-arrow small { font-size: 0.85rem; font-weight: 700; color: var(--accent); }
+/* In the grid-wrap's padding corner, clear of the panel edge and the zone line above. */
+.centre-arrow.bottom { bottom: -12px; }
+.centre-arrow.top { top: -12px; }
+.centre-arrow.right { right: -12px; }
+.centre-arrow.left { left: -12px; }
 .centre-arrow.mid-x { left: 50%; transform: translateX(-50%); }
 .centre-arrow.mid-y { top: 50%; transform: translateY(-50%); }
 .centre-arrow.mid-x.mid-y { transform: translate(-50%, -50%); }
@@ -469,6 +470,10 @@ main.join {
 .bu.ko { opacity: 0.5; text-decoration: line-through; }
 .bu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bu-status { text-align: right; font-variant-numeric: tabular-nums; }
+/* Portrait tablets stack too: a full-width arena beats a 450 px one beside the list. */
+@media (max-width: 1024px) and (orientation: portrait) {
+  .battle-layout { grid-template-columns: 1fr; }
+}
 @media (max-width: 760px) {
   .battle-layout { grid-template-columns: 1fr; }
   .arena-host { aspect-ratio: 1 / 0.8; }
@@ -570,15 +575,15 @@ main.join {
 /* Toasts                                                                   */
 /* ------------------------------------------------------------------------ */
 
+/* Top right, under the header: clear of the placement grid, palette and READY button. */
 .toasts {
   position: fixed;
-  left: 50%;
-  bottom: max(1rem, env(safe-area-inset-bottom));
-  transform: translateX(-50%);
+  right: max(1rem, env(safe-area-inset-right));
+  top: 5.25rem;
   display: grid;
   gap: 0.5rem;
   z-index: 50;
-  width: min(520px, calc(100vw - 2rem));
+  width: min(420px, calc(100vw - 2rem));
 }
 .toast {
   padding: 0.7rem 1rem;
@@ -656,6 +661,7 @@ main.join {
   border-radius: 8px;
   background: var(--bg-2);
 }
+.team-table .sb-rank { font-size: 1.6rem; font-family: inherit; text-align: center; }
 .team-table li.me { background: color-mix(in srgb, var(--team, #fff) 12%, var(--bg-2)); }
-.tt-name { display: grid; gap: 0.15rem; min-width: 0; }
+.tt-name { display: grid; gap: 0.15rem; min-width: 0; justify-items: start; }
 .benched { border-color: var(--warn); }

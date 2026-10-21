@@ -258,6 +258,9 @@ export class BattleEngine {
   /** Per-player strikes at each frame where they changed. */
   private readonly playerStrikeLog = new Map<string, Array<{ t: number; strikes: number }>>();
 
+  /** Wall time of every completed tick in ms (sandbox calls included): the §14 "sim ms/tick" (diagnostics, load test). */
+  readonly tickMs: number[] = [];
+
   private projectiles: Projectile[] = [];
   private nextProjectileId = 1;
   /** Completed ticks. */
@@ -383,7 +386,9 @@ export class BattleEngine {
             endReason = 'stopped';
             break;
           }
+          const t0 = performance.now();
           await this.step(this.time);
+          this.tickMs.push(performance.now() - t0);
           this.time += 1;
           const ended = this.checkElimination();
           if (ended || this.time % frameEvery === 0 || this.time === battleTicks) this.emitFrame();

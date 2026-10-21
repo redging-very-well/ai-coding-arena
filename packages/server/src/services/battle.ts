@@ -79,6 +79,7 @@ interface ActiveBattle {
   run?: Promise<BattleResult | undefined>;
   result?: BattleResult;
   simDone: boolean;
+  simDoneAt?: number;
   failed: boolean;
   /** Playback clock in ticks (fractional). */
   playbackTick: number;
@@ -94,6 +95,38 @@ interface ActiveBattle {
   aborted: boolean;
   /** Last whole playback second a state push went out for. */
   lastSecond: number;
+  /** Playback stalls ("thinking…": playback caught up with a sim that isn't done), for diagnostics. */
+  stalls: number;
+  stalledMs: number;
+  stalling: boolean;
+  startedAt: number;
+}
+
+/** Sim and playback numbers of the running or last battle (GET /admin/metrics, `npm run loadtest`, §14). */
+export interface BattleMetrics {
+  round: number;
+  /** Players and placed units in the battle. */
+  players: number;
+  units: number;
+  simDone: boolean;
+  /** Completed sim ticks so far. */
+  ticks: number;
+  /**
+   * Wall ms per sim tick (sandbox calls included). `p99Warm` leaves out the
+   * first second (isolate JIT warm-up); `over8` counts ticks above the 8 ms budget.
+   */
+  tickMs: { p50: number; p99: number; p99Warm: number; max: number; mean: number; over8: number } | null;
+  /** Wall time from START until the sim finished (null while running). */
+  simWallMs: number | null;
+  playback: { tick: number; speed: 1 | 2; paused: boolean; stalls: number; stalledMs: number };
+}
+
+/** Ticks left out of `p99Warm` (1 s of battle). */
+const WARMUP_TICKS = 60;
+
+function percentile(sorted: readonly number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1))]!;
 }
 
 export class BattleService {
@@ -101,6 +134,8 @@ export class BattleService {
   private factory: RunnerFactory | undefined;
   /** The last released battle, for the replay endpoint. */
   private lastReplay: ReplayDTO | undefined;
+  /** Metrics of the last battle that ended (kept after release, §14 load test). */
+  private lastMetrics: BattleMetrics | undefined;
 
   constructor(private readonly game: Game) {}
 
@@ -124,6 +159,37 @@ export class BattleService {
     const a = this.active;
     if (!a) return undefined;
     return frameAt(a.frames, Math.floor(a.playbackTick));
+  }
+
+  /** Sim/playback metrics of the running battle, else of the last one (diagnostics). */
+  metrics(): BattleMetrics | undefined {
+    const a = this.active;
+    return a ? this.metricsOf(a) : this.lastMetrics;
+  }
+
+  private metricsOf(a: ActiveBattle): BattleMetrics {
+    const ticks = a.engine?.tickMs ?? [];
+    const sorted = [...ticks].sort((x, y) => x - y);
+    const sum = ticks.reduce((t, x) => t + x, 0);
+    return {
+      round: a.round,
+      players: a.setup.length,
+      units: a.setup.reduce((n, s) => n + s.placements.length, 0),
+      simDone: a.simDone,
+      ticks: ticks.length,
+      tickMs: ticks.length
+        ? {
+            p50: percentile(sorted, 50),
+            p99: percentile(sorted, 99),
+            p99Warm: percentile([...ticks.slice(WARMUP_TICKS)].sort((x, y) => x - y), 99),
+            max: sorted[sorted.length - 1]!,
+            mean: sum / ticks.length,
+            over8: ticks.filter((x) => x > 8).length,
+          }
+        : null,
+      simWallMs: a.simDoneAt !== undefined ? a.simDoneAt - a.startedAt : null,
+      playback: { tick: Math.floor(a.playbackTick), speed: a.speed, paused: a.paused, stalls: a.stalls, stalledMs: Math.round(a.stalledMs) },
+    };
   }
 
   playback(): PlaybackDTO | undefined {
@@ -280,6 +346,10 @@ export class BattleService {
       releasing: false,
       aborted: false,
       lastSecond: 0,
+      stalls: 0,
+      stalledMs: 0,
+      stalling: false,
+      startedAt: now,
     };
     this.active = a;
     game.notifier.battleReveal(reveal);
@@ -332,6 +402,7 @@ export class BattleService {
         (result) => {
           a.result = result;
           a.simDone = true;
+          a.simDoneAt = Date.now();
           return result;
         },
         (err: unknown) => {
@@ -374,6 +445,13 @@ export class BattleService {
       const rate = this.game.options.playbackRate ?? 1;
       a.playbackTick = Math.min(last.t, a.playbackTick + (dt * tps * a.speed * rate) / 1000);
     }
+    // Playback waiting for the sim ("thinking…", §9 Decoupling).
+    const stalled = !a.paused && !a.failed && now >= a.holdUntil && !a.simDone && (!last || a.playbackTick >= last.t);
+    if (stalled) {
+      if (!a.stalling) a.stalls++;
+      a.stalledMs += dt;
+    }
+    a.stalling = stalled;
     this.sendFrames(a, Math.floor(a.playbackTick));
     // 1 Hz state pushes for the battle countdown (secondsLeft).
     const second = Math.floor(a.playbackTick / this.game.config.timers.ticksPerSecond);
@@ -503,6 +581,7 @@ export class BattleService {
       unitSummaries[s.playerId] = sums;
     }
 
+    this.lastMetrics = this.metricsOf(a);
     const end: BattleEndDTO = { round: a.round, endTick, reason, ranking, scoreboard: [] };
     if (inventors.length > 0) end.inventors = inventors;
     const record: RoundResultRecord = { round: a.round, end, reports, unitSummaries };

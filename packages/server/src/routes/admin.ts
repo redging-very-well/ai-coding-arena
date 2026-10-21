@@ -125,6 +125,26 @@ export function adminRoutes(game: Game): Router {
     res.json(game.visibility.adminOverview());
   });
 
+  // Diagnostics for the facilitator and `npm run loadtest` (§14, §15 "check CPU per tick"):
+  // server memory, WS connections and the running (else last) battle's sim ms/tick and playback stalls.
+  r.get('/metrics', (_req, res) => {
+    const mem = process.memoryUsage();
+    const mb = (n: number) => Math.round((n / 1024 / 1024) * 10) / 10;
+    res.json({
+      pid: process.pid,
+      uptimeSec: Math.round(process.uptime()),
+      phase: game.store.match.phase,
+      round: game.store.match.round,
+      rssMb: mb(mem.rss),
+      heapUsedMb: mb(mem.heapUsed),
+      heapTotalMb: mb(mem.heapTotal),
+      externalMb: mb(mem.external),
+      arrayBuffersMb: mb(mem.arrayBuffers),
+      wsClients: game.notifier.clientCount?.() ?? null,
+      battle: game.battle.metrics() ?? null,
+    });
+  });
+
   r.get('/config', (_req, res) => {
     const out: AdminConfigResponse = { config: game.config, repriced: [], invalidated: [] };
     res.json(out);

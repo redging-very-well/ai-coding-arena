@@ -15,7 +15,7 @@ import { floorTerrain } from '../common/render/iso.js';
 import { seatStyle, teamLook } from '../common/seats.js';
 import { cx } from '../common/ui.js';
 import { useAdmin } from './context.js';
-import { mapPreview, previewCount, styleOptions, teamModeOptions, unevenNote, type MapPreview, type PreviewPlayer } from './mapPreview.js';
+import { mapPreview, previewCount, selectedStyleOption, styleOptions, teamModeOptions, unevenNote, type MapPreview, type PreviewPlayer } from './mapPreview.js';
 
 /** The front edge(s) of a zone as SVG line coordinates (row 0 faces the centre, §9.2). */
 function frontEdges(z: MapPreview['zones'][number], S: number): Array<[number, number, number, number]> {
@@ -132,6 +132,8 @@ export function MatchSetup({ rounds }: { rounds: number }) {
   const styles = validMapStyles(n, mode);
   const uneven = unevenNote(chosen, mode, rounds);
 
+  const options = styleOptions(roster.length, mode);
+  const selected = selectedStyleOption(options, override);
   const save = (patch: { mapStyle?: MapStyle | null; teamMode?: TeamMode }, text?: string) => act(() => api.admin.setMatchSetup(patch), text);
 
   if (!setup) return <p class="dim">Loading the match setup…</p>;
@@ -140,8 +142,8 @@ export function MatchSetup({ rounds }: { rounds: number }) {
       <div class="btn-row">
         <label class="inline">
           Map
-          <select value={override ?? ''} disabled={busy} onChange={(e) => void save({ mapStyle: (e.currentTarget.value || null) as MapStyle | null })}>
-            {styleOptions(roster.length, mode).map((o) => (
+          <select value={selected} disabled={busy} onChange={(e) => void save({ mapStyle: (e.currentTarget.value || null) as MapStyle | null })}>
+            {options.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>

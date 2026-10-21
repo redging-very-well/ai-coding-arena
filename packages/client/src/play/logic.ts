@@ -166,7 +166,7 @@ export function tapCell(
   if (placementAt(placements, col, row)) {
     return { ok: true, placements: removeAt(placements, col, row), removed: true };
   }
-  if (unitId === null) return { ok: false, code: 'NOT_SELECTED', message: 'Tap a unit at the bottom first, then tap a square.' };
+  if (unitId === null) return { ok: false, code: 'NOT_SELECTED', message: 'Tap a unit below first, then tap a square.' };
   const cost = rules.costs.get(unitId);
   if (cost === undefined) return { ok: false, code: 'NOT_SELECTED', message: "That unit isn't in your army this round." };
   const without = placements.slice();
@@ -464,7 +464,7 @@ export function scoreLines(raw: Pick<RankingEntryDTO, 'place'> & Partial<ScorePa
       icon: '💥',
       text:
         dmg === 0
-          ? 'Your army did no damage this time: no damage points.'
+          ? 'No damage this time: +0 points. Next battle!'
           : `You dealt ${dmg} damage: ${pts(entry.damageBonus)}${entry.damageBonus > 0 ? '!' : '. Hit harder for a bonus!'}`,
       points: entry.damageBonus,
     },
@@ -472,7 +472,7 @@ export function scoreLines(raw: Pick<RankingEntryDTO, 'place'> & Partial<ScorePa
       icon: '🗡️',
       text:
         entry.valueDestroyed === 0
-          ? 'You didn\'t knock out any enemy units: no KO points.'
+          ? 'No knockouts this time: +0 points. Next battle!'
           : `You knocked out ${value} of enemy units: ${pts(entry.valueBonus)}${entry.valueBonus > 0 ? '!' : '.'}`,
       points: entry.valueBonus,
     },
@@ -483,7 +483,7 @@ export function scoreLines(raw: Pick<RankingEntryDTO, 'place'> & Partial<ScorePa
 export const BADGE_KID_TEXT: Readonly<Record<BadgeId, string>> = {
   lastStanding: 'You came 1st!',
   biggestHitter: 'You dealt the most damage!',
-  giantSlayer: 'You knocked out the most enemy value!',
-  ironWall: 'You had the most army still standing!',
+  giantSlayer: 'Your knockouts were worth the most $!',
+  ironWall: 'Your army had the most still standing at the end!',
   inventor: 'Another player borrowed your unit from the Open Armory!',
 };

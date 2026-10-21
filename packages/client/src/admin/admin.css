@@ -281,8 +281,10 @@ code,
   color: var(--text-dim);
   margin: 8px 0;
 }
-.last-battle ol {
+.last-battle .ranking-list {
   margin: 4px 0;
+  padding-left: 22px;
+  list-style: none;
 }
 .scoreboard {
   margin-top: 8px;

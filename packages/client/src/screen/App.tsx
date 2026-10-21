@@ -2,8 +2,9 @@
 // scaled to fit the window. The arena canvas is always mounted (the shared
 // ArenaRenderer draws into it); panels and overlays change by phase.
 
+import { Fragment } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { MAX_PLAYERS, teamModeLabel, type GameStateDTO, type PlayerStatusDTO, type TeamDTO, type TeamTableRowDTO } from '@pixel-clash/shared';
+import { BADGES, MAX_PLAYERS, teamModeLabel, type BadgeId, type GameStateDTO, type PlayerStatusDTO, type TeamDTO, type TeamTableRowDTO } from '@pixel-clash/shared';
 import { groupByTeam, mapName } from '../common/maps.js';
 import { seatStyle, teamLook } from '../common/seats.js';
 import { PHASE_TEXT, PLACE_MEDALS, cx, formatClock, formatMoney, ordinal } from '../common/ui.js';
@@ -163,7 +164,7 @@ function Header({ snap, ctrl, now }: { snap: ScreenSnapshot | null; ctrl: Screen
       </div>
       <div class="title">
         <h1 class="pixel">{SCREEN_TITLES[phase]}</h1>
-        <p>{expired ? 'Time is up! Waiting for the host to press START…' : PHASE_TEXT[phase].hint}</p>
+        <p>{expired ? "Time's up! Waiting for the host to press START…" : PHASE_TEXT[phase].hint}</p>
       </div>
       <div class="clock">
         {state && (state.round > 0 || state.armory?.enabled) && (
@@ -200,13 +201,14 @@ function Header({ snap, ctrl, now }: { snap: ScreenSnapshot | null; ctrl: Screen
 function ArenaOverlays({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenController; now: number }) {
   const phase = snap.state?.phase;
   const step = snap.revealAt !== null ? revealStep(now - snap.revealAt) : null;
-  const sd = snap.suddenDeathAt !== null && now - snap.suddenDeathAt < SUDDEN_DEATH_BANNER_MS;
   const pb = snap.playback;
   const battle = phase === 'BATTLE';
+  // Not over the results: a battle that ends right as sudden death starts must not keep the banner up.
+  const sd = (battle || !!snap.replay?.playing) && snap.suddenDeathAt !== null && now - snap.suddenDeathAt < SUDDEN_DEATH_BANNER_MS;
   return (
     <>
-      {(phase === 'LOBBY' || phase === 'PLAN' || phase === 'PLACEMENT') && (
-        <div class="arena-caption pixel">{phase === 'PLACEMENT' ? 'Armies hidden until START' : 'The arena awaits…'}</div>
+      {(phase === 'LOBBY' || phase === 'PLAN' || phase === 'PLACEMENT') && snap.toasts.length === 0 && (
+        <div class="arena-caption pixel">{phase === 'PLACEMENT' ? 'Armies stay secret until START!' : 'The arena awaits…'}</div>
       )}
       {step && (
         <div class="reveal" key={step}>
@@ -224,7 +226,11 @@ function ArenaOverlays({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: Screen
           {pb.speed === 2 && <span class="chip pixel speed">2x ⏩</span>}
           {pb.paused && <span class="chip pixel paused">⏸ PAUSED</span>}
           {pb.thinking && !pb.paused && <span class="chip pixel thinking">Thinking…</span>}
-          {snap.suddenDeathAt !== null && <span class="chip pixel sd">☠ Sudden death</span>}
+          {snap.suddenDeathAt !== null && (
+            <span class="chip pixel sd">
+              <span class="chip-ico">☠️</span> Sudden death
+            </span>
+          )}
         </div>
       )}
       {battle && pb?.paused && <div class="paused-veil pixel">PAUSED</div>}
@@ -249,7 +255,7 @@ function ArenaOverlays({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: Screen
 }
 
 function endReasonText(reason: 'elimination' | 'timeout' | 'skipped'): string {
-  return reason === 'elimination' ? 'Last army standing!' : reason === 'timeout' ? "Time's up!" : 'Battle skipped';
+  return reason === 'elimination' ? 'Last army standing!' : reason === 'timeout' ? "Time's up!" : 'No battle this time';
 }
 
 // ---------------------------------------------------------------------------
@@ -258,18 +264,22 @@ function endReasonText(reason: 'elimination' | 'timeout' | 'skipped'): string {
 
 function Sidebar({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenController; now: number }) {
   const state = snap.state;
-  if (!state) return <div class="panel muted">Waiting for the game server…</div>;
+  if (!state) return <div class="panel muted">Connecting to the game…</div>;
   switch (state.phase) {
     case 'LOBBY':
-    case 'PLAN':
+    case 'PLAN': {
+      // All seats taken: nobody can join, so the tiles get the whole column.
+      // Past 4 players a smaller join card leaves room for 2-4 rows of tiles.
+      const n = state.players.length;
       return (
         <>
-          <JoinCard snap={snap} />
-          <PlayerTiles state={state} />
+          {n < snap.maxPlayers && <JoinCard snap={snap} compact={n > 4} />}
+          <PlayerTiles state={state} maxPlayers={snap.maxPlayers} />
         </>
       );
+    }
     case 'PLACEMENT':
-      return <PlayerTiles state={state} />;
+      return <PlayerTiles state={state} maxPlayers={snap.maxPlayers} />;
     case 'BATTLE':
       return <ArmyBars snap={snap} ctrl={ctrl} />;
     case 'RESULTS':
@@ -279,19 +289,29 @@ function Sidebar({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
   }
 }
 
-function JoinCard({ snap }: { snap: ScreenSnapshot }) {
+function JoinCard({ snap, compact }: { snap: ScreenSnapshot; compact?: boolean }) {
   const join = snap.join;
   const pretty = join?.joinUrl.replace(/^https?:\/\//, '') ?? '…';
   return (
-    <div class="panel join">
+    <div class={cx('panel join', compact && 'compact')}>
       <h2 class="pixel">Join here</h2>
       <div class="join-row">
         {join?.qrSvg ? <div class="qr" dangerouslySetInnerHTML={{ __html: join.qrSvg }} /> : <div class="qr qr-empty" />}
         <div class="join-text">
-          <p>Scan the code or type:</p>
-          <div class="url pixel">{pretty}</div>
-          <p class="muted">Pick a name and a 4-digit PIN.</p>
+          <p>Scan the code or type the address below.</p>
+          <p class="muted">
+            Pick a name and a <span class="nowrap">4-digit</span> PIN.
+          </p>
         </div>
+      </div>
+      {/* Full panel width so a LAN address fits on one line; it may only wrap at ':' or '/'. */}
+      <div class="url pixel">
+        {pretty.split(/(?=[:/])/).map((part, i) => (
+          <Fragment key={i}>
+            {i > 0 && <wbr />}
+            {part}
+          </Fragment>
+        ))}
       </div>
     </div>
   );
@@ -308,17 +328,17 @@ function TeamChip({ teamId, name }: { teamId: number; name?: string }) {
   );
 }
 
-function PlayerTiles({ state }: { state: GameStateDTO }) {
+function PlayerTiles({ state, maxPlayers = MAX_PLAYERS }: { state: GameStateDTO; maxPlayers?: number }) {
   const players = [...state.players].sort((a, b) => a.seat - b.seat);
   const teams = state.match?.teams ?? null;
   const table = new Map((state.match?.teamTable ?? []).map((t) => [t.teamId, t]));
   const groups = groupByTeam(players, teams);
   const compact = players.length > 4;
-  const empty = teams ? 0 : freeTiles(players.length);
+  const empty = teams ? 0 : freeTiles(players.length, maxPlayers);
   return (
     <div class={cx('panel players', compact && 'compact')}>
       <h2 class="pixel">
-        Players {players.length}/{MAX_PLAYERS}
+        Players {players.length}/{maxPlayers}
       </h2>
       {groups.map((g) => (
         <div key={g.team?.teamId ?? 'rest'} class={cx('tile-group', g.team && 'team-group')} style={g.team ? { '--team': g.team.color } : undefined}>
@@ -384,8 +404,10 @@ function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController
   if (teams.length > 0) return <TeamArmyBars teams={teams} started={started} />;
   const max = Math.max(1, ...values.map((v) => v.start));
   const sorted = [...values].sort((a, b) => a.seat - b.seat);
+  // 7-8 players: the unit count moves into the name row so every bar fits the column.
+  const dense = sorted.length > 6;
   return (
-    <div class={cx('panel armies', sorted.length > 4 && 'compact')}>
+    <div class={cx('panel armies', sorted.length > 4 && 'compact', dense && 'dense')}>
       <h2 class="pixel">Army value</h2>
       {!reveal && <p class="muted">Get ready…</p>}
       {sorted.map((v) => {
@@ -396,15 +418,22 @@ function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController
             <div class="army-head">
               <span class="sym seat-num">{seat.symbol}</span>
               <span class="name">{v.name}</span>
+              {dense && (
+                <small class="cnt">
+                  {v.aliveCount}/{v.fieldedCount} units
+                </small>
+              )}
               <span class="val pixel">{out ? 'OUT' : formatMoney(v.living)}</span>
             </div>
             <div class="bar">
               <div class="fill" style={{ width: `${(100 * v.living) / max}%` }} />
               <div class="ghost" style={{ width: `${(100 * v.start) / max}%` }} />
             </div>
-            <div class="army-foot">
-              {v.aliveCount}/{v.fieldedCount} units standing
-            </div>
+            {!dense && (
+              <div class="army-foot">
+                {v.aliveCount}/{v.fieldedCount} units standing
+              </div>
+            )}
           </div>
         );
       })}
@@ -502,8 +531,11 @@ function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
   const lbState = state.lastBattle ? state : { ...state, lastBattle: snap.end ?? undefined };
   const teamMode = (lbState.lastBattle?.teams?.length ?? 0) > 0;
   const gained = new Map(rows.map((row) => [row.playerId, row]));
+  // 7-8 players: one line per player (badges as emoji, no sub-lines) so both tables and Replay fit.
+  const dense = Math.max(rows.length, board.length) > 6;
+  const badge = (b: BadgeId, usedBy: number | undefined) => (dense ? BADGES[b].emoji : badgeLabel(b, usedBy));
   return (
-    <div class={cx('panel ranking', rows.length > 4 && 'compact', teamMode && 'team-mode')}>
+    <div class={cx('panel ranking', rows.length > 3 && 'compact', dense && 'dense', teamMode && 'team-mode')}>
       <h2 class="pixel">Battle {snap.end?.round ?? state.round} results</h2>
       {rows.length === 0 && <p class="muted">Counting the points…</p>}
       {teamMode && <TeamResults state={lbState} />}
@@ -535,8 +567,8 @@ function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
                       {row && row.badges.length > 0 && (
                         <span class="badges">
                           {row.badges.map((b) => (
-                            <span key={b} class="badge">
-                              {badgeLabel(b, row.inventorUsedBy)}
+                            <span key={b} class="badge" title={BADGES[b].title}>
+                              {badge(b, row.inventorUsedBy)}
                             </span>
                           ))}
                         </span>
@@ -583,8 +615,8 @@ function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
                     {row.badges.length > 0 && (
                       <span class="badges">
                         {row.badges.map((b, j) => (
-                          <span key={b} class="badge" style={{ animationDelay: `${1600 + i * 250 + j * 300}ms` }}>
-                            {badgeLabel(b, row.inventorUsedBy)}
+                          <span key={b} class="badge" title={BADGES[b].title} style={{ animationDelay: `${1600 + i * 250 + j * 300}ms` }}>
+                            {badge(b, row.inventorUsedBy)}
                           </span>
                         ))}
                       </span>
@@ -704,7 +736,7 @@ function Podium({ state }: { state: GameStateDTO }) {
   const table = teamStandings(state.match?.teamTable ?? state.lastBattle?.teamTable);
   if (table.length > 0) {
     return (
-      <div class="podium-overlay team-mode">
+      <div class={cx('podium-overlay team-mode', final.length > 4 && 'many')}>
         <Confetti />
         <h1 class="pixel champion">{table[0] ? `${table[0].name} wins!` : 'Game over!'}</h1>
         <TeamPodium table={table} teams={state.match?.teams ?? null} state={state} />
@@ -714,7 +746,7 @@ function Podium({ state }: { state: GameStateDTO }) {
     );
   }
   return (
-    <div class="podium-overlay">
+    <div class={cx('podium-overlay', final.length > 4 && 'many')}>
       <Confetti />
       <h1 class="pixel champion">{final[0] ? `${final[0].name} wins!` : 'Game over!'}</h1>
       <div class="podium">

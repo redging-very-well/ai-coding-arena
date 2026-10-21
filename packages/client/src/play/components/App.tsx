@@ -104,7 +104,7 @@ export function App() {
       <main class="join">
         <div class="panel">
           <h2>You left the game</h2>
-          <p>A grown-up removed you from this game. If that's a mistake, ask them for help.</p>
+          <p>A grown-up took you out of this game. If that seems wrong, ask them for help.</p>
           <button class="btn" onClick={() => location.reload()}>
             Back to the start
           </button>
@@ -127,7 +127,7 @@ export function App() {
       <main class={cx('play', `phase-${phase.toLowerCase()}`)}>
         {st.socket !== 'open' && <p class="note offline">Reconnecting to the game…</p>}
         {st.priv && !st.priv.active && !st.priv.benched && phase !== 'LOBBY' && phase !== 'PLACEMENT' && (
-          <p class="note">You joined in the middle of a round. You're in from the next round!</p>
+          <p class="note">You joined partway through a round. You're in from the next round!</p>
         )}
         <Main phase={phase} />
         <ClaudeKit />

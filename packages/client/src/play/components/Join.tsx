@@ -48,10 +48,10 @@ export function Join() {
           : e?.code === 'BAD_LOGIN'
             ? "That name and PIN don't match. Try again!"
             : e?.code === 'GAME_FULL'
-              ? 'The game is full (4 players). Ask a grown-up.'
+              ? 'The game is full right now. Ask a grown-up for help.'
               : e?.code === 'RATE_LIMITED'
-                ? 'Too many tries. Wait a minute and try again.'
-                : (e?.kidMessage ?? 'Something went wrong. Try again.');
+                ? 'Too many tries! Wait a minute, then try again.'
+                : (e?.kidMessage ?? 'Oops, that didn\'t work. Try again!');
       setPin('');
       fail(msg);
     } finally {
