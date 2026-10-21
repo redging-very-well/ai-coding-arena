@@ -158,6 +158,23 @@ export class ReplayController {
     }
   }
 
+  /**
+   * Stop a running (or still loading) replay on its final frame, so the
+   * podium can take over when the match ends mid-replay.
+   */
+  finish(): void {
+    const v = this._view;
+    if (!v || (!v.playing && !v.loading)) return;
+    if (v.loading) {
+      this.clear();
+      return;
+    }
+    const t = this.deps.target;
+    t.seek(t.endTick);
+    t.setPlayback({ paused: true });
+    this.set({ ...v, playing: false, paused: true });
+  }
+
   /** Forget the replay (back to live or the lobby). */
   clear(): void {
     this.seq++;

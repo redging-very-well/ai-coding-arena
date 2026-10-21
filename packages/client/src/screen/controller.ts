@@ -273,6 +273,8 @@ export class ScreenController {
     if (state.lastBattle && !this.snap.end) patch.end = state.lastBattle;
     this.set(patch);
     this.stateSounds(prevState, state, changed);
+    // Next to MATCH_RESULTS during a replay: jump to its end so the podium shows at once.
+    if (changed && phase === 'MATCH_RESULTS') this.replays.finish();
     // A reload during RESULTS: show the final frame of the last battle.
     if (changed && (phase === 'RESULTS' || phase === 'MATCH_RESULTS') && this.arena.instanceIds.length === 0 && state.lastBattle) {
       void this.replays.load(state.lastBattle.round, { atEnd: true });

@@ -233,8 +233,8 @@ function ArenaOverlays({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: Screen
       )}
       {battle && pb && (
         <div class="chips">
-          {pb.speed === 2 && <span class="chip pixel speed">2x ⏩</span>}
-          {pb.paused && <span class="chip pixel paused">⏸ PAUSED</span>}
+          {pb.speed === 2 && <span class="chip pixel speed">2x »</span>}
+          {pb.paused && <span class="chip pixel paused">II PAUSED</span>}
           {pb.thinking && !pb.paused && <span class="chip pixel thinking">Thinking…</span>}
           {snap.suddenDeathAt !== null && (
             <span class="chip pixel sd">
@@ -247,7 +247,7 @@ function ArenaOverlays({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: Screen
       {snap.replay && (
         <div class="chips">
           <span class="chip pixel replay">
-            {snap.replay.loading ? 'Loading replay…' : snap.replay.playing ? `${snap.replay.paused ? '⏸' : '▶'} Replay ${snap.replay.speed}x` : 'Final moment'}
+            {snap.replay.loading ? 'Loading replay…' : snap.replay.playing ? `${snap.replay.paused ? 'II' : '▶'} Replay ${snap.replay.speed}x` : 'Final moment'}
           </span>
         </div>
       )}
@@ -800,8 +800,9 @@ function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
             2x
           </button>
           {r && !r.loading && (
-            <button class="btn pixel small" onClick={() => ctrl.toggleReplayPause()}>
-              {r.paused ? '▶' : '⏸'}
+            <button class="btn pixel small" title={r.paused ? 'Resume (space)' : 'Pause (space)'} onClick={() => ctrl.toggleReplayPause()}>
+              {/* "II", not ⏸: the pixel font has no ⏸ glyph and the fallback is a dot. */}
+              {r.paused ? '▶' : 'II'}
             </button>
           )}
           <button class="btn pixel small" title="Join poster (P)" onClick={() => ctrl.setPoster(true)}>

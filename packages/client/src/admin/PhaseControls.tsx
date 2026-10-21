@@ -227,8 +227,8 @@ export function PhaseControls() {
             <button class="btn" disabled={busy} onClick={() => act(() => api.admin.screen({ action: 'replaySpeed', speed: 2 }))}>
               2x
             </button>
-            <button class="btn" disabled={busy} onClick={() => act(() => api.admin.screen({ action: 'replayPause' }))}>
-              ⏯
+            <button class="btn" disabled={busy} onClick={() => act(() => api.admin.screen({ action: 'replayPause' }))} title="Pause or resume the replay">
+              Pause
             </button>
           </>
         )}

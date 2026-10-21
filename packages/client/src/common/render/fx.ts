@@ -252,7 +252,8 @@ export class FxLayer {
     d.x = x;
     d.y = y;
     d.at = now;
-    d.text = `${Math.max(1, Math.round(damage))}`;
+    // A minus sign and a warm colour keep it apart from the white seat-number badges.
+    d.text = `-${Math.max(1, Math.round(damage))}`;
     d.big = big;
   }
 
@@ -337,7 +338,7 @@ export class FxLayer {
       ctx.globalAlpha = pose.alpha;
       const y = Math.round(d.y - pose.rise);
       ctx.strokeText(d.text, Math.round(d.x), y);
-      ctx.fillStyle = d.big ? '#FFD447' : '#FFFFFF';
+      ctx.fillStyle = d.big ? '#FFD447' : '#FF8A7A';
       ctx.fillText(d.text, Math.round(d.x), y);
     }
     ctx.globalAlpha = 1;
