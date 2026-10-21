@@ -28,5 +28,6 @@ You don't write any code. Just tell Claude what you want, in your own words!
 ## Remember
 
 - Send units in the **Plan** phase. Then **pick** them and **place** them on the game page.
+- If Claude says it can't send your unit yet, tell it **"The Plan phase started!"** when the game page says Plan.
 - You have **$1,000** each round, up to **3** kinds of units, and a unit can cost up to **$500**.
-- After 60 seconds a safe circle shrinks. Units outside it get hurt!
+- After 50 seconds a safe circle shrinks. Units outside it get hurt!

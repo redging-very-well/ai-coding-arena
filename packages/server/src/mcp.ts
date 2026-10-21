@@ -29,7 +29,7 @@ export const MCP_INSTRUCTIONS = [
   'If you have no apiKey (see .pixel-clash/player.json), ask the kid for their player name and 4-digit PIN and call login.',
   'Save {name, apiKey} from login to .pixel-clash/player.json and pass apiKey on every pixel-clash tool call.',
   'Call get_unit_contract once to learn the unit format, and get_rules for costs and limits.',
-  'Always validate_unit before submit_unit, and fix problems using each error\'s "fix" text.',
+  'Always validate_unit before submit_unit, and fix problems using each error\'s "fix" text. validate_unit checks everything (sprite rows included), so never run scripts or shell commands to check a unit file.',
   'submit_unit works only in the PLAN phase (get_game_state shows submissionsOpen). Otherwise keep the unit validated and say "we\'ll send it when Plan starts".',
   'When changing an existing unit, pass its unitId (from list_my_units), even if you rename it.',
   'After a battle, get_battle_report shows errors with unit names and line numbers: fix those units.',
@@ -45,7 +45,7 @@ const API_KEY = z.string().optional().describe('The player apiKey from login (ne
 function kidHintForService(code: string): string {
   switch (code) {
     case 'PHASE_CLOSED':
-      return "We'll send your unit when the Plan phase starts!";
+      return "We'll send your unit when Plan time starts!";
     case 'AUTH_REQUIRED':
     case 'KEY_INVALID':
       return 'Tell Claude your player name and your 4-digit PIN.';
@@ -62,7 +62,7 @@ function kidHintForService(code: string): string {
     case 'GAME_FULL':
       return 'All the seats are taken. Ask a grown-up for help.';
     default:
-      return 'Something went wrong. Ask Claude to look at the error.';
+      return 'Oops, that didn\'t work. Ask Claude to take a look.';
   }
 }
 
