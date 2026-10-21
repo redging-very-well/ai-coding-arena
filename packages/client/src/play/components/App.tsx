@@ -10,6 +10,7 @@ import { Join } from './Join.js';
 import { Placement } from './Placement.js';
 import { Results } from './Results.js';
 import { Roster } from './Roster.js';
+import { TeamPanel } from './TeamPanel.js';
 
 function Toasts() {
   const st = useStore();
@@ -39,6 +40,18 @@ function Lobby() {
   );
 }
 
+/** Team mode, joined after Start match (§4): sits out until the next match. */
+function Benched() {
+  const st = useStore();
+  if (!st.priv?.benched) return null;
+  return (
+    <section class="panel benched">
+      <h2>Teams are set for this match</h2>
+      <p>You'll play in the next match! You can still ask Claude to build units now, so you're ready.</p>
+    </section>
+  );
+}
+
 function Main({ phase }: { phase: Phase }) {
   switch (phase) {
     case 'LOBBY':
@@ -52,6 +65,8 @@ function Main({ phase }: { phase: Phase }) {
     case 'PLAN':
       return (
         <>
+          <Benched />
+          <TeamPanel phase={phase} />
           <Roster phase={phase} />
           <ClaudeTerminal />
         </>
@@ -60,6 +75,7 @@ function Main({ phase }: { phase: Phase }) {
       return (
         <>
           <Placement />
+          <TeamPanel phase={phase} />
           <ClaudeTerminal />
         </>
       );
@@ -110,7 +126,7 @@ export function App() {
       <Header />
       <main class={cx('play', `phase-${phase.toLowerCase()}`)}>
         {st.socket !== 'open' && <p class="note offline">Reconnecting to the game…</p>}
-        {st.priv && !st.priv.active && phase !== 'LOBBY' && phase !== 'PLACEMENT' && (
+        {st.priv && !st.priv.active && !st.priv.benched && phase !== 'LOBBY' && phase !== 'PLACEMENT' && (
           <p class="note">You joined in the middle of a round. You're in from the next round!</p>
         )}
         <Main phase={phase} />

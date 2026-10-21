@@ -586,3 +586,99 @@ input.pin {
 .qs-json {
   margin-top: 12px;
 }
+
+/* -------------------------------------------- match setup: maps and teams */
+
+.match-setup {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+.match-setup select {
+  max-width: 340px;
+}
+.map-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+}
+.map-big {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+.map-notes {
+  display: grid;
+  gap: 4px;
+  max-width: 260px;
+}
+.map-view {
+  display: block;
+  background: #0d0f1a;
+  border-radius: 6px;
+}
+.map-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.map-thumb {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+}
+.map-thumb.on {
+  border-color: var(--accent);
+}
+.team-lists {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+.team-lists > p {
+  flex-basis: 100%;
+  margin: 0;
+}
+.team-list {
+  min-width: 150px;
+  padding: 6px 8px;
+  border: 3px solid var(--team, var(--border));
+  border-radius: 8px;
+}
+.team-list.pat-dashed { border-style: dashed; }
+.team-list.pat-double { border-style: double; border-width: 5px; }
+.team-list.pat-dotted { border-style: dotted; }
+.team-list-head {
+  color: var(--team);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.team-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.team-member {
+  width: 100%;
+  text-align: left;
+}
+.team-table-admin {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}

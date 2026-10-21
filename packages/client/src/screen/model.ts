@@ -10,6 +10,9 @@ import {
   type Phase,
   type PlayerStatusDTO,
   type ScoreboardEntryDTO,
+  type TeamDTO,
+  type TeamPattern,
+  type TeamTableRowDTO,
 } from '@pixel-clash/shared';
 
 // ---------------------------------------------------------------------------
@@ -61,6 +64,8 @@ export interface ArmyValue {
   playerId: string;
   name: string;
   seat: number;
+  /** Team mode: the player's team. */
+  teamId?: number;
   /** Total cost of the units fielded at START. */
   start: number;
   /** Total cost of the units still alive. */
@@ -84,13 +89,42 @@ export function armyValues(reveal: BattleRevealDTO, aliveIds: ReadonlySet<string
         aliveCount++;
       }
     }
-    return { playerId: p.playerId, name: p.name, seat: p.seat, start, living, aliveCount, fieldedCount: p.instances.length };
+    const team = reveal.teams && reveal.teams.length > 0 && p.teamId !== undefined ? { teamId: p.teamId } : {};
+    return { playerId: p.playerId, name: p.name, seat: p.seat, ...team, start, living, aliveCount, fieldedCount: p.instances.length };
+  });
+}
+
+export interface TeamArmy {
+  team: TeamDTO;
+  start: number;
+  living: number;
+  /** The members' bars, in seat order (the team bar is split by member). */
+  members: ArmyValue[];
+}
+
+/** Team mode (§12.2): one army bar per team, split by member. Empty in free-for-all. */
+export function teamArmyValues(values: readonly ArmyValue[], teams: readonly TeamDTO[] | null | undefined): TeamArmy[] {
+  if (!teams || teams.length === 0) return [];
+  return teams.map((team) => {
+    const members = values.filter((v) => v.teamId === team.teamId).sort((a, b) => a.seat - b.seat);
+    return {
+      team,
+      members,
+      start: members.reduce((s, v) => s + v.start, 0),
+      living: members.reduce((s, v) => s + v.living, 0),
+    };
   });
 }
 
 // ---------------------------------------------------------------------------
 // Player tiles (status ticks only, §3: no unit data before START)
 // ---------------------------------------------------------------------------
+
+/** Free seats to show as empty tiles: fill up to 4 tiles (then to an even count), never past 8 seats. */
+export function freeTiles(players: number, maxPlayers = 8): number {
+  const target = Math.min(maxPlayers, Math.max(4, players + (players % 2)));
+  return Math.max(0, target - players);
+}
 
 export interface StatusTick {
   label: string;
@@ -171,6 +205,58 @@ export function rankRows(state: Pick<GameStateDTO, 'lastBattle' | 'players' | 's
         eliminatedAtTick: r.eliminatedAtTick,
       };
     });
+}
+
+export interface TeamRankRow {
+  teamId: number;
+  name: string;
+  color: string;
+  pattern: TeamPattern;
+  memberNames: string[];
+  /** This round's team place (1-based, ties share) and the place points every member got. */
+  place: number;
+  placePoints: number;
+  livingCost: number;
+  /** Team table after this round: average member total and its place. */
+  points: number;
+  tablePlace: number;
+}
+
+/**
+ * Team mode RESULTS (§9.2): this round's team ranking joined with the team
+ * table and names, by round place. Empty in free-for-all.
+ */
+export function teamRankRows(state: Pick<GameStateDTO, 'lastBattle' | 'players' | 'match'>): TeamRankRow[] {
+  const lb = state.lastBattle;
+  const ranks = lb?.teams ?? [];
+  if (ranks.length === 0) return [];
+  const table = new Map((lb?.teamTable ?? state.match?.teamTable ?? []).map((t) => [t.teamId, t]));
+  const teams = new Map((state.match?.teams ?? []).map((t) => [t.teamId, t]));
+  const names = new Map(state.players.map((p) => [p.id, p.name]));
+  return [...ranks]
+    .sort((a, b) => a.place - b.place || a.teamId - b.teamId)
+    .map((r) => {
+      const t = table.get(r.teamId);
+      const team = teams.get(r.teamId);
+      const members = t?.members ?? team?.members ?? r.members;
+      return {
+        teamId: r.teamId,
+        name: t?.name ?? team?.name ?? `Team ${r.teamId + 1}`,
+        color: t?.color ?? team?.color ?? '#9AA0AA',
+        pattern: t?.pattern ?? team?.pattern ?? 'solid',
+        memberNames: members.map((id) => names.get(id) ?? '?'),
+        place: r.place,
+        placePoints: r.placePoints,
+        livingCost: r.livingCost,
+        points: t?.points ?? 0,
+        tablePlace: t?.place ?? r.place,
+      };
+    });
+}
+
+/** The team table by place (team podium, MATCH_RESULTS). */
+export function teamStandings(table: readonly TeamTableRowDTO[] | null | undefined): TeamTableRowDTO[] {
+  return [...(table ?? [])].sort((a, b) => a.place - b.place || b.points - a.points || a.teamId - b.teamId);
 }
 
 export type PodiumEntry = ScoreboardEntryDTO;

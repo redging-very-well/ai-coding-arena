@@ -1,17 +1,17 @@
 // Isometric projection, depth sort and floor tiles (plan §12). Shared by
 // /screen, the /play battle view and the replay.
 //
-// The sim is top-down on an 800×800 arena. The view is a 2:1 isometric
-// projection of it:
+// The sim is top-down on an S×S arena (S = 800, 1040 or 1200 by player
+// count, §9.2). The view is a 2:1 isometric projection of it:
 //     screenX = (x − y) · k        screenY = (x + y) · k / 2
-// so the arena becomes a diamond 1600k wide and 800k tall, with arena (0,0)
-// at the top vertex, (800,0) on the right, (0,800) on the left and (800,800)
-// at the bottom. `k` is the fit-to-canvas zoom.
+// so the arena becomes a diamond 2Sk wide and Sk tall, with arena (0,0) at
+// the top vertex, (S,0) on the right, (0,S) on the left and (S,S) at the
+// bottom. `k` is the fit-to-canvas zoom, so a bigger arena zooms out.
 //
 // Everything here is DOM-free (pure maths and RGBA buffers) so it can be unit
 // tested in Node; render/canvas.ts and render/arena.ts put it on a canvas.
 
-import { ARENA, CELL_SIZE, CENTER, zoneRect, type Corner, type SpriteSpec } from '@pixel-clash/shared';
+import { ARENA, CELL_SIZE, zoneRect, type Corner, type MapStyle, type Rect, type SpriteSpec } from '@pixel-clash/shared';
 import { hexToRgb, mixRgb, type Rgb } from '../seats.js';
 import { createImage, setPixel, type PixelImage } from './pixels.js';
 
@@ -55,6 +55,8 @@ export interface IsoView {
 }
 
 export interface FitOptions {
+  /** Arena side S in arena px (800, 1040 or 1200, §9.2). Default 800. */
+  arena?: number;
   /** Screen margin on every side (CSS px). Default 8. */
   margin?: number;
   /** Arena-px band around the diamond kept visible for edge props. Default 48. */
@@ -70,15 +72,16 @@ export interface FitOptions {
   pixelSnap?: boolean;
 }
 
-/** Fit the whole arena (plus props and headroom) into a canvas, centred. */
+/** Fit the whole S×S arena (plus props and headroom) into a canvas, centred. */
 export function fitIso(width: number, height: number, opts: FitOptions = {}): IsoView {
+  const S = opts.arena ?? ARENA.width;
   const margin = opts.margin ?? 8;
   const pad = opts.pad ?? 48;
   const top = opts.top ?? 64;
   const bottom = opts.bottom ?? FLOOR_CLIFF_WORLD;
-  // Content box in "k units": width (1600 + 4·pad), height (800 + 2·pad + top + bottom).
-  const unitsW = ARENA.width + ARENA.height + 4 * pad;
-  const unitsH = (ARENA.width + ARENA.height) / 2 + 2 * pad + top + bottom;
+  // Content box in "k units": width (2S + 4·pad), height (S + 2·pad + top + bottom).
+  const unitsW = 2 * S + 4 * pad;
+  const unitsH = S + 2 * pad + top + bottom;
   let k = Math.max(0.01, Math.min((width - 2 * margin) / unitsW, (height - 2 * margin) / unitsH));
   if (opts.pixelSnap) k = snapZoom(k);
   const contentH = unitsH * k;
@@ -86,7 +89,7 @@ export function fitIso(width: number, height: number, opts: FitOptions = {}): Is
     k,
     zoom: k * Math.SQRT2,
     // The diamond is symmetric about x: the top vertex sits on the centre line.
-    originX: width / 2 + ((ARENA.height - ARENA.width) / 2) * k,
+    originX: width / 2,
     originY: (height - contentH) / 2 + (pad + top) * k,
     width,
     height,
@@ -161,17 +164,66 @@ export const FLOOR_CLIFF_PX = 10;
 /** The same in arena px (fit uses it for bottom room). */
 export const FLOOR_CLIFF_WORLD = FLOOR_CLIFF_PX / FLOOR_K;
 
-export interface FloorZone {
-  corner: Corner;
-  /** "#RRGGBB" seat colour. */
+/** A zone base to tint: a corner of the 800 arena, or any zone rectangle (§9.2 maps). */
+export type FloorZone = ({ corner: Corner } | Rect) & {
+  /** "#RRGGBB" tint: the seat colour, or the team colour in team mode. */
   color: string;
+};
+
+/** The rectangle of a floor zone. */
+export function floorZoneRect(z: FloorZone): Rect {
+  return 'corner' in z ? zoneRect(z.corner) : { x: z.x, y: z.y, width: z.width, height: z.height };
+}
+
+/**
+ * Cosmetic terrain of a map style (no gameplay effect): Lanes draws its
+ * no-man's-land between the two rows, Islands a pad under each cluster.
+ */
+export interface FloorTerrain {
+  /** Arena side S. */
+  arena: number;
+  /** Lanes: the no-man's-land band [y0, y1) across the arena. */
+  band: { y0: number; y1: number } | null;
+  /** Islands: one pad per cluster (its zones' bounding box plus one cell). */
+  pads: Rect[];
+}
+
+/** The cosmetic terrain for a map (style + its zones in index order). */
+export function floorTerrain(arena: number, style?: MapStyle | null, zones: readonly (Rect & { facing?: string })[] = []): FloorTerrain {
+  const out: FloorTerrain = { arena, band: null, pads: [] };
+  if (style === 'lanes' && zones.length > 0) {
+    const top = zones.filter((z) => z.facing === 'S');
+    const bottom = zones.filter((z) => z.facing === 'N');
+    if (top.length && bottom.length) {
+      const y0 = Math.max(...top.map((z) => z.y + z.height));
+      const y1 = Math.min(...bottom.map((z) => z.y));
+      if (y1 > y0) out.band = { y0, y1 };
+    }
+  }
+  if (style === 'islands') {
+    for (let i = 0; i + 1 < zones.length; i += 2) {
+      const a = zones[i]!;
+      const b = zones[i + 1]!;
+      const x0 = Math.max(0, Math.min(a.x, b.x) - CELL_SIZE);
+      const y0 = Math.max(0, Math.min(a.y, b.y) - CELL_SIZE);
+      const x1 = Math.min(arena, Math.max(a.x + a.width, b.x + b.width) + CELL_SIZE);
+      const y1 = Math.min(arena, Math.max(a.y + a.height, b.y + b.height) + CELL_SIZE);
+      out.pads.push({ x: x0, y: y0, width: x1 - x0, height: y1 - y0 });
+    }
+  }
+  return out;
 }
 
 export interface FloorOptions {
-  /** Corner bases to tint (seat colours). */
+  /** Zone bases to tint (seat colours, or team colours in team mode). */
   zones?: readonly FloorZone[];
   /** Seed for the speckle pattern (keep it constant for a stable look). */
   seed?: number;
+  /** Arena side S (default 800). */
+  arena?: number;
+  /** Map style and its zones, for the cosmetic Lanes / Islands tiles. */
+  style?: MapStyle | null;
+  mapZones?: readonly (Rect & { facing?: string })[];
 }
 
 export interface FloorBitmap {
@@ -194,6 +246,15 @@ const FLOOR = {
   cliffLeft: hexToRgb('#262838'),
   cliffRight: hexToRgb('#31344A'),
   mortar: hexToRgb('#1A1B27'),
+  /** Lanes no-man's-land: dusty dirt tiles. */
+  dirtA: hexToRgb('#5A4F47'),
+  dirtB: hexToRgb('#524841'),
+  /** Islands cluster pads: mossy stone. */
+  mossA: hexToRgb('#3F5C52'),
+  mossB: hexToRgb('#39554B'),
+  /** Islands: the low ground between the clusters. */
+  lowA: hexToRgb('#3C4060'),
+  lowB: hexToRgb('#373A58'),
 } as const;
 
 /** Small deterministic integer hash → [0, 1). */
@@ -212,18 +273,25 @@ function inRect(x: number, y: number, r: { x: number; y: number; width: number; 
 /**
  * Colour of an arena ground point on the floor (no cliff): checkered stone
  * tiles, one per 40 px cell, with grout lines, speckles, a lighter lip at the
- * arena edge, a faint centre ring and seat-tinted corner zones.
+ * arena edge, a faint centre ring, the map's cosmetic terrain and tinted
+ * zones. `terrain` defaults to the plain 800 arena.
  */
-export function floorColorAt(x: number, y: number, zones: readonly FloorZone[], seed = 0): Rgb {
-  const W = ARENA.width;
-  const H = ARENA.height;
+export function floorColorAt(x: number, y: number, zones: readonly FloorZone[], seed = 0, terrain?: FloorTerrain): Rgb {
+  const W = terrain?.arena ?? ARENA.width;
+  const H = W;
+  const mid = W / 2;
   const cx = Math.floor(x / CELL_SIZE);
   const cy = Math.floor(y / CELL_SIZE);
   const u = x - cx * CELL_SIZE;
   const v = y - cy * CELL_SIZE;
   const px = 1 / FLOOR_K; // arena px per floor pixel (2.5)
 
-  let c: Rgb = (cx + cy) % 2 === 0 ? FLOOR.tileA : FLOOR.tileB;
+  const even = (cx + cy) % 2 === 0;
+  let c: Rgb = even ? FLOOR.tileA : FLOOR.tileB;
+  if (terrain?.band && y >= terrain.band.y0 && y < terrain.band.y1) c = even ? FLOOR.dirtA : FLOOR.dirtB;
+  else if (terrain && terrain.pads.length > 0) {
+    c = terrain.pads.some((r) => inRect(x, y, r)) ? (even ? FLOOR.mossA : FLOOR.mossB) : even ? FLOOR.lowA : FLOOR.lowB;
+  }
   // Per-tile variation and speckles (stable per seed).
   const tileShade = hash01(cx, cy, seed) * 0.12 - 0.06;
   c = mixRgb(c, tileShade > 0 ? FLOOR.light : FLOOR.dark, Math.abs(tileShade) * 3);
@@ -231,7 +299,7 @@ export function floorColorAt(x: number, y: number, zones: readonly FloorZone[], 
   if (sp < 0.05) c = FLOOR.dark;
   else if (sp > 0.965) c = FLOOR.light;
   // Centre ring (cosmetic): cells within 2 of the centre are a touch lighter.
-  const dc = Math.hypot(x - CENTER.x, y - CENTER.y);
+  const dc = Math.hypot(x - mid, y - mid);
   if (dc < 70) c = mixRgb(c, FLOOR.centre, 0.6);
   if (Math.abs(dc - 70) < px * 0.9) c = FLOOR.lip;
   // Grout on the tile's back edges (top-left / top-right in iso).
@@ -239,7 +307,7 @@ export function floorColorAt(x: number, y: number, zones: readonly FloorZone[], 
   if (grout) c = mixRgb(c, FLOOR.grout, 0.75);
 
   for (const z of zones) {
-    const r = zoneRect(z.corner);
+    const r = floorZoneRect(z);
     if (!inRect(x, y, r)) continue;
     const seat = hexToRgb(z.color);
     const border =
@@ -252,31 +320,33 @@ export function floorColorAt(x: number, y: number, zones: readonly FloorZone[], 
 }
 
 /**
- * Generate the floor bitmap: the diamond of 20×20 iso tiles plus a stone
+ * Generate the floor bitmap: the diamond of (S/40)² iso tiles plus a stone
  * cliff under the two front edges. Transparent outside. Pure (no DOM).
  */
 export function renderFloor(opts: FloorOptions = {}): FloorBitmap {
   const zones = opts.zones ?? [];
   const seed = opts.seed ?? 1;
+  const S = opts.arena ?? ARENA.width;
+  const terrain = floorTerrain(S, opts.style, opts.mapZones);
   const k = FLOOR_K;
-  const originX = ARENA.height * k; // left vertex at x = 0
-  const width = Math.ceil((ARENA.width + ARENA.height) * k);
-  const height = Math.ceil(((ARENA.width + ARENA.height) * k) / 2) + FLOOR_CLIFF_PX;
+  const originX = S * k; // left vertex at x = 0
+  const width = Math.ceil(2 * S * k);
+  const height = Math.ceil(S * k) + FLOOR_CLIFF_PX;
   const img = createImage(width, height);
   const maxLift = FLOOR_CLIFF_PX / k; // in arena px
 
   for (let py = 0; py < height; py++) {
     for (let px = 0; px < width; px++) {
       const { x, y } = isoUnproject(px + 0.5 - originX, py + 0.5, k);
-      if (x >= 0 && y >= 0 && x < ARENA.width && y < ARENA.height) {
-        setPixel(img, px, py, floorColorAt(x, y, zones, seed));
+      if (x >= 0 && y >= 0 && x < S && y < S) {
+        setPixel(img, px, py, floorColorAt(x, y, zones, seed, terrain));
         continue;
       }
       // Cliff: lifting this pixel by t arena px (h = t·k screen px up) lands
-      // on the arena's front edge (x = 800 or y = 800).
-      const t = Math.max(x, y) - ARENA.width;
+      // on the arena's front edge (x = S or y = S).
+      const t = Math.max(x, y) - S;
       if (t < 0 || t > maxLift || Math.min(x, y) - t < 0) continue;
-      const leftFace = y >= x; // the y = 800 edge faces bottom-left
+      const leftFace = y >= x; // the y = S edge faces bottom-left
       const along = leftFace ? x - t : y - t;
       const depthPx = t * k;
       const row = Math.floor(depthPx / 3.5);
@@ -306,14 +376,14 @@ export interface EdgeProp extends DepthItem {
 }
 
 /**
- * Deterministic props along the two back edges (x < 0 or y < 0), so they
+ * Deterministic props along the two back edges of an S arena (x < 0 or y < 0), so they
  * never cover a unit, plus a banner at each side corner.
  */
-export function edgeProps(seed = 1): EdgeProp[] {
+export function edgeProps(seed = 1, arena: number = ARENA.width): EdgeProp[] {
   const out: EdgeProp[] = [];
   const kinds: PropKind[] = ['rock', 'bush', 'crystal', 'rock', 'bush'];
   let i = 0;
-  for (let s = 30; s < ARENA.width - 20; s += 62) {
+  for (let s = 30; s < arena - 20; s += 62) {
     for (const edge of ['top', 'left'] as const) {
       const r = hash01(s, edge === 'top' ? 1 : 2, seed);
       if (r < 0.25) continue; // gaps
@@ -331,8 +401,8 @@ export function edgeProps(seed = 1): EdgeProp[] {
     }
   }
   out.push({ key: 'banner-top', kind: 'banner', size: 12, x: -18, y: -18 });
-  out.push({ key: 'banner-right', kind: 'banner', size: 12, x: ARENA.width + 10, y: -22 });
-  out.push({ key: 'banner-left', kind: 'banner', size: 12, x: -22, y: ARENA.height + 10 });
+  out.push({ key: 'banner-right', kind: 'banner', size: 12, x: arena + 10, y: -22 });
+  out.push({ key: 'banner-left', kind: 'banner', size: 12, x: -22, y: arena + 10 });
   return out;
 }
 

@@ -2,20 +2,23 @@
 // true orientation (arrow to the centre), a palette of the selected types,
 // tap palette → tap cell, tap a placed unit to remove it, sprites at true
 // size, live budget bar, Copy last layout / Clear / READY, autosave
-// (debounced 300 ms) and an iso mini-map.
+// (debounced 300 ms) and an iso mini-map. Works for every zone orientation of
+// the §9.2 maps (row 0 is always the front). Team mode: the mini-map shows the
+// teammates' zones and placements live as ghosts, and the Team panel their picks.
 
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { sizeOf, type PlacementDTO, type UnitCardDTO } from '@pixel-clash/shared';
+import { cornerZone, sizeOf, type MapZone, type PlacementDTO, type UnitCardDTO } from '@pixel-clash/shared';
 import { ApiError, api } from '../../common/api.js';
 import { resolveSprite } from '../../common/render/sprites.js';
+import { arenaFor, toMapZone, zoneLabel } from '../../common/maps.js';
 import { seatStyle } from '../../common/seats.js';
 import { cx, debounce, formatMoney } from '../../common/ui.js';
 import {
-  CORNER_WORDS,
   budgetText,
   cellFill,
   copiesOf,
   copyLastLayout,
+  isFrontCell,
   placementAt,
   spentOf,
   tapCell,
@@ -43,12 +46,19 @@ function useCellPx(): [(el: HTMLDivElement | null) => void, number] {
   return [setEl, px];
 }
 
+/** This round's zone as a shared/maps.ts zone (the map zone, or a legacy corner). */
+export function myMapZone(st: Pick<ReturnType<typeof useStore>, 'priv' | 'game'>): MapZone | null {
+  const dto = st.priv?.mapZone ?? st.game?.me?.myZone ?? null;
+  if (dto) return toMapZone(dto, arenaFor(dto, st.game?.match?.map));
+  return st.priv?.zone ? cornerZone(st.priv.zone) : null;
+}
+
 export function Placement() {
   const st = useStore();
   const store = getStore();
   const priv = st.priv;
   const seat = st.player?.seat ?? 0;
-  const zone = priv?.zone ?? null;
+  const zone = useMemo(() => myMapZone(st), [priv?.mapZone, priv?.zone, st.game?.me?.myZone, st.game?.match?.map]);
   const [local, setLocal] = useState<PlacementDTO[] | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
   const [shakeCell, setShakeCell] = useState<string | null>(null);
@@ -126,6 +136,14 @@ export function Placement() {
   };
 
   if (!priv || !st.player) return <section class="panel">Loading…</section>;
+  if (priv.benched) {
+    return (
+      <section class="panel placement">
+        <h2>Teams are set for this match</h2>
+        <p>You'll play in the next match! Meanwhile, ask Claude to make some great units.</p>
+      </section>
+    );
+  }
   if (!priv.active) {
     return (
       <section class="panel placement">
@@ -134,7 +152,7 @@ export function Placement() {
       </section>
     );
   }
-  if (!zone) return <section class="panel">Getting your corner…</section>;
+  if (!zone) return <section class="panel">Getting your zone…</section>;
 
   const onCell = (col: number, row: number) => {
     const r = tapCell(placements, col, row, chosen, rules);
@@ -148,6 +166,9 @@ export function Placement() {
 
   const dir = towardCentre(zone);
   const grid = zoneGrid(zone);
+  const where = zoneLabel(zone, zone.arena);
+  const arrowClass = `${dir.dy > 0 ? 'bottom' : dir.dy < 0 ? 'top' : 'mid-y'} ${dir.dx > 0 ? 'right' : dir.dx < 0 ? 'left' : 'mid-x'}`;
+  const teammates = (priv.team?.members ?? []).filter((m) => m.playerId !== st.player?.id);
   const over = spent > rules.budget;
   const pct = Math.min(100, (spent / Math.max(1, rules.budget)) * 100);
   const lastLayout = priv.lastLayout;
@@ -174,17 +195,17 @@ export function Placement() {
         </span>
       </div>
       <p class="zone-line">
-        This round you're in the <strong>{CORNER_WORDS[zone]}</strong> corner. The arrow points to the middle.
+        This round you're in <strong>{where}</strong>. The arrow points to the middle; the front row is nearest it.
       </p>
 
       <div class="placement-layout">
         <div class="grid-wrap">
-          <div class={cx('zone-grid', ready && 'is-ready')} ref={gridRef} role="grid" aria-label={`Your ${CORNER_WORDS[zone]} corner, 6 by 6 squares`}>
+          <div class={cx('zone-grid', ready && 'is-ready')} ref={gridRef} role="grid" aria-label={`Your ${where}, 6 by 6 squares`}>
             {grid.map((c) => {
               const p = placementAt(placements, c.col, c.row);
               const u = p ? unitsById.get(p.unitId) : undefined;
               const key = `${c.col},${c.row}`;
-              const front = c.col === 0 || c.row === 0;
+              const front = isFrontCell(zone, c.col, c.row);
               return (
                 <button
                   key={key}
@@ -206,14 +227,25 @@ export function Placement() {
               );
             })}
           </div>
-          <div class={`centre-arrow ${dir.dy > 0 ? 'bottom' : 'top'} ${dir.dx > 0 ? 'right' : 'left'}`} aria-hidden="true">
+          <div class={`centre-arrow ${arrowClass}`} aria-hidden="true">
             <span>{dir.arrow}</span>
             <small>middle</small>
           </div>
         </div>
 
         <aside class="placement-side">
-          <MiniMap zone={zone} seat={seat} playerId={st.player.id} name={st.player.name} placements={placements} units={palette} />
+          <MiniMap
+            zone={zone}
+            map={st.game?.match?.map ?? null}
+            seat={seat}
+            teamId={priv.teamId ?? null}
+            teams={st.game?.match?.teams ?? null}
+            playerId={st.player.id}
+            name={st.player.name}
+            placements={placements}
+            units={palette}
+            teammates={teammates}
+          />
           <div class={cx('budget', over && 'over')}>
             <div class="budget-bar" role="meter" aria-valuemin={0} aria-valuemax={rules.budget} aria-valuenow={spent}>
               <span class="budget-fill" style={{ width: `${pct}%` }} />

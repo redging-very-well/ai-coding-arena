@@ -1,4 +1,4 @@
-// Players table (plan §12.3): seat, zone, name, connected, designs, submitted
+// Players table (plan §12.3): seat (number badge), team, zone this round, name, connected, designs, submitted
 // this PLAN, selected, ready, strikes. Per player: Kick ("after this battle"
 // during BATTLE), Reset PIN, Rotate key, and the rescue paste box with
 // Validate (any phase) and Submit on behalf (PLAN only).
@@ -7,13 +7,20 @@ import { Fragment } from 'preact';
 import { useState } from 'preact/hooks';
 import type { AdminOverviewDTO, GameStateDTO, SubmitUnitResponse, ValidationResult } from '@pixel-clash/shared';
 import { api } from '../common/api.js';
-import { seatStyle } from '../common/seats.js';
+import { arenaFor, teamOfPlayer, zoneLabel } from '../common/maps.js';
+import { seatStyle, teamLook } from '../common/seats.js';
 import { copyText, cx, formatMoney } from '../common/ui.js';
 import { useAdmin } from './context.js';
 
 type OverviewPlayer = AdminOverviewDTO['players'][number];
 
 const ZONE_TEXT: Record<string, string> = { TL: 'top-left', TR: 'top-right', BR: 'bottom-right', BL: 'bottom-left' };
+
+/** "zone 3 (top right)" from the map zone, else the legacy corner, else a dash. */
+function zoneText(p: OverviewPlayer, s: GameStateDTO): string {
+  if (p.mapZone) return zoneLabel(p.mapZone, arenaFor(p.mapZone, s.match?.map));
+  return p.zone ? ZONE_TEXT[p.zone]! : '–';
+}
 
 const tick = (v: boolean) => (v ? <span class="yes">✓</span> : <span class="no">·</span>);
 
@@ -22,6 +29,8 @@ export function PlayersTable() {
   const s = state as GameStateDTO;
   const [open, setOpen] = useState<string | null>(null);
   const rows: OverviewPlayer[] = overview?.players ?? [];
+  const teams = s.match?.teams ?? overview?.setup.teams ?? null;
+  const teamMode = !!teams && teams.length > 0;
 
   return (
     <section class="panel players">
@@ -34,6 +43,7 @@ export function PlayersTable() {
             <thead>
               <tr>
                 <th>Seat</th>
+                {teamMode && <th>Team</th>}
                 <th>Zone</th>
                 <th>Name</th>
                 <th title="Has a /play page open">Online</th>
@@ -50,19 +60,33 @@ export function PlayersTable() {
               {rows.map((p) => {
                 const seat = seatStyle(p.seat);
                 const isOpen = open === p.id;
+                const team = teamOfPlayer(teams, p.id);
+                const look = teamLook(team?.teamId);
                 return (
                   <Fragment key={p.id}>
                     <tr class={cx(!p.active && 'inactive', p.leaving && 'leaving')}>
                       <td>
-                        <span class="seat-chip" style={{ background: seat.color }}>
-                          {seat.symbol} {p.seat + 1}
+                        <span class="seat-chip" style={{ background: seat.color, color: seat.ink }} title={seat.name}>
+                          {seat.symbol}
                         </span>
                       </td>
-                      <td>{p.zone ? ZONE_TEXT[p.zone] : '–'}</td>
+                      {teamMode && (
+                        <td>
+                          {team && look ? (
+                            <span class={cx('team-chip', `pat-${look.pattern}`)} style={{ '--team': look.color }}>
+                              {team.name}
+                            </span>
+                          ) : (
+                            <span class="dim small">{p.benched ? 'benched' : '–'}</span>
+                          )}
+                        </td>
+                      )}
+                      <td>{zoneText(p, s)}</td>
                       <td>
                         <b>{p.name}</b>
                         {!p.active && <div class="dim small">joins next round (from round {p.activeFromRound})</div>}
                         {p.leaving && <div class="warn-text small">kicked: leaves after this battle</div>}
+                        {p.benched && <div class="dim small">benched: teams are set, plays next match</div>}
                       </td>
                       <td>{p.connected ? <span class="yes">● on</span> : <span class="no">○ off</span>}</td>
                       <td>{p.designs}</td>
@@ -79,7 +103,7 @@ export function PlayersTable() {
                     </tr>
                     {isOpen && (
                       <tr class="actions-row">
-                        <td colSpan={11}>
+                        <td colSpan={teamMode ? 12 : 11}>
                           <PlayerActions player={p} phase={s.phase} onGone={() => setOpen(null)} />
                         </td>
                       </tr>

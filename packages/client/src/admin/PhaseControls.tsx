@@ -1,15 +1,18 @@
-// Phase controls (plan §12.3): Start match (rounds 1-10, Open Armory), Next, Skip, START,
+// Phase controls (plan §12.3): Start match (rounds 1-10, Open Armory, map
+// style and team mode with a map preview and team swaps), Next, Skip, START,
 // Force start, Pause/Resume (timer and battle), 1x/2x, timer ±1 min / set,
 // New match. Buttons are enabled by phase; the server enforces the gates.
 
 import { useEffect, useState } from 'preact/hooks';
-import type { GameStateDTO, Phase } from '@pixel-clash/shared';
+import { teamModeLabel, type GameStateDTO, type Phase } from '@pixel-clash/shared';
 import { api } from '../common/api.js';
+import { mapName } from '../common/maps.js';
 import { formatClock } from '../common/ui.js';
 import { useAdmin } from './context.js';
+import { MatchSetup } from './MatchSetup.js';
 
 const PHASE_HELP: Record<Phase, string> = {
-  LOBBY: 'Players join. Start the match when 2-4 players are in.',
+  LOBBY: 'Players join (up to 8). Pick the map and teams, then start the match when 2-8 players are in.',
   PLAN: 'Kids ask Claude for units and pick up to 3. Ends when the timer runs out, or press Next.',
   PLACEMENT: 'Kids place their armies and press READY. START when everyone is ready, or Force start.',
   BATTLE: 'The battle is playing. Pause, 1x/2x, or Skip to the results.',
@@ -56,6 +59,8 @@ export function PhaseControls() {
           <div class="dim">
             {p === 'LOBBY' ? `${s.players.length} player(s) joined` : `Round ${s.round} of ${s.rounds}`}
             {p !== 'LOBBY' && s.armory?.enabled && ` · 💡 Open Armory on (${s.armory.entries} units)`}
+            {p !== 'LOBBY' && s.match?.map && ` · 🗺️ ${mapName(s.match.map)}`}
+            {p !== 'LOBBY' && s.match && s.match.teamMode !== 'ffa' && ` · ${teamModeLabel(s.match.teamMode, s.match.map?.players ?? s.players.length)}`}
           </div>
         </div>
         <div class="clock-box">
@@ -77,6 +82,7 @@ export function PhaseControls() {
         </div>
       </div>
       <p class="help">{PHASE_HELP[p]}</p>
+      {p === 'LOBBY' && <MatchSetup rounds={Math.round(rounds)} />}
 
       <div class="btn-row">
         {p === 'LOBBY' && (
@@ -208,6 +214,19 @@ export function PhaseControls() {
               </li>
             ))}
           </ol>
+        </div>
+      )}
+
+      {s.match?.teamTable && s.match.teamTable.length > 0 && p !== 'LOBBY' && (
+        <div class="team-table-admin">
+          <span class="label">Teams</span>
+          {[...s.match.teamTable]
+            .sort((a, b) => a.place - b.place)
+            .map((t) => (
+              <span key={t.teamId} class="team-chip" style={{ '--team': t.color }}>
+                {t.place}. {t.name}: {t.points} pts ({t.members.map((id) => s.players.find((pl) => pl.id === id)?.name ?? '?').join(', ')})
+              </span>
+            ))}
         </div>
       )}
 

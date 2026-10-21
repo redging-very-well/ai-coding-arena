@@ -53,6 +53,21 @@ const money = { unit: '$', min: 0, step: 0.05 } satisfies Partial<QuickField>;
 
 export const QUICK_GROUPS: QuickGroup[] = [
   {
+    id: 'match',
+    title: 'Match',
+    fields: [
+      {
+        path: 'match.maxPlayers',
+        label: 'Max players (seats)',
+        help: 'How many kids can join one match (2-8). The map and arena size follow the player count automatically; a full game answers "All seats are taken".',
+        min: 2,
+        max: 8,
+        step: 1,
+        integer: true,
+      },
+    ],
+  },
+  {
     id: 'economy',
     title: 'Economy',
     fields: [
@@ -97,12 +112,9 @@ export const QUICK_GROUPS: QuickGroup[] = [
     id: 'scoring',
     title: 'Scoring',
     fields: [
-      { path: 'scoring.placePoints.0', label: 'Points for 1st', help: 'Round points for the winner.', unit: 'pts', min: 0, step: 1, integer: true },
-      { path: 'scoring.placePoints.1', label: 'Points for 2nd', help: 'Round points for second place.', unit: 'pts', min: 0, step: 1, integer: true },
-      { path: 'scoring.placePoints.2', label: 'Points for 3rd', help: 'Round points for third place.', unit: 'pts', min: 0, step: 1, integer: true },
-      { path: 'scoring.placePoints.3', label: 'Points for 4th', help: 'Round points for fourth place.', unit: 'pts', min: 0, step: 1, integer: true },
-      { path: 'scoring.damageBonusMax', label: 'Max damage bonus', help: 'Extra points for the top damage dealer; others get a share.', unit: 'pts', min: 0, step: 1, integer: true },
-      { path: 'scoring.valueBonusMax', label: 'Max value-destroyed bonus', help: 'Extra points for destroying the most enemy value; others get a share.', unit: 'pts', min: 0, step: 1, integer: true },
+      // Place points are a formula (1st gets players − 1 … last 0, §9 Points), not config.
+      { path: 'scoring.damageBonusMax', label: 'Max damage bonus (at 4 players)', help: 'Extra points for the top damage dealer; others get a share. Scaled × players/4.', unit: 'pts', min: 0, step: 1, integer: true },
+      { path: 'scoring.valueBonusMax', label: 'Max value-destroyed bonus (at 4 players)', help: 'Extra points for destroying the most enemy value; others get a share. Scaled × players/4.', unit: 'pts', min: 0, step: 1, integer: true },
     ],
   },
   {

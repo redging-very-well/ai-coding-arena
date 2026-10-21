@@ -12,6 +12,8 @@ import type {
   GameStateDTO,
   HealthDTO,
   LoginResponse,
+  MapStyle,
+  MatchSetupDTO,
   MeResponse,
   PlacementDTO,
   PlacementResponse,
@@ -19,6 +21,8 @@ import type {
   ReplayDTO,
   RulesDTO,
   SubmitUnitResponse,
+  TeamDTO,
+  TeamMode,
   TimerDTO,
   UnitCardDTO,
   UnitSourceDTO,
@@ -150,11 +154,18 @@ export const api = {
     login: (password: string) => request<{ ok: true }>('POST', '/admin/login', { password }),
     logout: () => request<{ ok: true }>('POST', '/admin/logout'),
     session: () => request<{ admin: boolean }>('GET', '/admin/session'),
-    startMatch: (rounds?: number, armory?: boolean) =>
+    /** Start match (§9.2): mapStyle/teamMode left out = the LOBBY draft's; mapStyle null = default for the player count. */
+    startMatch: (rounds?: number, armory?: boolean, setup: { mapStyle?: MapStyle | null; teamMode?: TeamMode } = {}) =>
       request<GameStateDTO>('POST', '/admin/match', {
         ...(rounds === undefined ? {} : { rounds }),
         ...(armory === undefined ? {} : { armory }),
+        ...setup,
       }),
+    matchSetup: () => request<MatchSetupDTO>('GET', '/admin/match/setup'),
+    /** LOBBY draft: map style override (null = auto by player count) and team mode; re-balances the teams. */
+    setMatchSetup: (setup: { mapStyle?: MapStyle | null; teamMode?: TeamMode }) => request<MatchSetupDTO>('PUT', '/admin/match/setup', setup),
+    /** Swap two players on different draft teams (LOBBY only). */
+    swapTeams: (playerA: string, playerB: string) => request<{ teams: TeamDTO[] }>('POST', '/admin/teams/swap', { playerA, playerB }),
     newMatch: () => request<GameStateDTO>('POST', '/admin/match/new'),
     nextPhase: () => request<GameStateDTO>('POST', '/admin/phase/next'),
     skipPhase: () => request<GameStateDTO>('POST', '/admin/phase/skip'),

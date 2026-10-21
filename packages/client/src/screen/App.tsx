@@ -3,8 +3,9 @@
 // ArenaRenderer draws into it); panels and overlays change by phase.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import type { GameStateDTO, PlayerStatusDTO } from '@pixel-clash/shared';
-import { SEATS, seatStyle } from '../common/seats.js';
+import { MAX_PLAYERS, teamModeLabel, type GameStateDTO, type PlayerStatusDTO, type TeamDTO, type TeamTableRowDTO } from '@pixel-clash/shared';
+import { groupByTeam, mapName } from '../common/maps.js';
+import { seatStyle, teamLook } from '../common/seats.js';
 import { PHASE_TEXT, PLACE_MEDALS, cx, formatClock, formatMoney, ordinal } from '../common/ui.js';
 import { Confetti } from './Confetti.js';
 import { ScreenController, type ScreenSnapshot } from './controller.js';
@@ -16,11 +17,15 @@ import {
   countUp,
   isUrgent,
   liveSecondsLeft,
+  freeTiles,
   podiumOrder,
   rankRows,
   revealStep,
   standings,
   statusTicks,
+  teamArmyValues,
+  teamRankRows,
+  teamStandings,
   type ArmyValue,
 } from './model.js';
 
@@ -161,12 +166,22 @@ function Header({ snap, ctrl, now }: { snap: ScreenSnapshot | null; ctrl: Screen
         <p>{expired ? 'Time is up! Waiting for the host to press START…' : PHASE_TEXT[phase].hint}</p>
       </div>
       <div class="clock">
-        {state && state.round > 0 && (
-          <div class="round pixel">
-            Round {state.round} of {state.rounds}
+        {state && (state.round > 0 || state.armory?.enabled) && (
+          <div class="clock-meta">
+            {state.round > 0 && (
+              <span class="round pixel">
+                Round {state.round} of {state.rounds}
+              </span>
+            )}
+            {state.armory?.enabled && <span class="armory-on">💡 Open Armory</span>}
           </div>
         )}
-        {state?.armory?.enabled && <div class="armory-on">💡 Open Armory</div>}
+        {state?.match?.map && (
+          <div class="map-name">
+            🗺️ {mapName(state.match.map)}
+            {state.match.teamMode !== 'ffa' && ` · ${teamModeLabel(state.match.teamMode, state.match.map.players)}`}
+          </div>
+        )}
         {seconds !== null && (
           <div class={cx('timer pixel', isUrgent(seconds) && 'urgent', state?.timer.paused && phase !== 'BATTLE' && 'paused')}>
             <small>{label}</small>
@@ -224,7 +239,7 @@ function ArenaOverlays({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: Screen
       <div class="toasts">
         {snap.toasts.map((t) => (
           <div key={t.id} class={cx('toast', `toast-${t.level}`)} style={{ '--seat': seatStyle(t.seat).color }}>
-            {t.seat >= 0 && <b class="sym">{seatStyle(t.seat).symbol}</b>}
+            {t.seat >= 0 && <b class="sym seat-num">{seatStyle(t.seat).symbol}</b>}
             {t.text}
           </div>
         ))}
@@ -282,22 +297,50 @@ function JoinCard({ snap }: { snap: ScreenSnapshot }) {
   );
 }
 
+/** A team chip in team colour + ring pattern (the pattern keeps teams apart without colour). */
+function TeamChip({ teamId, name }: { teamId: number; name?: string }) {
+  const look = teamLook(teamId);
+  if (!look) return null;
+  return (
+    <span class={cx('team-chip', `pat-${look.pattern}`)} style={{ '--team': look.color }}>
+      {name ?? look.name}
+    </span>
+  );
+}
+
 function PlayerTiles({ state }: { state: GameStateDTO }) {
   const players = [...state.players].sort((a, b) => a.seat - b.seat);
-  const empty = Math.max(0, SEATS.length - players.length);
+  const teams = state.match?.teams ?? null;
+  const table = new Map((state.match?.teamTable ?? []).map((t) => [t.teamId, t]));
+  const groups = groupByTeam(players, teams);
+  const compact = players.length > 4;
+  const empty = teams ? 0 : freeTiles(players.length);
   return (
-    <div class="panel players">
-      <h2 class="pixel">Players {players.length}/{SEATS.length}</h2>
-      <div class="tiles">
-        {players.map((p) => (
-          <PlayerTile key={p.id} p={p} state={state} />
-        ))}
-        {Array.from({ length: empty }, (_, i) => (
-          <div key={`empty-${i}`} class="tile empty">
-            <span class="pixel">Free seat</span>
+    <div class={cx('panel players', compact && 'compact')}>
+      <h2 class="pixel">
+        Players {players.length}/{MAX_PLAYERS}
+      </h2>
+      {groups.map((g) => (
+        <div key={g.team?.teamId ?? 'rest'} class={cx('tile-group', g.team && 'team-group')} style={g.team ? { '--team': g.team.color } : undefined}>
+          {teams && (
+            <div class="group-head">
+              {g.team ? <TeamChip teamId={g.team.teamId} name={g.team.name} /> : <span class="muted">Next match</span>}
+              {g.team && state.round > 0 && table.get(g.team.teamId) && <span class="pts pixel">{table.get(g.team.teamId)!.points} pts</span>}
+            </div>
+          )}
+          <div class="tiles">
+            {g.players.map((p) => (
+              <PlayerTile key={p.id} p={p} state={state} />
+            ))}
+            {!teams &&
+              Array.from({ length: empty }, (_, i) => (
+                <div key={`empty-${i}`} class="tile empty">
+                  <span class="pixel">Free seat</span>
+                </div>
+              ))}
           </div>
-        ))}
-      </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -309,7 +352,7 @@ function PlayerTile({ p, state }: { p: PlayerStatusDTO; state: GameStateDTO }) {
   return (
     <div class={cx('tile', `seat-${p.seat}`, !p.connected && 'offline', allDone && 'done')}>
       <div class="tile-head">
-        <span class="sym">{seat.symbol}</span>
+        <span class="sym seat-num">{seat.symbol}</span>
         <span class="name">{p.name}</span>
         {state.round > 0 && <span class="pts pixel">{p.points}</span>}
       </div>
@@ -321,6 +364,7 @@ function PlayerTile({ p, state }: { p: PlayerStatusDTO; state: GameStateDTO }) {
           </li>
         ))}
         {!p.connected && <li class="off">offline</li>}
+        {p.benched && <li class="off">plays next match</li>}
       </ul>
     </div>
   );
@@ -336,10 +380,12 @@ function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController
   } else if (reveal) {
     values = armyValues(reveal, null);
   }
+  const teams = teamArmyValues(values, reveal?.teams);
+  if (teams.length > 0) return <TeamArmyBars teams={teams} started={started} />;
   const max = Math.max(1, ...values.map((v) => v.start));
   const sorted = [...values].sort((a, b) => a.seat - b.seat);
   return (
-    <div class="panel armies">
+    <div class={cx('panel armies', sorted.length > 4 && 'compact')}>
       <h2 class="pixel">Army value</h2>
       {!reveal && <p class="muted">Get ready…</p>}
       {sorted.map((v) => {
@@ -348,7 +394,7 @@ function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController
         return (
           <div key={v.playerId} class={cx('army', out && 'out')} style={{ '--seat': seat.color, '--seat-light': seat.light }}>
             <div class="army-head">
-              <span class="sym">{seat.symbol}</span>
+              <span class="sym seat-num">{seat.symbol}</span>
               <span class="name">{v.name}</span>
               <span class="val pixel">{out ? 'OUT' : formatMoney(v.living)}</span>
             </div>
@@ -366,6 +412,83 @@ function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController
   );
 }
 
+/** Team mode (§12.2): one bar per team, split into its members' living value. */
+function TeamArmyBars({ teams, started }: { teams: ReturnType<typeof teamArmyValues>; started: boolean }) {
+  const max = Math.max(1, ...teams.map((t) => t.start));
+  return (
+    <div class="panel armies teams">
+      <h2 class="pixel">Team army value</h2>
+      {teams.map((t) => {
+        const out = started && t.members.every((m) => m.aliveCount === 0);
+        return (
+          <div key={t.team.teamId} class={cx('army', out && 'out')} style={{ '--team': t.team.color }}>
+            <div class="army-head">
+              <TeamChip teamId={t.team.teamId} name={t.team.name} />
+              <span class="name" />
+              <span class="val pixel">{out ? 'OUT' : formatMoney(t.living)}</span>
+            </div>
+            <div class="bar split">
+              {t.members.map((m) => {
+                const seat = seatStyle(m.seat);
+                return (
+                  <div
+                    key={m.playerId}
+                    class="part"
+                    title={m.name}
+                    style={{ width: `${(100 * m.living) / max}%`, '--seat': seat.color, '--seat-light': seat.light }}
+                  >
+                    {m.living > 0 && <span class="part-num pixel">{seat.symbol}</span>}
+                  </div>
+                );
+              })}
+              <div class="ghost" style={{ width: `${(100 * t.start) / max}%` }} />
+            </div>
+            <div class="army-foot">
+              {t.members.map((m) => `${m.name} ${m.aliveCount}/${m.fieldedCount}`).join(' · ')}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Team mode RESULTS: this round's team places with the team table next to it. */
+function TeamResults({ state }: { state: GameStateDTO }) {
+  const rows = teamRankRows(state);
+  if (rows.length === 0) return null;
+  return (
+    <table class="score-table team-results">
+      <thead>
+        <tr>
+          <th />
+          <th class="left">Team</th>
+          <th title="Place points every member got this round">Place</th>
+          <th title="Team points: the average of its members' totals">Team pts</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((t, i) => (
+          <tr key={t.teamId} class={cx('rank', `place-${t.place}`)} style={{ '--seat': t.color, animationDelay: `${i * 120}ms` }}>
+            <td class="medal">{PLACE_MEDALS[t.place - 1] ?? ''}</td>
+            <td class="who">
+              <TeamChip teamId={t.teamId} name={t.name} />
+              <small>
+                {t.memberNames.join(', ')} · {t.livingCost > 0 ? `${formatMoney(t.livingCost)} still standing` : 'knocked out'}
+              </small>
+            </td>
+            <td class="num pixel">+{t.placePoints}</td>
+            <td class="num gain pixel">
+              {t.points}
+              <small>{ordinal(t.tablePlace)} overall</small>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenController; now: number }) {
   const state = snap.state!;
   const rows = rankRows(state.lastBattle ? state : { ...state, lastBattle: snap.end ?? undefined });
@@ -376,11 +499,62 @@ function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
   const elapsed = shownAt.current === null ? 0 : now - shownAt.current;
   const r = snap.replay;
   const board = standings(state.scoreboard);
+  const lbState = state.lastBattle ? state : { ...state, lastBattle: snap.end ?? undefined };
+  const teamMode = (lbState.lastBattle?.teams?.length ?? 0) > 0;
+  const gained = new Map(rows.map((row) => [row.playerId, row]));
   return (
-    <div class="panel ranking">
+    <div class={cx('panel ranking', rows.length > 4 && 'compact', teamMode && 'team-mode')}>
       <h2 class="pixel">Battle {snap.end?.round ?? state.round} results</h2>
       {rows.length === 0 && <p class="muted">Counting the points…</p>}
-      {rows.length > 0 && (
+      {teamMode && <TeamResults state={lbState} />}
+      {teamMode && board.length > 0 && (
+        <>
+          <h3 class="pixel board-title">Everyone</h3>
+          <table class="score-table">
+            <thead>
+              <tr>
+                <th />
+                <th class="left">Player</th>
+                <th title="The team's place points">Place</th>
+                <th title="Damage bonus (your own)">💥</th>
+                <th title="Value bonus (your own)">🗡️</th>
+                <th>Round</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {board.map((s, i) => {
+                const seat = seatStyle(s.seat);
+                const row = gained.get(s.playerId);
+                return (
+                  <tr key={s.playerId} class="rank" style={{ '--seat': seat.color, animationDelay: `${400 + i * 80}ms` }}>
+                    <td class="pixel place-num">{ordinal(s.place)}</td>
+                    <td class="who">
+                      <span class="sym seat-num">{seat.symbol}</span>
+                      {s.name}
+                      {row && row.badges.length > 0 && (
+                        <span class="badges">
+                          {row.badges.map((b) => (
+                            <span key={b} class="badge">
+                              {badgeLabel(b, row.inventorUsedBy)}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </td>
+                    <td class="num pixel">{row ? `+${row.placePoints}` : '–'}</td>
+                    <td class="num pixel">{row ? `+${row.damageBonus}` : '–'}</td>
+                    <td class="num pixel">{row ? `+${row.valueBonus}` : '–'}</td>
+                    <td class="num gain pixel">{row ? `+${countUp(row.pointsGained, elapsed - 600 - i * 120)}` : ''}</td>
+                    <td class="num pixel">{s.points}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </>
+      )}
+      {!teamMode && rows.length > 0 && (
         <table class="score-table">
           <thead>
             <tr>
@@ -401,7 +575,7 @@ function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
                 <tr key={row.playerId} class={cx('rank', `place-${row.place}`)} style={{ '--seat': seat.color, animationDelay: `${i * 120}ms` }}>
                   <td class="medal">{PLACE_MEDALS[row.place - 1] ?? ''}</td>
                   <td class="who">
-                    <span class="sym">{seat.symbol}</span>
+                    <span class="sym seat-num">{seat.symbol}</span>
                     {row.name}
                     <small>
                       {ordinal(row.place)} · {row.livingCost > 0 ? `${formatMoney(row.livingCost)} still standing` : 'knocked out'}
@@ -441,7 +615,7 @@ function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
           ))}
         </p>
       )}
-      {board.length > 0 && (
+      {!teamMode && board.length > 0 && (
         <>
           <h3 class="pixel board-title">Scoreboard</h3>
           <table class="board-table">
@@ -452,7 +626,7 @@ function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
                   <tr key={s.playerId} style={{ '--seat': seat.color }}>
                     <td class="pixel">{ordinal(s.place)}</td>
                     <td class="left">
-                      <span class="sym">{seat.symbol}</span>
+                      <span class="sym seat-num">{seat.symbol}</span>
                       {s.name}
                     </td>
                     <td class="pixel">{s.points} pts</td>
@@ -498,9 +672,47 @@ function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
 // MATCH_RESULTS: podium, confetti, final scoreboard
 // ---------------------------------------------------------------------------
 
+/** Team mode MATCH_RESULTS: the team podium (members under each team). */
+function TeamPodium({ table, teams, state }: { table: TeamTableRowDTO[]; teams: TeamDTO[] | null; state: GameStateDTO }) {
+  const names = new Map(state.players.map((p) => [p.id, p.name]));
+  const top = podiumOrder(table.slice(0, 3));
+  return (
+    <div class="podium">
+      {top.map((t) => {
+        const members = t.members.length ? t.members : (teams?.find((x) => x.teamId === t.teamId)?.members ?? []);
+        return (
+          <div key={t.teamId} class={cx('step', `step-${t.place}`)} style={{ '--seat': t.color, '--seat-light': t.color }}>
+            <div class="medal">{PLACE_MEDALS[t.place - 1] ?? ''}</div>
+            <div class="who">
+              <TeamChip teamId={t.teamId} name={t.name} />
+            </div>
+            <div class={cx('block pixel', `pat-${t.pattern}`)}>
+              <span>{ordinal(t.place)}</span>
+              <small>{t.points} pts</small>
+              <small class="dmg members">{members.map((id) => names.get(id) ?? '?').join(', ')}</small>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Podium({ state }: { state: GameStateDTO }) {
   const final = standings(state.scoreboard);
   const top = podiumOrder(final.slice(0, 3));
+  const table = teamStandings(state.match?.teamTable ?? state.lastBattle?.teamTable);
+  if (table.length > 0) {
+    return (
+      <div class="podium-overlay team-mode">
+        <Confetti />
+        <h1 class="pixel champion">{table[0] ? `${table[0].name} wins!` : 'Game over!'}</h1>
+        <TeamPodium table={table} teams={state.match?.teams ?? null} state={state} />
+        <FinalTable final={final} />
+        <p class="thanks pixel">Great teamwork, everyone!</p>
+      </div>
+    );
+  }
   return (
     <div class="podium-overlay">
       <Confetti />
@@ -512,7 +724,7 @@ function Podium({ state }: { state: GameStateDTO }) {
             <div key={s.playerId} class={cx('step', `step-${s.place}`)} style={{ '--seat': seat.color, '--seat-light': seat.light }}>
               <div class="medal">{PLACE_MEDALS[s.place - 1] ?? ''}</div>
               <div class="who">
-                <span class="sym">{seat.symbol}</span> {s.name}
+                <span class="sym seat-num">{seat.symbol}</span> {s.name}
               </div>
               <div class="block pixel">
                 <span>{ordinal(s.place)}</span>
@@ -530,32 +742,40 @@ function Podium({ state }: { state: GameStateDTO }) {
           );
         })}
       </div>
-      <table class="final">
-        <tbody>
-          {final.map((s) => {
-            const seat = seatStyle(s.seat);
-            return (
-              <tr key={s.playerId} style={{ '--seat': seat.color }}>
-                <td class="pixel">{ordinal(s.place)}</td>
-                <td>
-                  <span class="sym">{seat.symbol}</span> {s.name}
-                </td>
-                <td class="pixel">{s.points} pts</td>
-                <td class="dmg">💥 {Math.round(s.damage ?? 0)}</td>
-                <td class="badge-counts">
-                  {badgeCounts(s).map((b) => (
-                    <span key={b.id} title={b.title}>
-                      {b.emoji}
-                      {b.count > 1 ? `×${b.count}` : ''}
-                    </span>
-                  ))}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <FinalTable final={final} />
       <p class="thanks pixel">Great battles, everyone!</p>
     </div>
+  );
+}
+
+/** The final individual standings (MATCH_RESULTS). */
+function FinalTable({ final }: { final: ReturnType<typeof standings> }) {
+  return (
+    <table class={cx('final', final.length > 4 && 'compact')}>
+      <tbody>
+        {final.map((s) => {
+          const seat = seatStyle(s.seat);
+          return (
+            <tr key={s.playerId} style={{ '--seat': seat.color }}>
+              <td class="pixel">{ordinal(s.place)}</td>
+              <td>
+                <span class="sym seat-num">{seat.symbol}</span> {s.name}
+                {s.teamId !== undefined && <TeamChip teamId={s.teamId} />}
+              </td>
+              <td class="pixel">{s.points} pts</td>
+              <td class="dmg">💥 {Math.round(s.damage ?? 0)}</td>
+              <td class="badge-counts">
+                {badgeCounts(s).map((b) => (
+                  <span key={b.id} title={b.title}>
+                    {b.emoji}
+                    {b.count > 1 ? `×${b.count}` : ''}
+                  </span>
+                ))}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

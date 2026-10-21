@@ -30,12 +30,17 @@ export const CHECKLIST: readonly ChecklistSection[] = [
       {
         id: 'box-env',
         title: 'Set the game server address in sessions/.env',
-        detail: 'PIXEL_CLASH_URL is the address above (http://<ip>:8080), plus TTYD_PASS_1..4 for the seat cards.',
+        detail: 'PIXEL_CLASH_URL is the address above (http://<ip>:8080), plus TTYD_PASS_1..8 for the seat cards (set all 8, even for a smaller game).',
       },
-      { id: 'box-up', title: 'Start the 4 seat containers', command: 'docker compose up -d' },
+      {
+        id: 'box-up',
+        title: 'Start the seat containers (all 8, or only the seats in use)',
+        detail: 'Fewer seats: docker compose up -d seat1 seat2 seat3 (one per kid laptop, matching the seat cards).',
+        command: 'docker compose up -d',
+      },
       {
         id: 'box-login',
-        title: 'Log in and trust each seat (seat1 … seat4)',
+        title: 'Log in and trust each seat (seat1 … seat8)',
         detail: 'Run /login with the event account, then accept the folder-trust dialog for /kit.',
         command: 'docker compose run --rm seat1 claude',
       },
@@ -45,7 +50,7 @@ export const CHECKLIST: readonly ChecklistSection[] = [
         detail: 'Claude should call get_game_state with no approval prompts.',
       },
       { id: 'box-admin', title: 'Enter the Claude box address in /admin so the seat links below appear' },
-      { id: 'box-firewall', title: 'Claude box allows inbound 7681-7684; sleep is disabled' },
+      { id: 'box-firewall', title: 'Claude box allows inbound 7681-7688; sleep is disabled' },
     ],
   },
   {

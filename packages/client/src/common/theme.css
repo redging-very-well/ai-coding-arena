@@ -21,11 +21,16 @@
   --warn: #facc15;
   --bad: #f87171;
 
-  /* Seat colours (colourblind-safe Okabe-Ito; keep in sync with seats.ts). */
-  --seat-0: #56b4e9;
-  --seat-1: #e69f00;
+  /* Seat colours 1-8 (Okabe-Ito based; keep in sync with seats.ts). Always
+     shown with the seat-number badge, since 8 colours can't all be told apart. */
+  --seat-0: #e69f00;
+  --seat-1: #56b4e9;
   --seat-2: #009e73;
-  --seat-3: #cc79a7;
+  --seat-3: #f0e442;
+  --seat-4: #4b8dff;
+  --seat-5: #d55e00;
+  --seat-6: #cc79a7;
+  --seat-7: #eeeeee;
 }
 
 *,
@@ -64,6 +69,43 @@ img.pixelated {
 .seat-1 { --seat: var(--seat-1); }
 .seat-2 { --seat: var(--seat-2); }
 .seat-3 { --seat: var(--seat-3); }
+.seat-4 { --seat: var(--seat-4); }
+.seat-5 { --seat: var(--seat-5); }
+.seat-6 { --seat: var(--seat-6); }
+.seat-7 { --seat: var(--seat-7); }
+
+/* Seat-number badge (1-8): colour is never the only cue (§12). */
+.seat-num {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6em;
+  height: 1.6em;
+  padding: 0 0.2em;
+  border-radius: 0.3em;
+  background: var(--seat, #9aa0aa);
+  color: #0d0f1a;
+  font-family: var(--font-pixel);
+  font-size: 0.7em;
+  line-height: 1;
+  vertical-align: middle;
+  box-shadow: inset 0 -0.15em 0 rgba(0, 0, 0, 0.3);
+}
+
+/* Team chip: team colour + ring pattern (gold solid, cyan dashed, magenta double, lime dotted). */
+.team-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.1em 0.55em;
+  border-radius: 999px;
+  border: 3px solid var(--team, #9aa0aa);
+  color: var(--team, #9aa0aa);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.team-chip.pat-dashed { border-style: dashed; }
+.team-chip.pat-double { border-style: double; border-width: 5px; }
+.team-chip.pat-dotted { border-style: dotted; }
 
 button {
   font: inherit;

@@ -382,6 +382,9 @@ main.join {
 .centre-arrow.top { top: -18px; }
 .centre-arrow.right { right: -18px; }
 .centre-arrow.left { left: -18px; }
+.centre-arrow.mid-x { left: 50%; transform: translateX(-50%); }
+.centre-arrow.mid-y { top: 50%; transform: translateY(-50%); }
+.centre-arrow.mid-x.mid-y { transform: translate(-50%, -50%); }
 .placement-side { display: grid; gap: 0.75rem; }
 .minimap {
   width: 100%;
@@ -595,3 +598,64 @@ main.join {
 @media (prefers-reduced-motion: reduce) {
   .toast, .clock.urgent, .conn { animation: none; }
 }
+
+/* ------------------------------------------------------------------------ */
+/* Teams (§9.2): My team panel, team table                                  */
+/* ------------------------------------------------------------------------ */
+
+.who .team-chip { font-size: 0.85rem; }
+.map-chip { white-space: nowrap; }
+.seat-badge { font-family: var(--font-pixel); font-weight: 400; font-size: 0.9rem; }
+.team-panel { border-color: var(--team, var(--border)); }
+.team-panel .panel-head { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.tm-list { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.6rem; }
+.tm-member {
+  border: 2px solid var(--border);
+  border-left: 6px solid var(--seat, var(--border));
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-2);
+}
+.tm-member.me { background: color-mix(in srgb, var(--team, #fff) 8%, var(--bg-2)); }
+.tm-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.tm-tick { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--text-dim); font-size: 0.9rem; }
+.tm-tick.on { color: var(--text); }
+.tm-box {
+  display: inline-grid;
+  place-items: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 2px solid var(--text-dim);
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 900;
+  color: #0d0f1a;
+}
+.tm-tick.on .tm-box { background: var(--good); border-color: var(--good); }
+.tm-cards { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+.tm-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+  font-size: 0.95rem;
+}
+.tm-cost { color: var(--accent); font-weight: 700; }
+.team-table { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: 0.4rem; }
+.team-table li {
+  display: grid;
+  grid-template-columns: 2.2rem 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 2px solid var(--border);
+  border-left: 6px solid var(--team, var(--border));
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+.team-table li.me { background: color-mix(in srgb, var(--team, #fff) 12%, var(--bg-2)); }
+.tt-name { display: grid; gap: 0.15rem; min-width: 0; }
+.benched { border-color: var(--warn); }

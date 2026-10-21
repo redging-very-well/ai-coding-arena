@@ -10,17 +10,27 @@
 //   ws.on('battle:reveal', (m) => arena.setReveal(m.data));
 //   ws.on('battle:frames', (m) => arena.pushFrames(m.frames, m.playback));
 //   // replay:  arena.loadReplay(replay); arena.setPlayback({ speed: 2 });
-//   // lobby:   arena.setZones([{ corner: 'TL', seat: 0 }, …]);
+//   // lobby:   arena.setMap(state.match.map);
+//   //          arena.setZones(map.zones.map((z) => ({ rect: z, seat: -1 })));
+//
+// The arena size S (800 / 1040 / 1200, §9.2) comes from the map (setMap, or
+// the reveal's `map`); the view zooms to fit it. Zones are tinted with the
+// seat colour (team colour in team mode) and carry the seat-number badge;
+// ground rings use the seat colour, or the team colour + pattern in team mode,
+// while the sprite outline always keeps the seat colour.
 //
 // The canvas should be sized by CSS; the renderer follows its box (HiDPI).
 
 import {
   ARENA,
-  CENTER,
   FRAME_FLAGS,
+  zoneRect,
   type BattleRevealDTO,
   type Corner,
   type FrameDTO,
+  type MapStyle,
+  type MapZoneDTO,
+  type Rect,
   type FrameEvent,
   type PlaybackDTO,
   type ReplayDTO,
@@ -46,11 +56,34 @@ import {
 } from './iso.js';
 import { FrameBuffer, LIVE_SNAP_TICKS, PlaybackClock, type FrameSample, type SampledUnit } from './playback.js';
 import { SpriteCache, UnitAnimator, chooseBakeScale, resolveSprite, type BakedSprite } from './sprites.js';
-import { rgba, seatStyle } from '../seats.js';
+import { patternDash, rgba, seatStyle, teamLook } from '../seats.js';
 
+/** A zone base to tint: a corner of the 800 arena, or a zone rectangle of the current map. */
 export interface ArenaZone {
-  corner: Corner;
+  corner?: Corner;
+  rect?: Rect;
+  /** Owner seat (-1 = neutral: no owner shown, e.g. before START). */
   seat: number;
+  /** Team mode: tint with the team colour (the badge keeps the seat number). */
+  teamId?: number | null;
+}
+
+/** The arena geometry the renderer draws: side S, style (cosmetic tiles) and every zone of the map. */
+export interface ArenaMap {
+  style: MapStyle | null;
+  width: number;
+  zones: readonly MapZoneDTO[];
+}
+
+/** The rectangle of an ArenaZone. */
+export function arenaZoneRect(z: ArenaZone): Rect {
+  if (z.rect) return { x: z.rect.x, y: z.rect.y, width: z.rect.width, height: z.rect.height };
+  return zoneRect(z.corner ?? 'TL');
+}
+
+/** Tint colour of a zone: the team colour in team mode, else the seat colour (grey when neutral). */
+export function zoneTint(z: Pick<ArenaZone, 'seat' | 'teamId'>): string {
+  return teamLook(z.teamId)?.color ?? seatStyle(z.seat).color;
 }
 
 export interface ArenaOptions {
@@ -64,6 +97,8 @@ export interface ArenaOptions {
   hpBars?: boolean;
   /** Animate units dropping into their zones on reveal (default true). */
   dropIn?: boolean;
+  /** Seat-number badges on owned zone tints and HP bars (default true). */
+  badges?: boolean;
   /** Called for each battle event as playback passes it (fx, sound, toasts). */
   onEvent?: (event: FrameEvent, arena: ArenaRenderer) => void;
   /** Extra drawing after the units (fx layer: damage numbers, particles…). */
@@ -76,6 +111,10 @@ export interface ArenaInstance {
   unitId: string;
   playerId: string;
   seat: number;
+  /** Team mode: the owner's team (ring colour + pattern). */
+  teamId?: number | null;
+  /** Drawn see-through and without HP (a teammate's placement on the /play mini-map). */
+  ghost?: boolean;
   name: string;
   stats: StatsSnapshot;
   spec: SpriteSpec;
@@ -111,6 +150,29 @@ export const DROP_MS = 450;
 export const DROP_STAGGER_MS = 35;
 /** A first frame later than this means we joined mid-battle: no drop-in. */
 const DROP_MAX_FIRST_T = 6;
+/** Team mode is on for a reveal when it lists teams. */
+function teamModeOf(reveal: BattleRevealDTO): boolean {
+  return !!reveal.teams && reveal.teams.length > 0;
+}
+
+/**
+ * The owned zones of a reveal: each player's map zone (or, from an older
+ * server, the legacy corner), tinted by team in team mode.
+ */
+export function revealZones(reveal: BattleRevealDTO): ArenaZone[] {
+  const teams = teamModeOf(reveal);
+  return reveal.players.flatMap((p): ArenaZone[] => {
+    const teamId = teams ? (p.teamId ?? null) : null;
+    if (p.mapZone) return [{ rect: p.mapZone, seat: p.seat, teamId }];
+    return p.zone ? [{ corner: p.zone, seat: p.seat, teamId }] : [];
+  });
+}
+
+/** The reveal's map geometry (an older reveal without `map` is the 800 Corners arena). */
+export function revealMap(reveal: BattleRevealDTO): ArenaMap | null {
+  return reveal.map ? { style: reveal.map.style, width: reveal.map.width, zones: reveal.map.zones } : null;
+}
+
 /** Floor bitmaps kept per zone combination. */
 const FLOOR_MEMO = 8;
 
@@ -153,10 +215,12 @@ export class ArenaRenderer {
   readonly clock = new PlaybackClock();
   private readonly ctx: CanvasRenderingContext2D;
   private readonly sprites = new SpriteCache<Bitmap>(pixelsToCanvas);
-  private readonly props: EdgeProp[] = edgeProps();
+  private props: EdgeProp[] = edgeProps();
   private view: IsoView;
   private cssSize = { width: 1, height: 1, dpr: 1 };
   private zones: ArenaZone[] = [];
+  private map: ArenaMap | null = null;
+  private teamMode = false;
   private floors = new Map<string, { bitmap: Bitmap; originX: number; originY: number }>();
   private instances = new Map<string, InstanceState>();
   private projectiles = new Map<number, ProjectileState>();
@@ -176,8 +240,17 @@ export class ArenaRenderer {
     private options: ArenaOptions = {},
   ) {
     this.ctx = pixelContext(canvas);
-    this.view = fitIso(1, 1, options.fit);
+    this.view = fitIso(1, 1, this.fitOptions());
     this.resize(true);
+  }
+
+  /** Arena side S of the current map. */
+  get arenaSize(): number {
+    return this.map?.width ?? ARENA.width;
+  }
+
+  private fitOptions(): FitOptions {
+    return { ...this.options.fit, arena: this.arenaSize };
   }
 
   // -------------------------------------------------------------------------
@@ -189,9 +262,26 @@ export class ArenaRenderer {
     if (patch.fit) this.resize(true);
   }
 
-  /** Tint the corner bases (pre-battle lobby view; also set by reveal). */
+  /** Tint the zone bases (pre-battle lobby view; also set by reveal). */
   setZones(zones: readonly ArenaZone[]): void {
     this.zones = [...zones];
+  }
+
+  /**
+   * The map to draw (arena size, cosmetic tiles). null = the 800 arena. A
+   * different size re-fits the view (the projector zooms out for bigger maps).
+   */
+  setMap(map: ArenaMap | null): void {
+    const before = this.arenaSize;
+    this.map = map ? { style: map.style, width: map.width, zones: [...map.zones] } : null;
+    if (this.arenaSize !== before) {
+      this.props = edgeProps(1, this.arenaSize);
+      this.view = fitIso(this.cssSize.width, this.cssSize.height, this.fitOptions());
+    }
+  }
+
+  get currentMap(): ArenaMap | null {
+    return this.map;
   }
 
   /** Forget the battle (back to an empty, tinted arena). */
@@ -207,12 +297,19 @@ export class ArenaRenderer {
     this.lastTick = 0;
   }
 
-  /** START: the fielded units of every player. Resets the battle state. */
-  setReveal(reveal: BattleRevealDTO): void {
+  /**
+   * START: the fielded units of every player. Resets the battle state.
+   * `ghosts`: players whose units are drawn see-through (teammates' live
+   * placements on the /play mini-map).
+   */
+  setReveal(reveal: BattleRevealDTO, opts: { ghosts?: ReadonlySet<string> } = {}): void {
     this.clearBattle();
     this.totalTicks = reveal.totalTicks;
-    this.zones = reveal.players.map((p) => ({ corner: p.zone, seat: p.seat }));
+    this.setMap(revealMap(reveal));
+    this.teamMode = teamModeOf(reveal);
+    this.zones = revealZones(reveal);
     for (const p of reveal.players) {
+      const ghost = opts.ghosts?.has(p.playerId) ?? false;
       const designs = new Map(p.units.map((u) => [u.unitId, u]));
       for (const inst of p.instances) {
         const u = designs.get(inst.unitId);
@@ -223,6 +320,8 @@ export class ArenaRenderer {
           unitId: u.unitId,
           playerId: p.playerId,
           seat: p.seat,
+          teamId: this.teamMode ? (p.teamId ?? null) : null,
+          ghost,
           name: u.name,
           stats: u.stats,
           spec: sprite.spec,
@@ -251,7 +350,7 @@ export class ArenaRenderer {
    * current scale, so the drop-in itself doesn't drop frames.
    */
   prewarm(reveal: BattleRevealDTO): void {
-    this.floorFor(reveal.players.map((p) => ({ corner: p.zone, seat: p.seat })));
+    this.floorFor(revealZones(reveal), revealMap(reveal));
     for (const p of reveal.players) {
       const color = seatStyle(p.seat).color;
       for (const u of p.units) {
@@ -368,7 +467,7 @@ export class ArenaRenderer {
     const size = fitCanvasToBox(this.canvas, this.ctx, force);
     if (!size) return;
     this.cssSize = size;
-    this.view = fitIso(size.width, size.height, this.options.fit);
+    this.view = fitIso(size.width, size.height, this.fitOptions());
   }
 
   /** Advance the clock to `now` (ms, performance.now()) and draw one frame. */
@@ -521,6 +620,7 @@ export class ArenaRenderer {
       ctx.fillRect(0, 0, width, height);
     }
     this.drawFloor();
+    if (this.options.badges !== false) this.drawZoneBadges();
     this.drawSafeZone(now);
     this.drawRings(now);
     this.drawBillboards(now);
@@ -529,14 +629,16 @@ export class ArenaRenderer {
     ctx.restore();
   }
 
-  /** The floor bitmap for a zone set (memoised: only a few combinations occur). */
-  private floorFor(zones: readonly ArenaZone[]): { bitmap: Bitmap; originX: number; originY: number } {
-    const key = zones.map((z) => `${z.corner}:${z.seat}`).join(',');
+  /** The floor bitmap for a map and zone set (memoised: only a few combinations occur). */
+  private floorFor(zones: readonly ArenaZone[], map: ArenaMap | null = this.map): { bitmap: Bitmap; originX: number; originY: number } {
+    const S = map?.width ?? ARENA.width;
+    const tinted = zones.map((z) => ({ ...arenaZoneRect(z), color: zoneTint(z) }));
+    const key = `${S}:${map?.style ?? '-'}|${tinted.map((z) => `${z.x},${z.y}:${z.color}`).join(',')}`;
     let f = this.floors.get(key);
     if (f) {
       this.floors.delete(key);
     } else {
-      const bmp = renderFloor({ zones: zones.map((z) => ({ corner: z.corner, color: seatStyle(z.seat).color })) });
+      const bmp = renderFloor({ zones: tinted, arena: S, style: map?.style ?? null, mapZones: map?.zones ?? [] });
       f = { bitmap: pixelsToCanvas(bmp.image), originX: bmp.originX, originY: bmp.originY };
     }
     this.floors.set(key, f);
@@ -556,12 +658,44 @@ export class ArenaRenderer {
     );
   }
 
+  /** Seat-number badge at the centre of each owned zone tint. */
+  private drawZoneBadges(): void {
+    const { view } = this;
+    for (const z of this.zones) {
+      if (z.seat < 0) continue;
+      const r = arenaZoneRect(z);
+      const c = toScreen(view, r.x + r.width / 2, r.y + r.height / 2);
+      const size = Math.max(18, Math.round(22 * view.zoom));
+      this.drawBadge(c.sx - size / 2, c.sy - size / 2, size, z.seat, 0.85);
+    }
+  }
+
+  /** A square seat-number badge (1-8) with its top-left at (x, y). */
+  private drawBadge(x: number, y: number, size: number, seat: number, alpha = 1): void {
+    const { ctx } = this;
+    const st = seatStyle(seat);
+    const bx = Math.round(x);
+    const by = Math.round(y);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#05040A';
+    ctx.fillRect(bx - 1, by - 1, size + 2, size + 2);
+    ctx.fillStyle = st.color;
+    ctx.fillRect(bx, by, size, size);
+    ctx.fillStyle = st.ink;
+    ctx.font = `${Math.max(7, Math.round(size * 0.62))}px "Press Start 2P", ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(st.symbol, bx + size / 2 + 0.5, by + size / 2 + 1);
+    ctx.globalAlpha = 1;
+  }
+
   private diamondPath(): void {
     const { ctx, view } = this;
+    const S = this.arenaSize;
     const a = toScreen(view, 0, 0);
-    const b = toScreen(view, ARENA.width, 0);
-    const c = toScreen(view, ARENA.width, ARENA.height);
-    const d = toScreen(view, 0, ARENA.height);
+    const b = toScreen(view, S, 0);
+    const c = toScreen(view, S, S);
+    const d = toScreen(view, 0, S);
     ctx.moveTo(a.sx, a.sy);
     ctx.lineTo(b.sx, b.sy);
     ctx.lineTo(c.sx, c.sy);
@@ -573,9 +707,10 @@ export class ArenaRenderer {
   private drawSafeZone(now: number): void {
     const r = this.sample?.safeZoneRadius;
     // The circle covers the whole arena until it shrinks below the half-diagonal.
-    if (r === undefined || r >= Math.hypot(CENTER.x, CENTER.y)) return;
+    const mid = this.arenaSize / 2;
+    if (r === undefined || r >= Math.hypot(mid, mid)) return;
     const { ctx, view } = this;
-    const c = toScreen(view, CENTER.x, CENTER.y);
+    const c = toScreen(view, mid, mid);
     const { rx, ry } = isoEllipse(r, view.k);
     ctx.save();
     ctx.beginPath();
@@ -624,22 +759,42 @@ export class ArenaRenderer {
     return out;
   }
 
+  /**
+   * Ground rings: seat colour in free-for-all; in team mode the team colour
+   * and pattern (solid, dashed, double, dotted) so teams read without colour.
+   */
   private drawRings(now: number): void {
     const { ctx, view } = this;
     for (const s of this.instances.values()) {
       if (!s.alive) continue;
       const seat = seatStyle(s.info.seat);
+      const team = teamLook(s.info.teamId);
+      const color = team?.color ?? seat.color;
       const p = toScreen(view, s.x, s.y);
       const { rx, ry } = isoEllipse(s.info.stats.size, view.k);
       const mine = this.options.highlightSeat !== undefined && this.options.highlightSeat !== null && s.info.seat === this.options.highlightSeat;
       const danger = (s.flags & FRAME_FLAGS.OUTSIDE_SAFE_ZONE) !== 0 && Math.sin(now / 90) > 0;
+      ctx.globalAlpha = s.info.ghost ? 0.5 : 1;
       ctx.beginPath();
       ctx.ellipse(p.sx, p.sy, rx, ry, 0, 0, Math.PI * 2);
-      ctx.fillStyle = rgba(seat.color, mine ? 0.35 : 0.22);
+      ctx.fillStyle = rgba(color, mine ? 0.35 : 0.22);
       ctx.fill();
-      ctx.lineWidth = Math.max(1, view.zoom * (mine ? 2 : 1.2));
-      ctx.strokeStyle = danger ? '#FF5A5A' : mine ? seat.light : seat.color;
+      const lw = Math.max(team ? 1.5 : 1, view.zoom * (mine ? 2 : team ? 1.6 : 1.2));
+      ctx.lineWidth = lw;
+      ctx.strokeStyle = danger ? '#FF5A5A' : mine && !team ? seat.light : color;
+      if (team) {
+        ctx.setLineDash(patternDash(team.pattern, lw));
+        ctx.lineCap = team.pattern === 'dotted' ? 'round' : 'butt';
+      }
       ctx.stroke();
+      if (team?.pattern === 'double') {
+        ctx.beginPath();
+        ctx.ellipse(p.sx, p.sy, rx + lw * 1.8, ry + lw * 0.9, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.lineCap = 'butt';
+      ctx.globalAlpha = 1;
     }
   }
 
@@ -692,8 +847,9 @@ export class ArenaRenderer {
     const pose = s.anim.pose(now, baked.frameCount, baked.fadeOnlyDeath);
     if (pose.gone) return;
     const feet = toScreen(view, s.x, s.y);
-    const top = this.blit(baked.frame(pose.state, pose.frame, pose.mirror), baked, feet, width, lift, pose.alpha * (pose.napping ? 0.75 : 1));
-    if (!s.alive || lift > 0) return;
+    const ghost = s.info.ghost ? 0.5 : 1;
+    const top = this.blit(baked.frame(pose.state, pose.frame, pose.mirror), baked, feet, width, lift, ghost * pose.alpha * (pose.napping ? 0.75 : 1));
+    if (!s.alive || lift > 0 || s.info.ghost) return;
 
     // HP bar.
     let y = top - Math.max(4, 3 * view.zoom);
@@ -709,6 +865,11 @@ export class ArenaRenderer {
       ctx.fillRect(bx, by, bw, bh);
       ctx.fillStyle = frac > 0.5 ? HP_COLORS.good : frac > 0.25 ? HP_COLORS.mid : HP_COLORS.low;
       ctx.fillRect(bx, by, Math.max(frac > 0 ? 1 : 0, Math.round(bw * frac)), bh);
+      // Seat-number badge on the bar's left end (kept readable when zoomed out).
+      if (this.options.badges !== false && s.info.seat >= 0) {
+        const side = Math.max(10, Math.round(bh * 2.4));
+        this.drawBadge(bx - side + 1, by + bh / 2 - side / 2, side, s.info.seat);
+      }
       y = by - 2;
     }
     // Own-unit marker: a small seat-coloured arrow.

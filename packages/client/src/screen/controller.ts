@@ -7,6 +7,7 @@
 import {
   CORNERS,
   type BattleEndDTO,
+  type MapDTO,
   type BattleRevealDTO,
   type FrameDTO,
   type GameStateDTO,
@@ -81,6 +82,8 @@ export class ScreenController {
   private dropTimer: ReturnType<typeof setTimeout> | null = null;
   private toastSeq = 0;
   private lastPhase: Phase | null = null;
+  /** The map last drawn empty (style, players), to redraw when it changes before START. */
+  private neutralKey = '';
   private sdWatch: ReturnType<typeof setInterval> | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -174,9 +177,13 @@ export class ScreenController {
       // Back to an empty arena: no unit data at all before START (§3).
       this.cancelPendingReveal();
       this.arena.clearBattle();
-      this.neutralZones();
+      this.neutralKey = '';
+      this.neutralZones(state.match?.map ?? null);
       Object.assign(patch, { reveal: null, revealAt: null, end: null, replay: null, playback: null, suddenDeathAt: null });
       if (phase !== 'PLACEMENT') void this.loadJoin();
+    } else if (PRE_BATTLE.includes(phase)) {
+      // The map grows or changes style as players join or leave (§9.2).
+      this.neutralZones(state.match?.map ?? null);
     }
     if (state.lastBattle && !this.snap.end) patch.end = state.lastBattle;
     this.set(patch);
@@ -242,9 +249,17 @@ export class ScreenController {
     this.set({ revealAt: null });
   }
 
-  private neutralZones(): void {
-    // Zone assignment is private until START, so all four bases are neutral.
-    this.arena.setZones(CORNERS.map((corner) => ({ corner, seat: -1 })));
+  /**
+   * The current map's empty zone outlines, zoomed to fit (§12.2). Zone
+   * assignment is private until START, so every base is neutral. Without a
+   * map (an older server) the four corners are shown.
+   */
+  private neutralZones(map: MapDTO | null = null): void {
+    const key = map ? `${map.style}:${map.players}` : '-';
+    if (key === this.neutralKey) return;
+    this.neutralKey = key;
+    this.arena.setMap(map);
+    this.arena.setZones(map ? map.zones.map((z) => ({ rect: z, seat: -1 })) : CORNERS.map((corner) => ({ corner, seat: -1 })));
   }
 
   // -------------------------------------------------------------------------

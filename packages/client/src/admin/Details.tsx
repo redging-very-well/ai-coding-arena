@@ -51,7 +51,10 @@ function PlayerDetails({ player, armory }: { player: OverviewPlayer; armory: Adm
   return (
     <div class="player-details" style={{ borderColor: seat.color }}>
       <h3>
-        <span style={{ color: seat.color }}>{seat.symbol}</span> {player.name}
+        <span class="seat-chip" style={{ background: seat.color, color: seat.ink }}>
+          {seat.symbol}
+        </span>{' '}
+        {player.name}
       </h3>
       <div class="dim small">
         Selection: {player.selection.length ? player.selection.map(nameOf).join(', ') : '(none)'} · Placement:{' '}

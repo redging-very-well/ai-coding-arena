@@ -1,17 +1,41 @@
-// RESULTS / MATCH_RESULTS (plan §12.1): my place, my points breakdown (place
-// + damage bonus + value bonus) and badges (§9), the scoreboard,
+// RESULTS / MATCH_RESULTS (plan §12.1): my place (my team's place in team
+// mode), my points breakdown (place + damage bonus + value bonus) and badges
+// (§9), the team table (team mode, §9.2), the scoreboard,
 // my units' battle stats (kills, damage) and "Ask Claude" prompts with Copy
 // buttons for units with errors. Also a replay of the last battle.
 
 import { useEffect, useState } from 'preact/hooks';
-import { BADGES, BADGE_IDS, type BattleReportDTO, type GameStateDTO } from '@pixel-clash/shared';
+import { BADGES, BADGE_IDS, type BattleReportDTO, type GameStateDTO, type TeamTableRowDTO } from '@pixel-clash/shared';
 import { ApiError, api } from '../../common/api.js';
+import { teamOfPlayer } from '../../common/maps.js';
 import { seatStyle } from '../../common/seats.js';
 import { PLACE_MEDALS, cx, ordinal } from '../../common/ui.js';
 import { BADGE_KID_TEXT, groupErrors, scoreLines, scoreParts, unitPrompts } from '../logic.js';
 import { getStore, useStore } from '../store.js';
 import { ArenaView } from './Battle.js';
 import { CopyButton } from './CopyButton.js';
+import { TeamChip } from './TeamPanel.js';
+
+/** Team table (§9.2): average member total, then place points; my team highlighted. */
+function TeamTable({ rows, game, myTeamId }: { rows: readonly TeamTableRowDTO[]; game: GameStateDTO; myTeamId: number | undefined }) {
+  const names = new Map(game.players.map((p) => [p.id, p.name]));
+  return (
+    <ol class="team-table">
+      {rows.map((t) => (
+        <li key={t.teamId} class={cx(t.teamId === myTeamId && 'me')} style={{ '--team': t.color }}>
+          <span class="sb-rank">{PLACE_MEDALS[t.place - 1] ?? t.place}</span>
+          <span class="tt-name">
+            <TeamChip teamId={t.teamId} name={t.name} />
+            <span class="dim small">{t.members.map((id) => names.get(id) ?? '?').join(', ')}</span>
+          </span>
+          <span class="sb-pts" title="Average of the members' points">
+            {t.points} pts
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
 
 function Scoreboard({ game, meId }: { game: GameStateDTO; meId: string | undefined }) {
   return (
@@ -22,7 +46,7 @@ function Scoreboard({ game, meId }: { game: GameStateDTO; meId: string | undefin
         return (
           <li key={s.playerId} class={cx(`seat-${s.seat}`, s.playerId === meId && 'me')}>
             <span class="sb-rank">{s.place ?? i + 1}</span>
-            <span class="sb-sym" style={{ color: seat.color }}>
+            <span class="seat-num" style={{ '--seat': seat.color }}>
               {seat.symbol}
             </span>
             <span class="sb-name">
@@ -86,6 +110,10 @@ export function Results() {
   const myBoard = game.scoreboard.findIndex((s) => s.playerId === meId);
   const myEntry = myBoard >= 0 ? game.scoreboard[myBoard]! : undefined;
   const myPlace = myEntry?.place ?? myBoard + 1;
+  const teamTable = last?.teamTable ?? game.match?.teamTable ?? null;
+  const myTeam = teamOfPlayer(game.match?.teams, meId);
+  const teamMode = !!teamTable && teamTable.length > 0;
+  const myTeamRow = teamTable?.find((t) => t.teamId === myTeam?.teamId);
 
   const watchReplay = async () => {
     if (!last) return;
@@ -104,11 +132,20 @@ export function Results() {
         <h2>{final ? 'Game over!' : `Round ${last?.round ?? game.round} results`}</h2>
       </div>
 
+      {final && teamMode && myTeamRow && (
+        <div class="big-result">
+          <span class="medal">{PLACE_MEDALS[Math.min(3, myTeamRow.place - 1)]}</span>
+          <div>
+            <div class="pixel big">Your team finished {ordinal(myTeamRow.place)}!</div>
+            <div class="dim">{myTeamRow.name}: {myTeamRow.points} points on average.</div>
+          </div>
+        </div>
+      )}
       {final && myEntry && (
         <div class="big-result">
           <span class="medal">{PLACE_MEDALS[Math.min(3, myPlace - 1)]}</span>
           <div>
-            <div class="pixel big">You finished {ordinal(myPlace)}!</div>
+            <div class="pixel big">{teamMode ? `On your own you finished ${ordinal(myPlace)}!` : `You finished ${ordinal(myPlace)}!`}</div>
             <div class="dim">
               {myEntry.points} points and {Math.round(myEntry.damage ?? 0)} damage in total. Great battles!
             </div>
@@ -121,12 +158,12 @@ export function Results() {
           <div class="big-result">
             <span class="medal">{PLACE_MEDALS[Math.min(3, mine.place - 1)]}</span>
             <div>
-              <div class="pixel big">You came {ordinal(mine.place)}!</div>
+              <div class="pixel big">{teamMode ? `Your team came ${ordinal(mine.place)}!` : `You came ${ordinal(mine.place)}!`}</div>
               <div class="points-gained">+{mine.pointsGained} points this round</div>
             </div>
           </div>
           <ul class="score-lines">
-            {scoreLines(mine).map((l) => (
+            {scoreLines(mine, { team: teamMode }).map((l) => (
               <li key={l.icon} class={cx(l.points > 0 && 'got')}>
                 <span class="sl-icon">{l.icon}</span>
                 <span>{l.text}</span>
@@ -169,7 +206,13 @@ export function Results() {
 
       <div class="results-layout">
         <div>
-          <h3>Scoreboard</h3>
+          {teamMode && teamTable && (
+            <>
+              <h3>Teams</h3>
+              <TeamTable rows={teamTable} game={game} myTeamId={myTeam?.teamId} />
+            </>
+          )}
+          <h3>{teamMode ? 'Everyone' : 'Scoreboard'}</h3>
           <Scoreboard game={game} meId={meId} />
           {last && (
             <button class="btn" onClick={() => void watchReplay()}>

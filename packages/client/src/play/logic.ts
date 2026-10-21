@@ -10,7 +10,9 @@ import {
   cellAt,
   isValidCell,
   sizeOf,
+  zoneAxes,
   zoneRect,
+  type ZoneRef,
   type BadgeId,
   type BattleReportDTO,
   type BattleReportErrorDTO,
@@ -31,40 +33,80 @@ export interface GridCell {
   /** Screen column/row of the drawn grid (0 = left / top). */
   gx: number;
   gy: number;
-  /** Zone-local cell (0,0 = nearest the arena centre, §9). */
+  /**
+   * Zone-local cell (row 0 = the front, §9.2). (0,0) is the front cell nearest
+   * the centre, except on a zone centred on the centre line, where col 0 is
+   * the edge (-x / -y side) and cols 2-3 are the middle.
+   */
   col: number;
   row: number;
 }
 
+function zoneOrigin(zone: ZoneRef): { x: number; y: number } {
+  return typeof zone === 'string' ? zoneRect(zone) : { x: zone.x, y: zone.y };
+}
+
 /**
- * The 36 cells of a corner zone in screen order (row-major, top-left first),
- * each with its zone-local col/row. The grid is drawn exactly as the zone sits
- * in the top-down arena, so (0,0) lands in the corner nearest the centre.
+ * The 36 cells of a zone in screen order (row-major, top-left first), each
+ * with its zone-local col/row. The grid is drawn exactly as the zone sits in
+ * the top-down arena (its true orientation, §12.1), so row 0 lands on the
+ * front edge for every facing, and (0,0) on the front cell nearest the centre
+ * (on a zone centred on the centre line: the front cell on the -x / -y edge).
+ * A `Corner` means that zone of the 4-player Corners map.
  */
-export function zoneGrid(corner: Corner): GridCell[] {
-  const r = zoneRect(corner);
+export function zoneGrid(zone: ZoneRef): GridCell[] {
+  const r = zoneOrigin(zone);
   const out: GridCell[] = [];
   for (let gy = 0; gy < GRID_SIZE; gy++) {
     for (let gx = 0; gx < GRID_SIZE; gx++) {
-      const c = cellAt(corner, r.x + gx * CELL_SIZE + CELL_SIZE / 2, r.y + gy * CELL_SIZE + CELL_SIZE / 2)!;
+      const c = cellAt(zone, r.x + gx * CELL_SIZE + CELL_SIZE / 2, r.y + gy * CELL_SIZE + CELL_SIZE / 2)!;
       out.push({ gx, gy, col: c.col, row: c.row });
     }
   }
   return out;
 }
 
-/** Which grid corner faces the arena centre: arrow direction for the zone. */
-export function towardCentre(corner: Corner): { dx: 1 | -1; dy: 1 | -1; arrow: string } {
-  switch (corner) {
-    case 'TL':
-      return { dx: 1, dy: 1, arrow: '↘' };
-    case 'TR':
-      return { dx: -1, dy: 1, arrow: '↙' };
-    case 'BR':
-      return { dx: -1, dy: -1, arrow: '↖' };
-    case 'BL':
-      return { dx: 1, dy: -1, arrow: '↗' };
-  }
+export type Step = -1 | 0 | 1;
+
+/**
+ * Where the arena centre lies from the zone, as a screen direction for the
+ * grid's arrow: diagonal for corner zones (towards the corner nearest the
+ * centre), straight out of the front edge for N/S/E/W zones.
+ */
+export function towardCentre(zone: ZoneRef): { dx: Step; dy: Step; arrow: string } {
+  const facing = typeof zone === 'string' ? 'diag' : zone.facing;
+  let dx: Step = 0;
+  let dy: Step = 0;
+  if (facing === 'diag') {
+    const a = zoneAxes(zone);
+    // col/row grow away from the centre, so the centre is the other way.
+    dx = (a.colAxis === 'x' ? -a.colSign : -a.rowSign) as Step;
+    dy = (a.colAxis === 'x' ? -a.rowSign : -a.colSign) as Step;
+  } else if (facing === 'S') dy = 1;
+  else if (facing === 'N') dy = -1;
+  else if (facing === 'E') dx = 1;
+  else dx = -1;
+  return { dx, dy, arrow: ARROWS[`${dx},${dy}`] ?? '•' };
+}
+
+const ARROWS: Readonly<Record<string, string>> = {
+  '1,1': '↘',
+  '-1,1': '↙',
+  '-1,-1': '↖',
+  '1,-1': '↗',
+  '0,1': '↓',
+  '0,-1': '↑',
+  '1,0': '→',
+  '-1,0': '←',
+};
+
+/**
+ * Front cells, highlighted on the grid: row 0 (the front edge). Corner
+ * (diag) zones have two front edges, the row and the column nearest the centre.
+ */
+export function isFrontCell(zone: ZoneRef, col: number, row: number): boolean {
+  const facing = typeof zone === 'string' ? 'diag' : zone.facing;
+  return row === 0 || (facing === 'diag' && col === 0);
 }
 
 /** Kid words for a corner (top-down, matching the placement grid). */
@@ -120,7 +162,7 @@ export function tapCell(
   unitId: string | null,
   rules: PlacementRules,
 ): PlaceResult {
-  if (!isValidCell(col, row)) return { ok: false, code: 'CELL_OUT_OF_ZONE', message: 'That square is outside your corner.' };
+  if (!isValidCell(col, row)) return { ok: false, code: 'CELL_OUT_OF_ZONE', message: 'That square is outside your zone.' };
   if (placementAt(placements, col, row)) {
     return { ok: true, placements: removeAt(placements, col, row), removed: true };
   }
@@ -314,7 +356,8 @@ export function unitPrompts(roster: readonly UnitCardDTO[], round: number, repor
 // ---------------------------------------------------------------------------
 
 export const TTYD_BASE_PORT = 7680;
-export const CLAUDE_SEATS = 4;
+/** Seat containers on the Claude box: seat1..seat8 on ports 7681-7688 (§11.1). */
+export const CLAUDE_SEATS = 8;
 
 /** Host part of a Claude box address ("192.168.8.20", "http://box:8080/x" → "box"). */
 export function claudeBoxHost(address: string | null | undefined): string | null {
@@ -405,13 +448,18 @@ export function scoreParts(entry: Pick<RankingEntryDTO, 'place'> & Partial<Score
   };
 }
 
-/** One line per part of the round score: place, damage bonus, value bonus. */
-export function scoreLines(raw: Pick<RankingEntryDTO, 'place'> & Partial<ScoreParts>): ScoreLine[] {
+/**
+ * One line per part of the round score: place, damage bonus, value bonus. In
+ * team mode the place (and its points) are the team's (§9.2 Team scoring),
+ * while the bonuses stay your own.
+ */
+export function scoreLines(raw: Pick<RankingEntryDTO, 'place'> & Partial<ScoreParts>, opts: { team?: boolean } = {}): ScoreLine[] {
   const entry = scoreParts(raw);
+  const who = opts.team ? 'Your team came' : 'You came';
   const dmg = Math.round(entry.damage);
   const value = `$${Math.round(entry.valueDestroyed).toLocaleString('en-US')}`;
   return [
-    { icon: '🏅', text: `You came ${nth(entry.place)}: ${pts(entry.placePoints)}!`, points: entry.placePoints },
+    { icon: '🏅', text: `${who} ${nth(entry.place)}: ${pts(entry.placePoints)}!`, points: entry.placePoints },
     {
       icon: '💥',
       text:

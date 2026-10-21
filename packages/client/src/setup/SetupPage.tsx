@@ -104,7 +104,7 @@ export function SetupPage() {
       <section class="panel">
         <h2>Seat terminals (Claude box)</h2>
         {!info || info.seatTerminals.length === 0 ? (
-          <p class="dim">Set the Claude box address in /admin (Server &amp; setup) to show the 4 seat terminal links here.</p>
+          <p class="dim">Set the Claude box address in /admin (Server &amp; setup) to show the seat terminal links (Seat 1-8) here. Only the seats you started on the Claude box will answer.</p>
         ) : (
           <div class="seat-grid">
             {info.seatTerminals.map((t) => {
@@ -112,7 +112,7 @@ export function SetupPage() {
               return (
                 <div class="seat-card" key={t.seat} style={{ borderColor: seat.color }}>
                   <div class="pixel" style={{ color: seat.color }}>
-                    {seat.symbol} {seatLabel(t.seat)}
+                    {seatLabel(t.seat)} ({seat.name})
                   </div>
                   <div class="qr" dangerouslySetInnerHTML={{ __html: t.qrSvg }} />
                   <a href={t.url} target="_blank" rel="noopener">
