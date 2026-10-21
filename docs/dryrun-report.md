@@ -6,7 +6,7 @@ Each scenario used a **fresh copy of the generic kit** (`GET /api/setup/kit.zip`
 
 ```sh
 cd pixel-clash-kit
-claude -p "<what the kid says>" --output-format stream-json --verbose --settings .claude/settings.json
+claude -p "<what the player says>" --output-format stream-json --verbose --settings .claude/settings.json
 # 2-turn exchanges: the same, plus --resume <session_id>
 ```
 
@@ -16,17 +16,17 @@ No `--dangerously-skip-permissions`, no `--permission-mode`, no `--mcp-config`. 
 
 "Validates" = `validate_unit` calls before the first successful `submit_unit` (target ≤ 3). "Calls" = all tool calls in that turn, including ToolSearch, file reads and writes and login.
 
-| # | Kid says | Calls | Validates | Outcome | Notes |
+| # | Player says | Calls | Validates | Outcome | Notes |
 |---|---|---|---|---|---|
 | s00 | "I'm Hana, PIN 1234. Make me a bouncy frog soldier and send it right now!" (LOBBY) | 9 | 1 | Validated, **no submit attempted** | It saw `submissionsOpen: false` and said "It's ready! When the Plan phase starts, tell me". Sprite ✓ |
 | s00 t2 | "The Plan phase started! Send my frog" (`--resume`) | 2 | 0 (validated in t1) | Submitted $120 | `get_game_state` then `submit_unit` |
 | s01 | PROMPTS: fast green ninja | 9 | 1 | Submitted $132 | Sprite ✓. 1 **denied Bash** (`python3` to JSON-check the file): fixed, see below |
 | s01b | same prompt, re-run after tuning | 8 | 1 | Submitted $139 | No denials |
-| s02 | PROMPTS: far, slow purple tower | 9 | 1 | Submitted $280 (cd 90) | `W_SLOW_NO_DISCOUNT` + `W_STAT_NEAR_MAX` warnings: kept "slowly" as asked and offered cd 60 to the kid. 1 denied python3 Bash |
+| s02 | PROMPTS: far, slow purple tower | 9 | 1 | Submitted $280 (cd 90) | `W_SLOW_NO_DISCOUNT` + `W_STAT_NEAR_MAX` warnings: kept "slowly" as asked and offered cd 60 to the player. 1 denied python3 Bash |
 | s03 | PROMPTS: soldiers wait near my towers | 11 | 1 | Submitted $112 | 1 denied python3 Bash |
-| s03b | same prompt, re-run after tuning (another kid) | 10 | 1 | Submitted $128 | Revised the kid's existing Bouncy Frog, passing `unitId` (from `get_unit_source`, since there was no local file). No denials |
+| s03b | same prompt, re-run after tuning (another player) | 10 | 1 | Submitted $128 | Revised the player's existing Bouncy Frog, passing `unitId` (from `get_unit_source`, since there was no local file). No denials |
 | s04 | PROMPTS: healer… can units heal? | 11 | 1 | Submitted $199 "Guardian" | Said there's no healing and built a bodyguard. The answer was too long and technical ("each tick", "allies"). 1 denied python3 Bash |
-| s04b | same prompt, re-run after tuning | 9 | 1 | Submitted $175 "Bodyguard" | Short, kid-level answer. No denials |
+| s04b | same prompt, re-run after tuning | 9 | 1 | Submitted $175 "Bodyguard" | Short, simple answer. No denials |
 | s05 | PROMPTS: give my tower a wizard hat and a glowing crystal | 11 | 1 | Submitted $198 "Wizard Tower" | Correctly made a NEW unit (templates are protected), no `unitId`. 1 denied python3 Bash |
 | s06 | "Make a tiny robot that's hard to block" | 12 | 1 | Submitted $120 (size 6) | 1 denied python3/awk Bash |
 | s06b | same prompt, re-run after tuning | 9 | 1 | Submitted $129 | Same name in a fresh folder: the server revised `zip-bot` by slug (v2), as specified. No denials |
@@ -36,11 +36,11 @@ No `--dangerously-skip-permissions`, no `--permission-mode`, no `--mcp-config`. 
 | s10 | "Really detailed 32×32 dragon with walk and fire animations" | 9 | 1 | Submitted $172, grid 32 | All 32-wide rows right first time |
 | s11 | "The game says my Golden Blaster is broken" (after an admin retune pushed it to $531, status invalid) | 11 | 1 | Submitted v2 $500 | `list_my_units` → applied the `UNIT_TOO_EXPENSIVE` fix exactly (maxHealth 380→350) → `unitId` passed |
 | s12 | "Why did my units stand still last battle? Fix them. And send it in!" (RESULTS) | 13 | 1 | Fixed + validated, not submitted | `get_battle_report` (TypeError on line 18, disabled) → `get_unit_source` → fix → validate. Explained that submit is closed until Plan |
-| s12 t2 | "no please try sending it anyway right now" | 2 | 0 | `PHASE_CLOSED` | Kid-friendly: "I tried, but the game said no… only takes new units in the Plan phase… tell me and I'll send it" |
+| s12 t2 | "no please try sending it anyway right now" | 2 | 0 | `PHASE_CLOSED` | Friendly: "I tried, but the game said no… only takes new units in the Plan phase… tell me and I'll send it" |
 | s12 t3 | "ok the plan phase started now! send it" (round 2 PLAN) | 2 | 0 | Submitted v2 $106 | `unitId: "marcher"` |
 | s13 | "My name is Gus, PIN 1234. Are you connected?" | 5 | 0 | Logged in, game state read | Phase, time, place and badge in 4 lines |
 
-Every scenario reached a valid submit (or the right "not yet") in **≤ 1 validate attempt**. Every new unit had a `sprite()`. Claude never asked the kid to type, paste or edit code, or to run a command. With CLAUDE.md as it is now, there were **no permission denials**.
+Every scenario reached a valid submit (or the right "not yet") in **≤ 1 validate attempt**. Every new unit had a `sprite()`. Claude never asked the player to type, paste or edit code, or to run a command. With CLAUDE.md as it is now, there were **no permission denials**.
 
 ## Settings and flags that work (M0(b) "freeze the settings syntax")
 
@@ -55,21 +55,21 @@ The kit's `.claude/settings.json` is unchanged and confirmed:
 ## Changes made
 
 - `packages/starter-kit/CLAUDE.md.tmpl`
-  - §3 Workflow: **"Don't check the file yourself with commands"** (no python/node/awk/wc). `validate_unit` checks everything, including sprite rows, and any command that isn't pre-approved pops up a permission question on the kid's screen. Before this, 6 of 7 first-round runs tried `python3 -c "json.dumps(open(...))"` or awk to count sprite rows. That was denied headless, and would be a prompt in a seat. After the change: 0 of 12 runs.
-  - §1: keep answers to the kid to about 4-6 short lines, without code words. The healer answer was a long technical essay before the change and a short one after.
+  - §3 Workflow: **"Don't check the file yourself with commands"** (no python/node/awk/wc). `validate_unit` checks everything, including sprite rows, and any command that isn't pre-approved pops up a permission question on the player's screen. Before this, 6 of 7 first-round runs tried `python3 -c "json.dumps(open(...))"` or awk to count sprite rows. That was denied headless, and would be a prompt in a seat. After the change: 0 of 12 runs.
+  - §1: keep answers to the player to about 4-6 short lines, without code words. The healer answer was a long technical essay before the change and a short one after.
   - The §5 contract block is unchanged (`starterkit.test.ts`).
 - `packages/server/src/mcp.ts` `MCP_INSTRUCTIONS`: the validate line now also says that `validate_unit` checks everything (sprite rows included), so Claude should never run scripts or shell commands to check a unit file.
-- `packages/starter-kit/PROMPTS.md`: a "Remember" tip: if Claude says it can't send yet, tell it "The Plan phase started!". Claude isn't told when PLAN opens, and in s00 and s12 the kid had to say it.
+- `packages/starter-kit/PROMPTS.md`: a "Remember" tip: if Claude says it can't send yet, tell it "The Plan phase started!". Claude isn't told when PLAN opens, and in s00 and s12 the player had to say it.
 - `plan.md` §11: the settings block is marked as frozen, with the verified semantics and the trust requirement.
 - `sessions/README.md` troubleshooting: a new row, "Claude asks for permission to use the pixel-clash tools or to write `units/…`" → the folder isn't trusted.
 
-The dry run itself changed no fix texts in `packages/shared/src/errors.ts`: no scenario hit a validation error on its own. The kid-hint rewrites in `errors.ts` and `packages/server/src/mcp.ts` (M7 polish: `KID_HINTS`, the number-bearing hints from `kidHintForIssue`, `SUCCESS_KID_HINT`, `kidHintForService`) came later and were **not** exercised in these runs. The one fix text that was exercised (`UNIT_TOO_EXPENSIVE` after a retune, s11) was applied word for word.
+The dry run itself changed no fix texts in `packages/shared/src/errors.ts`: no scenario hit a validation error on its own. The player-hint rewrites in `errors.ts` and `packages/server/src/mcp.ts` (M7 polish: `PLAYER_HINTS`, the number-bearing hints from `playerHintForIssue`, `SUCCESS_PLAYER_HINT`, `playerHintForService`) came later and were **not** exercised in these runs. The one fix text that was exercised (`UNIT_TOO_EXPENSIVE` after a retune, s11) was applied word for word.
 
 ## Remaining issues
 
 - **Fix texts got little real-Claude coverage.** Claude computes costs from CLAUDE.md §5 and gets sprite rows right first time, so `SPRITE_BAD_FRAME`, `STAT_OUT_OF_RANGE` and the cooldown-factor branch of `UNIT_TOO_EXPENSIVE` never fired. They are covered by unit tests only.
 - **The `UNIT_TOO_EXPENSIVE` fix aims at exactly the cap** (s11 ended at $500.00). The next small upward retune makes the unit invalid again. A suggestion with some headroom (for example ≤ $490) would be kinder. Not changed, because the existing tests pin the suggested values.
 - **First-call noise:** the generic zip has no `.pixel-clash/` folder, so the first `Read .pixel-clash/player.json` or `ls` returns an error. It's harmless (Claude then logs in), but it shows as an error in the transcript.
-- **"Plan started" is kid-driven:** Claude can't know when PLAN opens. The PROMPTS.md tip covers it, and a facilitator announcement on the projector would help.
+- **"Plan started" is player-driven:** Claude can't know when PLAN opens. The PROMPTS.md tip covers it, and a facilitator announcement on the projector would help.
 - **Not run in a real seat container (ttyd + trust dialog).** This run emulated the trusted state with `--settings`. The M8 dress rehearsal should confirm that a trusted seat shows no prompt for the first `login` and `Write`.
-- **The user's claude.ai connectors** (Gmail, Drive and others) appeared as pending MCP servers in some runs. A seat's fresh event account won't have them, but if the event account has connectors, disconnect them from that account (they add noise and tool choices the kid's Claude should never use).
+- **The user's claude.ai connectors** (Gmail, Drive and others) appeared as pending MCP servers in some runs. A seat's fresh event account won't have them, but if the event account has connectors, disconnect them from that account (they add noise and tool choices the player's Claude should never use).

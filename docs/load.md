@@ -71,7 +71,7 @@ event host** with this load test (dress rehearsal, §14).
 ### Sandbox children: ~105-110 MB each (warning)
 
 Every player's isolate lives in its own child process (`ivmChild`, §8). An idle child is ~70 MB
-(Node + isolated-vm) before any kid code, and the isolate itself may use up to its 32 MB
+(Node + isolated-vm) before any player code, and the isolate itself may use up to its 32 MB
 `memoryLimit`, so a busy battle child peaks at 105-110 MB. That is over the §14 "< 100 MB per
 child" target by construction, not a leak (it doesn't grow across rounds). V8 flags on the
 child (`--max-semi-space-size=1`, `--max-old-space-size=64`) only saved ~3-5 MB. 8 children ≈

@@ -1,6 +1,6 @@
 # Pixel Clash: Build Plan
 
-A LAN auto-battler for 2-8 players, free-for-all or in teams, on a map chosen for the player count (§9.2). Kids design units by talking to Claude Code on their own laptops. Claude submits the unit code to the game server over MCP. The server checks each unit, prices it, and runs it in a sandbox. Kids pick and place their units on a web page, and the battle plays on the projector.
+A LAN auto-battler for 2-8 players, free-for-all or in teams, on a map chosen for the player count (§9.2). Players design units by talking to Claude Code on their own laptops. Claude submits the unit code to the game server over MCP. The server checks each unit, prices it, and runs it in a sandbox. Players pick and place their units on a web page, and the battle plays on the projector.
 
 Status: implementation-ready spec. Written 2026-10-20. The event is a few days away.
 
@@ -9,13 +9,13 @@ Status: implementation-ready spec. Written 2026-10-20. The event is a few days a
 ## 1. Overview, goals, non-goals
 
 ### Event context
-- Kids coding day, ages about 9-13. Each game has 2-8 kids (free-for-all, or teams such as 2v2, 2v2v2 or 4v4, §9.2). Kid laptops need **only a browser**, with two tabs: `/play` on the game server and their seat's **ttyd** web terminal. Kids **only prompt Claude**. They never write or paste code by hand.
+- Kids coding day, players aged about 9-13. Each game has 2-8 players (free-for-all, or teams such as 2v2, 2v2v2 or 4v4, §9.2). Player laptops need **only a browser**, with two tabs: `/play` on the game server and their seat's **ttyd** web terminal. Players **only prompt Claude**. They never write or paste code by hand.
 - **Two machines** on a router or hotspot that we bring:
   - **Game server**: runs Pixel Clash on its host OS (not in the devcontainer). A projector shows the arena, and a facilitator runs the game from an admin panel.
   - **Claude box**: runs one Docker container per seat. Each container runs ttyd, which starts `claude` directly in that seat's kit folder (no shell). The facilitator logs Claude Code in beforehand.
 
 ### Goals
-1. Kids learn the loop "describe → Claude writes code → the server checks it → watch it fight → improve it" over several rounds.
+1. Players learn the loop "describe → Claude writes code → the server checks it → watch it fight → improve it" over several rounds.
 2. Zero hand-editing. The MCP tools and the error messages are written so Claude can fix problems by itself.
 3. Running untrusted code can never crash the game or freeze the projector, and it can never reach the host's files or network.
 4. A playable vertical slice exists early (milestone M3). Polish (sound, animations, replay, retro style) is in scope and comes last.
@@ -33,7 +33,7 @@ Status: implementation-ready spec. Written 2026-10-20. The event is a few days a
 
 ```mermaid
 flowchart LR
-  subgraph KIDS["Kid laptops (x2-8), browser only"]
+  subgraph PLAYERS["Player laptops (x2-8), browser only"]
     PB[Tab: /play<br/>profile, select, place]
     TT[Tab: ttyd seat N<br/>:768N]
   end
@@ -75,8 +75,8 @@ Key points:
 - **One process, one port** (default 8080) serves the static client build, REST, MCP, and WebSocket.
 - **The server is authoritative.** Clients never compute game results. The sim runs on the server and streams frames.
 - **One service layer.** REST and MCP handlers are thin adapters over `services/*` and return the same result and error objects.
-- **Network paths:** kid laptops need only the LAN (to the game server and the Claude box). The **Claude box** needs the LAN (to the game server's `/mcp`) **and** internet (to Anthropic). The game server needs no internet. The router must provide both (see §15).
-- **Seat isolation.** Claude Code can run shell commands, so each seat's Claude runs in its own container with only its own kit folder mounted. A kid can't reach another seat's folder or key, or the game server's `data/` (§11.1).
+- **Network paths:** player laptops need only the LAN (to the game server and the Claude box). The **Claude box** needs the LAN (to the game server's `/mcp`) **and** internet (to Anthropic). The game server needs no internet. The router must provide both (see §15).
+- **Seat isolation.** Claude Code can run shell commands, so each seat's Claude runs in its own container with only its own kit folder mounted. A player can't reach another seat's folder or key, or the game server's `data/` (§11.1).
 - **Battle results are held on the server until the projector shows them.** The sim runs ahead of playback, but nothing about the outcome (phase change, ranking, points, scoreboard, battle reports, `battle:end`) is sent to anyone until playback reaches the final frame (§9).
 
 ---
@@ -109,7 +109,7 @@ Default timers (all in config, and the host can change them live):
 
 ### What each actor can do in each state
 
-| State | Kid via Claude (MCP/REST) | Kid via /play page | Projector /screen | Facilitator /admin |
+| State | Player via Claude (MCP/REST) | Player via /play page | Projector /screen | Facilitator /admin |
 |---|---|---|---|---|
 | LOBBY | `login`, `get_rules`, `get_unit_contract`, `validate_unit`, `get_game_state`, `list_my_units`, `get_unit_source`. **No submit.** | create player or log in, download kit, view own roster | title, LAN URL + QR, joined player names (grouped by team once a team mode is set) | set up the match (rounds, Open Armory, map style, team mode, §9.2) with a map preview, swap players between teams, start match, kick/reset PIN, config, validate on behalf |
 | PLAN | everything above + **`submit_unit`** (new or revised) | view own roster and costs, **select ≤3 types**. Team mode: also sees teammates' selected types live | phase, timer, per-player status icons only (✓ submitted, ✓ selected), team table (names only) in team mode | next/skip, timer ±, pause timer, **submit on behalf**, kick/reset PIN |
@@ -151,7 +151,7 @@ Enforcement is on the server. Every response and WS message is built per recipie
 | API key (for Claude) | each player gets one `pc_<24 random base32>` key. It is shown on /play under "My Claude kit" and embedded in the personal kit zip. REST and MCP accept `Authorization: Bearer pc_…`. MCP tools also accept an optional `apiKey` argument, which is used when no header is present. |
 | MCP without a key (generic kit, the **primary path**) | each seat container on the Claude box gets the generic kit (§11.1). The MCP transport is **stateless**: nothing is bound to a session. Claude calls `login({name, pin})`, which returns `{player, apiKey}`. CLAUDE.md tells Claude to save that to `.pixel-clash/player.json` and pass `apiKey` on every later tool call. This survives server restarts and Claude Code restarts with no PIN re-entry. |
 | Facilitator | admin password from env `ADMIN_PASSWORD`. If unset, the server generates 3 words and prints them at startup. `POST /api/admin/login` sets an `pc_admin` cookie. Admin endpoints take only the admin cookie. |
-| Reset PIN | admin sets a new 4-digit PIN. This kills the player's web sessions but **keeps the API key**, so the kid's Claude kit keeps working. A separate "Rotate key" action (deferrable, §16) exists if a key leaks. |
+| Reset PIN | admin sets a new 4-digit PIN. This kills the player's web sessions but **keeps the API key**, so the player's Claude kit keeps working. A separate "Rotate key" action (deferrable, §16) exists if a key leaks. |
 | Kick | removes the player from the match and frees the seat. In team mode the team plays on short-handed (teams are never re-balanced mid-match) and the kicked player's zone stays empty (§9.2). Sessions and key are revoked. Data stays until wipe unless "kick + delete" is chosen. **During BATTLE, a kick takes effect after the battle**: the sim may already be computed, so the player's units keep fighting in this battle. The player is then removed from the ranking (the others are ranked among themselves), gets no points for the round, and takes no part in later rounds. In any other phase a kick is immediate. |
 | Rate limits (per player) | login 5/min, validate 1/s, submit 1 per 3 s. Over the limit: `RATE_LIMITED` with `retryAfterMs`. |
 
@@ -159,7 +159,7 @@ Enforcement is on the server. Every response and WS message is built per recipie
 
 ## 5. Unit contract
 
-Kids' units are one JS module (TS syntax is tolerated) with a default-exported class. The contract below is served verbatim by `get_unit_contract` and copied into the kit's CLAUDE.md.
+Players' units are one JS module (TS syntax is tolerated) with a default-exported class. The contract below is served verbatim by `get_unit_contract` and copied into the kit's CLAUDE.md.
 
 ```ts
 // packages/shared/src/contract.ts
@@ -231,7 +231,7 @@ export interface Unit extends UnitStats {
 }
 ```
 
-`SelfView.radius` and `OtherView.radius` are the unit's `size`. `enemies` holds every living unit with a different `teamId`; `allies` holds every other living unit with the same `teamId`: your own units **and, in team mode, all your teammates' units** (§9.2). Kid code should compare `teamId`, not `ownerId`, to tell friend from foe.
+`SelfView.radius` and `OtherView.radius` are the unit's `size`. `enemies` holds every living unit with a different `teamId`; `allies` holds every other living unit with the same `teamId`: your own units **and, in team mode, all your teammates' units** (§9.2). Player code should compare `teamId`, not `ownerId`, to tell friend from foe.
 
 Rules (enforced by the engine, and written into CLAUDE.md):
 1. **Stats are snapshotted at validation.** The server constructs the unit twice inside the sandbox, checks the stats, and stores a frozen `StatsSnapshot`. Combat reads only the snapshot. Changing `this.damage` inside `update()` has no effect.
@@ -255,20 +255,20 @@ Rules (enforced by the engine, and written into CLAUDE.md):
 | range | finite number, 20-300 | edge to edge |
 | speed | soldier: 0.5-5. tower: exactly 0 | a tower with speed > 0 gets `TOWER_CANNOT_MOVE` |
 | attackCooldown | integer, 10-600 | 60 = one attack per second. Above 60 gets `W_SLOW_NO_DISCOUNT` (§6) |
-| color | `/^#[0-9a-fA-F]{6}$/` | the owner is shown by an outline colour and ground ring, so kid colours never clash with ownership |
+| color | `/^#[0-9a-fA-F]{6}$/` | the owner is shown by an outline colour and ground ring, so player colours never clash with ownership |
 | size | optional, finite number, **6-20** (min and max unit size). Default soldier 10, tower 14 | body radius: hitbox, separation, edge-to-edge range, and drawn width (2 × size). Max 20 means one unit exactly fills a 40 px placement cell |
 | shape | optional, one of 4 values | fallback sprite only |
 
 ### 5.1 Unit rendering: `sprite()`
 
-Units draw themselves with pixel art. The renderer never runs kid code: `sprite()` is called **once in the validation isolate** (50 ms), and its JSON-copied result is checked and stored with the unit (`sprite` in the unit record). Clients receive the stored sprite at reveal and draw it.
+Units draw themselves with pixel art. The renderer never runs player code: `sprite()` is called **once in the validation isolate** (50 ms), and its JSON-copied result is checked and stored with the unit (`sprite` in the unit record). Clients receive the stored sprite at reveal and draw it.
 
 - **Optional.** Without `sprite()`, the client generates a fallback sprite from `color` + `shape` and gives the warning `W_NO_SPRITE` ("Ask Claude to draw a pixel-art sprite for your unit!"). Both templates include a sprite, so Claude learns the format from them.
 - **Display size follows `size`, not `grid`.** The sprite is a billboard (upright, facing the camera) anchored at the unit's feet, drawn `2 × size` logical px wide (times the iso zoom), with height = width. So `grid` only sets the pixel detail, and every unit's drawn size stays between the min and max unit size. Nearest-neighbour scaling keeps the pixels crisp.
 - **Animation** (client-side, 8 fps): `walk` while the unit moved this frame, `attack` for 250 ms after it fires, `hit` for 100 ms after taking damage, `death` once, then fade. The sprite is mirrored horizontally to face its movement or target direction, so sprites should be drawn facing right.
 - **Ownership** is drawn by the engine, not the sprite: a 1 px outline in the seat colour around opaque pixels, a seat-coloured ground ring (ellipse), and the HP bar above. Disabled units get a 💤 bubble.
 - **Validation rules:** `grid` is one of the allowed values; palette has 1-16 single-char keys (not `.`) with `#RRGGBB` values; every frame has exactly `grid` rows of exactly `grid` chars, using only palette keys or `.`; frame counts are within limits; at least 10% of the idle frame's pixels are opaque; and the spec is deterministic (it is called twice and must match). Errors: `SPRITE_THREW`, `SPRITE_BAD_GRID`, `SPRITE_BAD_PALETTE`, `SPRITE_BAD_FRAME` (with `state`, `frame`, `row`, `col`), `SPRITE_TOO_MANY_FRAMES`, `SPRITE_EMPTY`, `SPRITE_NOT_STABLE`. Each comes with a `fix`.
-- **Moderation:** the facilitator can press **Hide sprite** on any unit in /admin. That unit then uses the fallback sprite everywhere (a kid could draw something inappropriate).
+- **Moderation:** the facilitator can press **Hide sprite** on any unit in /admin. That unit then uses the fallback sprite everywhere (a player could draw something inappropriate).
 - **Privacy:** a sprite is part of the roster, so it is hidden until START and sent in `battle:reveal` only for fielded types.
 
 ---
@@ -368,10 +368,10 @@ A stored unit is `{ unitId, ownerId, version, status: "valid"|"invalid", source,
 **Unit identity and revisions.** `validate_unit` and `submit_unit` take an optional `unitId`.
 - With `unitId`: this is a revision of that design. It creates a new version and may change the name. `NOT_FOUND` if the player doesn't own it.
 - Without `unitId`: if the name's slug matches one of the player's designs, that design is revised. Otherwise a new design is created with `unitId` = slug of the name (suffixed `-2`, `-3`, … on collision with a retired design).
-- CLAUDE.md tells Claude to always pass `unitId` (from `list_my_units`) when the kid asks to change an existing unit, so renaming "Swift Ninja" to "Swift Ninja II" doesn't silently use a new design slot or orphan the selection.
+- CLAUDE.md tells Claude to always pass `unitId` (from `list_my_units`) when the player asks to change an existing unit, so renaming "Swift Ninja" to "Swift Ninja II" doesn't silently use a new design slot or orphan the selection.
 - Older versions are kept for the facilitator view. Selections follow the design to its latest valid version (§3).
 
-### Error format (written for Claude first, the kid second)
+### Error format (written for Claude first, the player second)
 
 ```json
 {
@@ -388,19 +388,19 @@ A stored unit is `{ unitId, ownerId, version, status: "valid"|"invalid", source,
   ],
   "warnings": [],
   "cost": null,
-  "kidHint": "Whoa, that unit hits WAY too hard! Ask Claude to lower its damage."
+  "playerHint": "Whoa, that unit hits WAY too hard! Ask Claude to lower its damage."
 }
 ```
 
 - `SYNTAX_ERROR`, `*_THREW` and `BAD_ACTION` include `line`, `column`, the `excerpt` (3 lines of source), and the thrown `errorMessage`.
 - `UNIT_TOO_EXPENSIVE` includes `breakdown` and a `fix` that names the biggest lever. Example (Scout with cooldown 10, $902): `"Cost is $902 but the max is $500. The ×6 cooldown factor is the biggest cost: raising attackCooldown from 10 to 20 makes it ×3 ($451). The most expensive stat is speed: 4 costs $109.44 before the factor ..."`.
-- A success returns `{ ok: true, unit: {unitId, version, stats, cost, breakdown}, warnings, kidHint }`.
+- A success returns `{ ok: true, unit: {unitId, version, stats, cost, breakdown}, warnings, playerHint }`.
 
 ---
 
 ## 8. Sandbox and execution
 
-**Threat model.** The code is Claude-generated for kids on a closed LAN. Accidents (infinite loops, huge arrays, throws) are near-certain, and malice is unlikely. The sandbox must still be a real boundary, because whatever runs there runs on the facilitator's laptop.
+**Threat model.** The code is Claude-generated for young players (aged about 9-13) on a closed LAN. Accidents (infinite loops, huge arrays, throws) are near-certain, and malice is unlikely. The sandbox must still be a real boundary, because whatever runs there runs on the facilitator's laptop.
 
 **Not security boundaries:** `node:vm` (the docs say so explicitly; prototype escapes reach `process`) and plain `worker_threads` (they get full Node APIs). Neither is used alone for untrusted code.
 
@@ -421,7 +421,7 @@ A stored unit is `{ unitId, ownerId, version, status: "valid"|"invalid", source,
 
 ### Isolate hardening rules
 - **No host References or Callbacks** are ever placed in a battle or validation isolate (no logger, no helpers). All I/O is JSON strings passed as `apply` arguments, and results come back with `{ result: { copy: true } }`.
-- Kid code shares `globalThis` with the harness, so the harness captures `JSON.parse`, `JSON.stringify`, `Map`, `Function.prototype.call` and the instances' `update` references in a closure **before** any kid code is evaluated. `__tick` and `__spawn` are defined as non-writable, non-configurable properties, and the host calls them through `ivm.Reference`s taken before kid code runs, so reassigning `globalThis.__tick` changes nothing.
+- Player code shares `globalThis` with the harness, so the harness captures `JSON.parse`, `JSON.stringify`, `Map`, `Function.prototype.call` and the instances' `update` references in a closure **before** any player code is evaluated. `__tick` and `__spawn` are defined as non-writable, non-configurable properties, and the host calls them through `ivm.Reference`s taken before player code runs, so reassigning `globalThis.__tick` changes nothing.
 - The host parses `__tick` output defensively: non-JSON or a non-array means the whole tick idles plus a strike. It accepts **at most one action per instanceId**, and only for living instances **owned by that player**. Anything else (enemy ids, duplicates, unknown ids) is dropped and counts a strike.
 - Microtask loops (`Promise.resolve().then(f)` recursing) and returned Promises are covered by fixtures. The tick must still return within timeout + 10 ms, or the isolate is disposed and the player disabled.
 
@@ -431,9 +431,9 @@ A stored unit is `{ unitId, ownerId, version, status: "valid"|"invalid", source,
 |---|---|---|
 | A unit throws in `update()` | that unit idles this tick, and the unit gets +1 strike | |
 | A unit reaches its strike limit | the unit is disabled for this battle (stands still, can still be hit). Friendly message: "Zappy got confused too many times and is taking a nap 💤" | 30 throws |
-| A player's `__tick` exceeds the hard timeout | all that player's units idle this tick. The host then reads `__current` with a separate short call (`compileScriptSync('__current').runSync(ctx, {timeout: 5})`) to name the culprit unit. Its **first** timeout in the battle only gives it +1 strike and a report entry ("Zappy took too long once"), because one stall can be the host (GC, scheduler), not the kid's code. Its **second** timeout in the battle **disables that one culprit unit**, so a real infinite loop is napping by its second tick. The player's other units keep running. | 12 ms; disable on the 2nd timeout (`sandbox.battle.timeoutsToDisable`, default 2) |
+| A player's `__tick` exceeds the hard timeout | all that player's units idle this tick. The host then reads `__current` with a separate short call (`compileScriptSync('__current').runSync(ctx, {timeout: 5})`) to name the culprit unit. Its **first** timeout in the battle only gives it +1 strike and a report entry ("Zappy took too long once"), because one stall can be the host (GC, scheduler), not the player's code. Its **second** timeout in the battle **disables that one culprit unit**, so a real infinite loop is napping by its second tick. The player's other units keep running. | 12 ms; disable on the 2nd timeout (`sandbox.battle.timeoutsToDisable`, default 2) |
 | Timeouts continue after the culprit is disabled | all of the player's units are disabled for the rest of the battle. Only timeouts with no culprit left to blame count (none named, or it already naps); a culprit's own forgiven and disabling timeouts don't, so several copies of one looping design each nap and the rest of the army keeps fighting | 3 in a row or 5 total |
-| `__tick` takes longer than the soft limit | +1 slow strike for the player. The harness keeps per-unit time (using the real `Date.now`, captured before kid code runs and never exposed) so the report can name the slowest unit. | 6 ms |
+| `__tick` takes longer than the soft limit | +1 slow strike for the player. The harness keeps per-unit time (using the real `Date.now`, captured before player code runs and never exposed) so the report can name the slowest unit. | 6 ms |
 | Slow strikes reach the limit | disable the slowest unit first; if slow strikes continue, disable the player. This stops a 15-20 ms unit from stretching a 90 s battle and stalling playback. | 30 slow strikes |
 | The isolate runs out of memory or crashes | dispose it and disable all of the player's units | |
 
@@ -442,7 +442,7 @@ Every strike and error is recorded in the player's **battle report** (§10) with
 ### Fallback (`config.sandbox = 'process'`): built only if M0 fails
 If isolated-vm won't install on the host, each player runs in a `child_process.fork` started with `--max-old-space-size=64` and Node's permission model (`--permission`, which needs Node ≥ 22.13; earlier 22.x needs `--experimental-permission`). It grants no fs-write, no child processes, no workers, and fs-read only for the child runner, which is **bundled into a single file** so `--allow-fs-read` can name just that file. The child starts with an **empty env** (`env: {}`) so it doesn't inherit `ADMIN_PASSWORD` or other secrets. Inside it, the code runs in a `node:vm` context with frozen minimal globals and the `timeout` option. The host SIGKILLs the child when a reply misses `2 × hard timeout`, then disables that player.
 
-**Residual risk (document for staff):** the permission model has no network control on Node 22. A `node:vm` escape in the child grants network access to the LAN **and the internet** (the router has an uplink, §15), plus read access to the allowed path. The process boundary and the vm layer make this unlikely for Claude-written kid code, but it is not a real sandbox.
+**Residual risk (document for staff):** the permission model has no network control on Node 22. A `node:vm` escape in the child grants network access to the LAN **and the internet** (the router has an uplink, §15), plus read access to the allowed path. The process boundary and the vm layer make this unlikely for Claude-written player code, but it is not a real sandbox.
 
 A third mode, `'inproc-unsafe'` (vm only), exists for dev and tests only, and startup refuses it unless `--unsafe` is passed.
 
@@ -660,15 +660,15 @@ Both kit zips build the MCP URL from the **`Host` header of the download request
 | GET `/admin/metrics` | admin | | diagnostics (M6): `{pid, phase, round, rssMb, heapUsedMb, heapTotalMb, externalMb, wsClients, battle: {round, players, units, simDone, ticks, tickMs: {p50, p99, p99Warm, max, mean, over8}, simWallMs, playback: {tick, speed, paused, stalls, stalledMs}} \| null}` for the running battle, else the last one. Used by `npm run loadtest` |
 | POST `/admin/wipe` | admin | `{confirm:"WIPE"}` | deletes `data/` and resets |
 
-**WebSocket `/ws`**: the client sends `{hello, role:'player'|'screen'|'admin'}` and auth comes from the cookie. The server pushes `state` (on change plus timer ticks at 1 Hz; carries `match.map`, `teams` and `teamTable`), `private` (own data: roster, selection, placement, zone, and in team mode the `team` block with teammates' live selections, zones and placements, re-sent to every member when any member changes, §9.2), `battle:reveal` (now also every zone's owner and the teams), `battle:frames` (batched every 50 ms), `battle:end` (only when playback reaches the final frame; includes the side ranking and, in team mode, the team table), `toast`. **`services/units` emits `private` to all of the owner's sockets after every submit, retire, re-price and invalidation**, so a unit Claude submits appears on the kid's open /play page within a second.
+**WebSocket `/ws`**: the client sends `{hello, role:'player'|'screen'|'admin'}` and auth comes from the cookie. The server pushes `state` (on change plus timer ticks at 1 Hz; carries `match.map`, `teams` and `teamTable`), `private` (own data: roster, selection, placement, zone, and in team mode the `team` block with teammates' live selections, zones and placements, re-sent to every member when any member changes, §9.2), `battle:reveal` (now also every zone's owner and the teams), `battle:frames` (batched every 50 ms), `battle:end` (only when playback reaches the final frame; includes the side ranking and, in team mode, the team table), `toast`. **`services/units` emits `private` to all of the owner's sockets after every submit, retire, re-price and invalidation**, so a unit Claude submits appears on the player's open /play page within a second.
 
 ### 10.4 MCP server
 
 - The transport is **Streamable HTTP** at `POST /mcp`, using `@modelcontextprotocol/sdk`'s `StreamableHTTPServerTransport` in **stateless mode** (`sessionIdGenerator: undefined`, a fresh server/transport per request). There is no `Mcp-Session-Id` to go stale, so a server restart is invisible to connected Claude Code clients. `GET`/`DELETE /mcp` return 405.
-- Auth, per request: identity comes from the `Authorization: Bearer pc_…` header first, then from the tool's optional `apiKey` argument. **`/mcp` never returns HTTP 401 or 403**: Claude Code treats those as "needs OAuth" and shows the server as broken. Every connection is accepted and `tools/list` always works. Without a valid identity, `get_rules`, `get_unit_contract` and `login` work, and every other tool returns a tool result with `isError: true`: `AUTH_REQUIRED` (fix: "Ask the kid for their player name and 4-digit PIN and call login, then pass the apiKey it returns.") or `KEY_INVALID` for a revoked/unknown key (fix: "Call login again with the kid's name and PIN. If that fails, ask a grown-up.").
+- Auth, per request: identity comes from the `Authorization: Bearer pc_…` header first, then from the tool's optional `apiKey` argument. **`/mcp` never returns HTTP 401 or 403**: Claude Code treats those as "needs OAuth" and shows the server as broken. Every connection is accepted and `tools/list` always works. Without a valid identity, `get_rules`, `get_unit_contract` and `login` work, and every other tool returns a tool result with `isError: true`: `AUTH_REQUIRED` (fix: "Ask the player for their name and 4-digit PIN and call login, then pass the apiKey it returns.") or `KEY_INVALID` for a revoked/unknown key (fix: "Call login again with the player's name and PIN. If that fails, ask a grown-up.").
 - **Origin check** (DNS-rebinding protection required by the Streamable HTTP spec): a small middleware on `/mcp` rejects requests whose `Origin` header is present and not in the allowlist (`http://<each LAN IPv4 from util/lan.ts>:<port>`, `http://localhost:<port>`, `http://127.0.0.1:<port>`). Requests with no `Origin` (Claude Code sends none) are allowed. The SDK's `enableDnsRebindingProtection` is not used, since a wrong `allowedHosts` would block every laptop.
 - The server name is `pixel-clash`. Each tool returns `structuredContent` (JSON matching `outputSchema`) **and** a `content` text block with the same JSON plus a one-line summary. A failure sets `isError: true` and uses the §7 error format.
-- Server `instructions` (shown to Claude) are a 10-line summary: the kid only prompts; if you have no key, `login` and save the apiKey; validate before submit; submit only in PLAN; pass `unitId` when revising; read `fix` fields; explain to the kid simply.
+- Server `instructions` (shown to Claude) are a 10-line summary: the player only prompts; if you have no key, `login` and save the apiKey; validate before submit; submit only in PLAN; pass `unitId` when revising; read `fix` fields; explain to the player simply.
 
 Every tool except `get_rules`, `get_unit_contract` and `login` also accepts an optional `apiKey: string`.
 
@@ -685,21 +685,21 @@ Every tool except `get_rules`, `get_unit_contract` and `login` also accepts an o
 | `list_armory` | `{}` | `{enabled, entries:[{armoryId, displayName, creatorName, stats, cost, breakdown, roundAdded, status}]}`. Empty when the toggle is off. Lets Claude suggest counters or improved designs. |
 | `get_battle_report` | `{round?}` (default: latest finished) | §10.3 report for own units, with culprit unitId/instanceId, error messages and lines. Not available for a battle still playing back. |
 
-Selection and placement are **not** MCP tools. Kids do those on the web page.
+Selection and placement are **not** MCP tools. Players do those on the web page.
 
 ---
 
-## 11. Kid starter kit
+## 11. Player starter kit
 
 Built by `services/kit.ts` from `starter-kit/` with placeholders filled in. It is served as a zip. The address placeholders are filled from the download request's `Host` header (§10.3), so the kit points at the address the laptop actually reached, even when the host has several interfaces (Docker bridge, VPN, Wi-Fi + Ethernet).
 
-**Primary path: the generic kit is rendered into each seat container on the Claude box** (§11.1). On the day the kid opens their seat's ttyd tab and tells Claude their name and PIN. The zips (generic and personal) remain for debugging and as a fallback on a laptop that has Claude Code installed.
+**Primary path: the generic kit is rendered into each seat container on the Claude box** (§11.1). On the day the player opens their seat's ttyd tab and tells Claude their name and PIN. The zips (generic and personal) remain for debugging and as a fallback on a laptop that has Claude Code installed.
 
 ### 11.1 Claude box: one container per seat (`sessions/`)
 
 ```
 sessions/
-├── Dockerfile            # node:22-slim + pinned Claude Code + pinned ttyd + curl; non-root user "kid"
+├── Dockerfile            # node:22-slim + pinned Claude Code + pinned ttyd + curl; non-root user "player"
 ├── entrypoint.sh         # renders /kit from the starter-kit templates using $PIXEL_CLASH_URL, then execs ttyd
 ├── docker-compose.yml    # services seat1..seat8
 ├── .env.example          # PIXEL_CLASH_URL=http://192.168.8.10:8080, TTYD_PASS_1..8
@@ -708,13 +708,13 @@ sessions/
 
 | Item | Spec |
 |---|---|
-| Container | one per seat (`seat1`…`seat8`, matching game seats 1-8), runs as non-root `kid`. The only mounts are named volumes: `kitN:/kit` (the kit folder) and `claudeN:/home/kid/.claude` (+ `.claude.json`) for Claude Code login and trust state. No host paths, no Docker socket, no privileged mode, `cap_drop: [ALL]`, `no-new-privileges`, memory limit 1.5 GB and CPU 1.0 per container (limits, not reservations: a seat typically uses well under 1 GB and under 1 core, and 8 × 1.5 GB still leaves ~4 GB for the host, so the box needs **~8 cores / 16 GB**, §15). For smaller games start only the seats in use (`docker compose up -d seat1 seat2 seat3`); the rest are never created. Compose still requires all 8 `TTYD_PASS_N`. |
-| ttyd | `ttyd -W -p 7681 -c kid:${TTYD_PASS_N} -t fontSize=18 -t titleFixed="Pixel Clash seat N" bash -c 'cd /kit && while true; do claude; sleep 1; done'`. `-W` makes it writable. Claude is restarted if it exits, and the kid never gets a shell prompt. The host port is `768N` (7681-7688). Basic auth is a short word printed on the seat card, so a kid can't drive another seat's terminal. |
-| Kit render | `entrypoint.sh` copies `starter-kit/` into `/kit` on first start (it never overwrites `.pixel-clash/player.json` or `units/`), fills `{{HOST}}` from `PIXEL_CLASH_URL` and renames the `*.tmpl` files. The generic kit has no key: the kid gives their name and PIN once, and Claude saves the apiKey to `/kit/.pixel-clash/player.json`, which persists in the volume. |
+| Container | one per seat (`seat1`…`seat8`, matching game seats 1-8), runs as non-root `player`. The only mounts are named volumes: `kitN:/kit` (the kit folder) and `claudeN:/home/player/.claude` (+ `.claude.json`) for Claude Code login and trust state. No host paths, no Docker socket, no privileged mode, `cap_drop: [ALL]`, `no-new-privileges`, memory limit 1.5 GB and CPU 1.0 per container (limits, not reservations: a seat typically uses well under 1 GB and under 1 core, and 8 × 1.5 GB still leaves ~4 GB for the host, so the box needs **~8 cores / 16 GB**, §15). For smaller games start only the seats in use (`docker compose up -d seat1 seat2 seat3`); the rest are never created. Compose still requires all 8 `TTYD_PASS_N`. |
+| ttyd | `ttyd -W -p 7681 -c player:${TTYD_PASS_N} -t fontSize=18 -t titleFixed="Pixel Clash seat N" bash -c 'cd /kit && while true; do claude; sleep 1; done'`. `-W` makes it writable. Claude is restarted if it exits, and the player never gets a shell prompt. The host port is `768N` (7681-7688). Basic auth is a short word printed on the seat card, so a player can't drive another seat's terminal. |
+| Kit render | `entrypoint.sh` copies `starter-kit/` into `/kit` on first start (it never overwrites `.pixel-clash/player.json` or `units/`), fills `{{HOST}}` from `PIXEL_CLASH_URL` and renames the `*.tmpl` files. The generic kit has no key: the player gives their name and PIN once, and Claude saves the apiKey to `/kit/.pixel-clash/player.json`, which persists in the volume. |
 | Login (adults, beforehand) | `docker compose run --rm seatN claude` → `/login` with the event account, then accept the folder-trust dialog for `/kit`. The state persists in `claudeN`. Do this for all 8 seats, then check each with "Are you connected to Pixel Clash?" (Claude calls `get_game_state`). |
-| Permissions | the kit's `.claude/settings.json` allowlist (below). Because the container is the boundary, the M0 spike also tries `--permission-mode acceptEdits`, and the facilitator decides whether kids may see any approval prompt. `bypassPermissions` is not used. |
+| Permissions | the kit's `.claude/settings.json` allowlist (below). Because the container is the boundary, the M0 spike also tries `--permission-mode acceptEdits`, and the facilitator decides whether players may see any approval prompt. `bypassPermissions` is not used. |
 | Network | default bridge network. Egress is needed to the game server (LAN) and to Anthropic. Optional hardening: a host firewall rule that allows container egress only to the game server IP and `api.anthropic.com`/`claude.ai` (documented in README, not required). |
-| Reset a seat | `docker compose restart seatN` (keeps login, kit and key). New kid on the same seat: `docker compose run --rm seatN rm -f /kit/.pixel-clash/player.json` then restart. |
+| Reset a seat | `docker compose restart seatN` (keeps login, kit and key). New player on the same seat: `docker compose run --rm seatN rm -f /kit/.pixel-clash/player.json` then restart. |
 | Wipe after the event | `docker compose down -v` removes all kit folders, keys, chat history and Claude logins. |
 
 ```
@@ -726,7 +726,7 @@ pixel-clash-kit/
 ├── units/
 │   ├── basic_soldier.js      # template (also pre-registered on the server)
 │   └── basic_tower.js
-└── PROMPTS.md                # example prompts for the kid (also printed on cards)
+└── PROMPTS.md                # example prompts for the player (also printed on cards)
 ```
 
 `.mcp.json` (personal kit):
@@ -747,21 +747,21 @@ The generic kit omits `headers`. Claude then calls `login` and passes `apiKey` a
     "Read(./units/**)", "Edit(./units/**)",
     "Read(./.pixel-clash/**)", "Edit(./.pixel-clash/**)" ] } }
 ```
-There is deliberately **no** `Bash(curl …)` rule: Claude Code Bash rules are prefix rules, so even `Bash(curl -sS http://HOST/api/:*)` would approve anything appended after the URL (a second URL to any host, `-T`/`--data-binary @<any file>`, `-o <path>`). The curl fallback (CLAUDE.md §9) is only for a seat whose MCP connection failed, so each curl call shows a permission prompt and CLAUDE.md tells Claude to ask the kid to fetch an adult first; the adult checks the command is one of the §9 commands toward the game server.
-Kids should never see an approval prompt on the normal (MCP) path; only the curl fallback prompts, and then an adult answers it. Adults accept the one-time folder-trust dialog during the pre-event login of each seat (§11.1), and it is on the setup checklist.
+There is deliberately **no** `Bash(curl …)` rule: Claude Code Bash rules are prefix rules, so even `Bash(curl -sS http://HOST/api/:*)` would approve anything appended after the URL (a second URL to any host, `-T`/`--data-binary @<any file>`, `-o <path>`). The curl fallback (CLAUDE.md §9) is only for a seat whose MCP connection failed, so each curl call shows a permission prompt and CLAUDE.md tells Claude to ask the player to fetch an adult first; the adult checks the command is one of the §9 commands toward the game server.
+Players should never see an approval prompt on the normal (MCP) path; only the curl fallback prompts, and then an adult answers it. Adults accept the one-time folder-trust dialog during the pre-event login of each seat (§11.1), and it is on the setup checklist.
 
 `CLAUDE.md` sections:
-1. **Who you're helping.** A kid (about 9-13) is playing Pixel Clash. They only talk to you, so never ask them to type or edit code. Use short, cheerful explanations.
-2. **Player.** `{{PLAYER_NAME}}` (personal kit). Generic kit: "First read `.pixel-clash/player.json`. If it is missing, or a tool says AUTH_REQUIRED or KEY_INVALID, ask the kid for their player name and 4-digit PIN, call `login`, save `{name, apiKey}` to `.pixel-clash/player.json`, and pass `apiKey` on every pixel-clash tool call."
-3. **Workflow.** Call `get_game_state` → write or edit `units/<name>.js` → `validate_unit` with the file's text → fix using each error's `fix` → `submit_unit` (only when `submissionsOpen`; otherwise tell the kid "we'll send it when the Plan phase starts" and keep it validated) → tell the kid the cost and remind them to select and place it on the web page. **When changing an existing unit, always pass its `unitId` (from `list_my_units`)**, even if you rename it.
+1. **Who you're helping.** A player (aged about 9-13) is playing Pixel Clash. They only talk to you, so never ask them to type or edit code. Use short, cheerful explanations.
+2. **Player.** `{{PLAYER_NAME}}` (personal kit). Generic kit: "First read `.pixel-clash/player.json`. If it is missing, or a tool says AUTH_REQUIRED or KEY_INVALID, ask the player for their name and 4-digit PIN, call `login`, save `{name, apiKey}` to `.pixel-clash/player.json`, and pass `apiKey` on every pixel-clash tool call."
+3. **Workflow.** Call `get_game_state` → write or edit `units/<name>.js` → `validate_unit` with the file's text → fix using each error's `fix` → `submit_unit` (only when `submissionsOpen`; otherwise tell the player "we'll send it when the Plan phase starts" and keep it validated) → tell the player the cost and remind them to select and place it on the web page. **When changing an existing unit, always pass its `unitId` (from `list_my_units`)**, even if you rename it.
 4. **The contract.** The full §5 TS types, the bounds table, and engine rules 1-5. Range is **edge to edge**; bodies have a `radius` equal to `size`. The arena size changes with the player count, so use `world.width`, `world.height` and `world.center`, never 800 or 400. Tell friend from foe with `teamId`.
-4b. **Drawing the unit.** The `sprite()` format (§5.1) with a worked 16×16 example, the tips "draw it facing right", "keep a dark outline so it pops on the floor", "use 2 walk frames and 1 attack frame", and "the kid can ask for any look: describe it back to them before drawing". Claude should always include a sprite.
+4b. **Drawing the unit.** The `sprite()` format (§5.1) with a worked 16×16 example, the tips "draw it facing right", "keep a dark outline so it pops on the floor", "use 2 walk frames and 1 attack frame", and "the player can ask for any look: describe it back to them before drawing". Claude should always include a sprite.
 5. **Cost formula** with coefficients and two worked examples. Tips: "Cooldown below 60 multiplies the whole cost." "Cooldown above 60 gives **no** discount, so use 60 instead of slower." "Two or three medium units usually beat one giant one."
 6. **Budget rules:** $1,000 per round, ≤3 types, ≤$500 per unit, and 4-8 units is a good army. After 50 s a safe circle shrinks toward the centre; units outside it lose health.
 6b. **Teams** (when `get_game_state` shows `myTeam`): your `allies` include your teammates' units, and you can't hurt them. Every teammate gets the team's place points. `teammates` lists what they selected, so suggest units that fill a gap (e.g. towers behind a teammate's tanks). Teammates' code and budgets are their own.
 7. **After a battle:** call `get_battle_report` and fix units that threw errors, timed out, or got disabled (the report names the unit and line).
 8. **Don'ts:** no imports, network, timers, async, or `Math.random` in the constructor. Don't change stats in `update()`. Don't call anything except the pixel-clash tools for the game.
-9. **Fallback** if the MCP tools are missing: the exact `curl` commands for `POST /api/units/validate` and `POST /api/units` with the Bearer key and a JSON body built from the file (works on macOS/Linux, and as `curl.exe` on Windows 10+). They are not pre-approved: each asks for permission, so Claude tells the kid to fetch an adult first.
+9. **Fallback** if the MCP tools are missing: the exact `curl` commands for `POST /api/units/validate` and `POST /api/units` with the Bearer key and a JSON body built from the file (works on macOS/Linux, and as `curl.exe` on Windows 10+). They are not pre-approved: each asks for permission, so Claude tells the player to fetch an adult first.
 
 `PROMPTS.md` examples:
 - "Make me a fast ninja soldier that runs at the closest enemy and slashes it. Make it green."
@@ -778,7 +778,7 @@ Kids should never see an approval prompt on the normal (MCP) path; only the curl
 - "Download Claude kit" (generic zip, address from the Host header).
 - **Seat terminal links**: the admin enters the Claude box address once in /admin. /setup and the projector then show `http://<claude-box>:7681` … `:7688` as "Seat 1-8 terminal" links/QRs, and `/play` shows "Open my Claude terminal" with a seat picker (a link only; the server never talks to ttyd).
 - A setup checklist for the Claude box (§11.1): `docker compose up -d` → log in and trust each seat → ask "Are you connected to Pixel Clash?". Claude should call `get_game_state` with no further prompts.
-- Each logged-in kid's /play page also has **"Download my Claude kit"** (personal zip with the key) as a fallback.
+- Each logged-in player's /play page also has **"Download my Claude kit"** (personal zip with the key) as a fallback.
 
 ---
 
@@ -786,7 +786,7 @@ Kids should never see an approval prompt on the normal (MCP) path; only the curl
 
 **Isometric 2D pixel art.** The battle is drawn as a 2:1 isometric view of the top-down sim: `screenX = (x − y) · k`, `screenY = (x + y) · k / 2`, so the S×S arena (800, 1040 or 1200, §9.2) becomes a diamond. The zoom `k` is chosen per battle so the whole diamond fits the canvas (the projector zooms out for bigger arenas; sprites, rings and HP bars scale with it, and HP bars and seat badges keep a minimum on-screen size). Units are billboard sprites from `sprite()` (§5.1), depth-sorted by `x + y` every frame. Projectiles fly in a small arc (visual height only). The sudden-death circle is drawn as an ellipse on the ground plane. The floor is pixel-art iso tiles (one tile per 40 px cell), with the current map's zone bases tinted (seat colour, or team colour in team mode; Lanes draws its no-man's-land and Islands its clusters with different cosmetic tiles) and cosmetic props (rocks, crystals, banners) outside the arena edge. There are no gameplay obstacles. All art is generated in code or bundled, with no external assets. `src/common/render/iso.ts` holds the projection, depth sort and tile drawing, and it is shared by /screen, the /play battle view and the replay.
 
-Retro arcade look: dark background, a pixel font (bundled "Press Start 2P", OFL) for headings only, and a readable sans for body text. Player text is ≥ 16 px. Projector text is large. **Seat colours** are an 8-colour set based on Okabe-Ito, adjusted for a dark floor: 1 orange `#E69F00`, 2 sky `#56B4E9`, 3 green `#009E73`, 4 yellow `#F0E442`, 5 blue `#4B8DFF`, 6 vermillion `#D55E00`, 7 pink `#CC79A7`, 8 white `#EEEEEE`. They are used for **outlines and zone tints** only. Eight colours can't all be told apart with every colour-vision type, so every unit, zone and player tile also shows its **seat number badge** (1-8, pixel font, on the HP bar's left end and on the zone tint). In team mode the **ground ring uses the team colour and pattern** (§9.2: gold solid, cyan dashed, magenta double, lime dotted) and the 1 px sprite outline keeps the seat colour, so you can read team and seat at a glance. In free-for-all the ring is the seat colour. Language is kid-friendly throughout (§12.4).
+Retro arcade look: dark background, a pixel font (bundled "Press Start 2P", OFL) for headings only, and a readable sans for body text. Player text is ≥ 16 px. Projector text is large. **Seat colours** are an 8-colour set based on Okabe-Ito, adjusted for a dark floor: 1 orange `#E69F00`, 2 sky `#56B4E9`, 3 green `#009E73`, 4 yellow `#F0E442`, 5 blue `#4B8DFF`, 6 vermillion `#D55E00`, 7 pink `#CC79A7`, 8 white `#EEEEEE`. They are used for **outlines and zone tints** only. Eight colours can't all be told apart with every colour-vision type, so every unit, zone and player tile also shows its **seat number badge** (1-8, pixel font, on the HP bar's left end and on the zone tint). In team mode the **ground ring uses the team colour and pattern** (§9.2: gold solid, cyan dashed, magenta double, lime dotted) and the 1 px sprite outline keeps the seat colour, so you can read team and seat at a glance. In free-for-all the ring is the seat colour. Language is friendly throughout (§12.4).
 
 ### 12.1 Player page `/play` (laptop-first, also usable on tablets)
 - **Join:** name + 4-digit PIN keypad, with tabs for "New player" and "I'm back".
@@ -800,7 +800,7 @@ Retro arcade look: dark background, a pixel font (bundled "Press Start 2P", OFL)
 ### 12.2 Projector `/screen` (1920×1080 target, scales)
 - **LOBBY/PLAN/PLACEMENT:** title, round "2 of 3", a big timer, the join QR + URL (LOBBY/PLAN), and player tiles with **only** status ticks (grouped by team in team mode, with the team table). The arena shows the map's empty zone outlines, zoomed to fit, with no owners. **No unit data at all before START.**
 - **START:** a "3-2-1 CLASH!" reveal animation, then units drop into their zones.
-- **BATTLE:** an isometric canvas arena with interpolated 60 fps rendering, kid-drawn animated sprites, seat-coloured outlines and ground rings, HP bars, projectile arcs and trails, hit flashes, death animations, and floating damage numbers. A 90 s countdown (turns red at 10 s). At `suddenDeath.startTick` (50 s by default) a "SUDDEN DEATH!" banner and the shrinking safe circle. Per-player army value bars (team mode: one bar per team, split by member). Speed and paused indicators. A "💤 X is taking a nap" toast when a unit is disabled.
+- **BATTLE:** an isometric canvas arena with interpolated 60 fps rendering, player-drawn animated sprites, seat-coloured outlines and ground rings, HP bars, projectile arcs and trails, hit flashes, death animations, and floating damage numbers. A 90 s countdown (turns red at 10 s). At `suddenDeath.startTick` (50 s by default) a "SUDDEN DEATH!" banner and the shrinking safe circle. Per-player army value bars (team mode: one bar per team, split by member). Speed and paused indicators. A "💤 X is taking a nap" toast when a unit is disabled.
 - **RESULTS:** a ranking with placement medals (by team in team mode, then the team table and individual totals), points animation, and a "Replay" button (also triggerable from admin) with 1x/2x (scrub is deferrable).
 - **MATCH_RESULTS:** a podium (a team podium in team mode), confetti, and the final individual scoreboard.
 
@@ -815,7 +815,7 @@ Retro arcade look: dark background, a pixel font (bundled "Press Start 2P", OFL)
 - **Sound** (WebAudio-synthesized, no assets): placement blip, ready chime, countdown beeps, shoot (pitch by unit type), hit, death, victory jingle. A mute toggle on the projector. Player pages are muted by default.
 - **Animations:** reveal, unit bob/idle, muzzle flash, screen shake on big hits, results count-up, confetti.
 - **Replay** of the last battle from stored frames, at 1x/2x.
-- **Kid language:** "Your unit costs too much! ($612, the max is $500)", "Zappy is taking a nap 💤 (too many errors)", "Plan time! Ask Claude for new units", "Place your army!", "CLASH!".
+- **Friendly language:** "Your unit costs too much! ($612, the max is $500)", "Zappy is taking a nap 💤 (too many errors)", "Plan time! Ask Claude for new units", "Place your army!", "CLASH!".
 
 ---
 
@@ -838,7 +838,7 @@ pixel-clash/
 │   │   ├── config.ts             # config schema (zod) + defaults
 │   │   ├── cost.ts               # computeCost(stats, coeffs) -> {raw,cost,breakdown}
 │   │   ├── bounds.ts             # stat guard checks -> error objects
-│   │   ├── errors.ts             # error codes, messages, fix + kidHint templates
+│   │   ├── errors.ts             # error codes, messages, fix + playerHint templates
 │   │   ├── protocol.ts           # REST/WS/MCP DTOs
 │   │   ├── geometry.ts           # arena, zones, zone-local cells, per-round zone assignment, safe circle
 │   │   ├── maps.ts               # §9.2 map styles, zone tables + facing, arena size per player count, team blocks
@@ -863,7 +863,7 @@ pixel-clash/
 │   └── starter-kit/              # kit template files with {{placeholders}}
 │       ├── CLAUDE.md.tmpl  PROMPTS.md  .mcp.json.tmpl  .claude/settings.json.tmpl
 │       └── units/{basic_soldier,basic_tower}.js
-│       # *.tmpl so this repo's Claude Code never loads the kid-facing CLAUDE.md
+│       # *.tmpl so this repo's Claude Code never loads the player-facing CLAUDE.md
 │       # or settings while building; renamed when the zip is built
 ├── tests/
 │   ├── fixtures/units/{good,bad,malicious}/*.js
@@ -910,8 +910,8 @@ Persistence: `data/state.json` (players, PIN hashes, keys, match state; debounce
 
 ### Dress-rehearsal checklist (on the event hardware, ≥ 1 day before)
 - [ ] Host OS: `npm ci && npm run build && npm start` works offline. isolated-vm loads (banner says `sandbox: isolated-vm`).
-- [ ] Router up. Both the game server and the Claude box have reserved IPs. Firewalls allow inbound TCP 8080 (game server) and 7681-7688 (Claude box). Kid laptops reach `/play` and all 8 ttyd ports. Containers on the Claude box reach the game server's `/mcp` **and** Anthropic.
-- [ ] Claude box: `docker compose up -d`, all 8 seats logged in and trusted. From the kid laptops (as many as we have, up to 8; fill the rest with `npm run bots`): open ttyd seat N (basic auth from the seat card) → kid gives name + PIN → MCP connected with **no approval prompts** → submit → unit appears on /play → select → place → START → battle → results, run for 3 full rounds. Then play one round each of: 2p Duel, 3p Triangle, 6p Ring free-for-all, 2v2 Corners, 4v4 Lanes and 2v2v2v2 Islands (with a team swap in LOBBY), and check teammates see each other's selections and placements while opponents and the projector don't.
+- [ ] Router up. Both the game server and the Claude box have reserved IPs. Firewalls allow inbound TCP 8080 (game server) and 7681-7688 (Claude box). Player laptops reach `/play` and all 8 ttyd ports. Containers on the Claude box reach the game server's `/mcp` **and** Anthropic.
+- [ ] Claude box: `docker compose up -d`, all 8 seats logged in and trusted. From the player laptops (as many as we have, up to 8; fill the rest with `npm run bots`): open ttyd seat N (basic auth from the seat card) → player gives name + PIN → MCP connected with **no approval prompts** → submit → unit appears on /play → select → place → START → battle → results, run for 3 full rounds. Then play one round each of: 2p Duel, 3p Triangle, 6p Ring free-for-all, 2v2 Corners, 4v4 Lanes and 2v2v2v2 Islands (with a team swap in LOBBY), and check teammates see each other's selections and placements while opponents and the projector don't.
 - [ ] Isolation check: in a seat terminal, ask Claude to list `/`, read another seat's files, and read the game server's `data/`. It must find nothing beyond its own `/kit`.
 - [ ] Projector at its real resolution: readability from the back of the room (also the 1200 arena zoomed out: seat badges and HP bars readable, 8 seat colours and 4 team rings distinguishable), and sound level.
 - [ ] Every admin control works once: map style override, team mode, team swap, pause, 2x, skip, force start with an un-ready player (and one with no placements: auto-place), kick during BATTLE, reset PIN, validate on behalf outside PLAN, submit on behalf in PLAN, config retune, replay, New match.
@@ -923,45 +923,45 @@ Persistence: `data/state.json` (players, PIN hashes, keys, match state; debounce
 
 ## 15. Ops and event day
 
-- **Network.** Plan for up to 8 kid laptops + the game server + the Claude box (+ a facilitator device) on the router. Bring a travel router (or a phone hotspot that allows client-to-client traffic) **with an internet uplink**. The Claude box needs Anthropic. Don't rely on the venue Wi-Fi, which often has client isolation. Give the game server and the Claude box DHCP reservations. If the game server's IP changes, update `PIXEL_CLASH_URL` in `sessions/.env` and run `docker compose up -d` (the entrypoint re-renders `.mcp.json`).
+- **Network.** Plan for up to 8 player laptops + the game server + the Claude box (+ a facilitator device) on the router. Bring a travel router (or a phone hotspot that allows client-to-client traffic) **with an internet uplink**. The Claude box needs Anthropic. Don't rely on the venue Wi-Fi, which often has client isolation. Give the game server and the Claude box DHCP reservations. If the game server's IP changes, update `PIXEL_CLASH_URL` in `sessions/.env` and run `docker compose up -d` (the entrypoint re-renders `.mcp.json`).
 - **Claude box.** Docker (or Docker Desktop) with `sessions/` built and all 8 seats logged in the day before. Allow inbound 7681-7688. Disable sleep. Sizing: 8 Claude Code processes need about **8 cores and 16 GB RAM** (4 seats: 4 cores / 8 GB). For a smaller game, start only the seats in use.
 - **Host.** Run on the host OS (not the devcontainer, whose ports forward to localhost). Use **Node 24 LTS** (not 26: isolated-vm has no build for it) and `npm start`. The game server is a **macOS arm64** laptop. Install Python + a C++ toolchain (Xcode CLT / VS Build Tools) beforehand as insurance for isolated-vm. Allow Node through the OS firewall (macOS prompt / Windows Defender private-network rule / `ufw allow 8080/tcp`). Disable sleep. An 8-player battle ticks 8 isolates in parallel (§9.2): use a laptop with **≥ 8 cores**, on mains power, and confirm the 8-player load test (§14) on it.
-- **Prereqs per kid laptop.** A browser only. A printed **seat card** per laptop (8 cards, showing the seat number and colour): the `/play` URL/QR, the ttyd seat URL (`http://<claude-box>:768N`) and its basic-auth word.
-- **Run of show.** Kids join `/play` from the QR (name + PIN) → open their seat's terminal tab (Claude is already running) → tell Claude their name and PIN → facilitator picks the map style and team mode in Start match (checks the preview, swaps players between teams if needed) and starts the match (round 1 PLAN = 15 min) → … → MATCH_RESULTS.
+- **Prereqs per player laptop.** A browser only. A printed **seat card** per laptop (8 cards, showing the seat number and colour): the `/play` URL/QR, the ttyd seat URL (`http://<claude-box>:768N`) and its basic-auth word.
+- **Run of show.** Players join `/play` from the QR (name + PIN) → open their seat's terminal tab (Claude is already running) → tell Claude their name and PIN → facilitator picks the map style and team mode in Start match (checks the preview, swaps players between teams if needed) and starts the match (round 1 PLAN = 15 min) → … → MATCH_RESULTS.
 - **Fallbacks:**
 
   | Problem | Fallback |
   |---|---|
   | MCP won't connect in a seat | Claude uses the `curl` commands in CLAUDE.md (REST with the Bearer key). The REST API works without MCP. curl is **not** pre-allowed (§11), so each call prompts: an adult checks it is a §9 command toward the game server and approves it. |
-  | A seat's terminal is stuck | `docker compose restart seatN` (login, kit and key survive). Or move the kid to a spare seat. |
-  | The Claude box or Anthropic is down | the kid dictates; the facilitator validates the code in /admin any time and presses **Submit on behalf** during PLAN (add PLAN time if needed) |
-  | Kid forgot their PIN | admin Reset PIN (the key and kit keep working) |
-  | A kid is absent or stalls | force start; 2-8 player games are supported and the map follows the count; optional `npm run bots`. Team mode: decide in LOBBY (switch to a valid mode or free-for-all); once the match runs, a missing member's team plays short-handed |
+  | A seat's terminal is stuck | `docker compose restart seatN` (login, kit and key survive). Or move the player to a spare seat. |
+  | The Claude box or Anthropic is down | the player dictates; the facilitator validates the code in /admin any time and presses **Submit on behalf** during PLAN (add PLAN time if needed) |
+  | Player forgot their PIN | admin Reset PIN (the key and kit keep working) |
+  | A player is absent or stalls | force start; 2-8 player games are supported and the map follows the count; optional `npm run bots`. Team mode: decide in LOBBY (switch to a valid mode or free-for-all); once the match runs, a missing member's team plays short-handed |
 | Teams look unfair | in LOBBY, swap players; after Start match teams are fixed until New match |
   | isolated-vm broken on the day | `sandbox: process` (red banner), only if it was built (§16 M0). Mention the residual risk to staff (§8). |
   | Server crash | `npm start` again; state reloads from `data/` |
   | Projector issues | the battle is also visible on each `/play` page |
 | 8-player battle lags (playback shows "thinking…") | check CPU per tick in /admin; lower `caps.maxCopies` (e.g. 12 → 8) in the config editor during RESULTS or PLAN for the next round, and play at 1x |
 
-- **After the event:** run `npm run wipe` (or admin Wipe) on the game server. This deletes players, PIN hashes, keys, unit sources, and replays. On the Claude box, run `docker compose down -v` to remove kit folders, keys, chat history and logins. Kid laptops hold nothing. Only the Claude box talks to the internet (Anthropic); game data never leaves the LAN.
+- **After the event:** run `npm run wipe` (or admin Wipe) on the game server. This deletes players, PIN hashes, keys, unit sources, and replays. On the Claude box, run `docker compose down -v` to remove kit folders, keys, chat history and logins. Player laptops hold nothing. Only the Claude box talks to the internet (Anthropic); game data never leaves the LAN.
 
 ---
 
 ## 16. Milestones
 
-Order: de-risk first (isolated-vm and the MCP path), then a vertical slice that already includes the real kid path (Claude → MCP → /play), then control and hardening, then polish. Assumed calendar: Day 1 = M0-M3, Day 2 = M4-M6 (including M5.5), Day 3 = M7-M8, then the event.
+Order: de-risk first (isolated-vm and the MCP path), then a vertical slice that already includes the real player path (Claude → MCP → /play), then control and hardening, then polish. Assumed calendar: Day 1 = M0-M3, Day 2 = M4-M6 (including M5.5), Day 3 = M7-M8, then the event.
 
 | # | Milestone | Acceptance criteria |
 |---|---|---|
-| M0 | Scaffold + two go/no-go spikes | Workspaces build. `shared/cost.ts`, `bounds.ts`, `config`, both templates exist. `cost.test.ts` is green. **(a) isolated-vm:** on the actual host OS, `node --version` ≥ 22.13; `npm ci` succeeds with the network cable unplugged after a cache warm-up; `node --no-node-snapshot -e "new (require('isolated-vm').Isolate)({memoryLimit:32})"` works and a 1-line isolate times out correctly. If not: build `processRunner` (§8 fallback) first. Record the passing Node and isolated-vm versions in the rehearsal checklist. **(b) MCP + Claude box spike:** a stub stateless `/mcp` with one `ping` tool on 0.0.0.0 on the game server, plus a first cut of `sessions/` (Dockerfile, entrypoint, compose with one seat) on the **Claude box**. Open the seat via ttyd from a third device's browser, log in and trust once, then ask Claude to ping. Pass: `ping` is called with no approval prompt, the kid never sees a shell (exiting Claude restarts it), and the container can't see host files. Record the exact `settings.json` syntax that works (e.g. `mcp__pixel-clash` vs `mcp__pixel-clash__*`, `enabledMcpjsonServers`) and whether `acceptEdits` is needed, then freeze it into `starter-kit/`. |
+| M0 | Scaffold + two go/no-go spikes | Workspaces build. `shared/cost.ts`, `bounds.ts`, `config`, both templates exist. `cost.test.ts` is green. **(a) isolated-vm:** on the actual host OS, `node --version` ≥ 22.13; `npm ci` succeeds with the network cable unplugged after a cache warm-up; `node --no-node-snapshot -e "new (require('isolated-vm').Isolate)({memoryLimit:32})"` works and a 1-line isolate times out correctly. If not: build `processRunner` (§8 fallback) first. Record the passing Node and isolated-vm versions in the rehearsal checklist. **(b) MCP + Claude box spike:** a stub stateless `/mcp` with one `ping` tool on 0.0.0.0 on the game server, plus a first cut of `sessions/` (Dockerfile, entrypoint, compose with one seat) on the **Claude box**. Open the seat via ttyd from a third device's browser, log in and trust once, then ask Claude to ping. Pass: `ping` is called with no approval prompt, the player never sees a shell (exiting Claude restarts it), and the container can't see host files. Record the exact `settings.json` syntax that works (e.g. `mcp__pixel-clash` vs `mcp__pixel-clash__*`, `enabledMcpjsonServers`) and whether `acceptEdits` is needed, then freeze it into `starter-kit/`. |
 | M1 | Validator core + sandbox | Validator steps 1-8 (normalize, CJS transpile, import check, evaluate, construct, bounds, determinism, cost). The ivm runner with per-player isolates, hardened harness, timeout, memory limit, culprit-unit attribution, and strikes. A handful of core good/bad/malicious fixtures (infinite loop, huge array, getter stats, import). Errors carry `code/field/fix`. Core `validator.test.ts` and `sandbox.test.ts` are green. |
 | M2 | Headless sim | `sim.test.ts` core cases green (incl. edge-to-edge range, first-strike timing, determinism with shuffled placements). A template vs template battle runs 5400 ticks in < 2 s via the real ivm runner. Frames are recorded. |
 | M2.5 | Size + sprites (contract update) | `size` stat in contract, bounds, cost (new §6 table green), sim radii and frame flags; validator step 8b with all `SPRITE_*` codes and fixtures; `shared/sprite.ts` with the fallback generator; both templates get sprites. |
-| M3 | **Playable vertical slice with the real kid path** | Server state machine + REST + WS + a minimal `/play` (join, roster with sprites, select, top-down tap-to-place, ready) + a `/screen` **isometric** canvas (iso floor, sprites, depth sort, HP bars; effects come in M7) + minimal `/admin` (start match, next, START). **`/mcp` (stateless) with `login`, `get_unit_contract`, `validate_unit`, `submit_unit`** (thin over services) and the `private` push on submit. **A real Claude Code in a Claude-box seat (via ttyd) submits a unit and it appears on that kid's /play page; two browsers play a full 2-round match to MATCH_RESULTS on the LAN, with nothing leaked before START.** Error-text tuning starts here. |
+| M3 | **Playable vertical slice with the real player path** | Server state machine + REST + WS + a minimal `/play` (join, roster with sprites, select, top-down tap-to-place, ready) + a `/screen` **isometric** canvas (iso floor, sprites, depth sort, HP bars; effects come in M7) + minimal `/admin` (start match, next, START). **`/mcp` (stateless) with `login`, `get_unit_contract`, `validate_unit`, `submit_unit`** (thin over services) and the `private` push on submit. **A real Claude Code in a Claude-box seat (via ttyd) submits a unit and it appears on that player's /play page; two browsers play a full 2-round match to MATCH_RESULTS on the LAN, with nothing leaked before START.** Error-text tuning starts here. |
 | M4 | Full MCP + starter kit + Claude box | All MCP tools, Origin check, never-401 auth. `sessions/` complete for 8 seats (§11.1) with the isolation check passing. Generic and personal kit zips with Host-header addresses (fallback), `/setup` page with QR and seat terminal links. `mcp.e2e.test.ts` green, including the restart case. **Real-Claude dry run (§14) with the 6 prompts.** |
 | M5 | Full game control | All §12.3 controls, timers, 2x/pause playback, result release at playback end, skip, force start + auto-place, zone rotation, kick (after-battle rule)/reset PIN, validate/submit on behalf, config editor with re-pricing and invalidation, persistence and restart recovery, privacy tests green, battle reports via REST and MCP. |
 | M5.5 | **Maps, 2-8 players and teams (§9.2)** | `shared/maps.ts` with every §9.2 style and zone table, facing and the generalized zone-local cells (Corners unchanged), arena 800/1040/1200, scaled sudden-death radii; contract `WorldView` width/height/center/mapStyle and `teamId` on Self/OtherView, engine allies/enemies by team, no friendly fire to teammates, side-based elimination, End and ranking (team living cost); seats 0-7 and `GAME_FULL` at 8; Start match body `{rounds, armory, mapStyle?, teamMode}`, `PUT /admin/match/setup` draft with snake auto-balance and LOBBY re-balance, `POST /admin/teams/swap`, benched late joiners; per-round FFA map resolution and team-block rotation; scaled place points and bonuses, team place points, team table, Last Standing for the winning team; team privacy (live teammate selection/zone/placement in `private.team`); state DTO `match.map/teams/teamTable`, `get_game_state`/`get_rules` fields; UI: 8 seat colours + number badges, team rings with patterns, zoom-to-fit iso arena, map previews and team lists in /admin, team strip and ghost placements in /play, team table on /screen and /play; `UV_THREADPOOL_SIZE` 16; `sessions/` with 8 seats (7681-7688). `maps.test.ts`, `teams.test.ts` and the new sim/privacy cases green; **8 × 12 load test: sim p99 < 8 ms/tick**; one 8-bot Ring match and one 4v4 Lanes match play to MATCH_RESULTS on the LAN. |
-| M6 | Hardening | Validator steps 9-10 (dry-run worlds, warnings incl. `W_SLOW_NO_DISCOUNT`) and the full malicious fixture set. Slow strikes. Load test passes (8 players × 12 copies). **Balance test passes on every map style; sudden-death and bounds tuned.** Rate limits work. Error texts tuned from the real-Claude dry run. Bots script done. Kid-friendly copy pass on all errors. |
+| M6 | Hardening | Validator steps 9-10 (dry-run worlds, warnings incl. `W_SLOW_NO_DISCOUNT`) and the full malicious fixture set. Slow strikes. Load test passes (8 players × 12 copies). **Balance test passes on every map style; sudden-death and bounds tuned.** Rate limits work. Error texts tuned from the real-Claude dry run. Bots script done. Friendly copy pass on all errors. |
 | M7 | Polish | Retro theme, synthesized sounds, reveal/hit/death/sudden-death/results animations, replay at 1x/2x, podium and confetti, projector QR poster view. No regressions in tests. |
 | M8 | Dress rehearsal | The full §14 checklist is ticked on the event hardware. Printed materials are ready. |
 
@@ -977,9 +977,9 @@ If time runs short, keep the order and cut only from inside M7 and the deferrabl
 
 | Topic | Decision |
 |---|---|
-| Topology | LAN web server. Kids join by name + PIN on their own laptops to manage their profile, select units, and place them. |
-| Unit submission | Kids only prompt Claude Code. Claude submits through **MCP** (and REST). No file upload. |
-| Audience | Kids prompt; they don't hand-write code. |
+| Topology | LAN web server. Players join by name + PIN on their own laptops to manage their profile, select units, and place them. |
+| Unit submission | Players only prompt Claude Code. Claude submits through **MCP** (and REST). No file upload. |
+| Audience | Players aged about 9-13. They prompt; they don't hand-write code. |
 | Cost formula | `(Base + Σ c_i·x_i·(1 + k·(x_i/max_i)²)) × max(1, 60/Cooldown)`: each stat term is convex with **k = 2** (`cost.curveK`), so a maxed stat costs 3× its linear price and one big unit costs more than two halves. Coefficients are tunable and retuned for the curve to Base 10 / HP 0.25 / Dmg 1.5 / Range 0.2 / Speed 12 / Size 0.5 (stat bounds tightened alongside, §5/§6). |
 | Budget | $1,000 per round. Designs are free. Each copy costs its unit cost. ≤3 types per round. ≤$500 per unit. 4-8 units is the target. |
 | Rounds | PLAN (only submission window) → PLACEMENT → BATTLE → RESULTS, × N (default 3). Points by place, **plus** damage and value-destroyed bonuses (§9), and badges. Place points are (P − 1) … 0 and the bonus maxima 2 and 1 are scaled × P/4, so 4 players still get 3/2/1/0 + 0-2 + 0-1 (§9.2). |
@@ -1000,7 +1000,7 @@ Max 8 designs (templates don't count) and 12 placed copies per player. 4-digit P
 | Topic | Decision |
 |---|---|
 | Claude accounts | The facilitator logs every seat in beforehand on the event account. |
-| Kid laptops | Browser only. Kids use Claude Code through **ttyd** on a separate **Claude box**. |
+| Player laptops | Browser only. Players use Claude Code through **ttyd** on a separate **Claude box**. |
 | Seat isolation | One Docker container per seat with only its own kit folder (§11.1). |
 | ttyd entry | Straight into `claude` with no shell; it restarts if it exits. |
 | Seat linking | Fixed seat → fixed ttyd port (7681-7688), on a printed seat card. |
@@ -1032,5 +1032,5 @@ Max 8 designs (templates don't count) and 12 placed copies per player. 4-digit P
 
 ### Open items
 1. **isolated-vm on the game server's host OS**: confirmed only by the M0 check. (It already works in the devcontainer on Node 24 / arm64 with isolated-vm 6.1.2.) Otherwise the process fallback is built and used, with its documented residual risk.
-2. **Claude box OS and Docker setup**, and whether kids may ever see an approval prompt (`acceptEdits` decision in the M0 spike).
+2. **Claude box OS and Docker setup**, and whether players may ever see an approval prompt (`acceptEdits` decision in the M0 spike).
 3. **8-player balance and lag on the real hardware**: sudden-death strength on the 1200 arena and the Ring 8 corner-vs-edge zone difference are tuned by the M5.5/M6 balance test; the 8 × 12 load test must pass on the game-server laptop itself.

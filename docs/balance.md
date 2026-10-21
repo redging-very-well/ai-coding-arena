@@ -79,7 +79,7 @@ get better, never silently worse: bricks win 71 of 80 (89%, cap 0.89), and the t
 The top is a loop: tanks edge bricks (9-7), bricks crush the turtle, the turtle holds
 the tanks to 8-8. **Watch item:** tanks and bricks are clearly the strongest pair and
 the tanks are unbeaten (their worst is the 8-8 with the turtle). The margin is thin; if
-real kids converge on Half-Tank spam, raise `cost.hp` or `curveK` a little (and update
+real players converge on Half-Tank spam, raise `cost.hp` or `curveK` a little (and update
 the §6 tables and `cost.test.ts`). The scout swarm only beats the sniper nest: with
 range 20 and 8 damage it melts against anything that hits back.
 
@@ -161,7 +161,7 @@ All six archetypes + rush + templates, rotated through every zone.
 **Watch item:** in a big free-for-all the chase-nearest soldier armies grind each other
 down and the turtle, which never walks into anyone, mops up the remnants (it wins alone by
 elimination at 32-38 s, or shares 1st with the sniper nest when sudden death ends the
-battle at 89 s). Smarter kid units
+battle at 89 s). Smarter player units
 (focus fire, retreating into the circle) and the damage/value bonuses (§9 Points) offset
 this in real play, so no retune was made for it (it is a capped exception in the test instead). If it shows up on the day, the lever is
 tower cost (raise `cost.range`, which mostly prices towers) rather than more sudden death,
