@@ -5,13 +5,13 @@
 #   pixel-clash-seat claude-loop the program ttyd runs: claude, restarted if it exits
 #   pixel-clash-seat render      render /kit and exit
 #   pixel-clash-seat check       print versions, kit state and game-server reachability
-#   pixel-clash-seat new-kid     forget the seat's player (empties /kit, chat history, approvals)
+#   pixel-clash-seat new-player     forget the seat's player (empties /kit, chat history, approvals)
 #   pixel-clash-seat <cmd...>    render /kit, then exec <cmd> (e.g. `claude` for the adult login)
 #
 # Environment:
 #   PIXEL_CLASH_URL   game server base URL, e.g. http://192.168.8.10:8080 (required)
 #   TTYD_PASS         basic-auth word for this seat's terminal (required for serve)
-#   TTYD_USER         basic-auth user (default: kid)
+#   TTYD_USER         basic-auth user (default: player)
 #   SEAT              seat number, shown in the terminal title (default: ?)
 #   CLAUDE_PERMISSION_MODE  optional: default | acceptEdits | plan (M0 spike decides)
 #   CLAUDE_CONTINUE   1 (default) = reopen the seat's last conversation after a
@@ -21,7 +21,7 @@ set -euo pipefail
 
 KIT_DIR="${PC_KIT_DIR:-/kit}"
 TEMPLATE_DIR="${PC_TEMPLATE_DIR:-/opt/pixel-clash/starter-kit}"
-CONFIG_DIR="${CLAUDE_CONFIG_DIR:-${HOME:-/home/kid}/.claude}"
+CONFIG_DIR="${CLAUDE_CONFIG_DIR:-${HOME:-/home/player}/.claude}"
 SEAT="${SEAT:-?}"
 
 log() { printf '[seat %s] %s\n' "$SEAT" "$*" >&2; }
@@ -96,7 +96,7 @@ render_kit() {
 serve() {
   [ -n "${TTYD_PASS:-}" ] || die "TTYD_PASS is not set. Put TTYD_PASS_${SEAT} in sessions/.env (a short word for the seat card)."
   [[ "${TTYD_PASS}" =~ ^[^[:space:]:]+$ ]] || die "TTYD_PASS must be one word with no spaces or ':'"
-  local user="${TTYD_USER:-kid}"
+  local user="${TTYD_USER:-player}"
   render_kit
   log "ttyd on :7681 (user '$user'); claude starts in $KIT_DIR"
   # -W writable, -O same-origin websockets only, -c basic auth, -w start dir.
@@ -109,7 +109,7 @@ serve() {
     /usr/local/bin/pixel-clash-seat claude-loop
 }
 
-# What the kid's terminal runs: claude, forever. This is not a security
+# What the player's terminal runs: claude, forever. This is not a security
 # boundary (Claude Code's `!` prefix runs commands); the container is.
 claude_loop() {
   local -a args=()
@@ -149,7 +149,7 @@ check() {
   if [ -f "$KIT_DIR/.pixel-clash/player.json" ]; then
     echo "player:          logged in (.pixel-clash/player.json exists)"
   else
-    echo "player:          none yet (the kid tells Claude their name + PIN)"
+    echo "player:          none yet (the player tells Claude their name + PIN)"
   fi
   if [ -f "$CONFIG_DIR/.credentials.json" ] || grep -qs '"oauthAccount"' "$CONFIG_DIR/.claude.json"; then
     echo "claude login:    looks logged in"
@@ -173,8 +173,8 @@ check() {
   fi
 }
 
-# Forget the previous kid on this seat. Keeps the Claude login and folder trust.
-new_kid() {
+# Forget the previous player on this seat. Keeps the Claude login and folder trust.
+new_player() {
   # Everything in /kit is re-rendered below: the old key (.pixel-clash/), their
   # unit files (the designs stay on the game server), saved approvals
   # (.claude/settings.local.json) and anything else Claude created.
@@ -182,7 +182,7 @@ new_kid() {
   rm -rf "$(project_history_dir)" "$CONFIG_DIR/file-history" "$CONFIG_DIR/todos"
   rm -f "$CONFIG_DIR/history.jsonl"
   render_kit
-  log "seat cleared for a new kid. Now run: docker compose restart seat${SEAT}"
+  log "seat cleared for a new player. Now run: docker compose restart seat${SEAT}"
 }
 
 cmd="${1:-serve}"
@@ -191,7 +191,7 @@ case "$cmd" in
   claude-loop) claude_loop ;;
   render) render_kit ;;
   check) check ;;
-  new-kid) new_kid ;;
+  new-player) new_player ;;
   *)
     render_kit
     cd "$KIT_DIR"

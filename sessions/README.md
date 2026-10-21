@@ -1,23 +1,23 @@
 # Pixel Clash Claude box (`sessions/`)
 
-One Docker container per seat (plan §11.1). Each container runs **ttyd**, which runs **Claude Code** straight inside that seat's kit folder `/kit`. Kids open `http://<claude-box>:768N` in a browser and type to Claude; the terminal opens straight into Claude, and if Claude exits it starts again.
+One Docker container per seat (plan §11.1). Each container runs **ttyd**, which runs **Claude Code** straight inside that seat's kit folder `/kit`. Players open `http://<claude-box>:768N` in a browser and type to Claude; the terminal opens straight into Claude, and if Claude exits it starts again.
 
-**The container is the security boundary, not the ttyd loop.** Claude Code's `!` prefix runs any typed command in the container as user `kid`, and a kid can accept any approval prompt Claude raises. So treat each seat as "a kid with a shell inside this container": they can reach `/kit`, the seat's own Claude state, and whatever the network allows, but not other seats, the host or the game server's files. In particular, **each seat can read its own Claude login** (`/home/kid/.claude/.credentials.json`): use a dedicated event account and sign it out of all sessions after the event (§5). The image ships a root-owned `/etc/claude-code/managed-settings.json` that kid-writable settings can't override: it turns off `bypassPermissions` mode and denies Claude reading the credentials file (the `!` prefix still can).
+**The container is the security boundary, not the ttyd loop.** Claude Code's `!` prefix runs any typed command in the container as user `player`, and a player can accept any approval prompt Claude raises. So treat each seat as "a player with a shell inside this container": they can reach `/kit`, the seat's own Claude state, and whatever the network allows, but not other seats, the host or the game server's files. In particular, **each seat can read its own Claude login** (`/home/player/.claude/.credentials.json`): use a dedicated event account and sign it out of all sessions after the event (§5). The image ships a root-owned `/etc/claude-code/managed-settings.json` that player-writable settings can't override: it turns off `bypassPermissions` mode and denies Claude reading the credentials file (the `!` prefix still can).
 
 | Seat | Terminal URL | Basic auth | Volumes |
 |---|---|---|---|
-| 1 | `http://<claude-box>:7681` | `kid` / `TTYD_PASS_1` | `kit1`, `claude1` |
-| 2 | `http://<claude-box>:7682` | `kid` / `TTYD_PASS_2` | `kit2`, `claude2` |
-| 3 | `http://<claude-box>:7683` | `kid` / `TTYD_PASS_3` | `kit3`, `claude3` |
-| 4 | `http://<claude-box>:7684` | `kid` / `TTYD_PASS_4` | `kit4`, `claude4` |
-| 5 | `http://<claude-box>:7685` | `kid` / `TTYD_PASS_5` | `kit5`, `claude5` |
-| 6 | `http://<claude-box>:7686` | `kid` / `TTYD_PASS_6` | `kit6`, `claude6` |
-| 7 | `http://<claude-box>:7687` | `kid` / `TTYD_PASS_7` | `kit7`, `claude7` |
-| 8 | `http://<claude-box>:7688` | `kid` / `TTYD_PASS_8` | `kit8`, `claude8` |
+| 1 | `http://<claude-box>:7681` | `player` / `TTYD_PASS_1` | `kit1`, `claude1` |
+| 2 | `http://<claude-box>:7682` | `player` / `TTYD_PASS_2` | `kit2`, `claude2` |
+| 3 | `http://<claude-box>:7683` | `player` / `TTYD_PASS_3` | `kit3`, `claude3` |
+| 4 | `http://<claude-box>:7684` | `player` / `TTYD_PASS_4` | `kit4`, `claude4` |
+| 5 | `http://<claude-box>:7685` | `player` / `TTYD_PASS_5` | `kit5`, `claude5` |
+| 6 | `http://<claude-box>:7686` | `player` / `TTYD_PASS_6` | `kit6`, `claude6` |
+| 7 | `http://<claude-box>:7687` | `player` / `TTYD_PASS_7` | `kit7`, `claude7` |
+| 8 | `http://<claude-box>:7688` | `player` / `TTYD_PASS_8` | `kit8`, `claude8` |
 
-- `kitN` → `/kit`: the rendered starter kit (CLAUDE.md, `.mcp.json`, `.claude/settings.json`, `units/`) plus `.pixel-clash/player.json` (the kid's apiKey, written by Claude after login).
-- `claudeN` → `/home/kid/.claude`: all Claude Code state (`CLAUDE_CONFIG_DIR`): the login, folder trust, `.claude.json` and chat history.
-- No host folders, no Docker socket, `cap_drop: ALL`, `no-new-privileges`, at most 1.5 GB RAM and 1 CPU per seat, runs as user `kid`.
+- `kitN` → `/kit`: the rendered starter kit (CLAUDE.md, `.mcp.json`, `.claude/settings.json`, `units/`) plus `.pixel-clash/player.json` (the player's apiKey, written by Claude after login).
+- `claudeN` → `/home/player/.claude`: all Claude Code state (`CLAUDE_CONFIG_DIR`): the login, folder trust, `.claude.json` and chat history.
+- No host folders, no Docker socket, `cap_drop: ALL`, `no-new-privileges`, at most 1.5 GB RAM and 1 CPU per seat, runs as user `player`.
 
 Pinned versions (change the `ARG`s in `Dockerfile`): `node:22.23.3-slim`, Claude Code `2.1.290`, ttyd `1.7.7` (SHA-256 checked, amd64 and arm64).
 
@@ -27,7 +27,7 @@ All commands below run in this `sessions/` folder.
 
 Needs Docker with Compose v2 and BuildKit (any current Docker Engine or Docker Desktop).
 
-**Sizing.** Each seat runs one Claude Code process (more if a kid opens extra tabs). For all 8 seats plan on about **8 cores and 16 GB RAM**; 4 seats need about 4 cores / 8 GB, 2 seats about 2 cores / 4 GB. Each container is capped at 1.5 GB RAM and 1 CPU (limits, not reservations: a seat typically uses well under 1 GB and under 1 core), so 8 seats at their cap still leave ~4 GB for the host on a 16 GB box. On Docker Desktop, give the Docker VM that much memory and CPU in its settings.
+**Sizing.** Each seat runs one Claude Code process (more if a player opens extra tabs). For all 8 seats plan on about **8 cores and 16 GB RAM**; 4 seats need about 4 cores / 8 GB, 2 seats about 2 cores / 4 GB. Each container is capped at 1.5 GB RAM and 1 CPU (limits, not reservations: a seat typically uses well under 1 GB and under 1 core), so 8 seats at their cap still leave ~4 GB for the host on a 16 GB box. On Docker Desktop, give the Docker VM that much memory and CPU in its settings.
 
 ```sh
 cp .env.example .env
@@ -81,22 +81,22 @@ docker compose run --rm seatN check
 
 prints the Claude Code and ttyd versions, the game server URL, whether the kit is rendered, whether a player is saved, whether Claude looks logged in and trusted, and whether the container can reach the game server (`/api/health`) and Anthropic.
 
-Then, from a kid laptop: open `http://<claude-box>:768N`, enter `kid` + the seat word, and ask "Are you connected to Pixel Clash?". There must be **no approval prompts**.
+Then, from a player laptop: open `http://<claude-box>:768N`, enter `player` + the seat word, and ask "Are you connected to Pixel Clash?". There must be **no approval prompts**.
 
-Isolation check (dress rehearsal), so facilitators know what a kid can reach from a seat:
+Isolation check (dress rehearsal), so facilitators know what a player can reach from a seat:
 
 - Ask Claude in a seat to list `/`, read another seat's files, and read the game server's `data/`. It must find nothing beyond its own `/kit` and the container's system files.
 - Type `! ls /` and `! cat ~/.claude/.credentials.json` directly (the `!` prefix runs a command without Claude). The first works and the second prints this seat's login token: that is expected (see the box above), which is why the event account must be a dedicated one.
 
 ## 4. During the event
 
-- **A seat's terminal is stuck:** `docker compose restart seatN`. This keeps the Claude login, the kit and the kid's key; the conversation reopens (see `CLAUDE_CONTINUE`).
-- **New kid on the same seat:**
+- **A seat's terminal is stuck:** `docker compose restart seatN`. This keeps the Claude login, the kit and the player's key; the conversation reopens (see `CLAUDE_CONTINUE`).
+- **New player on the same seat:**
   ```sh
-  docker compose run --rm seatN new-kid
+  docker compose run --rm seatN new-player
   docker compose restart seatN
   ```
-  `new-kid` empties `/kit` completely (the old kid's key in `.pixel-clash/`, their unit files, any other files Claude created, and `.claude/settings.local.json` with any "don't ask again" approvals), deletes this seat's chat history, file-history backups and todos, and re-renders the kit from the templates. The old kid's designs stay on the game server. The Claude login and folder trust are kept. (Minimal version from the plan: `docker compose run --rm seatN rm -f /kit/.pixel-clash/player.json`.)
+  `new-player` empties `/kit` completely (the old player's key in `.pixel-clash/`, their unit files, any other files Claude created, and `.claude/settings.local.json` with any "don't ask again" approvals), deletes this seat's chat history, file-history backups and todos, and re-renders the kit from the templates. The old player's designs stay on the game server. The Claude login and folder trust are kept. (Minimal version from the plan: `docker compose run --rm seatN rm -f /kit/.pixel-clash/player.json`.)
 - **Game server IP changed:** edit `PIXEL_CLASH_URL` in `.env`, then `docker compose up -d` (the seats restart and re-render `.mcp.json` and CLAUDE.md).
 - **Reloading the browser tab** starts a new `claude` process; with `CLAUDE_CONTINUE=1` (default) it reopens the seat's last conversation. Each open tab gets its own Claude process, so keep one tab per seat.
 
@@ -106,26 +106,26 @@ Isolation check (dress rehearsal), so facilitators know what a kid can reach fro
 docker compose down -v
 ```
 
-Removes all 16 volumes (`kit1`..`kit8`, `claude1`..`claude8`): kit folders, apiKeys, chat history and the Claude logins. Kid laptops hold nothing. Deleting the volumes does **not** revoke the event account's login token on Anthropic's side (any seat could have read it): sign the event account out of all sessions (or change its password) after the event. Also run `npm run wipe` (or admin Wipe) on the game server. Optionally `docker image rm pixel-clash-seat:local`.
+Removes all 16 volumes (`kit1`..`kit8`, `claude1`..`claude8`): kit folders, apiKeys, chat history and the Claude logins. Player laptops hold nothing. Deleting the volumes does **not** revoke the event account's login token on Anthropic's side (any seat could have read it): sign the event account out of all sessions (or change its password) after the event. Also run `npm run wipe` (or admin Wipe) on the game server. Optionally `docker image rm pixel-clash-seat:local`.
 
 ## 6. Options (`.env`)
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `PIXEL_CLASH_URL` | (required) | Game server base URL, `http://<ip>:<port>` |
-| `TTYD_PASS_1`..`8` | (required, all 8) | Basic-auth word per seat (user `kid`). Compose checks all 8 even when only some seats run. |
+| `TTYD_PASS_1`..`8` | (required, all 8) | Basic-auth word per seat (user `player`). Compose checks all 8 even when only some seats run. |
 | `CLAUDE_PERMISSION_MODE` | empty | `acceptEdits` or `plan` passes `--permission-mode` to claude. Decided in the M0 spike; `bypassPermissions` is refused. |
 | `CLAUDE_CONTINUE` | `1` | Reopen the last conversation after a restart or reload (`claude --continue`); `0` = always fresh |
 
 ## 7. Optional: egress firewall (Linux Docker hosts)
 
-Containers need the game server (LAN) and the internet (Anthropic). Nothing else is required. To stop seats from reaching the rest of the LAN (kid laptops, the router admin page), add rules to Docker's `DOCKER-USER` chain for the seats' bridge `pcseats` (fixed in `docker-compose.yml`). Example with the game server at `192.168.8.10:8080`:
+Containers need the game server (LAN) and the internet (Anthropic). Nothing else is required. To stop seats from reaching the rest of the LAN (player laptops, the router admin page), add rules to Docker's `DOCKER-USER` chain for the seats' bridge `pcseats` (fixed in `docker-compose.yml`). Example with the game server at `192.168.8.10:8080`:
 
 ```sh
 # Run after `docker compose up` (the bridge must exist). -I 1 inserts at the top,
 # so the LAST rule below ends up FIRST. DOCKER-USER runs before Docker's own
 # ESTABLISHED/RELATED accept, so the final rule (replies to connections that
-# kid laptops opened to the published 768N ports) is required: without it the
+# player laptops opened to the published 768N ports) is required: without it the
 # private-net REJECTs drop ttyd's replies and every seat terminal goes dead.
 sudo iptables -I DOCKER-USER 1 -i pcseats -j REJECT
 sudo iptables -I DOCKER-USER 1 -i pcseats -p tcp --dport 443 -j ACCEPT        # HTTPS (Anthropic)
@@ -140,7 +140,7 @@ sudo iptables -I DOCKER-USER 1 -i pcseats -m conntrack --ctstate ESTABLISHED,REL
 sudo iptables -I INPUT 1 -i pcseats -m conntrack --ctstate NEW -p tcp --dport 7681:7688 -j REJECT
 ```
 
-Check with `docker compose run --rm seat1 check` (game server and Anthropic must still be reachable). That only tests outbound traffic, so also check inbound: from a kid laptop, open `http://<claude-box>:7681`, log in with the seat word and type to Claude. `sudo iptables -L DOCKER-USER -n --line-numbers` must show the `ESTABLISHED,RELATED` rule as line 1. The rules disappear on reboot unless saved (`iptables-save`/`netfilter-persistent`). Allowing only `api.anthropic.com` and `claude.ai` by name needs an HTTPS proxy; port 443 to the internet is the practical middle ground. On Docker Desktop (macOS/Windows) these rules don't apply; rely on the router instead.
+Check with `docker compose run --rm seat1 check` (game server and Anthropic must still be reachable). That only tests outbound traffic, so also check inbound: from a player laptop, open `http://<claude-box>:7681`, log in with the seat word and type to Claude. `sudo iptables -L DOCKER-USER -n --line-numbers` must show the `ESTABLISHED,RELATED` rule as line 1. The rules disappear on reboot unless saved (`iptables-save`/`netfilter-persistent`). Allowing only `api.anthropic.com` and `claude.ai` by name needs an HTTPS proxy; port 443 to the internet is the practical middle ground. On Docker Desktop (macOS/Windows) these rules don't apply; rely on the router instead.
 
 ## 8. Troubleshooting
 
@@ -148,11 +148,11 @@ Check with `docker compose run --rm seat1 check` (game server and Anthropic must
 |---|---|
 | `docker compose` says `set PIXEL_CLASH_URL` / `set TTYD_PASS_N` | Create `.env` from `.env.example` in this folder. |
 | A seat keeps restarting | `docker compose logs seatN`. The entrypoint prints a clear `ERROR:` (bad `PIXEL_CLASH_URL`, missing or bad `TTYD_PASS`). |
-| Browser shows 401 / asks again for a password | Wrong seat word. User is `kid`. |
+| Browser shows 401 / asks again for a password | Wrong seat word. User is `player`. |
 | Terminal opens but Claude asks to log in, or shows the trust dialog | That seat wasn't logged in or trusted: do step 2 for it, then `docker compose restart seatN`. |
 | Claude asks for permission to use the pixel-clash tools or to write `units/…` | The folder isn't trusted: Claude Code ignores the kit's `.claude/settings.json` allowlist in an untrusted folder. Do step 2 (accept the trust dialog) for that seat, then `docker compose restart seatN`. |
-| Claude says the pixel-clash tools are missing | `docker compose run --rm seatN check`: is the game server reachable? Is `.mcp.json` pointing at the right IP? In the seat, Claude can type `/mcp` to see the server status. Meanwhile Claude falls back to the `curl` commands in CLAUDE.md §9. They are not pre-approved (a prefix rule can't limit curl to the game API), so each one prompts and Claude asks the kid to fetch an adult: check the command is one of the §9 commands to the game server before approving it. |
-| Kid sees an approval prompt | Note which tool it was. Add the rule to `packages/starter-kit/.claude/settings.json.tmpl` (or set `CLAUDE_PERMISSION_MODE=acceptEdits`), `docker compose up -d --build`. |
+| Claude says the pixel-clash tools are missing | `docker compose run --rm seatN check`: is the game server reachable? Is `.mcp.json` pointing at the right IP? In the seat, Claude can type `/mcp` to see the server status. Meanwhile Claude falls back to the `curl` commands in CLAUDE.md §9. They are not pre-approved (a prefix rule can't limit curl to the game API), so each one prompts and Claude asks the player to fetch an adult: check the command is one of the §9 commands to the game server before approving it. |
+| Player sees an approval prompt | Note which tool it was. Add the rule to `packages/starter-kit/.claude/settings.json.tmpl` (or set `CLAUDE_PERMISSION_MODE=acceptEdits`), `docker compose up -d --build`. |
 | `anthropic api: NOT reachable` | The Claude box or router has no internet uplink (venue Wi-Fi with captive portal?). |
 | `game server: NOT reachable` | Wrong IP in `.env`, the game server isn't running on `0.0.0.0`, or its firewall blocks 8080. Containers can't reach a game server that only listens on `localhost`. |
 | Build fails at `sha256sum` | The ttyd download changed or was corrupted: don't skip the check; retry, or re-pin `TTYD_VERSION` with the new release's `SHA256SUMS`. |

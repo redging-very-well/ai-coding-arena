@@ -4,7 +4,7 @@
 #   docker compose up -d --build                          # all 8 seats
 #   docker compose up -d --build seat1 seat2 seat3        # or only the seats in use
 #
-# Seat N (1-8) is http://<claude-box>:768N (basic auth: kid / TTYD_PASS_N).
+# Seat N (1-8) is http://<claude-box>:768N (basic auth: player / TTYD_PASS_N).
 # See README.md for the pre-event login, resets and the wipe.
 
 name: pixel-clash-seats
@@ -32,7 +32,7 @@ x-seat: &seat
 
 x-seat-env: &seat-env
   PIXEL_CLASH_URL: ${PIXEL_CLASH_URL:?set PIXEL_CLASH_URL in sessions/.env}
-  TTYD_USER: kid
+  TTYD_USER: player
   CLAUDE_PERMISSION_MODE: ${CLAUDE_PERMISSION_MODE:-}
   CLAUDE_CONTINUE: ${CLAUDE_CONTINUE:-1}
 
@@ -47,7 +47,7 @@ services:
     ports: ["7681:7681"]
     volumes:
       - kit1:/kit
-      - claude1:/home/kid/.claude
+      - claude1:/home/player/.claude
 
   seat2:
     <<: *seat
@@ -59,7 +59,7 @@ services:
     ports: ["7682:7681"]
     volumes:
       - kit2:/kit
-      - claude2:/home/kid/.claude
+      - claude2:/home/player/.claude
 
   seat3:
     <<: *seat
@@ -71,7 +71,7 @@ services:
     ports: ["7683:7681"]
     volumes:
       - kit3:/kit
-      - claude3:/home/kid/.claude
+      - claude3:/home/player/.claude
 
   seat4:
     <<: *seat
@@ -83,7 +83,7 @@ services:
     ports: ["7684:7681"]
     volumes:
       - kit4:/kit
-      - claude4:/home/kid/.claude
+      - claude4:/home/player/.claude
 
   seat5:
     <<: *seat
@@ -95,7 +95,7 @@ services:
     ports: ["7685:7681"]
     volumes:
       - kit5:/kit
-      - claude5:/home/kid/.claude
+      - claude5:/home/player/.claude
 
   seat6:
     <<: *seat
@@ -107,7 +107,7 @@ services:
     ports: ["7686:7681"]
     volumes:
       - kit6:/kit
-      - claude6:/home/kid/.claude
+      - claude6:/home/player/.claude
 
   seat7:
     <<: *seat
@@ -119,7 +119,7 @@ services:
     ports: ["7687:7681"]
     volumes:
       - kit7:/kit
-      - claude7:/home/kid/.claude
+      - claude7:/home/player/.claude
 
   seat8:
     <<: *seat
@@ -131,7 +131,7 @@ services:
     ports: ["7688:7681"]
     volumes:
       - kit8:/kit
-      - claude8:/home/kid/.claude
+      - claude8:/home/player/.claude
 
 networks:
   default:

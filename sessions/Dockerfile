@@ -58,18 +58,18 @@ RUN npm install -g --no-fund --no-audit "@anthropic-ai/claude-code@${CLAUDE_CODE
  && claude --version
 
 # Non-root user. /kit and the Claude config dir are created here and owned by
-# "kid" so the named volumes mounted on them start with the right owner.
-RUN useradd --create-home --uid 10001 --user-group --shell /bin/bash kid \
- && mkdir -p /kit /home/kid/.claude \
- && chown kid:kid /kit /home/kid/.claude
+# "player" so the named volumes mounted on them start with the right owner.
+RUN useradd --create-home --uid 10001 --user-group --shell /bin/bash player \
+ && mkdir -p /kit /home/player/.claude \
+ && chown player:player /kit /home/player/.claude
 
-# Managed settings (root-owned, so kid-writable user/project settings can't
+# Managed settings (root-owned, so player-writable user/project settings can't
 # widen them): no bypassPermissions mode, and Claude may not read the login.
 RUN mkdir -p /etc/claude-code \
  && printf '%s\n' '{' \
       '  "permissions": {' \
       '    "disableBypassPermissionsMode": "disable",' \
-      '    "deny": ["Read(//home/kid/.claude/.credentials.json)", "Edit(//home/kid/.claude/**)", "Edit(//kit/.claude/**)"]' \
+      '    "deny": ["Read(//home/player/.claude/.credentials.json)", "Edit(//home/player/.claude/**)", "Edit(//kit/.claude/**)"]' \
       '  }' \
       '}' >/etc/claude-code/managed-settings.json \
  && chmod 0644 /etc/claude-code/managed-settings.json
@@ -83,14 +83,14 @@ RUN chmod -R a+rX,go-w /opt/pixel-clash \
 # CLAUDE_CONFIG_DIR keeps ALL Claude Code state (login, trust, .claude.json,
 # chat history) inside the claudeN volume. DISABLE_AUTOUPDATER keeps the
 # pinned version.
-ENV HOME=/home/kid \
+ENV HOME=/home/player \
     SHELL=/bin/bash \
-    CLAUDE_CONFIG_DIR=/home/kid/.claude \
+    CLAUDE_CONFIG_DIR=/home/player/.claude \
     DISABLE_AUTOUPDATER=1 \
     PC_KIT_DIR=/kit \
     PC_TEMPLATE_DIR=/opt/pixel-clash/starter-kit
 
-USER kid
+USER player
 WORKDIR /kit
 EXPOSE 7681
 
