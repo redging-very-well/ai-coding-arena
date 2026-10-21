@@ -5,6 +5,10 @@
 // Pushes: `state` (on change, coalesced, plus 1 Hz timer ticks), `private`
 // (own data, coalesced per player), `battle:reveal`, `battle:frames`,
 // `battle:end`, `toast`, `kicked`.
+//
+// Team mode (§9.2): when a member's private data changes, every teammate's
+// `private` (with the `team` block) is re-sent too, at most 300 ms later. The
+// `state` push leaves `me.team` out (it can carry sprites and goes out at 1 Hz).
 
 import type { IncomingMessage, Server } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -26,6 +30,8 @@ import type { Viewer } from './services/visibility.js';
 /** Skip frame batches for a client whose send buffer is this full. */
 const MAX_BUFFERED = 2 * 1024 * 1024;
 const HEARTBEAT_MS = 30_000;
+/** Teammates' `private` pushes are batched over this window (§9.2 Team privacy). */
+const TEAM_PUSH_MS = 300;
 
 interface Client {
   ws: WebSocket;
@@ -58,6 +64,9 @@ export class WsHub implements Notifier {
   private readonly clients = new Set<Client>();
   private statePending = false;
   private readonly privatePending = new Set<string>();
+  /** Teammates of changed players, pushed when `teamTimer` fires. */
+  private readonly teamPending = new Set<string>();
+  private teamTimer: NodeJS.Timeout | undefined;
   private heartbeat: NodeJS.Timeout | undefined;
 
   constructor(private readonly game: Game) {}
@@ -101,6 +110,7 @@ export class WsHub implements Notifier {
 
   close(): void {
     if (this.heartbeat) clearInterval(this.heartbeat);
+    if (this.teamTimer) clearTimeout(this.teamTimer);
     for (const c of this.clients) c.ws.terminate();
     this.clients.clear();
     this.wss.close();
@@ -184,7 +194,7 @@ export class WsHub implements Notifier {
   }
 
   private sendState(c: Client): void {
-    this.send(c, { type: 'state', state: this.game.visibility.gameState(this.viewerOf(c)) });
+    this.send(c, { type: 'state', state: this.game.visibility.gameState(this.viewerOf(c), { withTeam: false }) });
   }
 
   private sendPrivate(c: Client): void {
@@ -209,7 +219,8 @@ export class WsHub implements Notifier {
         const key = c.role === 'player' ? `p:${c.playerId}` : c.role;
         let text = cache.get(key);
         if (text === undefined) {
-          text = JSON.stringify({ type: 'state', state: this.game.visibility.gameState(this.viewerOf(c)) } satisfies ServerWsMessage);
+          const state = this.game.visibility.gameState(this.viewerOf(c), { withTeam: false });
+          text = JSON.stringify({ type: 'state', state } satisfies ServerWsMessage);
           cache.set(key, text);
         }
         this.sendRaw(c, text);
@@ -218,6 +229,19 @@ export class WsHub implements Notifier {
   }
 
   privateChanged(playerId: string): void {
+    // Teammates see this player's selection/zone/placement live (§9.2).
+    for (const mate of this.game.teams.teammatesOf(playerId)) {
+      if (!this.privatePending.has(mate)) this.teamPending.add(mate);
+    }
+    if (this.teamPending.size > 0 && !this.teamTimer) {
+      this.teamTimer = setTimeout(() => {
+        this.teamTimer = undefined;
+        const ids = [...this.teamPending];
+        this.teamPending.clear();
+        for (const id of ids) this.pushPrivate(id);
+      }, TEAM_PUSH_MS);
+      this.teamTimer.unref?.();
+    }
     const first = this.privatePending.size === 0;
     this.privatePending.add(playerId);
     if (!first) return;
@@ -225,12 +249,18 @@ export class WsHub implements Notifier {
       const ids = [...this.privatePending];
       this.privatePending.clear();
       for (const id of ids) {
-        const data = this.game.visibility.privateState(id);
-        if (!data) continue;
-        const text = JSON.stringify({ type: 'private', data } satisfies ServerWsMessage);
-        for (const c of this.clients) if (c.role === 'player' && c.playerId === id) this.sendRaw(c, text);
+        // Sent now with fresh data: a queued teammate push for it is redundant.
+        this.teamPending.delete(id);
+        this.pushPrivate(id);
       }
     });
+  }
+
+  private pushPrivate(playerId: string): void {
+    const data = this.game.visibility.privateState(playerId);
+    if (!data) return;
+    const text = JSON.stringify({ type: 'private', data } satisfies ServerWsMessage);
+    for (const c of this.clients) if (c.role === 'player' && c.playerId === playerId) this.sendRaw(c, text);
   }
 
   toast(target: ToastTarget, level: ToastLevel, message: string): void {

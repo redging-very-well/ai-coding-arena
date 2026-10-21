@@ -9,8 +9,11 @@
 //     compared with them directly.
 //   * Everything that iterates units does so in instanceId order (plain string
 //     comparison), players in seat order. Never in Promise-resolve order.
+//   * Sides (§9, §9.2): free-for-all every player is a side of their own; in
+//     team mode (every setup carries a `teamId`) a side is a team. Allies,
+//     friendly fire, elimination, End and ranking work on sides.
 
-import type { Corner, PlacementDTO, RankingEntryDTO, StatsSnapshot, UnitType } from '@pixel-clash/shared';
+import type { PlacementDTO, RankingEntryDTO, StatsSnapshot, TeamRoundRankDTO, UnitType, ZoneRef } from '@pixel-clash/shared';
 import type { PlayerRunner } from '../sandbox/runner.js';
 
 /** Deterministic string order used for instanceIds and playerIds. */
@@ -32,10 +35,15 @@ export interface BattleUnitDesign {
 
 export interface BattlePlayerSetup {
   playerId: string;
-  /** Seat 0-3: instanceId prefix, and the order results are applied in. */
+  /** Seat 0-7: instanceId prefix, and the order results are applied in. */
   seat: number;
-  /** This round's zone (§9 Zones). */
-  zone: Corner;
+  /** This round's zone (§9 Zones): a zone of the battle's map, or a Corner of the 800 Corners map. */
+  zone: ZoneRef;
+  /**
+   * Team mode only (§9.2): the player's team 0..T−1. Give it to every player
+   * or to none; without it every player is their own side (teamId = seat).
+   */
+  teamId?: number;
   /** The ≤ 3 designs this player fields. */
   units: readonly BattleUnitDesign[];
   /** Zone-local placements (one per cell). Order does not matter. */
@@ -74,6 +82,8 @@ export interface SimUnit {
   id: string;
   playerId: string;
   seat: number;
+  /** The side: the team in team mode, else the seat (§5 `teamId`). */
+  teamId: number;
   unitId: string;
   stats: StatsSnapshot;
   cost: number;
@@ -151,7 +161,9 @@ export interface PlayerIncident {
 export interface PlayerOutcome {
   playerId: string;
   seat: number;
-  zone: Corner;
+  zone: ZoneRef;
+  /** Team mode only: the player's team (ranking groups by it). */
+  teamId?: number;
   /** Time (completed ticks) at which the player's last unit died; null = survived. */
   eliminatedAtTick: number | null;
   /** Sum of the full costs of the player's living units at the end. */
@@ -198,4 +210,6 @@ export interface BattleResult {
   units: UnitReport[];
   /** Ranking and round scores at the sim's end, kicked players excluded (§9 Ranking, Points). */
   ranking: RankingEntryDTO[];
+  /** Team mode only: the round's team ranking (§9.2 Team scoring). */
+  teams?: TeamRoundRankDTO[];
 }

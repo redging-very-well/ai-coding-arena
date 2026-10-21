@@ -26,8 +26,12 @@ import { LineMapper, findUnitFrame, splitInlineSourceMap } from './sourcemap.js'
 export type CallOutcome =
   /** The harness function returned this string. */
   | { kind: 'ok'; value: string; elapsedMs: number }
-  /** The per-call timeout fired; `culprit` is `__current` read right after (if asked for). */
-  | { kind: 'timeout'; elapsedMs: number; culprit?: string }
+  /**
+   * The per-call timeout fired; `culprit` is `__current` read right after (if
+   * asked for). `stalledMs`: how long the sandbox process itself was frozen
+   * (not scheduled) during the call, if at all.
+   */
+  | { kind: 'timeout'; elapsedMs: number; culprit?: string; stalledMs?: number }
   /** The call failed without killing the sandbox (should not happen with an intact harness). */
   | { kind: 'error'; message: string; elapsedMs: number }
   /** The sandbox is gone: out of memory, crashed, missed its deadline, or disposed. */
@@ -123,11 +127,35 @@ export function encodeTickInput(input: Pick<TickInput, 'nowMs' | 'selves' | 'ene
   return JSON.stringify({
     nowMs: input.nowMs,
     selves: input.selves,
-    enemiesJson: JSON.stringify(input.enemies),
+    enemiesJson: enemiesJsonOf(input.enemies),
     worldJson: JSON.stringify(input.world),
     allyIds: input.allies.map((a) => a.id),
-    alliesJson: input.allies.map((a) => JSON.stringify(a)),
+    alliesJson: alliesJsonOf(input.allies),
   });
+}
+
+// The engine shares one enemies/allies array per side and tick between that
+// side's players, so each is serialised once per side, not once per player
+// (§9.2 Performance). Keyed by array identity; entries die with the arrays.
+const enemiesJsonCache = new WeakMap<readonly unknown[], string>();
+const alliesJsonCache = new WeakMap<readonly unknown[], string[]>();
+
+function enemiesJsonOf(enemies: TickInput['enemies']): string {
+  let json = enemiesJsonCache.get(enemies);
+  if (json === undefined) {
+    json = JSON.stringify(enemies);
+    enemiesJsonCache.set(enemies, json);
+  }
+  return json;
+}
+
+function alliesJsonOf(allies: TickInput['allies']): string[] {
+  let json = alliesJsonCache.get(allies);
+  if (json === undefined) {
+    json = allies.map((a) => JSON.stringify(a));
+    alliesJsonCache.set(allies, json);
+  }
+  return json;
 }
 
 /** Parse a harness reply that should be a JSON object; undefined if it isn't. */
@@ -386,6 +414,14 @@ export class SessionPlayerRunner implements PlayerRunner {
         return crashed(out.detail);
       case 'timeout': {
         const selfIds = new Set(input.selves.map((s) => s.id));
+        // The sandbox process was frozen for at least half the budget, and
+        // without the freeze the tick would have finished in time: the host's
+        // fault. A real endless loop on a healthy host runs its whole budget
+        // unfrozen (a little event-loop lag under load is far below half of
+        // it), so it is still blamed; one that happened to be frozen is
+        // blamed on its next tick.
+        const stalledMs = out.stalledMs ?? 0;
+        const hostStall = stalledMs >= hardTimeoutMs / 2 && out.elapsedMs - stalledMs < hardTimeoutMs;
         return {
           status: 'timeout',
           outputs: [],
@@ -394,6 +430,7 @@ export class SessionPlayerRunner implements PlayerRunner {
           forged: 0,
           // Only trust a culprit that is one of this player's acting instances.
           ...(out.culprit && selfIds.has(out.culprit) ? { culprit: out.culprit } : {}),
+          ...(hostStall ? { hostStall: true } : {}),
         };
       }
       case 'error':

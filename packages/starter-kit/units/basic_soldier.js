@@ -30,8 +30,9 @@ export default class BasicSoldier {
   // Called once per tick (60 times a second) for each copy of this unit.
   //   self    - this copy: position, hp, range, radius, cooldownRemaining...
   //   enemies - every living enemy unit
-  //   allies  - my other living units
-  //   world   - arena size, tick, my corner, the shrinking safe zone
+  //   allies  - my other living units (and in team mode my teammates' units)
+  //   world   - arena size (world.width: 800, 1040 or 1200), world.center,
+  //             tick, my start zone, the shrinking safe zone. Never assume 800!
   // Return one action: { action: 'attack', targetId }, { action: 'move', destination: {x, y} }
   // or { action: 'idle' }.
   update(self, enemies, allies, world) {

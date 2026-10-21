@@ -10,6 +10,7 @@
 import { fail, ok, type Phase, type Result, type TimerDTO } from '@pixel-clash/shared';
 import { log } from '../util/log.js';
 import type { Game } from './game.js';
+import { teamRoundRanking } from '../sim/scoring.js';
 import type { RoundResultRecord } from './store.js';
 
 export type GatedOp = 'submit' | 'retire' | 'selection' | 'placement' | 'ready' | 'adminSubmit';
@@ -199,8 +200,14 @@ export class MatchService {
   // Transitions
   // -------------------------------------------------------------------------
 
-  /** LOBBY → PLAN (needs ≥ 2 players). `armoryIn` switches Open Armory on for the whole match (§9.1). */
-  startMatch(roundsIn?: unknown, armoryIn?: unknown): Result<true> {
+  /**
+   * LOBBY → PLAN (needs 2-8 players). `armoryIn` switches Open Armory on for
+   * the whole match (§9.1). `mapStyleIn` (undefined = the draft's, null = the
+   * default for the player count) and `teamModeIn` (undefined = the draft's)
+   * are checked against the players now (§9.2); team mode fixes the teams and
+   * the map for the whole match.
+   */
+  startMatch(roundsIn?: unknown, armoryIn?: unknown, mapStyleIn?: unknown, teamModeIn?: unknown): Result<true> {
     if (this.m.phase !== 'LOBBY') return fail('PHASE_CLOSED', 'A match is already running.', { details: { phase: this.m.phase } });
     const rounds = roundsIn === undefined || roundsIn === null ? this.game.config.timers.defaultRounds : roundsIn;
     if (typeof rounds !== 'number' || !Number.isInteger(rounds) || rounds < 1 || rounds > 10) {
@@ -213,7 +220,10 @@ export class MatchService {
     if (players.length < 2) {
       return fail('NOT_ENOUGH_PLAYERS', 'A match needs at least 2 players.', { details: { players: players.length } });
     }
+    const setup = this.game.teams.resolveStart(mapStyleIn, teamModeIn);
+    if (!setup.ok) return setup;
     for (const p of players) p.activeFromRound = 1;
+    this.game.teams.applyStart(setup.data);
     this.m.rounds = rounds;
     this.m.round = 1;
     this.m.results = [];
@@ -221,7 +231,8 @@ export class MatchService {
     this.m.damage = {};
     this.m.badges = {};
     this.game.armory.reset(armoryIn === true);
-    log.info(`match started: ${rounds} rounds, ${players.length} players${armoryIn === true ? ', Open Armory on' : ''}`);
+    const teamsText = setup.data.teams ? `, ${setup.data.teamMode} on ${setup.data.style}` : `, free-for-all (${setup.data.mapStyle ?? 'default'} map)`;
+    log.info(`match started: ${rounds} rounds, ${players.length} players${teamsText}${armoryIn === true ? ', Open Armory on' : ''}`);
     this.enterPlan();
     return ok(true);
   }
@@ -315,7 +326,10 @@ export class MatchService {
     // Players kicked during this battle leave the scoreboard with it (§4).
     const leaving = new Set(m.pendingKicks);
     result.end.scoreboard = this.game.visibility.scoreboard(leaving);
+    // Team mode (§9.2): the round's team ranking, then the match team table.
+    if (this.game.teams.active) result.end.teams = teamRoundRanking(result.end.ranking);
     m.results.push(result);
+    if (this.game.teams.active) result.end.teamTable = this.game.teams.teamTable(leaving) ?? [];
     m.phase = 'RESULTS';
     this.clearTimer();
     this.game.players.applyPendingKicks();
@@ -396,6 +410,7 @@ export class MatchService {
     m.damage = {};
     m.badges = {};
     m.zones = {};
+    m.map = null;
     this.game.armory.reset(false);
     this.clearTimer();
     for (const p of this.game.players.list()) {
@@ -409,6 +424,10 @@ export class MatchService {
       rs.prevSelection = null;
       rs.submittedThisPlan = false;
     }
+    // Teams are only fixed for a match: back in LOBBY the draft is re-dealt
+    // for everyone (benched players included), §9.2.
+    m.teams = null;
+    this.game.teams.rebalance(true);
     this.changed();
     this.allPrivateChanged();
     return ok(true);

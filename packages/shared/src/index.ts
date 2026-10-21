@@ -5,5 +5,7 @@ export * from './cost.js';
 export * from './bounds.js';
 export * from './errors.js';
 export * from './geometry.js';
+export * from './maps.js';
 export * from './protocol.js';
 export * from './sprite.js';
+export * from './teams.js';

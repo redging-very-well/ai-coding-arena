@@ -21,6 +21,7 @@ import { PlayersService } from './players.js';
 import { RoundService } from './round.js';
 import { SetupService } from './setup.js';
 import { Store } from './store.js';
+import { TeamsService } from './teams.js';
 import { UnitsService } from './units.js';
 import { VisibilityService } from './visibility.js';
 
@@ -87,6 +88,7 @@ export class Game {
   readonly units: UnitsService;
   readonly armory: ArmoryService;
   readonly round: RoundService;
+  readonly teams: TeamsService;
   readonly match: MatchService;
   readonly battle: BattleService;
   readonly visibility: VisibilityService;
@@ -105,6 +107,7 @@ export class Game {
     this.units = new UnitsService(this);
     this.armory = new ArmoryService(this);
     this.round = new RoundService(this);
+    this.teams = new TeamsService(this);
     this.battle = new BattleService(this);
     this.match = new MatchService(this);
     this.visibility = new VisibilityService(this);

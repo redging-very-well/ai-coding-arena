@@ -37,7 +37,24 @@ export function adminRoutes(game: Game): Router {
 
   r.post('/match', (req, res) => {
     const b = body(req);
-    stateAfter(game.match.startMatch(b.rounds, b.armory), res);
+    // `mapStyle`/`teamMode` left out = the LOBBY draft's (§9.2); mapStyle null = default for the player count.
+    stateAfter(game.match.startMatch(b.rounds, b.armory, b.mapStyle, b.teamMode), res);
+  });
+
+  // Match setup draft (§9.2, LOBBY only): map style override + team mode, with the preview.
+  r.get('/match/setup', (_req, res) => {
+    res.json(game.teams.setupDTO());
+  });
+
+  r.put('/match/setup', (req, res) => {
+    const b = body(req);
+    send(res, game.teams.setDraft({ mapStyle: b.mapStyle, teamMode: b.teamMode }));
+  });
+
+  // Swap two players between draft teams (§9.2, LOBBY only).
+  r.post('/teams/swap', (req, res) => {
+    const b = body(req);
+    send(res, game.teams.swap(b.playerA, b.playerB));
   });
 
   r.post(

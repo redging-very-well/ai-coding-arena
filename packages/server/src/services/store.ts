@@ -15,21 +15,24 @@ import type {
   BattleReportDTO,
   BattleEndDTO,
   CostBreakdown,
-  Corner,
   DeepPartial,
   GameConfig,
+  MapStyle,
+  MapZone,
   Phase,
   PlacementDTO,
   ReplayDTO,
   SetupSettingsDTO,
   SpriteSpec,
   StatsSnapshot,
+  TeamDTO,
+  TeamMode,
   UnitBattleSummaryDTO,
   UnitStatus,
   ValidationError,
   ValidationWarning,
 } from '@pixel-clash/shared';
-import { migrateConfigPatch } from '@pixel-clash/shared';
+import { cornerZone, isMapStyle, isTeamMode, migrateConfigPatch, type Corner } from '@pixel-clash/shared';
 import { log } from '../util/log.js';
 
 // ---------------------------------------------------------------------------
@@ -44,7 +47,7 @@ export interface PlayerRecord {
   /** `scrypt$<salt hex>$<hash hex>` */
   pinHash: string;
   apiKey: string;
-  /** Seat 0-3 (colour, instance-id prefix). -1 once kicked. */
+  /** Seat 0-7 (colour, seat badge, instance-id prefix). -1 once kicked. */
   seat: number;
   /** Join order (zones are assigned in join order, §9). */
   joinSeq: number;
@@ -169,8 +172,26 @@ export interface MatchState {
   damage: Record<string, number>;
   /** Badges won this match: playerId → badge → count. */
   badges: Record<string, Partial<Record<BadgeId, number>>>;
-  /** This round's zones (assigned at the start of PLACEMENT; owner-only until START). */
-  zones: Record<string, Corner>;
+  /**
+   * Match setup (§9.2). In LOBBY it is the host's draft (`PUT
+   * /admin/match/setup`); from Start match on it is the match's own.
+   * `mapStyle` null = the default for the player count.
+   */
+  setup: { mapStyle: MapStyle | null; teamMode: TeamMode };
+  /**
+   * Team mode (§9.2): the teams, members in join order. LOBBY: the draft
+   * (auto-balanced, swaps kept until the roster or mode changes). From Start
+   * match to New match: fixed; a kicked member keeps their slot (a hole, so the
+   * team keeps its block shape). null = free-for-all.
+   */
+  teams: TeamDTO[] | null;
+  /**
+   * The map of the current round: resolved at every PLACEMENT in
+   * free-for-all, fixed at Start match in team mode. null before the first.
+   */
+  map: { style: MapStyle; players: number } | null;
+  /** This round's zones on `map` (assigned at the start of PLACEMENT; owner and teammates only until START). */
+  zones: Record<string, MapZone>;
   perPlayer: Record<string, PlayerRoundState>;
   /** Released battle results of this match. */
   results: RoundResultRecord[];
@@ -210,6 +231,9 @@ export function newMatchState(defaultRounds: number): MatchState {
     points: {},
     damage: {},
     badges: {},
+    setup: { mapStyle: null, teamMode: 'ffa' },
+    teams: null,
+    map: null,
     zones: {},
     perPlayer: {},
     results: [],
@@ -337,6 +361,24 @@ export class Store {
       // State files from before the damage tie-break and badges.
       this.match.damage ??= {};
       this.match.badges ??= {};
+      // State files from before maps and teams (§9.2): zones were Corners of the 800 Corners map.
+      const setup = (this.match.setup ?? {}) as Partial<MatchState['setup']>;
+      this.match.setup = {
+        mapStyle: isMapStyle(setup.mapStyle) ? setup.mapStyle : null,
+        teamMode: isTeamMode(setup.teamMode) ? setup.teamMode : 'ffa',
+      };
+      this.match.teams ??= null;
+      this.match.map ??= null;
+      const zones: Record<string, MapZone> = {};
+      for (const [id, z] of Object.entries((this.match.zones ?? {}) as Record<string, MapZone | Corner>)) {
+        zones[id] = typeof z === 'string' ? cornerZone(z) : z;
+      }
+      this.match.zones = zones;
+      if (Object.keys(zones).length > 0 && !this.match.map) {
+        const n = Object.keys(zones).length;
+        // Old 1-2 player zones were TL(+BR) = Duel, 3-4 players the Corners map.
+        this.match.map = { style: n <= 2 ? 'duel' : 'corners', players: Math.min(n, 4) };
+      }
     }
     this.sessions = new Map(Object.entries(data.sessions ?? {}));
     this.adminSessions = new Set(data.adminSessions ?? []);

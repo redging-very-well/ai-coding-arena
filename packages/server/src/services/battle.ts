@@ -8,10 +8,16 @@
 import { randomInt } from 'node:crypto';
 import {
   isArmoryUnitId,
+  legacyCornerOf,
+  mapDTO,
+  mapFor,
+  mapZoneDTO,
+  scaleSuddenDeath,
   type BattleEndDTO,
   type BattleReportDTO,
   type BattleRevealDTO,
   type FrameDTO,
+  type MapZone,
   type PlaybackDTO,
   type ReplayDTO,
   type RevealedUnitDTO,
@@ -43,7 +49,10 @@ const PUMP_MS = 50;
 interface SetupPlayer {
   playerId: string;
   seat: number;
-  zone: BattlePlayerSetup['zone'];
+  /** This round's zone on the battle's map (§9.2). */
+  zone: MapZone;
+  /** Team mode: the player's team. */
+  teamId?: number;
   units: BattleUnitDesign[];
   runnerUnits: RunnerUnitDesign[];
   revealUnits: RevealedUnitDTO[];
@@ -218,17 +227,35 @@ export class BattleService {
       }
       const known = new Set(units.map((u) => u.unitId));
       const placements = rs.placements.filter((pl) => known.has(pl.unitId));
-      setup.push({ playerId: p.id, seat: p.seat, zone, units, runnerUnits, revealUnits, placements, fielded, borrowed, borrowedNames });
+      const teamId = game.teams.active ? game.teams.teamIdOf(p.id) : undefined;
+      setup.push({
+        playerId: p.id,
+        seat: p.seat,
+        zone,
+        ...(teamId !== undefined ? { teamId } : {}),
+        units,
+        runnerUnits,
+        revealUnits,
+        placements,
+        fielded,
+        borrowed,
+        borrowedNames,
+      });
     }
 
+    const layout = game.teams.currentLayout();
     const reveal: BattleRevealDTO = {
       round: m.round,
       totalTicks: game.config.timers.battleTicks,
+      ...(layout ? { map: mapDTO(layout) } : {}),
+      ...(game.teams.active ? { teams: game.teams.publicTeams() } : {}),
       players: setup.map((s) => ({
         playerId: s.playerId,
         name: game.store.players.get(s.playerId)?.name ?? '?',
         seat: s.seat,
-        zone: s.zone,
+        zone: legacyCornerOf(s.zone),
+        mapZone: mapZoneDTO(s.zone),
+        ...(s.teamId !== undefined ? { teamId: s.teamId } : {}),
         units: s.revealUnits,
         instances: buildInstances({ seat: s.seat, zone: s.zone, units: s.units, placements: s.placements }),
       })),
@@ -262,7 +289,8 @@ export class BattleService {
       // Nobody to fight: straight to an empty result.
       a.simDone = true;
       a.result = { endTick: 0, endReason: 'elimination', players: [], units: [], ranking: [] };
-      a.frames.push({ t: 0, units: [], projectiles: [], safeZoneRadius: game.config.suddenDeath.startRadius, events: [] });
+      const radius = scaleSuddenDeath(game.config.suddenDeath, layout?.width ?? 800).startRadius;
+      a.frames.push({ t: 0, units: [], projectiles: [], safeZoneRadius: radius, events: [] });
     } else {
       a.started = this.launch(a);
     }
@@ -283,15 +311,18 @@ export class BattleService {
         for (const r of runners.values()) r.dispose();
         return;
       }
+      const map = game.store.match.map;
       const engine = new BattleEngine({
         players: a.setup.map((s) => ({
           playerId: s.playerId,
           seat: s.seat,
           zone: s.zone,
+          ...(s.teamId !== undefined ? { teamId: s.teamId } : {}),
           units: s.units,
           placements: s.placements,
           runner: runners.get(s.playerId)!,
         })),
+        ...(map ? { map: { style: map.style, width: mapFor(map.style, map.players).width } } : {}),
         config: game.config,
         seed: a.seed,
       });

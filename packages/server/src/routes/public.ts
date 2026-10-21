@@ -37,7 +37,7 @@ export function publicRoutes(game: Game): Router {
   );
 
   r.get('/rules', (_req, res) => {
-    res.json(buildRules(game.config, game.armory.enabled));
+    res.json(buildRules(game.config, game.armory.enabled, game.teams.matchInfo()));
   });
 
   r.get('/contract', (_req, res) => {

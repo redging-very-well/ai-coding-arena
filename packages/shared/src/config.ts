@@ -1,5 +1,6 @@
 // Game configuration: zod schema + defaults (plan §5 bounds, §6 economy,
-// §3 timers, §8 sandbox limits, §9 sudden death and scoring, §4 rate limits).
+// §3 timers, §8 sandbox limits, §9 sudden death and scoring, §9.2 match size,
+// §4 rate limits).
 //
 // `DEFAULT_CONFIG` is the single source of truth in code. `config/default.json`
 // at the repo root mirrors it for humans/ops and a test keeps them in sync.
@@ -84,16 +85,21 @@ export const ConfigSchema = z.object({
     battleTicks: posInt(),
     ticksPerSecond: posInt(),
   }),
+  /** Match size (§9.2). Arena sizes, zone tables and team colours are code (shared/maps.ts, teams.ts). */
+  match: z.object({
+    /** Seats 0..maxPlayers−1; joining beyond it is GAME_FULL. 2-8. */
+    maxPlayers: z.number().int().min(2).max(8),
+  }),
   /**
    * Round points (§9 Points): place points + damage bonus + value bonus.
-   * Bonus = round-half-up(max × mine / top), 0 when the top value is 0.
+   * Place points are a formula, not config: with P ranked players and T sides,
+   * place k gets round((P − 1) × (T − k) / (T − 1)) (free-for-all: P − k).
+   * Bonus = round-half-up(max × P/4 × mine / top), 0 when the top value is 0.
    */
   scoring: z.object({
-    /** Points by place: index 0 = 1st place (same table for 2-4 players). */
-    placePoints: z.array(z.number().int().nonnegative()).min(4),
-    /** Max damage bonus (for the top effective damage dealer). */
+    /** Max damage bonus AT 4 PLAYERS (for the top effective damage dealer); scaled × P/4. */
     damageBonusMax: z.number().int().nonnegative(),
-    /** Max value-destroyed bonus (for the top value destroyer). */
+    /** Max value-destroyed bonus AT 4 PLAYERS (for the top value destroyer); scaled × P/4. */
     valueBonusMax: z.number().int().nonnegative(),
   }),
   suddenDeath: z
@@ -199,8 +205,10 @@ export const DEFAULT_CONFIG: GameConfig = {
     battleTicks: 5400,
     ticksPerSecond: 60,
   },
+  match: {
+    maxPlayers: 8,
+  },
   scoring: {
-    placePoints: [3, 2, 1, 0],
     damageBonusMax: 2,
     valueBonusMax: 1,
   },
@@ -272,15 +280,18 @@ export function deepMerge<T>(base: T, patch: unknown): T {
 
 /**
  * Rewrite keys of older config files/patches to the current shape. Today:
- * the top-level `points` array (place points) became `scoring.placePoints`.
- * An explicit `scoring.placePoints` wins over a legacy `points`. Returns a
- * new object; anything that isn't a plain object is returned unchanged.
+ * the fixed place-points table (the top-level `points` array, later
+ * `scoring.placePoints`) is gone: place points are the §9 formula, so both
+ * keys are dropped. Returns a new object; anything that isn't a plain object
+ * is returned unchanged.
  */
 export function migrateConfigPatch<T>(patch: T): T {
-  if (!isPlainObject(patch) || !('points' in patch)) return patch;
-  const { points, ...rest } = patch;
-  const scoring: Record<string, unknown> = isPlainObject(rest.scoring) ? { ...rest.scoring } : {};
-  if (points !== undefined && !('placePoints' in scoring)) scoring.placePoints = points;
+  if (!isPlainObject(patch)) return patch;
+  const hasLegacyScoring = isPlainObject(patch.scoring) && 'placePoints' in patch.scoring;
+  if (!('points' in patch) && !hasLegacyScoring) return patch;
+  const { points: _points, ...rest } = patch;
+  if (!isPlainObject(rest.scoring)) return rest as T;
+  const { placePoints: _placePoints, ...scoring } = rest.scoring;
   return { ...rest, scoring } as T;
 }
 

@@ -5,20 +5,20 @@ import type { Rng } from './prng.js';
 import type { SimUnit } from './types.js';
 
 /**
- * Keep a body inside the arena. The centre is clamped so the whole body stays
- * on the 800×800 field (cell centres are ≥ 20 px from the edge, so placement
- * is never affected).
+ * Keep a body inside the S×S arena (default 800, §9.2). The centre is clamped
+ * so the whole body stays on the field (cell centres are ≥ 20 px from the
+ * edge, so placement is never affected).
  */
-export function clampBody(u: Pick<SimUnit, 'x' | 'y' | 'radius'>): void {
-  u.x = Math.min(ARENA.width - u.radius, Math.max(u.radius, u.x));
-  u.y = Math.min(ARENA.height - u.radius, Math.max(u.radius, u.y));
+export function clampBody(u: Pick<SimUnit, 'x' | 'y' | 'radius'>, arena: number = ARENA.width): void {
+  u.x = Math.min(arena - u.radius, Math.max(u.radius, u.x));
+  u.y = Math.min(arena - u.radius, Math.max(u.radius, u.y));
 }
 
 /**
  * Move a soldier straight toward `dest` by at most `speed` px (no
  * teleporting), then clamp. Returns true if the unit actually moved.
  */
-export function stepToward(u: SimUnit, dest: Point, speed: number): boolean {
+export function stepToward(u: SimUnit, dest: Point, speed: number, arena: number = ARENA.width): boolean {
   const dx = dest.x - u.x;
   const dy = dest.y - u.y;
   const dist = Math.hypot(dx, dy);
@@ -31,7 +31,7 @@ export function stepToward(u: SimUnit, dest: Point, speed: number): boolean {
     u.x += (dx / dist) * speed;
     u.y += (dy / dist) * speed;
   }
-  clampBody(u);
+  clampBody(u, arena);
   return u.x !== before.x || u.y !== before.y;
 }
 
@@ -45,7 +45,7 @@ export function stepToward(u: SimUnit, dest: Point, speed: number): boolean {
  *
  * `units` must be the living units sorted by instanceId.
  */
-export function separate(units: readonly SimUnit[], passes: number, rng: Rng): void {
+export function separate(units: readonly SimUnit[], passes: number, rng: Rng, arena: number = ARENA.width): void {
   for (let pass = 0; pass < passes; pass++) {
     for (let i = 0; i < units.length; i++) {
       const a = units[i]!;
@@ -77,19 +77,19 @@ export function separate(units: readonly SimUnit[], passes: number, rng: Rng): v
         if (aFixed) {
           b.x += dx * overlap;
           b.y += dy * overlap;
-          clampBody(b);
+          clampBody(b, arena);
         } else if (bFixed) {
           a.x -= dx * overlap;
           a.y -= dy * overlap;
-          clampBody(a);
+          clampBody(a, arena);
         } else {
           const half = overlap / 2;
           a.x -= dx * half;
           a.y -= dy * half;
           b.x += dx * half;
           b.y += dy * half;
-          clampBody(a);
-          clampBody(b);
+          clampBody(a, arena);
+          clampBody(b, arena);
         }
       }
     }

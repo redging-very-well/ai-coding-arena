@@ -26,23 +26,36 @@
 // The sim "runs ahead": `run()` loops as fast as the runners allow, pushing
 // frames to `frames` / `onFrame`. Playback, result release and Skip are the
 // battle service's job; `stop()` ends the loop early.
+//
+// Maps and teams (§9.2): the arena is S×S (800 / 1040 / 1200, from
+// `BattleOptions.map` or the zones), and the sudden-death radii are scaled by
+// S/800. Free-for-all every player is their own side (teamId = seat); in team
+// mode (every setup has a `teamId`) `allies` are all of the team's units,
+// attacking a teammate idles, a team is eliminated with its last unit, the
+// battle ends when ≤ 1 side has units, and sides are ranked (team living cost
+// on timeout).
 
 import {
-  CENTER,
   ARENA,
+  arenaCenter,
   cellCenter,
   computeCost,
   instanceIdFor,
+  scaleSuddenDeath,
   sizeOf,
-  zoneCenter,
+  zoneCenterOf,
   type BattleReportDTO,
   type FrameDTO,
   type GameConfig,
+  type MapLayout,
+  type MapStyle,
   type OtherView,
   type PlayerMetricsDTO,
+  type Point,
   type RankingEntryDTO,
   type SelfView,
   type WorldView,
+  type ZoneRef,
 } from '@pixel-clash/shared';
 import {
   isUnitError,
@@ -62,7 +75,7 @@ import { separate, stepToward } from './movement.js';
 import { deriveSeed, mulberry32, type Rng } from './prng.js';
 import { applyHit, moveProjectiles, resolveHits, type PendingHit } from './projectiles.js';
 import { rankResult } from './ranking.js';
-import { playerMetrics, roundScoreOf, scoreRanking, sumMetrics } from './scoring.js';
+import { playerMetrics, roundScoreOf, scoreRanking, sumMetrics, teamRoundRanking } from './scoring.js';
 import { applySuddenDeath, safeRadiusAt } from './suddenDeath.js';
 import {
   compareIds,
@@ -172,6 +185,13 @@ export function designFor(unitId: string, stats: BattleUnitDesign['stats'], conf
 
 export interface BattleOptions {
   players: readonly BattlePlayerSetup[];
+  /**
+   * The battle's map (§9.2): arena size and style for `world`. Omitted: the
+   * arena is taken from the players' map zones (800 for Corners), and the
+   * style is Duel for ≤ 2 players, else Corners.
+   */
+  map?: Pick<MapLayout, 'style' | 'width'>;
+  /** Config; `suddenDeath` radii are the 800-arena values (scaled by S/800 here). */
   config: GameConfig;
   /** Battle seed (integer). The engine's own PRNG is derived from it. */
   seed: number;
@@ -193,7 +213,7 @@ interface PlayerState {
   units: SimUnit[];
   eliminatedAtTick: number | null;
   playerStrikes: number;
-  /** Every hard timeout (reported). */
+  /** Every hard timeout (reported); host stalls (`TickResult.hostStall`) are not counted. */
   timeouts: number;
   /** Timeouts without a culprit that can still be blamed (they count toward the player limits, §8). */
   playerTimeouts: number;
@@ -215,7 +235,14 @@ interface PendingAction {
 
 export class BattleEngine {
   readonly frames: FrameDTO[];
+  /** Arena side S (§9.2). */
+  readonly arena: number;
+  readonly mapStyle: MapStyle;
+  /** Team mode: every setup carries a teamId. */
+  readonly teamMode: boolean;
+  /** The config with sudden death scaled to this arena. */
   private readonly config: GameConfig;
+  private readonly center: Point;
   private readonly players: PlayerState[];
   /** Every unit, sorted by instanceId. */
   private readonly units: SimUnit[];
@@ -239,7 +266,13 @@ export class BattleEngine {
   private started = false;
 
   constructor(opts: BattleOptions) {
-    this.config = opts.config;
+    this.arena = arenaOf(opts);
+    this.center = arenaCenter(this.arena);
+    this.mapStyle = opts.map?.style ?? (opts.players.length <= 2 ? 'duel' : 'corners');
+    this.config = { ...opts.config, suddenDeath: scaleSuddenDeath(opts.config.suddenDeath, this.arena) };
+    const withTeam = opts.players.filter((p) => p.teamId !== undefined).length;
+    if (withTeam !== 0 && withTeam !== opts.players.length) throw new Error('give a teamId to every player or to none');
+    this.teamMode = withTeam > 0;
     this.rng = mulberry32(deriveSeed(opts.seed, 0x51));
     this.onFrame = opts.onFrame;
     this.kicked = opts.kickedPlayerIds ?? new Set();
@@ -377,10 +410,12 @@ export class BattleEngine {
 
   private makeUnit(setup: BattlePlayerSetup, design: BattleUnitDesign, inst: PlacedInstance): SimUnit {
     const s = design.stats;
+    const center = this.center;
     return {
       id: inst.instanceId,
       playerId: setup.playerId,
       seat: setup.seat,
+      teamId: setup.teamId ?? setup.seat,
       unitId: design.unitId,
       stats: s,
       cost: design.cost,
@@ -398,7 +433,7 @@ export class BattleEngine {
       firedSinceFrame: false,
       // Sprites are drawn facing right: start facing the arena centre, in
       // SCREEN space (iso screenX ∝ x − y, §12; ties by arena x).
-      facingLeft: screenX(inst) > screenX(CENTER) || (screenX(inst) === screenX(CENTER) && inst.x > CENTER.x),
+      facingLeft: screenX(inst) > screenX(center) || (screenX(inst) === screenX(center) && inst.x > center.x),
       outsideSafeZone: false,
       damageDealt: 0,
       kills: 0,
@@ -448,7 +483,10 @@ export class BattleEngine {
     }
     const others = living.map(toOtherView);
     const safeRadius = safeRadiusAt(tick, cfg);
-    const inputs = this.players.map((p) => this.buildInput(p, tick, living, others, safeRadius));
+    // enemies/allies are built once per side and shared by its players, so
+    // the sandbox serialises them once per side (§9.2 Performance).
+    const sideViews = new Map<number, { enemies: OtherView[]; allies: OtherView[] }>();
+    const inputs = this.players.map((p) => this.buildInput(p, tick, living, others, safeRadius, sideViews));
 
     // 2) All runners in parallel; results applied in seat order below.
     const results = await Promise.all(
@@ -468,7 +506,7 @@ export class BattleEngine {
       for (const self of input.selves) {
         if (!raw.has(self.id)) continue;
         const unit = this.byId.get(self.id)!;
-        const action = resolveAction(raw.get(self.id), unit, (id) => this.byId.get(id), cfg.sim.rangeTolerance);
+        const action = resolveAction(raw.get(self.id), unit, (id) => this.byId.get(id), cfg.sim.rangeTolerance, this.arena);
         if (action.kind !== 'idle') pending.push({ unit, action });
       }
     });
@@ -478,14 +516,14 @@ export class BattleEngine {
       if (action.kind !== 'move') continue;
       const sx0 = screenX(unit);
       // Sticky until the next frame is recorded (cleared in FrameRecorder.record).
-      if (stepToward(unit, action.destination, unit.stats.speed)) unit.movedSinceFrame = true;
+      if (stepToward(unit, action.destination, unit.stats.speed, this.arena)) unit.movedSinceFrame = true;
       const sx1 = screenX(unit);
       if (sx1 < sx0) unit.facingLeft = true;
       else if (sx1 > sx0) unit.facingLeft = false;
     }
 
     // 5) Separation.
-    separate(living, cfg.sim.separationPasses, this.rng);
+    separate(living, cfg.sim.separationPasses, this.rng, this.arena);
 
     // 6) Fire attacks. Melee hits are queued and land in step 7 together with
     //    the projectile impacts, so the first hit in seat, then instanceId
@@ -524,7 +562,7 @@ export class BattleEngine {
     });
 
     // 8) Sudden death (credits nobody: no damage, kills or value).
-    applySuddenDeath(living, tick, cfg);
+    applySuddenDeath(living, tick, cfg, this.center);
 
     // 9) Remove the dead.
     for (const u of living) {
@@ -547,26 +585,36 @@ export class BattleEngine {
     living: readonly SimUnit[],
     others: readonly OtherView[],
     safeRadius: number,
+    sideViews: Map<number, { enemies: OtherView[]; allies: OtherView[] }>,
   ): TickInput | undefined {
     if (p.disabled || p.runner.disposed) return undefined;
     const selves = living.filter((u) => u.playerId === p.setup.playerId && !u.disabled).map(toSelfView);
     if (selves.length === 0) return undefined;
-    const corner = zoneCenter(p.setup.zone);
+    const corner = zoneCenterOf(p.setup.zone);
+    const { x: cx, y: cy } = this.center;
     const world: WorldView = {
-      width: ARENA.width,
-      height: ARENA.height,
+      width: this.arena,
+      height: this.arena,
       tick,
       ticksLeft: this.config.timers.battleTicks - tick,
+      mapStyle: this.mapStyle,
       myCorner: { x: corner.x, y: corner.y },
-      center: { x: CENTER.x, y: CENTER.y },
-      safeZone: { x: CENTER.x, y: CENTER.y, radius: safeRadius },
+      center: { x: cx, y: cy },
+      safeZone: { x: cx, y: cy, radius: safeRadius },
     };
+    // Same teamId = friend (own units and, in team mode, every teammate's), else enemy.
+    const teamId = p.setup.teamId ?? p.setup.seat;
+    let views = sideViews.get(teamId);
+    if (!views) {
+      views = { enemies: others.filter((o) => o.teamId !== teamId), allies: others.filter((o) => o.teamId === teamId) };
+      sideViews.set(teamId, views);
+    }
     return {
       tick,
       nowMs: (tick * 1000) / this.config.timers.ticksPerSecond,
       selves,
-      enemies: others.filter((o) => o.ownerId !== p.setup.playerId),
-      allies: others.filter((o) => o.ownerId === p.setup.playerId),
+      enemies: views.enemies,
+      allies: views.allies,
       world,
     };
   }
@@ -586,6 +634,14 @@ export class BattleEngine {
     if (res.status === 'crashed') {
       this.incident(p, tick, 'crashed', `The sandbox crashed${res.detail ? `: ${res.detail}` : ''}.`);
       this.disablePlayer(p, 'crashed');
+      return actions;
+    }
+
+    if (res.status === 'timeout' && res.hostStall) {
+      // The sandbox process was frozen (OS / VM scheduler) for most of the
+      // tick: the units idle, but it's not the kid's code, so no strike and
+      // no timeout count (§8).
+      this.incident(p, tick, 'timeout', 'The game computer paused for a moment (not your code); all units idled this tick.');
       return actions;
     }
 
@@ -720,15 +776,18 @@ export class BattleEngine {
     return this.units.filter((u) => u.alive);
   }
 
-  /** Step 10: mark newly eliminated players. Returns true when ≤ 1 player has living units. */
+  /**
+   * Step 10: mark newly eliminated players. Returns true when ≤ 1 side (a
+   * free-for-all player, or a team) has living units.
+   */
   private checkElimination(): boolean {
-    let withUnits = 0;
+    const sidesWithUnits = new Set<number>();
     for (const p of this.players) {
       const alive = p.units.some((u) => u.alive);
-      if (alive) withUnits += 1;
+      if (alive) sidesWithUnits.add(p.setup.teamId ?? p.setup.seat);
       else if (p.eliminatedAtTick === null) p.eliminatedAtTick = this.time;
     }
-    return withUnits <= 1;
+    return sidesWithUnits.size <= 1;
   }
 
   private emitFrame(): void {
@@ -771,6 +830,7 @@ export class BattleEngine {
         playerId: p.setup.playerId,
         seat: p.setup.seat,
         zone: p.setup.zone,
+        ...(p.setup.teamId !== undefined ? { teamId: p.setup.teamId } : {}),
         eliminatedAtTick: living.length > 0 ? null : p.eliminatedAtTick ?? this.time,
         livingCost: living.reduce((sum, u) => sum + u.cost, 0),
         livingUnits: living.length,
@@ -805,6 +865,7 @@ export class BattleEngine {
     });
     const result: BattleResult = { endTick: this.time, endReason, players, units, ranking: [] };
     result.ranking = scoreRanking(rankResult(result, this.kicked), playerMetrics(result), this.config.scoring);
+    if (this.teamMode) result.teams = teamRoundRanking(result.ranking);
     return result;
   }
 }
@@ -814,6 +875,18 @@ export async function runBattle(opts: BattleOptions): Promise<BattleResult & { f
   const engine = new BattleEngine(opts);
   const result = await engine.run();
   return { ...result, frames: engine.frames };
+}
+
+/** Arena side S: the map's, else the players' map zones' (all must agree), else 800. */
+function arenaOf(opts: BattleOptions): number {
+  const sizes = new Set(opts.players.map((p) => zoneArena(p.zone)));
+  if (opts.map) sizes.add(opts.map.width);
+  if (sizes.size > 1) throw new Error(`players' zones and the map disagree on the arena size (${[...sizes].join(', ')})`);
+  return [...sizes][0] ?? ARENA.width;
+}
+
+function zoneArena(zone: ZoneRef): number {
+  return typeof zone === 'string' ? ARENA.width : zone.arena;
 }
 
 /**
@@ -936,6 +1009,7 @@ function toOtherView(u: SimUnit): OtherView {
   return {
     id: u.id,
     ownerId: u.playerId,
+    teamId: u.teamId, // free-for-all: the seat; team mode: the team (§5, §9.2)
     type: u.type,
     name: u.stats.name,
     x: u.x,
@@ -952,6 +1026,7 @@ function toSelfView(u: SimUnit): SelfView {
     id: u.id,
     unitId: u.unitId,
     ownerId: u.playerId,
+    teamId: u.teamId, // free-for-all: the seat; team mode: the team (§5, §9.2)
     type: u.type,
     name: u.stats.name,
     x: u.x,

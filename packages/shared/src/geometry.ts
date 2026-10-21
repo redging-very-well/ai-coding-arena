@@ -1,16 +1,19 @@
-// Arena geometry (plan §9): arena size, corner zones, zone-local cells,
-// per-round zone assignment, unit radii, range checks and the sudden-death
-// safe circle.
+// Arena geometry (plan §9): the 800 arena and its corner zones, cell sizes,
+// unit radii, range checks and the sudden-death safe circle.
 //
-// Zone-local cells: each zone is a 6×6 grid of 40 px cells. `col`/`row` are
-// mirrored per corner so that (0,0) is always the cell nearest the arena
-// centre; `col` runs along x (away from the centre), `row` along y (away from
-// the centre). This keeps "Copy last layout" meaningful when zones rotate.
+// Map styles for 2-8 players (arena 800/1040/1200, zone tables, facing, the
+// generalized zone-local cells and rotation incl. team blocks) are in maps.ts
+// (§9.2). The Corner helpers here are the 4-player Corners map, whose zones
+// keep the original rule: each zone is a 6×6 grid of 40 px cells, `col` runs
+// along x and `row` along y, both away from the centre, so (0,0) is the cell
+// nearest the arena centre.
 
 import type { GameConfig } from './config.js';
 import { DEFAULT_SIZE, type UnitType } from './contract.js';
 
+/** The 800 arena of 2-4 players (bigger maps: `arenaSizeFor` in maps.ts, §9.2). */
 export const ARENA = { width: 800, height: 800 } as const;
+/** Centre of the 800 arena. An S arena's centre is (S/2, S/2). */
 export const CENTER = { x: 400, y: 400 } as const;
 export const ZONE_SIZE = 240;
 export const CELL_SIZE = 40;
@@ -63,51 +66,18 @@ export function zoneCenter(corner: Corner): Point {
   return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 }
 
-/**
- * Which way zone-local col/row grow in arena space for a corner: +1 means the
- * arena coordinate increases with col/row. Left zones grow leftwards (−x) so
- * col 0 hugs the centre; top zones grow upwards (−y).
- */
-function axisSigns(corner: Corner): { sx: 1 | -1; sy: 1 | -1 } {
-  const right = corner === 'TR' || corner === 'BR';
-  const bottom = corner === 'BL' || corner === 'BR';
-  return { sx: right ? 1 : -1, sy: bottom ? 1 : -1 };
-}
-
 export function isValidCell(col: number, row: number): boolean {
   return (
     Number.isInteger(col) && Number.isInteger(row) && col >= 0 && row >= 0 && col < GRID_SIZE && row < GRID_SIZE
   );
 }
 
-/** Arena-space centre of zone-local cell (col,row). Throws on an invalid cell. */
-export function cellCenter(corner: Corner, col: number, row: number): Point {
-  if (!isValidCell(col, row)) throw new RangeError(`cell (${col},${row}) is outside the ${GRID_SIZE}x${GRID_SIZE} zone`);
-  const r = zoneRect(corner);
-  const { sx, sy } = axisSigns(corner);
-  // Edge of the zone nearest the centre, then step outwards cell by cell.
-  const innerX = sx === 1 ? r.x : r.x + r.width;
-  const innerY = sy === 1 ? r.y : r.y + r.height;
-  return {
-    x: innerX + sx * (col * CELL_SIZE + CELL_SIZE / 2),
-    y: innerY + sy * (row * CELL_SIZE + CELL_SIZE / 2),
-  };
-}
-
-/** Inverse of `cellCenter`: the zone-local cell containing an arena point, or null. */
-export function cellAt(corner: Corner, x: number, y: number): Cell | null {
-  const r = zoneRect(corner);
-  if (x < r.x || x >= r.x + r.width || y < r.y || y >= r.y + r.height) return null;
-  const { sx, sy } = axisSigns(corner);
-  const dx = sx === 1 ? x - r.x : r.x + r.width - x;
-  const dy = sy === 1 ? y - r.y : r.y + r.height - y;
-  const col = Math.min(GRID_SIZE - 1, Math.floor(dx / CELL_SIZE));
-  const row = Math.min(GRID_SIZE - 1, Math.floor(dy / CELL_SIZE));
-  return { col, row };
-}
+// Zone-local cells (`cellCenter`, `cellAt`) live in maps.ts: they take a
+// `Corner` (this file's 4-corner zones) or any §9.2 map zone.
 
 /**
- * The set of zones used for n players (§9): 2 players TL+BR, 3 players
+ * The Corner set used for n players on the 800 arena (Duel / Corners maps,
+ * §9.2; other counts and styles: `mapFor` in maps.ts): 2 players TL+BR, 3 players
  * TL/TR/BR (TR is the "middle" seat next to both others), 4 players all
  * (clockwise).
  */
@@ -165,11 +135,11 @@ export function inRange(
   return edgeDistance(self, other) <= self.range + tolerance;
 }
 
-/** Clamp a point to the arena. */
-export function clampToArena(p: Point): Point {
+/** Clamp a point to an S×S arena (default 800). */
+export function clampToArena(p: Point, arena: number = ARENA.width): Point {
   return {
-    x: Math.min(ARENA.width, Math.max(0, p.x)),
-    y: Math.min(ARENA.height, Math.max(0, p.y)),
+    x: Math.min(arena, Math.max(0, p.x)),
+    y: Math.min(arena, Math.max(0, p.y)),
   };
 }
 
@@ -184,9 +154,12 @@ export function safeZoneRadius(tick: number, sd: GameConfig['suddenDeath']): num
   return sd.startRadius + (sd.endRadius - sd.startRadius) * t;
 }
 
-/** Whether a unit centre is outside the safe circle (and so takes sudden-death damage). */
-export function outsideSafeZone(p: Point, radius: number): boolean {
-  return Math.hypot(p.x - CENTER.x, p.y - CENTER.y) > radius;
+/**
+ * Whether a unit centre is outside the safe circle (and so takes sudden-death
+ * damage). The circle is centred on the arena centre (default the 800 arena's).
+ */
+export function outsideSafeZone(p: Point, radius: number, center: Point = CENTER): boolean {
+  return Math.hypot(p.x - center.x, p.y - center.y) > radius;
 }
 
 /** Sudden-death damage per tick for a unit: damagePctPerSecond% of maxHP / ticksPerSecond. */

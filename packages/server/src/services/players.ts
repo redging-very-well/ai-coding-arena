@@ -7,7 +7,8 @@ import { hashPin, newApiKey, verifyPin } from './auth.js';
 import type { Game } from './game.js';
 import { newRoundState, type PlayerRecord } from './store.js';
 
-export const MAX_SEATS = 4;
+/** The most seats any config allows (§4: seats 0-7). The live limit is `config.match.maxPlayers`. */
+export const MAX_SEATS = 8;
 export const NAME_RE = /^[A-Za-z0-9 _-]{1,16}$/;
 export const PIN_RE = /^\d{4}$/;
 
@@ -36,11 +37,15 @@ export class PlayersService {
     return p && !p.kicked ? p : undefined;
   }
 
-  /** Takes part in the current round (or, in LOBBY, in the next match). */
+  /**
+   * Takes part in the current round (or, in LOBBY, in the next match). In a
+   * team match a player who is on no team (joined after Start) is benched.
+   */
   isActive(p: PlayerRecord): boolean {
     const m = this.game.store.match;
     if (p.kicked) return false;
     if (m.phase === 'LOBBY') return true;
+    if (this.game.teams.isBenched(p)) return false;
     return p.activeFromRound <= m.round;
   }
 
@@ -59,6 +64,9 @@ export class PlayersService {
     if (typeof pinIn !== 'string' || !PIN_RE.test(pinIn)) {
       return fail('BAD_PIN_FORMAT', 'The PIN must be exactly 4 digits.', { hint: 'For example 4821.' });
     }
+    // Hash first: everything after this point is synchronous, so kids joining
+    // at the same moment can't be given the same seat or name.
+    const pinHash = await hashPin(pinIn);
     const store = this.game.store;
     const nameKey = name.toLowerCase();
     const existing = [...store.players.values()].find((p) => p.nameKey === nameKey);
@@ -68,14 +76,15 @@ export class PlayersService {
       });
     }
     const used = new Set(this.list().map((p) => p.seat));
+    const seats = Math.min(MAX_SEATS, this.game.config.match.maxPlayers);
     let seat = -1;
-    for (let s = 0; s < MAX_SEATS; s++) {
+    for (let s = 0; s < seats; s++) {
       if (!used.has(s)) {
         seat = s;
         break;
       }
     }
-    if (seat < 0) return fail('GAME_FULL', 'All 4 seats are taken.', { hint: 'Ask a grown-up to free a seat.' });
+    if (seat < 0) return fail('GAME_FULL', `All ${seats} seats are taken.`, { hint: 'Ask a grown-up to free a seat.' });
 
     // A kicked player's name can be reused: their old record goes away.
     if (existing) this.purge(existing.id);
@@ -90,7 +99,7 @@ export class PlayersService {
       id: `p_${randomBytes(5).toString('hex')}`,
       name,
       nameKey,
-      pinHash: await hashPin(pinIn),
+      pinHash,
       apiKey: newApiKey(),
       seat,
       joinSeq: store.nextJoinSeq(),
@@ -103,8 +112,12 @@ export class PlayersService {
     store.match.points[player.id] ??= 0;
     this.game.auth.registerKey(player);
     this.game.units.addTemplates(player.id);
+    // LOBBY: the draft teams are re-dealt for the new roster (§9.2).
+    this.game.teams.rebalance();
     store.save();
-    if (!this.isActive(player)) {
+    if (this.game.teams.isBenched(player)) {
+      this.game.notifier.toast({ playerId: player.id }, 'info', "Teams are set for this match. You'll play in the next match!");
+    } else if (!this.isActive(player)) {
       this.game.notifier.toast({ playerId: player.id }, 'info', "You're in from the next round!");
     }
     this.game.notifier.stateChanged();
@@ -203,9 +216,12 @@ export class PlayersService {
       delete store.match.perPlayer[p.id];
       delete store.match.zones[p.id];
     }
-    // Zones depend on the active player count (§9 Zones): re-deal them so
-    // e.g. the last 2 players get the diagonal TL/BR. Placements are
-    // zone-local, so they stay valid.
+    // LOBBY: re-deal the draft teams (§9.2). In a team match teams never
+    // change: the kicked member's slot stays as a hole.
+    this.game.teams.rebalance();
+    // Zones depend on the active player count (§9.2): re-deal them so e.g.
+    // the last 2 free-for-all players get the Duel map (team mode: the kicked
+    // member's zone stays empty). Placements are zone-local, so they stay valid.
     if (store.match.phase === 'PLACEMENT') {
       this.game.round.assignZones();
       for (const other of this.list()) this.game.notifier.privateChanged(other.id);

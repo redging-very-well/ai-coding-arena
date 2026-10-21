@@ -92,6 +92,10 @@ export const SERVICE_ERROR_CODES = [
   'ARMORY_OWN_UNIT',
   'NOT_ALL_READY',
   'NOT_ENOUGH_PLAYERS',
+  'BAD_MAP_STYLE',
+  'BAD_TEAM_MODE',
+  'NO_TEAMS',
+  'SAME_TEAM',
   'TEMPLATE_PROTECTED',
   'TEMPLATE_WOULD_BREAK',
   'VALIDATION_FAILED',
@@ -198,6 +202,8 @@ export function httpStatusFor(code: ErrorCode): number {
     case 'CELL_TAKEN':
     case 'NOT_ALL_READY':
     case 'NOT_ENOUGH_PLAYERS':
+    case 'NO_TEAMS':
+    case 'SAME_TEAM':
     case 'TEMPLATE_PROTECTED':
     case 'TEMPLATE_WOULD_BREAK':
       return 409;

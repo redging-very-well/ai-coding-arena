@@ -19,7 +19,10 @@ export function playerRoutes(game: Game): Router {
       seat: p.seat,
       connected: game.notifier.isConnected(p.id),
       active: game.players.isActive(p),
+      benched: game.teams.isBenched(p),
     };
+    const teamId = game.teams.active ? game.teams.teamIdOf(p.id) : undefined;
+    if (teamId !== undefined) me.teamId = teamId;
     res.json(me);
   });
 

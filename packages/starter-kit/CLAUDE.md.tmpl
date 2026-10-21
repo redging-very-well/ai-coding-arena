@@ -40,6 +40,7 @@ A unit file has **one default-exported class**. The constructor sets the stats a
 
 ```ts
 export type UnitType = 'soldier' | 'tower';
+export type MapStyle = 'duel' | 'triangle' | 'corners' | 'ring' | 'lanes' | 'islands'; // §9.2
 export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 
 /** Fields the constructor MUST set as plain data properties on `this`. */
@@ -73,21 +74,25 @@ export interface SpriteSpec {
 export interface SelfView {
   id: string;            // instanceId of this copy, e.g. "2-0-3"
   unitId: string;        // the design this copy was made from
-  ownerId: string; type: UnitType; name: string;
+  ownerId: string; teamId: number; type: UnitType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number;
   damage: number; range: number; speed: number;
   attackCooldown: number; cooldownRemaining: number; // 0 = can attack this tick
 }
 export interface OtherView {
-  id: string; ownerId: string; type: UnitType; name: string;
+  id: string; ownerId: string; teamId: number; type: UnitType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number; range: number;
 }
 export interface WorldView {
-  width: 800; height: 800; tick: number; ticksLeft: number;
-  myCorner: { x: number; y: number };   // centre of my start zone (this round)
-  center: { x: 400; y: 400 };
-  safeZone: { x: 400; y: 400; radius: number }; // shrinks from tick 3600 (sudden death, §9)
+  width: number; height: number;        // arena size this battle: 800 (2-4 players), 1040 (5-6), 1200 (7-8), §9.2
+  tick: number; ticksLeft: number;
+  mapStyle: MapStyle;                   // §9.2
+  myCorner: { x: number; y: number };   // centre of my start zone this round (name kept from the 4-corner map; a zone need not be a corner)
+  center: { x: number; y: number };     // = { x: width / 2, y: height / 2 }
+  safeZone: { x: number; y: number; radius: number }; // centred on `center`; shrinks from tick 3600 (sudden death, §9)
 }
+// teamId: free-for-all = the owner's seat (0-7), so every player is their own team.
+// Team mode = the team index (0-3). Same teamId = friend, different = enemy.
 // Helper semantics (also documented in CLAUDE.md):
 // inRange(self, other) === Math.hypot(other.x - self.x, other.y - self.y) - self.radius - other.radius <= self.range
 
@@ -123,14 +128,16 @@ export interface Unit extends UnitStats {
 2. **Extra state is allowed.** Any other fields on `this` (memory, targets, modes) persist between ticks for that copy. Module-level variables are shared by all of this player's copies of the same unit type.
 3. **`update(self, enemies, allies, world)` runs once per tick** (60 ticks = 1 second) with fresh copies of the data. Changing the inputs does nothing.
 4. **The returned action is only a request; the engine checks it:**
-   - `{ action: 'attack', targetId }`: the target must be a living enemy, in range (`Math.hypot(dx, dy) - self.radius - target.radius <= self.range`, edge to edge), and `self.cooldownRemaining` must be 0. Otherwise the unit idles. Attacking never moves the unit. Bodies that touch are always in range.
+   - `{ action: 'attack', targetId }`: the target must be a living enemy (a different `teamId`), in range (`Math.hypot(dx, dy) - self.radius - target.radius <= self.range`, edge to edge), and `self.cooldownRemaining` must be 0. Otherwise the unit idles. Attacking never moves the unit. Bodies that touch are always in range.
    - Cooldown: `cooldownRemaining` is 0 at the start, so a unit can fire on its first tick. Firing sets it to `attackCooldown`, and it drops by 1 each tick.
    - `{ action: 'move', destination: { x, y } }`: soldiers only. The unit walks at most `speed` px per tick straight toward the destination (clamped to the arena). Towers ignore moves.
    - `{ action: 'idle' }`, `undefined`, anything malformed, or a thrown error all mean idle. **Errors also count strikes; too many and the unit is switched off** for the rest of the battle.
    - Range ≤ 50 is melee (instant hit); longer range fires a homing shot that always hits if the target is still alive.
 5. **No `import`, `require`, network, timers (`setTimeout`), `async`/`await` or Promises.** They don't exist in the game. `update()` must be fast: a loop over the enemies is fine, but never loop forever.
 
-The arena is 800 × 800 px. `world.myCorner` is the centre of your start zone this round, `world.center` is (400, 400), and `world.safeZone` is the shrinking safe circle (section 6).
+**The arena size depends on the map.** It is 800 × 800 px with 2-4 players, 1040 × 1040 with 5-6 and 1200 × 1200 with 7-8, and the map style (`world.mapStyle`: Duel, Triangle, Corners, Ring, Lanes or Islands) changes where the start zones are. So **never write 800 or 400 into a unit**: use `world.width` / `world.height` for the size and `world.center` for the middle. `world.myCorner` is the centre of your start zone this round (on most maps it isn't a corner), and `world.safeZone` is the shrinking safe circle (section 6).
+
+**Teams and allies.** Every unit has a `teamId`. Same `teamId` = friend, different = enemy. In free-for-all every player is their own team, so `allies` are just your own units. When the host picks teams (2v2, 3v3, 2v2v2, 4v4 …), `allies` also holds your **teammates'** units (their `ownerId` is not yours) and `enemies` holds only the other teams. You can't hurt allies: attacking one just idles. Your team wins together: everyone on the 1st team gets the 1st place points. Good team units help each other, e.g. a tank that walks next to a teammate's sniper.
 
 ## 4b. Drawing the unit: `sprite()`
 
@@ -258,19 +265,19 @@ Tips:
 - At most **3 unit types** per round, at most **12 copies** placed, at most **$500** per unit, and at most **8 designs** (revisions and the two starter templates don't count).
 - **4-8 units is a good army.**
 - Units can only be **submitted in the Plan phase**. You can validate at any time.
-- A battle lasts 90 seconds. **Sudden death:** after 60 seconds a safe circle (`world.safeZone`, centred on (400, 400)) shrinks toward the middle. Units outside it lose 4% of their max health every second, so armies are forced to meet. Smart units move inside `world.safeZone` late in the battle.
-- When time runs out, the player whose living units are worth the most money wins the round. Otherwise the last army standing wins.
+- A battle lasts 90 seconds. **Sudden death:** after 60 seconds a safe circle (`world.safeZone`, centred on `world.center`) shrinks toward the middle. Units outside it lose 4% of their max health every second, so armies are forced to meet. Smart units move inside `world.safeZone` late in the battle.
+- When time runs out, the player (or team) whose living units are worth the most money wins the round. Otherwise the last army (or team) standing wins.
 
 ### How points work
 
 Every round, each player scores **place points + damage bonus + value bonus**:
 
-- **Place points:** 1st 3, 2nd 2, 3rd 1, 4th 0 (players who tie share the better place).
-- **Damage bonus (0-2):** `round(2 × myDamage / topDamage)`. Damage counts only what really hurts: a 40-damage hit on an enemy with 15 health left counts 15. Shots count when they land, even if the shooter is already gone.
-- **Value bonus (0-1):** `round(1 × myValueDestroyed / topValueDestroyed)`. When one of your hits knocks out an enemy unit, you score that unit's full price.
+- **Place points:** 1st gets (number of players − 1), then one less per place, down to 0 for last: with 4 players 3, 2, 1, 0; with 2 players 1, 0; with 8 players 7 down to 0 (players who tie share the better place). In team mode every member gets the team's place points.
+- **Damage bonus (0-2 with 4 players):** `round(2 × players/4 × myDamage / topDamage)`, always your own (also in teams). Damage counts only what really hurts: a 40-damage hit on an enemy with 15 health left counts 15. Shots count when they land, even if the shooter is already gone.
+- **Value bonus (0-1 with 4 players):** `round(1 × players/4 × myValueDestroyed / topValueDestroyed)`. When one of your hits knocks out an enemy unit, you score that unit's full price.
 - Rounding is half-up (0.5 rounds up). Sudden-death damage counts for nobody.
-- **Badges** (just for fun, no points): 🏆 Last Standing (1st place), 💥 Biggest Hitter (most damage), 🗡️ Giant Slayer (most enemy value knocked out), 🛡️ Iron Wall (most army value still standing at the end).
-- The match winner has the most points after all rounds; equal points are decided by total damage.
+- **Badges** (just for fun, no points): 🏆 Last Standing (1st place; in teams every member of the winning team), 💥 Biggest Hitter (most damage), 🗡️ Giant Slayer (most enemy value knocked out), 🛡️ Iron Wall (most army value still standing at the end).
+- The match winner has the most points after all rounds; equal points are decided by total damage. In team mode there is also a team table (the average of the members' points).
 
 **Strategy tip:** the bonuses are worth about as much as 1st place, so **aggressive units score damage points even if they don't survive**. An army that hits hard and comes 2nd can beat a turtle that hides and survives. A good mix is a few hard hitters to rack up damage plus something tough to stay standing. The exact numbers are in `get_rules` (`scoring`).
 - There is no healing, no shields and no special powers: units can only move and attack. If the kid asks for something like that, explain it kindly and suggest the closest thing that works (e.g. a tough tank instead of a healer).

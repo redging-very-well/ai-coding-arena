@@ -3,12 +3,17 @@
 // auto-place at lock.
 
 import {
-  assignZones,
+  MAP_STYLE_INFO,
+  assignMapZones,
+  assignTeamZones,
   fail,
   isArmoryUnitId,
   isValidCell,
+  mapFor,
   ok,
-  type Corner,
+  resolveMapStyle,
+  zoneCentredOnLine,
+  type MapZone,
   type PlacementDTO,
   type PlacementResponse,
   type Result,
@@ -38,7 +43,7 @@ export class RoundService {
     return rs;
   }
 
-  zoneOf(playerId: string): Corner | null {
+  zoneOf(playerId: string): MapZone | null {
     return this.game.store.match.zones[playerId] ?? null;
   }
 
@@ -151,11 +156,38 @@ export class RoundService {
     }
   }
 
-  /** Assign this round's zones (§9): active players in join order get zoneSet[(i + round) % n]. */
+  /**
+   * Assign this round's zones (§9.2), at the start of PLACEMENT (and again
+   * when a kick changes the active players).
+   *   * Team mode: the map fixed at Start match; whole teams rotate as blocks
+   *     and members inside their block. A kicked member's zone stays empty.
+   *   * Free-for-all: the map is resolved from the active player count P (the
+   *     host's style if valid for P, else the default, with an admin toast);
+   *     active players in join order get zones[(i + round) % P].
+   */
   assignZones(): void {
-    const m = this.game.store.match;
-    const ids = this.game.players.active().map((p) => p.id);
-    m.zones = ids.length > 0 ? Object.fromEntries(assignZones(ids, m.round)) : {};
+    const g = this.game;
+    const m = g.store.match;
+    const ids = g.players.active().map((p) => p.id);
+    const teams = g.teams.slots();
+    if (g.teams.active && teams && m.map) {
+      const active = new Set(ids);
+      const slots = teams.map((t) => ({ members: t.members.map((id) => (active.has(id) ? id : null)) }));
+      m.zones = Object.fromEntries(assignTeamZones(mapFor(m.map.style, m.map.players), slots, m.round));
+      return;
+    }
+    if (ids.length === 0) {
+      m.zones = {};
+      return;
+    }
+    const players = ids.length;
+    const { style, fellBack } = resolveMapStyle(m.setup.mapStyle, players);
+    const prev = m.map;
+    m.map = { style, players };
+    if (fellBack && (prev?.style !== style || prev?.players !== players)) {
+      g.notifier.toast({ admin: true }, 'info', `Map changed to ${MAP_STYLE_INFO[style].label} for ${players} player${players === 1 ? '' : 's'}`);
+    }
+    m.zones = Object.fromEntries(assignMapZones(mapFor(style, players), ids, m.round));
   }
 
   // -------------------------------------------------------------------------
@@ -248,6 +280,7 @@ export class RoundService {
         available: this.lockedDesigns(p.id).map((d) => ({ unitId: d.unitId, cost: d.cost })),
         lastLayout: rs.lastLayout,
         caps: { budget: caps.budget, maxCopies: caps.maxCopies, maxTypes: caps.maxTypes },
+        ...(this.zoneOf(p.id) ? { facing: this.zoneOf(p.id)!.facing, centred: zoneCentredOnLine(this.zoneOf(p.id)!) } : {}),
       });
       rs.placements = res.placements;
       if (res.placements.length > 0) names.push(p.name);

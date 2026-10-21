@@ -2,11 +2,16 @@
 // that carries game data is built here. Before START nobody but the owner
 // (and the facilitator's overview) sees a player's units, selection,
 // placement or zone; after START the reveal carries only the fielded types.
+// Team mode (§9.2) adds one relation: while a team match runs, teammates see
+// each other's selected types (cards, never source), zones and placements
+// live (`me.team` / `private.team`, built by TeamsService.privateTeam).
 // The ranking, points of the current battle and reports are only visible once
 // the battle service released them (playback reached the final frame).
 
 import {
   emptyBadgeCounts,
+  legacyCornerOf,
+  mapZoneDTO,
   type AdminOverviewDTO,
   type BattleEndDTO,
   type GameStateDTO,
@@ -43,6 +48,10 @@ export class VisibilityService {
       active: g.players.isActive(p),
     };
     if (g.store.match.pendingKicks.includes(p.id)) dto.leaving = true;
+    // Team membership is public (§3); in LOBBY it is the draft.
+    const teamId = g.teams.teamIdOf(p.id);
+    if (teamId !== undefined) dto.teamId = teamId;
+    if (g.teams.isBenched(p)) dto.benched = true;
     return dto;
   }
 
@@ -53,11 +62,13 @@ export class VisibilityService {
    */
   scoreboard(exclude?: ReadonlySet<string>): ScoreboardEntryDTO[] {
     const m = this.game.store.match;
+    const teams = this.game.teams;
     return matchStandings(
       this.game.players.list().filter((p) => !exclude?.has(p.id)).map((p) => ({
         playerId: p.id,
         name: p.name,
         seat: p.seat,
+        ...(teams.active && teams.teamIdOf(p.id) !== undefined ? { teamId: teams.teamIdOf(p.id)! } : {}),
         points: m.points[p.id] ?? 0,
         damage: m.damage[p.id] ?? 0,
         badges: { ...emptyBadgeCounts(), ...m.badges[p.id] },
@@ -72,28 +83,39 @@ export class VisibilityService {
     return m.results[m.results.length - 1]?.end;
   }
 
-  me(playerId: string): MyStateDTO | undefined {
+  /**
+   * The owner-only `me` block. `team` (teammates' live selection, zones and
+   * placements, §9.2 Team privacy) is included unless `withTeam` is false: the
+   * WS `state` push leaves it out (it travels in `private`, debounced).
+   */
+  me(playerId: string, withTeam = true): MyStateDTO | undefined {
     const g = this.game;
     const p = g.players.get(playerId);
     if (!p) return undefined;
     const rs = g.round.stateOf(playerId);
     const phase = g.store.match.phase;
     const showRound = phase === 'PLACEMENT' || phase === 'BATTLE' || phase === 'RESULTS';
-    return {
+    const zone = showRound ? g.round.zoneOf(playerId) : null;
+    const me: MyStateDTO = {
       playerId,
       budget: g.config.caps.budget,
       spent: showRound ? g.round.spent(playerId) : 0,
       selection: rs.selection.slice(),
       placement: showRound ? rs.placements.slice() : [],
-      myZone: showRound ? g.round.zoneOf(playerId) : null,
+      myZone: zone ? mapZoneDTO(zone) : null,
       ready: phase === 'PLACEMENT' ? rs.ready : false,
       submissionsOpen: g.match.submissionsOpen(),
       active: g.players.isActive(p),
       hasLastLayout: (rs.lastLayout?.length ?? 0) > 0,
     };
+    const teamId = g.teams.active ? g.teams.teamIdOf(playerId) : undefined;
+    if (teamId !== undefined) me.teamId = teamId;
+    if (g.teams.isBenched(p)) me.benched = true;
+    if (withTeam && g.teams.active) me.team = g.teams.privateTeam(playerId);
+    return me;
   }
 
-  gameState(viewer: Viewer): GameStateDTO {
+  gameState(viewer: Viewer, opts: { withTeam?: boolean } = {}): GameStateDTO {
     const g = this.game;
     const m = g.store.match;
     const state: GameStateDTO = {
@@ -105,6 +127,7 @@ export class VisibilityService {
       scoreboard: this.scoreboard(),
       sandboxMode: g.config.sandbox.mode,
       armory: g.armory.info(),
+      match: g.teams.matchInfo(),
     };
     if (m.phase === 'BATTLE') {
       const pb = g.battle.playback();
@@ -113,7 +136,7 @@ export class VisibilityService {
     const last = this.lastBattle();
     if (last) state.lastBattle = last;
     if (viewer.role === 'player') {
-      const me = this.me(viewer.playerId);
+      const me = this.me(viewer.playerId, opts.withTeam !== false);
       if (me) state.me = me;
     }
     return state;
@@ -124,13 +147,16 @@ export class VisibilityService {
     const p = g.players.get(playerId);
     if (!p) return undefined;
     const me = this.me(playerId)!;
-    return {
+    const phase = g.store.match.phase;
+    const zone = phase === 'PLACEMENT' || phase === 'BATTLE' || phase === 'RESULTS' ? g.round.zoneOf(playerId) : null;
+    const out: PrivateStateDTO = {
       player: toPlayerDTO(p),
       roster: g.units.list(playerId),
       selection: me.selection,
       placement: me.placement,
       lastLayout: g.round.stateOf(playerId).lastLayout,
-      zone: me.myZone,
+      zone: zone ? legacyCornerOf(zone) : null,
+      mapZone: me.myZone,
       budget: me.budget,
       spent: me.spent,
       ready: me.ready,
@@ -138,6 +164,10 @@ export class VisibilityService {
       armoryEnabled: g.armory.enabled,
       armory: g.armory.list(playerId),
     };
+    if (me.teamId !== undefined) out.teamId = me.teamId;
+    if (me.benched) out.benched = true;
+    if (g.teams.active) out.team = me.team ?? null;
+    return out;
   }
 
   /** Facilitator overview: everything, including sources (§12.3 "show details"). */
@@ -157,7 +187,8 @@ export class VisibilityService {
         const last = m.results[m.results.length - 1];
         return {
           ...this.status(p),
-          zone: m.zones[p.id] ?? null,
+          zone: m.zones[p.id] ? legacyCornerOf(m.zones[p.id]!) : null,
+          mapZone: m.zones[p.id] ? mapZoneDTO(m.zones[p.id]!) : null,
           designs: units.filter((u) => !u.isTemplate).length,
           strikes: last?.reports[p.id]?.strikes ?? 0,
           activeFromRound: p.activeFromRound,
@@ -169,6 +200,7 @@ export class VisibilityService {
       }),
       lanUrls: lanUrls(this.port),
       sandboxMode: g.config.sandbox.mode,
+      setup: g.teams.setupDTO(),
       armory: g.armory.adminList(),
     };
   }

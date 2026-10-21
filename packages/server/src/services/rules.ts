@@ -8,10 +8,23 @@ import {
   DEFAULT_CONFIG,
   DEFAULT_SIZE,
   GRID_SIZE,
+  MAP_STYLES,
+  MAP_STYLE_INFO,
+  MAX_PLAYERS,
+  MIN_PLAYERS,
   PHASES,
+  TEAM_MODES,
+  TEAM_STYLES,
   ZONE_SIZE,
+  arenaSizeFor,
+  defaultMapStyle,
+  isValidTeamMode,
+  placePointsTable,
+  scaledBonusMax,
+  teamModeLabel,
   type ContractDTO,
   type GameConfig,
+  type MatchInfoDTO,
   type RulesDTO,
 } from '@pixel-clash/shared';
 import { repoPath } from '../util/paths.js';
@@ -34,8 +47,44 @@ export function armoryRules(enabled: boolean): Record<string, unknown> {
   };
 }
 
-export function buildRules(config: GameConfig, armoryEnabled = false): RulesDTO {
+/** Map styles, arena sizes and zone rules (§9.2). */
+export function mapRules(): Record<string, unknown> {
+  const counts = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, i) => i + MIN_PLAYERS);
+  return {
+    text: 'The map depends on the player count: 2 Duel (opposite corners), 3 Triangle, 4 Corners, 5-8 Ring; the host can pick another style that fits (Lanes for 4/6/8, Islands for 6/8, Corners for 3). The arena grows with the players: read world.width, world.height and world.center (and world.mapStyle), never assume 800 or 400.',
+    arenaSizes: Object.fromEntries(counts.map((n) => [n, arenaSizeFor(n)])),
+    defaults: Object.fromEntries(counts.map((n) => [n, defaultMapStyle(n)])),
+    styles: MAP_STYLES.map((style) => ({ style, ...MAP_STYLE_INFO[style], arenaSizes: MAP_STYLE_INFO[style].players.map(arenaSizeFor) })),
+    zones: `Every player has one ${ZONE_SIZE}x${ZONE_SIZE} zone (${GRID_SIZE}x${GRID_SIZE} cells of ${CELL_SIZE} px). Placement col/row are zone-local: row 0 is the FRONT row (facing the centre, or on Lanes the other row) and (0,0) is the front cell nearest the centre, so a layout means the same thing on every map.`,
+    rotation: 'Zones are dealt at the start of every Placement and rotate each round. In team mode whole teams rotate as blocks of neighbouring zones, and teammates rotate inside their block.',
+    rangesUnchanged: 'Ranges, speeds, sizes, budget and caps are the same on every map; only the arena and the zone positions change.',
+  };
+}
+
+/** Team modes and team rules (§9.2). */
+export function teamRules(): Record<string, unknown> {
+  const counts = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, i) => i + MIN_PLAYERS);
+  return {
+    modes: TEAM_MODES.map((mode) => ({
+      mode,
+      validFor: counts.filter((n) => isValidTeamMode(mode, n)).map((n) => ({ players: n, label: teamModeLabel(mode, n) })),
+    })),
+    colors: TEAM_STYLES.map((t) => ({ name: t.name, color: t.color, pattern: t.pattern })),
+    rules: [
+      'Free-for-all is the default: every player is their own team (teamId = your seat).',
+      'Team mode (2v2, 3v3, 2v2v2, 4v4, 2v2v2v2) is chosen at Start match; teams are fixed for the whole match. Late joiners sit out until the next match.',
+      "Same teamId = friend, different = enemy. allies are your own other units AND all your teammates' units; enemies are every other team's units.",
+      "There is no friendly fire: attacking a teammate's unit just idles.",
+      "A team is out when its last unit dies; the battle ends when one team (or nobody) is left. At the time limit teams are ranked by the total cost of all their members' living units.",
+      "Every member gets the TEAM's place points; damage and value-destroyed bonuses stay your own. The team table ranks teams by the average of their members' match points.",
+      "Teammates see each other's picked units (name, stats, cost, sprite), zones and placements live during Plan and Placement, so you can plan together. Code is never shared. Opponents see nothing until START.",
+    ],
+  };
+}
+
+export function buildRules(config: GameConfig, armoryEnabled = false, match?: MatchInfoDTO): RulesDTO {
   const t = config.timers;
+  const arena = match?.map ? { width: match.map.width, height: match.map.height } : { width: ARENA.width, height: ARENA.height };
   return {
     phases: PHASES,
     timers: {
@@ -62,37 +111,54 @@ export function buildRules(config: GameConfig, armoryEnabled = false): RulesDTO 
     },
     scoring: scoringRules(config),
     arena: {
-      width: ARENA.width,
-      height: ARENA.height,
+      width: arena.width,
+      height: arena.height,
       zoneSize: ZONE_SIZE,
       cellSize: CELL_SIZE,
       gridSize: GRID_SIZE,
-      zones: '2 players: TL+BR; 3 players: TL, TR, BR; 4 players: all corners. Zones rotate every round.',
+      zones: 'The map depends on the player count: 2 Duel (opposite corners), 3 Triangle, 4 Corners, 5-8 Ring; the host can pick Lanes or Islands. The arena is 800 px for 2-4 players, 1040 for 5-6 and 1200 for 7-8: read world.width and world.center, never assume 800 or 400. Zones rotate every round.',
       rangeIs: 'edge to edge: distance - self.radius - other.radius <= range',
     },
     suddenDeath: {
       ...config.suddenDeath,
-      text: `From ${config.suddenDeath.startTick / t.ticksPerSecond} s a safe circle around (400,400) shrinks; units outside lose ${config.suddenDeath.damagePctPerSecond}% of max health per second.`,
+      text: `From ${config.suddenDeath.startTick / t.ticksPerSecond} s a safe circle around world.center shrinks (radii here are for the 800 arena and grow with it); units outside lose ${config.suddenDeath.damagePctPerSecond}% of max health per second.`,
     },
     submissions: 'submit_unit works only in the PLAN phase; validate_unit works any time.',
     armory: armoryRules(armoryEnabled),
-    ranking: 'Survivors rank above the eliminated. At the time limit, survivors are ranked by the total cost of their living units.',
-    pointsSummary: `Round points = place points (${config.scoring.placePoints.join('/')}) + damage bonus (0-${config.scoring.damageBonusMax}) + value-destroyed bonus (0-${config.scoring.valueBonusMax}). See scoring.`,
+    maps: mapRules(),
+    teams: teamRules(),
+    ...(match
+      ? {
+          thisMatch: {
+            mapStyle: match.mapStyle,
+            teamMode: match.teamMode,
+            arena,
+            teams: match.teams?.map((tm) => ({ teamId: tm.teamId, name: tm.name, members: tm.members.length })) ?? null,
+          },
+        }
+      : {}),
+    ranking:
+      'Survivors rank above the eliminated. At the time limit, survivors are ranked by the total cost of their living units. In team mode whole teams are ranked the same way (team living cost).',
+    pointsSummary: `Round points = place points (1st gets players - 1 down to 0 for last; 4 players: ${placePointsTable(4).join('/')}) + damage bonus (0-${config.scoring.damageBonusMax} at 4 players) + value-destroyed bonus (0-${config.scoring.valueBonusMax} at 4 players). Bonuses scale with players / 4. See scoring.`,
   };
 }
 
 /** §9 Points / Badges / Match standings, with the numbers from config. */
 export function scoringRules(config: GameConfig): RulesDTO['scoring'] {
   const sc = config.scoring;
-  const place = sc.placePoints.map((p, i) => `${ordinal(i + 1)} ${p}`).join(', ');
+  const four = placePointsTable(4);
+  const place = four.map((p, i) => `${ordinal(i + 1)} ${p}`).join(', ');
+  const byPlayers: Record<string, number[]> = {};
+  for (let n = 2; n <= config.match.maxPlayers; n++) byPlayers[n] = placePointsTable(n);
   return {
-    placePoints: [...sc.placePoints],
+    placePoints: four,
+    placePointsByPlayers: byPlayers,
     damageBonusMax: sc.damageBonusMax,
     valueBonusMax: sc.valueBonusMax,
     formula: 'round points = place points + damage bonus + value bonus',
-    place: `Place points: ${place} (the same table for 2-4 players; tied players share the better place).`,
-    damageBonus: `Damage bonus: round(${sc.damageBonusMax} x myDamage / topDamage), 0-${sc.damageBonusMax}. Damage is EFFECTIVE damage to enemy units: a hit counts at most the hp the target had left (no overkill). It is credited when the hit lands (projectiles on impact), even if the shooter died meanwhile.`,
-    valueBonus: `Value bonus: round(${sc.valueBonusMax} x myValueDestroyed / topValueDestroyed), 0-${sc.valueBonusMax}. When your hit finishes an enemy unit you get its FULL unit cost as value destroyed (and a KO). Hits in the same tick resolve in seat order, then instanceId order.`,
+    place: `Place points: 1st gets (players - 1), then one less per place, down to 0 for last (2 players 1/0, 4 players: ${place}, 8 players 7..0; tied players share the better place). In team mode every member gets the team's place points: round((players - 1) x (teams - place) / (teams - 1)).`,
+    damageBonus: `Damage bonus: round(${sc.damageBonusMax} x players/4 x myDamage / topDamage), e.g. 0-${scaledBonusMax(sc.damageBonusMax, 4)} with 4 players. Damage is EFFECTIVE damage to enemy units: a hit counts at most the hp the target had left (no overkill). It is credited when the hit lands (projectiles on impact), even if the shooter died meanwhile.`,
+    valueBonus: `Value bonus: round(${sc.valueBonusMax} x players/4 x myValueDestroyed / topValueDestroyed), e.g. 0-${scaledBonusMax(sc.valueBonusMax, 4)} with 4 players. Bonuses are always your own, also in team mode. When your hit finishes an enemy unit you get its FULL unit cost as value destroyed (and a KO). Hits in the same tick resolve in seat order, then instanceId order.`,
     rounding: 'Rounding is half-up (0.5 rounds up). A bonus is 0 when the top value is 0.',
     suddenDeath: 'Damage and KOs from the sudden-death circle count for nobody.',
     badges: Object.values(BADGES).map((b) => `${b.emoji} ${b.title}: ${b.rule}`),
@@ -162,7 +228,9 @@ export const STRATEGY_TIPS = [
   "attackCooldown above 60 gives NO discount: it's the same price for less damage. Use 60.",
   'Range is edge to edge: bigger bodies (size) reach further but are easier to hit.',
   CURVE_TIP_SLOT,
-  'Points come from your place AND from damage (up to +2) and enemy value destroyed (up to +1). Aggressive units score damage points even if they do not survive.',
+  'Points come from your place AND from damage (up to +2 with 4 players, more with more players) and enemy value destroyed (up to +1 with 4 players). Aggressive units score damage points even if they do not survive.',
+  'The arena is 800, 1040 or 1200 px wide depending on the player count: use world.width, world.height and world.center, never 800 or 400.',
+  "Tell friend from foe by teamId: allies include your teammates' units in team mode, and enemies are only the other teams' units.",
   'After 60 s a safe circle shrinks toward the centre; units outside it lose health. Towers far from the centre will suffer.',
   'Add a sprite() method with pixel art (drawn facing right); without it the unit gets a plain fallback look.',
 ];

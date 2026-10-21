@@ -24,7 +24,8 @@ export default class BasicTower {
     this.shape = 'square';      // circle, square, triangle or diamond (just for looks)
   }
 
-  // Called once per tick for each copy of this tower.
+  // Called once per tick for each copy of this tower. `enemies` holds only
+  // units of other teams (same teamId = friend), so every target is fair game.
   update(self, enemies, allies, world) {
     // Can't fire yet: nothing to do this tick.
     if (self.cooldownRemaining > 0) {

@@ -2,7 +2,8 @@
 //
 // A unit's update() result is only a request. Anything that is not a legal
 // action becomes idle: undefined, unknown actions, malformed objects, moves by
-// towers, attacks on allies / dead / unknown targets, attacks while cooling
+// towers, attacks on allies (own units, and in team mode any teammate's,
+// §9.2) / dead / unknown targets, attacks while cooling
 // down, and attacks out of range. Validation runs against the start-of-tick
 // snapshot, the same state every unit decided on, so resolution is
 // simultaneous: an attack that was in range in the snapshot fires this tick
@@ -16,7 +17,7 @@ export type IdleReason =
   | 'malformed' // not an object / unknown action / bad fields
   | 'tower-cannot-move'
   | 'no-target' // unknown or dead target
-  | 'friendly-target' // own unit (no friendly fire)
+  | 'friendly-target' // own or a teammate's unit (no friendly fire)
   | 'cooling-down'
   | 'out-of-range'
   | 'disabled'; // the acting unit is disabled or dead
@@ -37,12 +38,14 @@ const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFi
 /**
  * Turn a raw sandbox action into a legal engine action.
  * `lookup` returns the unit with that instanceId (alive or not), if any.
+ * Move destinations are clamped to the S×S arena (default 800).
  */
 export function resolveAction(
   raw: unknown,
   actor: SimUnit,
   lookup: (instanceId: string) => SimUnit | undefined,
   rangeTolerance: number,
+  arena?: number,
 ): ResolvedAction {
   if (!actor.alive || actor.disabled) return idle('disabled');
   if (raw === undefined || raw === null) return idle('idle');
@@ -56,7 +59,7 @@ export function resolveAction(
       if (actor.type !== 'soldier') return idle('tower-cannot-move');
       const dest = raw['destination'];
       if (!isRecord(dest) || !finite(dest['x']) || !finite(dest['y'])) return idle('malformed');
-      return { kind: 'move', destination: clampToArena({ x: dest['x'], y: dest['y'] }) };
+      return { kind: 'move', destination: clampToArena({ x: dest['x'], y: dest['y'] }, arena) };
     }
 
     case 'attack': {
@@ -64,7 +67,8 @@ export function resolveAction(
       if (typeof targetId !== 'string') return idle('malformed');
       const target = lookup(targetId);
       if (!target || !target.alive) return idle('no-target');
-      if (target.playerId === actor.playerId) return idle('friendly-target');
+      // Same side = friend: own units, and in team mode every teammate's (§9.2).
+      if (target.playerId === actor.playerId || target.teamId === actor.teamId) return idle('friendly-target');
       if (actor.cooldownRemaining > 0) return idle('cooling-down');
       // Edge to edge with 0.5 px float tolerance (§5 rule 4).
       if (edgeDistance(actor, target) > actor.stats.range + rangeTolerance) return idle('out-of-range');

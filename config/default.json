@@ -57,13 +57,10 @@
     "battleTicks": 5400,
     "ticksPerSecond": 60
   },
+  "match": {
+    "maxPlayers": 8
+  },
   "scoring": {
-    "placePoints": [
-      3,
-      2,
-      1,
-      0
-    ],
     "damageBonusMax": 2,
     "valueBonusMax": 1
   },

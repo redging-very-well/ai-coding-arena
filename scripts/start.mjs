@@ -1,5 +1,5 @@
 // `npm start`: a tiny cross-platform launcher (plan §13) for the built server:
-//   UV_THREADPOOL_SIZE=8 node --no-node-snapshot packages/server/dist/index.js
+//   UV_THREADPOOL_SIZE=16 node --no-node-snapshot packages/server/dist/index.js
 // Extra arguments (e.g. --unsafe) are passed through.
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -17,7 +17,7 @@ if (!existsSync(entry)) {
 const child = spawn(process.execPath, ['--no-node-snapshot', entry, ...process.argv.slice(2)], {
   cwd: root,
   stdio: 'inherit',
-  env: { ...process.env, UV_THREADPOOL_SIZE: process.env.UV_THREADPOOL_SIZE ?? '8' },
+  env: { ...process.env, UV_THREADPOOL_SIZE: process.env.UV_THREADPOOL_SIZE ?? '16' },
 });
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => child.kill(sig));
 child.on('exit', (code, signal) => process.exit(code ?? (signal ? 1 : 0)));

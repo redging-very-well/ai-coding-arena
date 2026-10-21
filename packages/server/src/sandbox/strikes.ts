@@ -39,7 +39,7 @@ export type PlayerDisableReason = 'timeouts' | 'slow' | 'crashed';
 export type StrikeEvent =
   | { kind: 'unit-error'; tick: number; instanceId: string; message: string; line?: number; strikes: number }
   | { kind: 'unit-disabled'; tick: number; instanceId: string; reason: DisableReason; message: string }
-  | { kind: 'timeout'; tick: number; elapsedMs: number; culprit?: string }
+  | { kind: 'timeout'; tick: number; elapsedMs: number; culprit?: string; hostStall?: true }
   | { kind: 'slow'; tick: number; elapsedMs: number; slowestInstanceId?: string; slowStrikes: number }
   | { kind: 'forged'; tick: number; count: number }
   | { kind: 'bad-output'; tick: number; detail?: string }
@@ -118,6 +118,11 @@ export class StrikeTracker {
         this.timeoutsInARow = 0;
         return this.push(out);
       case 'timeout': {
+        if (result.hostStall) {
+          // The sandbox process was frozen, not the kid's code: idle, no blame.
+          out.push({ kind: 'timeout', tick, elapsedMs: result.elapsedMs, hostStall: true });
+          return this.push(out);
+        }
         out.push({ kind: 'timeout', tick, elapsedMs: result.elapsedMs, ...(result.culprit ? { culprit: result.culprit } : {}) });
         const culprit = result.culprit;
         if (culprit && !this.disabled.has(culprit)) {

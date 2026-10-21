@@ -129,7 +129,16 @@ class SplitRunner implements PlayerRunner {
     const timeouts = results.filter((r) => r.status === 'timeout');
     if (timeouts.length > 0) {
       const culprit = timeouts.find((r) => r.culprit !== undefined)?.culprit;
-      return { status: 'timeout', outputs: [], elapsedMs, slow: false, forged: 0, ...(culprit ? { culprit } : {}) };
+      const hostStall = timeouts.every((r) => r.hostStall === true);
+      return {
+        status: 'timeout',
+        outputs: [],
+        elapsedMs,
+        slow: false,
+        forged: 0,
+        ...(culprit ? { culprit } : {}),
+        ...(hostStall ? { hostStall: true } : {}),
+      };
     }
     const bad = results.find((r) => r.status === 'bad-output');
     if (bad) return { status: 'bad-output', outputs: [], elapsedMs, slow: bad.slow, forged: 0, ...(bad.detail ? { detail: bad.detail } : {}) };

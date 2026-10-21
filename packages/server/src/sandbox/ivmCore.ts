@@ -42,6 +42,55 @@ const RESET_TIMEOUT_MS = 50;
  */
 export const STUCK_WALL_CAP_MS = 250;
 
+/**
+ * CPU a pending call may burn beyond its deadline before it counts as
+ * spinning. Not every freeze is visible to StallMeter: when only the isolate
+ * thread's CPU is taken away, this event loop keeps running on time, yet the
+ * frozen time can still be billed as CPU (seen up to ~25 ms over the deadline
+ * with 8 sandboxes on a busy VM). A real spinner crosses this within ~50 ms.
+ */
+const STUCK_CPU_GRACE_MS = 30;
+/** Period of the stall probe that runs on this process's event loop during a call. */
+const STALL_PROBE_MS = 2;
+/** A probe this much later than due means the process (or the VM) was frozen. */
+const STALL_SLACK_MS = 3;
+
+/**
+ * Measures how long THIS process was frozen during a call: not scheduled at
+ * all, because the OS or the hypervisor took its CPUs away (a busy laptop, VM
+ * preemption). The isolate runs on its own thread, so this event loop is idle
+ * during a call and a short interval timer fires on time unless the whole
+ * process is stopped; every late firing is frozen time.
+ *
+ * Why it matters: a freeze inflates the call's wall time (isolated-vm's own
+ * timeout fires), and on VMs that don't report steal time (e.g. OrbStack,
+ * many laptop hypervisors) it also shows up as this process's CPU time,
+ * which made a healthy isolate look like it was spinning.
+ */
+class StallMeter {
+  private last = performance.now();
+  private frozen = 0;
+  private readonly timer = setInterval(() => this.sample(), STALL_PROBE_MS);
+
+  private sample(): void {
+    const now = performance.now();
+    const late = now - this.last - STALL_PROBE_MS;
+    if (late > STALL_SLACK_MS) this.frozen += late;
+    this.last = now;
+  }
+
+  /** Frozen time so far, in ms. */
+  get stalledMs(): number {
+    this.sample();
+    return this.frozen;
+  }
+
+  stop(): number {
+    clearInterval(this.timer);
+    return this.stalledMs;
+  }
+}
+
 type FnRef = IVM.Reference<(...args: unknown[]) => unknown>;
 const API_FNS: readonly HarnessApiFn[] = ['reset', 'load', 'seal', 'spawn', 'stats', 'sprite', 'tick'];
 
@@ -128,15 +177,19 @@ export class IvmSession implements SandboxSession {
     opts: CallOptions,
   ): Promise<CallOutcome> {
     const start = performance.now();
+    const stalls = new StallMeter();
     const call = ref.apply(undefined, args as never[], { timeout: timeoutMs }).then(
       (value): CallOutcome =>
         typeof value === 'string'
           ? { kind: 'ok', value, elapsedMs: performance.now() - start }
           : { kind: 'error', message: 'harness returned a non-string', elapsedMs: performance.now() - start },
-      (err: unknown) => this.failure(err, performance.now() - start, opts),
+      (err: unknown) => this.failure(err, performance.now() - start, opts, stalls.stalledMs),
     );
-    if (opts.deadlineMs === undefined) return call;
-    return this.withDeadline(call, opts.deadlineMs, start);
+    try {
+      return await (opts.deadlineMs === undefined ? call : this.withDeadline(call, opts.deadlineMs, start, stalls));
+    } finally {
+      stalls.stop();
+    }
   }
 
   /**
@@ -150,13 +203,18 @@ export class IvmSession implements SandboxSession {
    * would disable a healthy player's whole army. So when the timer fires:
    *   1. wait one more turn of the event loop (setImmediate, after the poll
    *      phase) and let a reply that is already waiting win;
-   *   2. kill only if this process has burned `deadlineMs` of CPU since the
-   *      call started (the isolate really is spinning), or if the call is
-   *      still pending STUCK_WALL_CAP_MS after its deadline whatever the CPU.
+   *   2. kill only if this process has burned `deadlineMs` +
+   *      STUCK_CPU_GRACE_MS of CPU since the call started, not counting the
+   *      time the process was frozen (the isolate really is spinning), or if
+   *      the call is still pending STUCK_WALL_CAP_MS after its deadline
+   *      whatever the CPU.
    * Otherwise check again later. In a child sandbox process (the default) the
-   * isolate is the only thing using CPU, so process CPU is the isolate's.
+   * isolate is the only thing using CPU, so process CPU is the isolate's. But
+   * when the process was frozen mid-call (StallMeter), its CPU time is
+   * inflated: VMs without steal-time accounting bill the frozen time as CPU,
+   * and 8 sandboxes stalled together used to kill healthy armies.
    */
-  private async withDeadline(call: Promise<CallOutcome>, deadlineMs: number, start: number): Promise<CallOutcome> {
+  private async withDeadline(call: Promise<CallOutcome>, deadlineMs: number, start: number, stalls: StallMeter): Promise<CallOutcome> {
     let settled = false;
     void call.then(() => {
       settled = true;
@@ -172,14 +230,17 @@ export class IvmSession implements SandboxSession {
           const cpu = process.cpuUsage(cpu0);
           const cpuMs = (cpu.user + cpu.system) / 1000;
           const waitedMs = performance.now() - start;
-          if (cpuMs >= deadlineMs || waitedMs >= deadlineMs + STUCK_WALL_CAP_MS) {
+          // Frozen time may have been billed as CPU: don't count it.
+          const spinning = cpuMs - stalls.stalledMs >= deadlineMs + STUCK_CPU_GRACE_MS;
+          if (spinning || waitedMs >= deadlineMs + STUCK_WALL_CAP_MS) {
             const detail = deadlineDetail(Math.round(waitedMs));
             this.kill(detail);
             resolve({ kind: 'crashed', detail });
             return;
           }
           // Not scheduled, not stuck: look again when the CPU budget could be used up.
-          const nextMs = Math.min(Math.max(1, deadlineMs - cpuMs), deadlineMs + STUCK_WALL_CAP_MS - waitedMs);
+          const cpuLeftMs = deadlineMs + STUCK_CPU_GRACE_MS - (cpuMs - stalls.stalledMs);
+          const nextMs = Math.min(Math.max(1, cpuLeftMs), deadlineMs + STUCK_WALL_CAP_MS - waitedMs);
           timer = setTimeout(check, Math.max(1, nextMs));
         });
       };
@@ -193,7 +254,7 @@ export class IvmSession implements SandboxSession {
     }
   }
 
-  private failure(err: unknown, elapsedMs: number, opts: CallOptions): CallOutcome {
+  private failure(err: unknown, elapsedMs: number, opts: CallOptions, stalledMs = 0): CallOutcome {
     // Never pass an unbounded string on (a kid can throw a 12 MB message).
     const message = capMessage(err instanceof Error ? err.message : String(err));
     if (this.catastrophic || this.isolate.isDisposed) {
@@ -203,7 +264,7 @@ export class IvmSession implements SandboxSession {
     if (TIMEOUT_RE.test(message)) {
       const culprit = opts.probeCulpritMs !== undefined ? this.probeCulprit(opts.probeCulpritMs) : undefined;
       this.resetHarness();
-      return { kind: 'timeout', elapsedMs, ...(culprit ? { culprit } : {}) };
+      return { kind: 'timeout', elapsedMs, ...(culprit ? { culprit } : {}), ...(stalledMs > 0 ? { stalledMs } : {}) };
     }
     return { kind: 'error', message, elapsedMs };
   }

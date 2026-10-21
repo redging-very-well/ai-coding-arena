@@ -275,6 +275,14 @@ export interface TickResult {
    */
   culprit?: string;
   /**
+   * status 'timeout' only: the sandbox process was frozen (not scheduled by
+   * the OS or the hypervisor) for most of the tick, so the timeout is the
+   * host's fault, not the kid's code. The tick still idles, but nobody gets a
+   * strike and it counts toward no timeout limit (§8: "one stall can be the
+   * host").
+   */
+  hostStall?: boolean;
+  /**
    * Number of output entries dropped as forged or duplicate. > 0 means the
    * sim records a player strike (§8 hardening rules).
    */

@@ -7,6 +7,7 @@
 
 // --- BEGIN CONTRACT (plan §5, verbatim) ---
 export type UnitType = 'soldier' | 'tower';
+export type MapStyle = 'duel' | 'triangle' | 'corners' | 'ring' | 'lanes' | 'islands'; // §9.2
 export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 
 /** Fields the constructor MUST set as plain data properties on `this`. */
@@ -40,21 +41,25 @@ export interface SpriteSpec {
 export interface SelfView {
   id: string;            // instanceId of this copy, e.g. "2-0-3"
   unitId: string;        // the design this copy was made from
-  ownerId: string; type: UnitType; name: string;
+  ownerId: string; teamId: number; type: UnitType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number;
   damage: number; range: number; speed: number;
   attackCooldown: number; cooldownRemaining: number; // 0 = can attack this tick
 }
 export interface OtherView {
-  id: string; ownerId: string; type: UnitType; name: string;
+  id: string; ownerId: string; teamId: number; type: UnitType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number; range: number;
 }
 export interface WorldView {
-  width: 800; height: 800; tick: number; ticksLeft: number;
-  myCorner: { x: number; y: number };   // centre of my start zone (this round)
-  center: { x: 400; y: 400 };
-  safeZone: { x: 400; y: 400; radius: number }; // shrinks from tick 3600 (sudden death, §9)
+  width: number; height: number;        // arena size this battle: 800 (2-4 players), 1040 (5-6), 1200 (7-8), §9.2
+  tick: number; ticksLeft: number;
+  mapStyle: MapStyle;                   // §9.2
+  myCorner: { x: number; y: number };   // centre of my start zone this round (name kept from the 4-corner map; a zone need not be a corner)
+  center: { x: number; y: number };     // = { x: width / 2, y: height / 2 }
+  safeZone: { x: number; y: number; radius: number }; // centred on `center`; shrinks from tick 3600 (sudden death, §9)
 }
+// teamId: free-for-all = the owner's seat (0-7), so every player is their own team.
+// Team mode = the team index (0-3). Same teamId = friend, different = enemy.
 // Helper semantics (also documented in CLAUDE.md):
 // inRange(self, other) === Math.hypot(other.x - self.x, other.y - self.y) - self.radius - other.radius <= self.range
 

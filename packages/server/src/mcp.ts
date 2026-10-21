@@ -167,12 +167,12 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Game rules',
       description:
-        'Phases, timers, budget, caps, the cost formula and coefficients, stat bounds, scoring (place points + damage bonus + value-destroyed bonus, badges, match standings), arena and sudden death.',
+        'Phases, timers, budget, caps, the cost formula and coefficients, stat bounds, scoring (place points + damage bonus + value-destroyed bonus, badges, match standings), map styles and arena sizes by player count, team modes and team rules, and sudden death.',
       inputSchema: {},
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },
     },
-    async () => toolResult({ ok: true, ...buildRules(game.config, game.armory.enabled) }, 'The Pixel Clash rules.'),
+    async () => toolResult({ ok: true, ...buildRules(game.config, game.armory.enabled, game.teams.matchInfo()) }, 'The Pixel Clash rules.'),
   );
 
   server.registerTool(
@@ -263,7 +263,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Game state',
       description:
-        'Phase, round, time left, whether submissions are open, my selection and budget, and the scoreboard (per player: total points, total damage, place and badges won).',
+        "Phase, round, time left, whether submissions are open, my selection and budget, the scoreboard (per player: total points, total damage, place and badges won), the map style and arena size, the team mode, my team and my teammates' picked unit types (team mode), and the team table.",
       inputSchema: { apiKey: API_KEY },
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },
@@ -271,6 +271,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     async ({ apiKey }) =>
       withPlayer(apiKey, (p) => {
         const s = game.visibility.gameState({ role: 'player', playerId: p.id });
+        const team = s.me?.team ?? null;
         const data = {
           ok: true,
           player: { id: p.id, name: p.name },
@@ -283,14 +284,32 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
           myBudget: s.me?.budget ?? game.config.caps.budget,
           myZone: s.me?.myZone ?? null,
           active: s.me?.active ?? false,
+          benched: s.me?.benched === true,
           armory: s.armory,
           scoreboard: s.scoreboard,
+          // Maps and teams (§9.2). Teammates' types only in team mode (never code).
+          mapStyle: s.match?.mapStyle ?? null,
+          arena: s.match?.map ? { width: s.match.map.width, height: s.match.map.height } : null,
+          players: s.players.map((x) => ({ name: x.name, seat: x.seat, ...(x.teamId !== undefined ? { teamId: x.teamId } : {}), active: x.active })),
+          teamMode: s.match?.teamMode ?? 'ffa',
+          myTeam: team ? { teamId: team.teamId, name: team.name, members: team.members.map((m) => m.name) } : null,
+          teammates: team
+            ? team.members
+                .filter((m) => m.playerId !== p.id)
+                .map((m) => ({
+                  name: m.name,
+                  selectedTypes: m.selection.map((c) => ({ displayName: c.name, type: c.stats.type, stats: c.stats, cost: c.cost })),
+                }))
+            : [],
+          teamTable: s.match?.teamTable ?? null,
         };
         const time = data.secondsLeft === null ? '' : `, ${data.secondsLeft} s left`;
         return toolResult(
           data,
           `Phase ${s.phase} (round ${s.round} of ${s.rounds}${time}). Submissions are ${data.submissionsOpen ? 'OPEN' : 'closed'}.` +
-            (s.armory.enabled ? ` Open Armory is ON (${s.armory.entries} units; see list_armory).` : ''),
+            (s.armory.enabled ? ` Open Armory is ON (${s.armory.entries} units; see list_armory).` : '') +
+            (data.arena ? ` Map: ${data.mapStyle}, arena ${data.arena.width}x${data.arena.height}.` : '') +
+            (team ? ` Team mode: you are on ${team.name} with ${data.myTeam!.members.filter((n) => n !== p.name).join(', ') || 'nobody else'}.` : ''),
         );
       }),
   );

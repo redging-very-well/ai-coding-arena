@@ -46,9 +46,16 @@ const TICKS_PER_WORLD = 5;
 const ME = 'you';
 const ENEMY = 'enemy';
 
+/** Median of a non-empty list (upper middle for an even count); 0 when empty. */
+function median(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)]!;
+}
+
 function other(id: string, ownerId: string, type: UnitType, x: number, y: number): OtherView {
   const radius = UNIT_RADIUS[type];
-  return { id, ownerId, type, name: type === 'tower' ? 'Enemy Tower' : 'Enemy Soldier', x, y, radius, hp: 100, maxHp: 100, range: 40 };
+  return { id, ownerId, teamId: ownerId === ENEMY ? 1 : 0, type, name: type === 'tower' ? 'Enemy Tower' : 'Enemy Soldier', x, y, radius, hp: 100, maxHp: 100, range: 40 };
 }
 
 interface World {
@@ -171,6 +178,11 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
   let returnedNothing = false;
   let moved = false;
   let attackedWhenAble = true;
+  // W_SLOW: the per-call update() time the harness measures INSIDE the
+  // isolate (`ms`, the isolate's own clock, whole ms), not host wall time.
+  // One call can still catch a GC pause or a preempted thread under load, so
+  // each practice world counts its MEDIAN call and the warning uses the
+  // slowest world: a genuinely slow update() is slow on every call.
   let slowestMs = 0;
 
   for (const [w, world] of worlds(stats, { ...corner, radius }).entries()) {
@@ -192,11 +204,13 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
       return { errors, warnings };
     }
     let attacked = false;
+    const worldCallMs: number[] = [];
     for (let t = 0; t < TICKS_PER_WORLD; t++) {
       const self: SelfView = {
         id: instanceId,
         unitId: 'unit',
         ownerId: ME,
+        teamId: 0,
         type: stats.type,
         name: stats.name,
         x: corner.x,
@@ -215,6 +229,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
         height: ARENA.height,
         tick: t,
         ticksLeft: battleTicks - t,
+        mapStyle: 'corners',
         myCorner: { x: corner.x, y: corner.y },
         center: { x: CENTER.x, y: CENTER.y },
         safeZone: { x: CENTER.x, y: CENTER.y, radius: ctx.config.suddenDeath.startRadius },
@@ -224,7 +239,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
         nowMs: (t * 1000) / ctx.config.timers.ticksPerSecond,
         selves: [self],
         enemies: world.enemies,
-        allies: [{ id: self.id, ownerId: ME, type: self.type, name: self.name, x: self.x, y: self.y, radius, hp: self.hp, maxHp: self.maxHp, range: self.range }, ...world.allies],
+        allies: [{ id: self.id, ownerId: ME, teamId: 0, type: self.type, name: self.name, x: self.x, y: self.y, radius, hp: self.hp, maxHp: self.maxHp, range: self.range }, ...world.allies],
         world: worldView,
       };
       const out = await session.call('tick', [encodeTickInput(input)], callMs, { deadlineMs: callMs + DEFAULT_DEADLINE_SLACK_MS });
@@ -265,7 +280,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
         });
         return { errors, warnings };
       }
-      slowestMs = Math.max(slowestMs, entry.ms ?? 0);
+      worldCallMs.push(entry.ms ?? 0);
       if ('error' in entry) {
         const stack = parsed.stacks.get(instanceId);
         const located = locate(asHarnessError({ message: entry.error.message, ...(stack ? { stack } : {}) }), ctx);
@@ -313,6 +328,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
       if (action?.action === 'attack') attacked = true;
     }
     if (world.expectAttack && !attacked) attackedWhenAble = false;
+    slowestMs = Math.max(slowestMs, median(worldCallMs));
   }
 
   if (!attackedWhenAble && stats.damage > 0) {

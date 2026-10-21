@@ -43,7 +43,13 @@
 //   POST /admin/login {password}      -> {ok:true}
 //   POST /admin/logout                -> {ok:true}
 //   GET  /admin/session               -> {admin: boolean}
-//   POST /admin/match {rounds?, armory?} -> GameStateDTO (LOBBY -> PLAN, needs ≥ 2 players; armory = Open Armory, §9.1)
+//   POST /admin/match {rounds?, armory?, mapStyle?, teamMode?} -> GameStateDTO (LOBBY -> PLAN, needs 2-8 players;
+//                                        armory = Open Armory, §9.1; mapStyle null = default for the player count,
+//                                        omitted = the draft's; teamMode omitted = the draft's ('ffa' by default), §9.2;
+//                                        BAD_MAP_STYLE / BAD_TEAM_MODE with details {players, valid})
+//   GET  /admin/match/setup           -> MatchSetupDTO (the LOBBY draft, or the running match's setup)
+//   PUT  /admin/match/setup {mapStyle?, teamMode?} -> MatchSetupDTO (LOBBY only; re-balances the draft teams)
+//   POST /admin/teams/swap {playerA, playerB} -> {teams: TeamDTO[]} (LOBBY, team-mode draft only; SAME_TEAM, NO_TEAMS)
 //   POST /admin/match/new             -> GameStateDTO (MATCH_RESULTS -> LOBBY)
 //   POST /admin/phase/next            -> GameStateDTO
 //   POST /admin/phase/skip            -> GameStateDTO
@@ -75,16 +81,21 @@
 //     battle countdown) runs. In RESULTS/MATCH_RESULTS it carries `lastBattle`.
 //   * The 'admin' role receives the same 'state' as the projector; the admin
 //     page reads details from GET /api/admin/overview (refetch on 'state').
-//   * Instance ids are `${seat}-${row}-${col}`; colour by seat (0-3).
+//   * Instance ids are `${seat}-${row}-${col}`; colour by seat (0-7).
+//   * Maps and teams (§9.2): `MapDTO` is public (no zone owners before START),
+//     `TeamDTO` is public; teammates' live selections/zones/placements travel
+//     only in each member's `private.team` block (`TeamPrivateDTO`).
 //   * Phase gates (§10.2): submit/retire/selection only in PLAN; placement and
 //     ready only in PLACEMENT; validate always. A closed gate is HTTP 409
 //     PHASE_CLOSED with details {phase, opensIn, secondsLeft?}.
 // ===========================================================================
 
 import type { CostBreakdown } from './cost.js';
-import type { SpriteSpec, StatsSnapshot } from './contract.js';
+import type { MapStyle, SpriteSpec, StatsSnapshot } from './contract.js';
 import type { ValidationError, ValidationResult, ValidationSuccess, ValidationWarning } from './errors.js';
 import type { Corner } from './geometry.js';
+import type { Facing } from './maps.js';
+import type { TeamMode } from './teams.js';
 
 export const PHASES = ['LOBBY', 'PLAN', 'PLACEMENT', 'BATTLE', 'RESULTS', 'MATCH_RESULTS'] as const;
 export type Phase = (typeof PHASES)[number];
@@ -101,7 +112,7 @@ export const ADMIN_COOKIE = 'pc_admin';
 export interface PlayerDTO {
   id: string;
   name: string;
-  /** Player slot 0-3: fixes colour and instance-id prefix. Not a zone. */
+  /** Player slot 0-7: fixes colour, seat-number badge (seat + 1) and instance-id prefix. Not a zone. */
   seat: number;
 }
 
@@ -119,6 +130,10 @@ export interface PlayerStatusDTO extends PlayerDTO {
   active: boolean;
   /** Kicked during BATTLE; removed when the battle ends. */
   leaving?: boolean;
+  /** Team mode: the player's team (team membership is public, §3). */
+  teamId?: number;
+  /** Joined after Start match in team mode: sits out until the next match (§4). */
+  benched?: boolean;
 }
 
 /** POST /players, POST /login, MCP login. */
@@ -134,6 +149,10 @@ export interface MeResponse {
   seat: number;
   connected: boolean;
   active: boolean;
+  /** Team mode: own team. */
+  teamId?: number;
+  /** Joined after Start match in team mode: sits out until the next match (§4). */
+  benched: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -243,7 +262,7 @@ export interface ArmoryInfoDTO {
 
 export interface PlacementDTO {
   unitId: string;
-  /** Zone-local, mirrored so (0,0) is nearest the arena centre (§9). 0-5. */
+  /** Zone-local, 0-5: row 0 = the zone's front row, (0,0) = the front cell nearest the centre (§9.2). */
   col: number;
   row: number;
 }
@@ -272,11 +291,122 @@ export interface TimerDTO {
   expired?: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Maps and teams (§9.2)
+// ---------------------------------------------------------------------------
+
+/** One zone of a map (public: no owner before START). */
+export interface MapZoneDTO {
+  index: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  facing: Facing;
+}
+
+/** A resolved map (shared/maps.ts `mapDTO`). */
+export interface MapDTO {
+  style: MapStyle;
+  players: number;
+  width: number;
+  height: number;
+  zones: MapZoneDTO[];
+}
+
+/** Ground-ring pattern of a team, so teams never rely on colour alone. */
+export type TeamPattern = 'solid' | 'dashed' | 'double' | 'dotted';
+
+/** A team (public). Fixed from Start match to New match. */
+export interface TeamDTO {
+  /** 0..T−1 (= `teamId` in the unit views, §5). */
+  teamId: number;
+  name: string;
+  color: string;
+  pattern: TeamPattern;
+  /** Player ids in join order (the block-rotation slots, §9.2). */
+  members: string[];
+}
+
+/** One team's result in one battle (shared by every member). */
+export interface TeamRoundRankDTO {
+  teamId: number;
+  /** 1-based; tied teams share the better place. */
+  place: number;
+  /** round((P − 1) × (T − place) / (T − 1)), given to every member. */
+  placePoints: number;
+  /** Team living cost: the sum over the ranked members' living units. */
+  livingCost: number;
+  /** When the team's last (ranked) unit died; null = survived. */
+  eliminatedAtTick: number | null;
+  /** Ranked members (kicked ones left out). */
+  members: string[];
+}
+
+/** Team table row (§9.2 Team scoring). */
+export interface TeamTableRowDTO {
+  teamId: number;
+  name: string;
+  color: string;
+  pattern: TeamPattern;
+  members: string[];
+  /** Average of the current members' match totals, one decimal. */
+  points: number;
+  /** Tie-break: the sum of the team's place points over the match (counted once per round). */
+  placePoints: number;
+  /** 1-based; equal points and place points share a place. */
+  place: number;
+}
+
+/** Match setup: the LOBBY draft (`PUT /admin/match/setup`) and the started match. */
+export interface MatchSetupDTO {
+  /** The host's style override, or null for the default by player count. */
+  mapStyle: MapStyle | null;
+  teamMode: TeamMode;
+  map: MapDTO;
+  teams: TeamDTO[] | null;
+  validStyles: MapStyle[];
+  validTeamModes: TeamMode[];
+}
+
+/** `/state` `match` block (§10.3). */
+export interface MatchInfoDTO {
+  mapStyle: MapStyle;
+  teamMode: TeamMode;
+  /** The current map; no zone owners before START. */
+  map: MapDTO | null;
+  teams: TeamDTO[] | null;
+  teamTable: TeamTableRowDTO[] | null;
+}
+
+/** A teammate as seen by the other members (team privacy, §9.2). */
+export interface TeamMemberPrivateDTO {
+  playerId: string;
+  name: string;
+  seat: number;
+  ready: boolean;
+  zone: MapZoneDTO | null;
+  /** Selected types as unit cards (never source, versions or unselected designs). */
+  selection: UnitCardDTO[];
+  placement: PlacementDTO[];
+  spent: number;
+}
+
+/** The `private.team` block (team mode only). */
+export interface TeamPrivateDTO {
+  teamId: number;
+  name: string;
+  color: string;
+  members: TeamMemberPrivateDTO[];
+}
+
 /** Match standings row (§9 Match standings). */
 export interface ScoreboardEntryDTO {
   playerId: string;
   name: string;
   seat: number;
+  /** Team mode: the player's team. */
+  teamId?: number;
   /** Total round points this match. */
   points: number;
   /** Total effective damage dealt this match (the tie-break). */
@@ -296,14 +426,20 @@ export interface MyStateDTO {
   /** PLAN: the chosen unitIds. From PLACEMENT on: the locked selection (palette). */
   selection: string[];
   placement: PlacementDTO[];
-  /** Only sent to the owner, from the start of PLACEMENT. */
-  myZone: Corner | null;
+  /** This round's zone on the map (§9.2). Only sent to the owner, from the start of PLACEMENT. */
+  myZone: MapZoneDTO | null;
   ready: boolean;
   submissionsOpen: boolean;
   /** False when joined mid-round ("you're in from the next round"). */
   active: boolean;
   /** "Copy last layout" is available (a previous layout exists). */
   hasLastLayout: boolean;
+  /** Team mode: own team. */
+  teamId?: number;
+  /** Joined after Start match in team mode: sits out until the next match (§4). */
+  benched?: boolean;
+  /** Team mode: teammates' live selection/zone/placement (§9.2 Team privacy). */
+  team?: TeamPrivateDTO | null;
 }
 
 /** Playback state of the current battle. */
@@ -337,6 +473,8 @@ export interface GameStateDTO {
   lastBattle?: BattleEndDTO;
   /** Open Armory (§9.1): on/off for this match. */
   armory: ArmoryInfoDTO;
+  /** Map, teams and team table (§9.2). */
+  match?: MatchInfoDTO;
   /** Owner-only block. */
   me?: MyStateDTO;
 }
@@ -372,7 +510,9 @@ export interface RulesDTO {
   bounds: Record<string, unknown>;
   /** §9 Points: place points + damage bonus + value bonus, badges, standings. */
   scoring: {
+    /** Free-for-all place points at 4 players (3/2/1/0); the rule is the formula in `placePointsRule`. */
     placePoints: number[];
+    /** Damage / value bonus maxima at 4 players; scaled × P/4. */
     damageBonusMax: number;
     valueBonusMax: number;
     [key: string]: unknown;
@@ -450,11 +590,19 @@ export interface BattleRevealDTO {
   round: number;
   /** Battle length in ticks. */
   totalTicks: number;
+  /** The battle's map (§9.2). */
+  map?: MapDTO;
+  /** Team mode: the teams. */
+  teams?: TeamDTO[] | null;
   players: Array<{
     playerId: string;
     name: string;
     seat: number;
-    zone: Corner;
+    /** Legacy: the corner of the 800 arena when the zone is one (Duel/Corners), else null. Use `mapZone`. */
+    zone: Corner | null;
+    /** The zone on the battle's map (§9.2). */
+    mapZone?: MapZoneDTO;
+    teamId?: number;
     units: RevealedUnitDTO[];
     instances: Array<{ instanceId: string; unitId: string; x: number; y: number }>;
   }>;
@@ -496,13 +644,16 @@ export interface PlayerMetricsDTO {
 /** One player's round score: `total` = placePoints + damageBonus + valueBonus. */
 export interface RoundScoreDTO {
   playerId: string;
+  /** Team mode: the player's team. `place` and `placePoints` are then the team's. */
+  teamId?: number;
   place: number;
+  /** round((P − 1) × (T − place) / (T − 1)); free-for-all = P − place (§9 Points). */
   placePoints: number;
   damage: number;
-  /** round-half-up(damageBonusMax × damage / top damage); 0 when the top is 0. */
+  /** round-half-up(damageBonusMax × P/4 × damage / top damage); 0 when the top is 0. */
   damageBonus: number;
   valueDestroyed: number;
-  /** round-half-up(valueBonusMax × valueDestroyed / top value destroyed); 0 when the top is 0. */
+  /** round-half-up(valueBonusMax × P/4 × valueDestroyed / top value destroyed); 0 when the top is 0. */
   valueBonus: number;
   total: number;
   badges: BadgeId[];
@@ -527,6 +678,9 @@ export interface BattleEndDTO {
   reason: 'elimination' | 'timeout' | 'skipped';
   ranking: RankingEntryDTO[];
   scoreboard: ScoreboardEntryDTO[];
+  /** Team mode: this round's team ranking and the match team table. */
+  teams?: TeamRoundRankDTO[];
+  teamTable?: TeamTableRowDTO[];
   /**
    * Open Armory (§9.1): creators whose Armory units other players fielded in
    * this battle (💡 Inventor, no points), with "used by N players".
@@ -586,11 +740,18 @@ export interface PrivateStateDTO {
   placement: PlacementDTO[];
   /** The layout used in the previous battle ("Copy last layout"), or null. */
   lastLayout: PlacementDTO[] | null;
+  /** Legacy: the corner of the 800 arena when this round's zone is one (Duel/Corners), else null. Use `mapZone`. */
   zone: Corner | null;
+  /** The zone on this round's map (§9.2). */
+  mapZone?: MapZoneDTO | null;
   budget: number;
   spent: number;
   ready: boolean;
   active: boolean;
+  /** Team mode: own team, benched flag and teammates' live data (§9.2). */
+  teamId?: number;
+  benched?: boolean;
+  team?: TeamPrivateDTO | null;
   /** Open Armory is on for this match (§9.1). */
   armoryEnabled: boolean;
   /** Borrowable Armory units (never your own; empty when Open Armory is off). */
@@ -624,7 +785,10 @@ export type ServerWsMessage =
 // ---------------------------------------------------------------------------
 
 export interface AdminPlayerDTO extends PlayerStatusDTO {
+  /** Legacy corner of this round's zone (Duel/Corners on the 800 arena), else null. */
   zone: Corner | null;
+  /** This round's zone on the map (§9.2), or null. */
+  mapZone: MapZoneDTO | null;
   designs: number;
   strikes: number;
   activeFromRound: number;
@@ -642,6 +806,8 @@ export interface AdminOverviewDTO {
   >;
   lanUrls: string[];
   sandboxMode: GameStateDTO['sandboxMode'];
+  /** The match setup (§9.2): the LOBBY draft with its map preview and teams, or the running match's. */
+  setup: MatchSetupDTO;
   /**
    * Open Armory entries (§9.1) with their REAL sprites, so the facilitator can
    * see and hide them, also for retired or deleted designs. Empty when off.
