@@ -9,10 +9,12 @@ import { groupByTeam, mapName } from '../common/maps.js';
 import { seatStyle, teamLook } from '../common/seats.js';
 import { PHASE_TEXT, PLACE_MEDALS, cx, formatClock, formatMoney, ordinal } from '../common/ui.js';
 import { Confetti } from './Confetti.js';
-import { ScreenController, type ScreenSnapshot } from './controller.js';
+import { ScreenController, prefersReducedMotion, type ScreenSnapshot } from './controller.js';
 import {
   armyValues,
   badgeCounts,
+  badgePopDelayMs,
+  countUpStartMs,
   badgeLabel,
   battleSecondsLeft,
   countUp,
@@ -33,6 +35,7 @@ import {
 const STAGE_W = 1920;
 const STAGE_H = 1080;
 const SUDDEN_DEATH_BANNER_MS = 3200;
+const REDUCED_MOTION = prefersReducedMotion();
 
 const SCREEN_TITLES: Record<GameStateDTO['phase'], string> = {
   LOBBY: 'Join the game!',
@@ -92,10 +95,15 @@ export function App() {
   const scale = useStageScale();
   useEffect(() => ctrl?.syncReplay(), [ctrl, now]);
 
-  // Keyboard for the facilitator at the projector: R replay, 1/2 speed, space pause.
+  // Keyboard for the facilitator at the projector: P join poster, M mute;
+  // after a battle R replay, 1/2 speed, space pause.
   useEffect(() => {
     if (!ctrl) return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === 'p' || e.key === 'P' || e.key === 'q' || e.key === 'Q') return ctrl.setPoster();
+      if (e.key === 'Escape') return ctrl.setPoster(false);
+      if (e.key === 'm' || e.key === 'M') return ctrl.toggleMuted();
       const phase = ctrl.snapshot.state?.phase;
       if (phase !== 'RESULTS' && phase !== 'MATCH_RESULTS') return;
       if (e.key === 'r' || e.key === 'R') ctrl.playReplay();
@@ -127,7 +135,9 @@ export function App() {
           </section>
           <aside class="side">{snap && ctrl && <Sidebar snap={snap} ctrl={ctrl} now={now} />}</aside>
         </main>
-        {snap && phase === 'MATCH_RESULTS' && state && <Podium state={state} />}
+        {snap && phase === 'MATCH_RESULTS' && state && !snap.replay?.playing && <Podium state={state} />}
+        {snap && ctrl && snap.poster && <JoinPoster snap={snap} onClose={() => ctrl.setPoster(false)} />}
+        {snap && ctrl && <SoundControl snap={snap} ctrl={ctrl} />}
         {snap && snap.conn !== 'open' && (
           <div class="conn">{snap.conn === 'connecting' ? 'Connecting…' : 'Reconnecting to the game server…'}</div>
         )}
@@ -236,9 +246,12 @@ function ArenaOverlays({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: Screen
       {battle && pb?.paused && <div class="paused-veil pixel">PAUSED</div>}
       {snap.replay && (
         <div class="chips">
-          <span class="chip pixel replay">{snap.replay.loading ? 'Loading replay…' : snap.replay.playing ? `▶ Replay ${snap.replay.speed}x` : 'Final moment'}</span>
+          <span class="chip pixel replay">
+            {snap.replay.loading ? 'Loading replay…' : snap.replay.playing ? `${snap.replay.paused ? '⏸' : '▶'} Replay ${snap.replay.speed}x` : 'Final moment'}
+          </span>
         </div>
       )}
+      {snap.replay && !snap.replay.loading && (snap.replay.playing || phase === 'RESULTS') && <ReplayBar ctrl={ctrl} />}
       {phase === 'RESULTS' && snap.end && !snap.replay?.playing && (
         <div class="end-reason pixel">{endReasonText(snap.end.reason)}</div>
       )}
@@ -251,6 +264,103 @@ function ArenaOverlays({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: Screen
         ))}
       </div>
     </>
+  );
+}
+
+/** Replay progress bar; click (or drag) to jump. */
+function ReplayBar({ ctrl }: { ctrl: ScreenController }) {
+  const pct = Math.round(ctrl.replayProgress() * 1000) / 10;
+  const seekTo = (e: PointerEvent) => {
+    const el = e.currentTarget as HTMLElement;
+    const r = el.getBoundingClientRect();
+    if (r.width > 0) ctrl.seekReplay((e.clientX - r.left) / r.width);
+  };
+  return (
+    <div
+      class="replay-bar"
+      role="slider"
+      aria-label="Replay position"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={pct}
+      onPointerDown={(e) => {
+        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+        seekTo(e);
+      }}
+      onPointerMove={(e) => {
+        if (e.buttons & 1) seekTo(e);
+      }}
+    >
+      <div class="replay-fill" style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+/** Mute toggle and, until the browser allows audio, the "click to enable sound" hint. */
+function SoundControl({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController }) {
+  if (snap.audio === 'unsupported') return null;
+  const locked = snap.audio === 'locked' && !snap.muted;
+  return (
+    <div class="sound-ctl">
+      {locked && <span class="sound-hint pixel">🔈 Click anywhere to enable sound</span>}
+      <button
+        class={cx('btn small sound-btn', snap.muted && 'off')}
+        title={snap.muted ? 'Sound off (M)' : 'Sound on (M)'}
+        aria-pressed={!snap.muted}
+        onClick={() => ctrl.toggleMuted()}
+      >
+        {snap.muted ? '🔇' : '🔊'}
+      </button>
+    </div>
+  );
+}
+
+/** Full-screen join poster (P key or /admin): big QR, the URL and the seat terminal links. */
+function JoinPoster({ snap, onClose }: { snap: ScreenSnapshot; onClose: () => void }) {
+  const join = snap.join;
+  const pretty = join?.joinUrl.replace(/^https?:\/\//, '') ?? '…';
+  const terminals = snap.setup?.seatTerminals ?? [];
+  return (
+    <div class="poster" onClick={onClose}>
+      <div class="poster-logo pixel">
+        PIXEL<span>CLASH</span>
+      </div>
+      <h1 class="pixel poster-title">Join the game!</h1>
+      <div class="poster-main">
+        {join?.qrSvg ? <div class="poster-qr" dangerouslySetInnerHTML={{ __html: join.qrSvg }} /> : <div class="poster-qr qr-empty" />}
+        <div class="poster-text">
+          <p>Scan the code or open:</p>
+          <div class="poster-url pixel">
+            {pretty.split(/(?=[:/])/).map((part, i) => (
+              <Fragment key={i}>
+                {i > 0 && <wbr />}
+                {part}
+              </Fragment>
+            ))}
+          </div>
+          <p class="muted">
+            Pick a name and a <span class="nowrap">4-digit</span> PIN.
+          </p>
+        </div>
+      </div>
+      {terminals.length > 0 && (
+        <div class="poster-seats">
+          <h2 class="pixel">Your Claude terminal</h2>
+          <ul>
+            {terminals.map((t) => {
+              const seat = seatStyle(t.seat);
+              return (
+                <li key={t.seat} style={{ '--seat': seat.color }}>
+                  <b class="sym seat-num">{seat.symbol}</b>
+                  {t.url.replace(/^https?:\/\//, '')}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+      <p class="poster-hint">Press P to close</p>
+    </div>
   );
 }
 
@@ -525,7 +635,8 @@ function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
   // The count-up starts when the ranking first has rows.
   const shownAt = useRef<number | null>(null);
   if (rows.length > 0 && shownAt.current === null) shownAt.current = now;
-  const elapsed = shownAt.current === null ? 0 : now - shownAt.current;
+  // Reduced motion: final numbers at once (the CSS skips the pop-ins too).
+  const elapsed = REDUCED_MOTION ? Number.POSITIVE_INFINITY : shownAt.current === null ? 0 : now - shownAt.current;
   const r = snap.replay;
   const board = standings(state.scoreboard);
   const lbState = state.lastBattle ? state : { ...state, lastBattle: snap.end ?? undefined };
@@ -601,8 +712,7 @@ function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
           <tbody>
             {rows.map((row, i) => {
               const seat = seatStyle(row.seat);
-              const t0 = 300 + i * 250;
-              const gained = countUp(row.pointsGained, elapsed - t0);
+              const gained = countUp(row.pointsGained, elapsed - countUpStartMs(i));
               return (
                 <tr key={row.playerId} class={cx('rank', `place-${row.place}`)} style={{ '--seat': seat.color, animationDelay: `${i * 120}ms` }}>
                   <td class="medal">{PLACE_MEDALS[row.place - 1] ?? ''}</td>
@@ -615,7 +725,7 @@ function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
                     {row.badges.length > 0 && (
                       <span class="badges">
                         {row.badges.map((b, j) => (
-                          <span key={b} class="badge" title={BADGES[b].title} style={{ animationDelay: `${1600 + i * 250 + j * 300}ms` }}>
+                          <span key={b} class="badge" title={BADGES[b].title} style={{ animationDelay: `${badgePopDelayMs(i, j)}ms` }}>
                             {badge(b, row.inventorUsedBy)}
                           </span>
                         ))}
@@ -694,6 +804,9 @@ function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
               {r.paused ? '▶' : '⏸'}
             </button>
           )}
+          <button class="btn pixel small" title="Join poster (P)" onClick={() => ctrl.setPoster(true)}>
+            QR
+          </button>
         </div>
       )}
     </div>

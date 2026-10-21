@@ -20,6 +20,7 @@ import type {
   PlaybackDTO,
   ReplayDTO,
   RulesDTO,
+  ScreenCommandDTO,
   SubmitUnitResponse,
   TeamDTO,
   TeamMode,
@@ -172,6 +173,8 @@ export const api = {
     timer: (t: { setSeconds?: number; addSeconds?: number; paused?: boolean }) => request<TimerDTO>('POST', '/admin/timer', t),
     start: (force = false) => request<GameStateDTO>('POST', '/admin/start', { force }),
     battle: (b: { paused?: boolean; speed?: 1 | 2 }) => request<PlaybackDTO>('POST', '/admin/battle', b),
+    /** Projector remote (§12.2): replay, 1x/2x, pause, join poster. `screens` = projectors reached. */
+    screen: (command: ScreenCommandDTO) => request<{ ok: true; screens: number }>('POST', '/admin/screen', command),
     kick: (playerId: string, deleteData = false) =>
       request<{ ok: true; effective: 'now' | 'after-battle' }>('POST', `/admin/players/${enc(playerId)}/kick`, { deleteData }),
     resetPin: (playerId: string, pin: string) => request<{ ok: true }>('POST', `/admin/players/${enc(playerId)}/pin`, { pin }),

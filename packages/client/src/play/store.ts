@@ -2,6 +2,7 @@
 // player's private data, rules, and the battle feed. The arena renderer for
 // the battle view lives here too (it must see the reveal and every frame even
 // before the battle panel mounts). Components subscribe with `useStore`.
+// Sounds (§12.4) are muted by default here; the header has the unmute button.
 
 import { useEffect, useState } from 'preact/hooks';
 import {
@@ -18,8 +19,11 @@ import {
   type StatBounds,
 } from '@pixel-clash/shared';
 import { ApiError, api } from '../common/api.js';
+import { SoundEngine } from '../common/audio.js';
 import { ArenaRenderer } from '../common/render/arena.js';
+import { MUTE_KEY_PLAY, countdownCue, revealCue } from '../common/sfx.js';
 import { GameSocket, type WsStatus } from '../common/ws.js';
+import { REVEAL_STEPS, REVEAL_STEP_MS } from '../screen/model.js';
 
 export interface Toast {
   id: number;
@@ -85,18 +89,24 @@ export class PlayStore {
   /** Arena for the battle mini-view; its canvas is moved into whichever panel shows it. */
   readonly arenaCanvas: HTMLCanvasElement;
   readonly arena: ArenaRenderer;
+  /** UI sounds: muted until the player presses the unmute button (remembered on this device). */
+  readonly sound = new SoundEngine(MUTE_KEY_PLAY, true);
   private readonly listeners = new Set<Listener>();
   private toastSeq = 0;
   private battleDirty = false;
   private battleTimer: ReturnType<typeof setInterval> | null = null;
   private lastFrame: FrameDTO | null = null;
   private disabled = new Set<string>();
+  /** Last countdown reading, for the last-5-seconds beeps. */
+  private lastCount: { key: string; secs: number | null } = { key: '', secs: null };
 
   constructor() {
     this.arenaCanvas = document.createElement('canvas');
     this.arenaCanvas.className = 'arena-canvas';
     this.arena = new ArenaRenderer(this.arenaCanvas, { fit: { margin: 4, pad: 24 } });
     this.socket = new GameSocket('screen');
+    this.sound.installUnlock();
+    this.sound.subscribe(() => this.set({}));
     this.wire();
   }
 
@@ -228,6 +238,7 @@ export class PlayStore {
       const prev = this.state.game;
       this.set({ game: m.state });
       if (prev && prev.phase !== m.state.phase) this.onPhaseChange(prev.phase, m.state.phase);
+      this.countdownSound(m.state);
     });
     s.on('private', (m) => {
       if (m.data.player.seat !== this.state.player?.seat) this.arena.setOptions({ highlightSeat: m.data.player.seat });
@@ -240,6 +251,13 @@ export class PlayStore {
     });
     s.on('kicked', () => this.set({ auth: 'kicked' }));
     s.on('battle:reveal', (m) => {
+      // At START (not a reload mid-battle): "3, 2, 1, CLASH!" beeps with the projector.
+      if ((this.state.game?.battle?.tick ?? 0) === 0 && this.state.game?.phase !== 'RESULTS') {
+        REVEAL_STEPS.forEach((step, i) => {
+          const sfx = revealCue(step);
+          if (sfx) this.sound.play(sfx, { delayMs: i * REVEAL_STEP_MS, force: true });
+        });
+      }
       this.arena.setReveal(m.data);
       this.lastFrame = null;
       this.disabled.clear();
@@ -273,10 +291,31 @@ export class PlayStore {
     if (kept.length === 0 && to === 'PLAN') this.toast('Plan time! Ask Claude for new units.', 'good');
     else if (kept.length === 0 && to === 'PLACEMENT') this.toast('Place your army!', 'good');
     if (to === 'BATTLE') this.toast('CLASH!', 'good', 2500);
+    // A little jingle when you won the round.
+    const meId = this.state.player?.id;
+    const mine = this.state.game?.lastBattle?.ranking.find((r) => r.playerId === meId);
+    if (to === 'RESULTS' && mine?.place === 1) this.sound.play('victory');
     if (from === 'BATTLE' && this.battleTimer) {
       clearInterval(this.battleTimer);
       this.battleTimer = null;
     }
+  }
+
+  /** Beeps in the last 5 seconds of the PLAN/PLACEMENT timer and the battle (state arrives at 1 Hz). */
+  private countdownSound(g: GameStateDTO): void {
+    let key = '';
+    let secs: number | null = null;
+    if (g.phase === 'BATTLE' && g.battle) {
+      key = `BATTLE:${g.round}`;
+      secs = g.battle.paused ? null : (g.battle.totalTicks - g.battle.tick) / 60;
+    } else if ((g.phase === 'PLAN' || g.phase === 'PLACEMENT') && !g.timer.paused) {
+      key = `${g.phase}:${g.round}`;
+      secs = g.timer.secondsLeft;
+    }
+    const prev = this.lastCount.key === key ? this.lastCount.secs : null;
+    this.lastCount = { key, secs };
+    const cue = countdownCue(prev, secs);
+    if (cue) this.sound.play(cue.sfx, { force: true });
   }
 
   /** The unit list updates at 4 Hz, not per frame batch. */

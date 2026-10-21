@@ -1124,6 +1124,152 @@ canvas.arena {
   text-align: center;
 }
 
+/* ---------------------------------------------------------- replay bar */
+
+.replay-bar {
+  position: absolute;
+  left: 40px;
+  right: 40px;
+  bottom: 24px;
+  height: 18px;
+  background: rgba(13, 15, 26, 0.85);
+  border: 3px solid var(--border);
+  cursor: pointer;
+  touch-action: none;
+  z-index: 2;
+}
+.replay-bar ~ .toasts {
+  bottom: 60px;
+}
+.replay-fill {
+  height: 100%;
+  background: var(--accent);
+  box-shadow: inset 0 -4px 0 #8a5f00;
+}
+
+/* ----------------------------------------------------------- sound */
+
+.sound-ctl {
+  position: absolute;
+  right: 40px;
+  bottom: 2px;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.sound-btn {
+  font-size: 20px;
+  padding: 4px 10px;
+  line-height: 1;
+}
+.sound-btn.off {
+  opacity: 0.6;
+}
+.sound-hint {
+  font-size: 13px;
+  padding: 5px 10px;
+  background: rgba(13, 15, 26, 0.9);
+  border: 3px solid var(--accent);
+  color: var(--accent);
+  animation: pc-pulse 1.6s steps(2) infinite;
+}
+
+/* ---------------------------------------------------------- join poster */
+
+.poster {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 48px;
+  background: radial-gradient(ellipse at 50% 35%, #1d2238 0%, #07080f 80%);
+  cursor: pointer;
+}
+.poster-logo {
+  font-size: 44px;
+  color: var(--accent);
+  text-shadow: 4px 4px 0 #8a5f00;
+}
+.poster-logo span {
+  margin-left: 0.5em;
+  color: #f87171;
+  text-shadow: 4px 4px 0 #7a1f1f;
+}
+.poster-title {
+  margin: 28px 0 36px;
+  font-size: 84px;
+  color: var(--text);
+  text-shadow: 8px 8px 0 #000;
+}
+.poster-main {
+  display: flex;
+  align-items: center;
+  gap: 64px;
+}
+.poster-qr {
+  width: 520px;
+  height: 520px;
+  padding: 22px;
+  background: #fff;
+  box-shadow: 12px 12px 0 #05060c;
+}
+.poster-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  shape-rendering: crispEdges;
+}
+.poster-text {
+  max-width: 760px;
+  font-size: 40px;
+}
+.poster-text p {
+  margin: 0 0 24px;
+}
+.poster-url {
+  font-size: 40px;
+  line-height: 1.5;
+  color: #fff;
+  overflow-wrap: anywhere;
+  background: #0d0f1a;
+  border: 5px solid var(--accent);
+  padding: 22px 26px;
+  margin-bottom: 28px;
+}
+.poster-seats {
+  margin-top: 40px;
+  text-align: center;
+}
+.poster-seats h2 {
+  margin: 0 0 16px;
+  font-size: 26px;
+  color: var(--accent);
+}
+.poster-seats ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 12px 40px;
+  font-size: 26px;
+}
+.poster-seats li {
+  border-left: 8px solid var(--seat);
+  padding-left: 12px;
+  white-space: nowrap;
+}
+.poster-hint {
+  position: absolute;
+  bottom: 20px;
+  margin: 0;
+  font-size: 18px;
+  color: var(--text-dim);
+}
+
 /* ----------------------------------------------------------- connection */
 
 .conn {
@@ -1148,7 +1294,8 @@ canvas.arena {
   .rank,
   .badge,
   .step,
-  .champion {
+  .champion,
+  .sound-hint {
     animation: none;
   }
 }

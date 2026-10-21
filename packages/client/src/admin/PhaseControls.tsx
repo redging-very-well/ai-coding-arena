@@ -1,7 +1,8 @@
 // Phase controls (plan §12.3): Start match (rounds 1-10, Open Armory, map
 // style and team mode with a map preview and team swaps), Next, Skip, START,
 // Force start, Pause/Resume (timer and battle), 1x/2x, timer ±1 min / set,
-// New match. Buttons are enabled by phase; the server enforces the gates.
+// New match, and the projector remote (join poster, replay at 1x/2x). Buttons
+// are enabled by phase; the server enforces the gates.
 
 import { useEffect, useState } from 'preact/hooks';
 import { teamModeLabel, type GameStateDTO, type Phase } from '@pixel-clash/shared';
@@ -19,6 +20,9 @@ const PHASE_HELP: Record<Phase, string> = {
   RESULTS: 'Round results. Press Next for the next round (or the final results).',
   MATCH_RESULTS: 'The match is over. New match keeps players and units, resets points.',
 };
+
+/** Toast text for a projector command: says so when no /screen page got it. */
+const onScreen = (text: string) => (r: { screens: number }) => (r.screens > 0 ? text : 'No /screen page is open right now.');
 
 const SKIP_TEXT: Partial<Record<Phase, string>> = {
   PLAN: 'Skip to placement',
@@ -203,6 +207,32 @@ export function PhaseControls() {
           </button>
         </div>
       )}
+
+      <div class="btn-row">
+        <span class="label" title="Remote control for /screen (keys there: P poster, R replay, M mute)">Projector</span>
+        <button class="btn" disabled={busy} onClick={() => act(() => api.admin.screen({ action: 'poster', show: true }), onScreen('Join poster on the projector'))}>
+          Show join poster
+        </button>
+        <button class="btn subtle" disabled={busy} onClick={() => act(() => api.admin.screen({ action: 'poster', show: false }))}>
+          Hide poster
+        </button>
+        {s.lastBattle && (p === 'RESULTS' || p === 'MATCH_RESULTS') && (
+          <>
+            <button class="btn" disabled={busy} onClick={() => act(() => api.admin.screen({ action: 'replay' }), onScreen('Replay on the projector'))}>
+              ▶ Replay
+            </button>
+            <button class="btn" disabled={busy} onClick={() => act(() => api.admin.screen({ action: 'replaySpeed', speed: 1 }))}>
+              1x
+            </button>
+            <button class="btn" disabled={busy} onClick={() => act(() => api.admin.screen({ action: 'replaySpeed', speed: 2 }))}>
+              2x
+            </button>
+            <button class="btn" disabled={busy} onClick={() => act(() => api.admin.screen({ action: 'replayPause' }))}>
+              ⏯
+            </button>
+          </>
+        )}
+      </div>
 
       {s.lastBattle && (p === 'RESULTS' || p === 'MATCH_RESULTS') && (
         <div class="last-battle">

@@ -161,6 +161,7 @@ export function Placement() {
       return;
     }
     setNote(null);
+    store.sound.play(r.placements.length < placements.length ? 'remove' : 'place', { force: true });
     commit(r.placements);
   };
 
@@ -179,6 +180,7 @@ export function Placement() {
     save.flush();
     try {
       await api.setReady(!ready);
+      store.sound.play(ready ? 'remove' : 'ready', { force: true });
     } catch (err) {
       store.toast(err instanceof ApiError ? err.playerMessage : "Couldn't change READY. Try again!", 'error');
     } finally {

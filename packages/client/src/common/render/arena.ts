@@ -1,7 +1,9 @@
 // The isometric battle renderer (plan §12): floor, tinted zones, edge props,
 // safe-zone ellipse, ground rings, depth-sorted sprite billboards, HP bars,
 // projectile arcs with trails and the napping bubble. Interpolates between
-// buffered frames at display rate (60 fps).
+// buffered frames at display rate (60 fps). With `fx` on (the projector) it
+// adds muzzle flashes, hit sparks, damage numbers, death pops, screen shake on
+// big hits and an idle bob (fx.ts; pooled, reduced with prefers-reduced-motion).
 //
 // Used by /screen (live + replay), the /play battle mini-view and replays:
 //
@@ -39,11 +41,12 @@ import {
   type StatsSnapshot,
 } from '@pixel-clash/shared';
 import { fitCanvasToBox, pixelContext, pixelsToCanvas, type Bitmap } from './canvas.js';
+import { FxLayer, bobOffset, isBigHit } from './fx.js';
 import {
   FLOOR_K,
   PROP_SPRITES,
   billboardWidth,
-  depthSort,
+  depthCompare,
   edgeProps,
   fitIso,
   isoEllipse,
@@ -101,6 +104,13 @@ export interface ArenaOptions {
   badges?: boolean;
   /** Called for each battle event as playback passes it (fx, sound, toasts). */
   onEvent?: (event: FrameEvent, arena: ArenaRenderer) => void;
+  /**
+   * Projector effects (default false): muzzle flashes, hit sparks, floating
+   * damage numbers, death pops, screen shake on big hits, idle bob.
+   */
+  fx?: boolean;
+  /** prefers-reduced-motion: no shake or bob, fewer particles (default false). */
+  reducedMotion?: boolean;
   /** Extra drawing after the units (fx layer: damage numbers, particles…). */
   overlay?: (ctx: CanvasRenderingContext2D, view: IsoView, arena: ArenaRenderer, now: number) => void;
 }
@@ -134,6 +144,25 @@ interface InstanceState {
   flags: number;
   /** Present in the current sample. */
   alive: boolean;
+  /** Idle-bob phase (ms), so copies don't float in step. */
+  bobPhase: number;
+}
+
+/** One entry of the per-frame draw list (reused between frames: no allocation). */
+interface DrawItem {
+  x: number;
+  y: number;
+  key: string;
+  unit: InstanceState | null;
+  prop: EdgeProp | null;
+  lift: number;
+}
+
+/** A per-instance phase in [0, 900) ms from its id. */
+function phaseOf(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return Math.abs(h) % 900;
 }
 
 interface ProjectileState {
@@ -210,6 +239,18 @@ export function dropInActive(o: { now: number; revealAt: number; units: number; 
   return o.bufferLength === 0 || o.tick <= o.firstT + DROP_MAX_FIRST_T;
 }
 
+/** Drop-in progress of the `index`-th unit `elapsedMs` after the reveal: < 0 not yet visible, ≥ 1 landed. */
+export function dropProgress(elapsedMs: number, index: number): number {
+  return (elapsedMs - index * DROP_STAGGER_MS) / DROP_MS;
+}
+
+/** Height (CSS px) above its spot of a dropping unit at progress `t` (ease-in fall from 260 px). */
+export function dropLift(t: number): number {
+  if (t >= 1) return 0;
+  const f = 1 - Math.max(0, t);
+  return f * f * 260;
+}
+
 export class ArenaRenderer {
   readonly buffer = new FrameBuffer();
   readonly clock = new PlaybackClock();
@@ -234,12 +275,20 @@ export class ArenaRenderer {
   private running = false;
   private resizeObserver: ResizeObserver | null = null;
   private sample: FrameSample | null = null;
+  /** Projector effects (used when options.fx is on). */
+  readonly fx = new FxLayer();
+  private readonly drawItems: DrawItem[] = [];
+  private readonly seenIds = new Set<string>();
+  private readonly liveProjectiles = new Set<number>();
+  /** The font last set on the context this frame (setting ctx.font re-parses it: costly ×96 badges). */
+  private font = '';
 
   constructor(
     readonly canvas: HTMLCanvasElement,
     private options: ArenaOptions = {},
   ) {
     this.ctx = pixelContext(canvas);
+    this.fx.options = { reducedMotion: !!options.reducedMotion };
     this.view = fitIso(1, 1, this.fitOptions());
     this.resize(true);
   }
@@ -259,6 +308,7 @@ export class ArenaRenderer {
 
   setOptions(patch: Partial<ArenaOptions>): void {
     this.options = { ...this.options, ...patch };
+    this.fx.options = { reducedMotion: !!this.options.reducedMotion };
     if (patch.fit) this.resize(true);
   }
 
@@ -290,6 +340,7 @@ export class ArenaRenderer {
     this.instances.clear();
     this.projectiles.clear();
     this.lastFireByTarget.clear();
+    this.fx.clear();
     this.sample = null;
     this.endT = null;
     this.totalTicks = 0;
@@ -337,6 +388,7 @@ export class ArenaRenderer {
           hp: u.stats.maxHealth,
           flags: 0,
           alive: true,
+          bobPhase: phaseOf(inst.instanceId),
         });
       }
     }
@@ -410,6 +462,7 @@ export class ArenaRenderer {
     this.clock.seek(Math.min(this.endTick, Math.max(this.buffer.firstT, tick)));
     this.lastTick = this.clock.tick;
     this.projectiles.clear();
+    this.fx.clear();
     this.resyncDeaths();
   }
 
@@ -491,6 +544,7 @@ export class ArenaRenderer {
   // -------------------------------------------------------------------------
 
   private step(dt: number, now: number): void {
+    if (this.options.fx) this.fx.update(dt, now);
     if (this.buffer.length === 0) {
       this.sample = null;
       return;
@@ -502,6 +556,7 @@ export class ArenaRenderer {
       // Backwards, or a big jump (snap after a background tab, seek): don't
       // replay many seconds of events at once (every flash, death and toast).
       this.projectiles.clear();
+      this.fx.clear();
       this.resyncDeaths();
     } else if (t > prev) {
       for (const { event } of this.buffer.eventsBetween(prev, t)) this.applyEvent(event, now);
@@ -509,7 +564,8 @@ export class ArenaRenderer {
     this.lastTick = t;
     this.sample = this.buffer.sample(t);
     if (!this.sample) return;
-    const seen = new Set<string>();
+    const seen = this.seenIds;
+    seen.clear();
     for (const u of this.sample.units) {
       seen.add(u.id);
       const s = this.instances.get(u.id) ?? this.adoptUnknown(u);
@@ -532,7 +588,46 @@ export class ArenaRenderer {
     if (event.type === 'fire' && !event.melee) this.lastFireByTarget.set(event.targetId, event.instanceId);
     const ids = event.type === 'hit' ? [event.targetId, event.instanceId] : [event.instanceId];
     for (const id of ids) this.instances.get(id)?.anim.onEvent(event, now);
+    if (this.options.fx) this.eventFx(event, now);
     this.options.onEvent?.(event, this);
+  }
+
+  /** Spawn the projector effects for a battle event (positions from the last drawn state). */
+  private eventFx(ev: FrameEvent, now: number): void {
+    const { view } = this;
+    if (ev.type === 'fire') {
+      const s = this.instances.get(ev.instanceId);
+      if (!s || s.info.ghost) return;
+      const p = toScreen(view, s.x, s.y);
+      const h = billboardWidth(s.info.stats.size, view);
+      const t = this.instances.get(ev.targetId);
+      let dx = 0;
+      let dy = 0;
+      if (t) {
+        const tp = toScreen(view, t.x, t.y);
+        const d = Math.hypot(tp.sx - p.sx, tp.sy - p.sy) || 1;
+        dx = (tp.sx - p.sx) / d;
+        dy = (tp.sy - p.sy) / d;
+      }
+      const r = h * 0.45;
+      this.fx.muzzle(p.sx + dx * r, p.sy - h * 0.5 + dy * r * 0.5, Math.max(2, h * 0.12), ev.melee ? '#FFFFFF' : s.info.stats.color, now);
+    } else if (ev.type === 'hit') {
+      const t = this.instances.get(ev.targetId);
+      if (!t || t.info.ghost) return;
+      const p = toScreen(view, t.x, t.y);
+      const h = billboardWidth(t.info.stats.size, view);
+      const max = t.info.stats.maxHealth;
+      const big = isBigHit(ev.damage, max);
+      this.fx.sparks(p.sx, p.sy - h * 0.5, view.zoom, big ? '#FFD447' : '#FFFFFF');
+      this.fx.damageNumber(p.sx, p.sy - h * 0.9, ev.damage, big, now);
+      if (big) this.fx.bigHit(ev.damage / max, now);
+    } else if (ev.type === 'death') {
+      const t = this.instances.get(ev.instanceId);
+      if (!t || t.info.ghost) return;
+      const p = toScreen(view, t.x, t.y);
+      const h = billboardWidth(t.info.stats.size, view);
+      this.fx.deathPop(p.sx, p.sy - h * 0.4, t.info.stats.size, view.zoom, [seatStyle(t.info.seat).color, t.info.stats.color, '#FFFFFF']);
+    }
   }
 
   /** After a seek or a mid-battle join: units missing from the frame are long dead. */
@@ -580,13 +675,15 @@ export class ArenaRenderer {
       hp: u.hp,
       flags: u.flags,
       alive: true,
+      bobPhase: phaseOf(u.id),
     };
     this.instances.set(u.id, st);
     return st;
   }
 
   private trackProjectiles(): void {
-    const live = new Set<number>();
+    const live = this.liveProjectiles;
+    live.clear();
     for (const p of this.sample?.projectiles ?? []) {
       live.add(p.id);
       if (this.projectiles.has(p.id)) continue;
@@ -613,20 +710,33 @@ export class ArenaRenderer {
     const { ctx, view } = this;
     const { width, height } = this.cssSize;
     ctx.save();
+    this.font = '';
     ctx.imageSmoothingEnabled = false;
     if (this.options.background === null) ctx.clearRect(0, 0, width, height);
     else {
       ctx.fillStyle = this.options.background ?? '#0D0F1A';
       ctx.fillRect(0, 0, width, height);
     }
+    const shake = this.options.fx ? this.fx.offset(now) : null;
+    if (shake && (shake.x !== 0 || shake.y !== 0)) ctx.translate(shake.x, shake.y);
     this.drawFloor();
     if (this.options.badges !== false) this.drawZoneBadges();
     this.drawSafeZone(now);
     this.drawRings(now);
     this.drawBillboards(now);
     this.drawProjectiles();
+    if (this.options.fx) {
+      this.fx.draw(ctx, now, Math.max(11, Math.round(9 * view.zoom)));
+      this.font = '';
+    }
     this.options.overlay?.(ctx, view, this, now);
     ctx.restore();
+  }
+
+  private setFont(font: string): void {
+    if (font === this.font) return;
+    this.ctx.font = font;
+    this.font = font;
   }
 
   /** The floor bitmap for a map and zone set (memoised: only a few combinations occur). */
@@ -682,7 +792,7 @@ export class ArenaRenderer {
     ctx.fillStyle = st.color;
     ctx.fillRect(bx, by, size, size);
     ctx.fillStyle = st.ink;
-    ctx.font = `${Math.max(7, Math.round(size * 0.62))}px "Press Start 2P", ui-monospace, monospace`;
+    this.setFont(`${Math.max(7, Math.round(size * 0.62))}px "Press Start 2P", ui-monospace, monospace`);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(st.symbol, bx + size / 2 + 0.5, by + size / 2 + 1);
@@ -729,36 +839,6 @@ export class ArenaRenderer {
     ctx.restore();
   }
 
-  /** Units in drawing order, with drop-in offsets applied. */
-  private visibleUnits(now: number): Array<InstanceState & { lift: number }> {
-    const out: Array<InstanceState & { lift: number }> = [];
-    const drop =
-      this.options.dropIn !== false &&
-      dropInActive({
-        now,
-        revealAt: this.revealAt,
-        units: this.instances.size,
-        bufferLength: this.buffer.length,
-        tick: this.clock.tick,
-        firstT: this.buffer.firstT,
-      });
-    let i = 0;
-    for (const s of this.instances.values()) {
-      let lift = 0;
-      if (drop) {
-        const t = (now - this.revealAt - i * DROP_STAGGER_MS) / DROP_MS;
-        if (t < 0) {
-          i++;
-          continue;
-        }
-        if (t < 1) lift = (1 - t) * (1 - t) * 260;
-      }
-      i++;
-      out.push({ ...s, lift });
-    }
-    return out;
-  }
-
   /**
    * Ground rings: seat colour in free-for-all; in team mode the team colour
    * and pattern (solid, dashed, double, dotted) so teams read without colour.
@@ -803,16 +883,50 @@ export class ArenaRenderer {
     return this.sprites.get(s.info.specKey, s.info.spec, seatStyle(s.info.seat).color, scale);
   }
 
+  /** Reuse (or grow) the draw-list slot `i`. */
+  private drawItem(i: number, x: number, y: number, key: string, unit: InstanceState | null, prop: EdgeProp | null, lift: number): void {
+    let it = this.drawItems[i];
+    if (!it) this.drawItems.push((it = { x, y, key, unit, prop, lift }));
+    it.x = x;
+    it.y = y;
+    it.key = key;
+    it.unit = unit;
+    it.prop = prop;
+    it.lift = lift;
+  }
+
+  /** Props and units back to front, with the drop-in offsets (one reused list, no per-frame closures). */
   private drawBillboards(now: number): void {
-    type Item = { x: number; y: number; key: string; draw: () => void };
-    const items: Item[] = [];
-    for (const prop of this.props) {
-      items.push({ x: prop.x, y: prop.y, key: prop.key, draw: () => this.drawProp(prop, now) });
+    let n = 0;
+    for (const prop of this.props) this.drawItem(n++, prop.x, prop.y, prop.key, null, prop, 0);
+    const drop =
+      this.options.dropIn !== false &&
+      dropInActive({
+        now,
+        revealAt: this.revealAt,
+        units: this.instances.size,
+        bufferLength: this.buffer.length,
+        tick: this.clock.tick,
+        firstT: this.buffer.firstT,
+      });
+    let i = 0;
+    for (const s of this.instances.values()) {
+      let lift = 0;
+      if (drop) {
+        const t = dropProgress(now - this.revealAt, i);
+        i++;
+        if (t < 0) continue;
+        lift = dropLift(t);
+      }
+      this.drawItem(n++, s.x, s.y, s.info.instanceId, s, null, lift);
     }
-    for (const s of this.visibleUnits(now)) {
-      items.push({ x: s.x, y: s.y, key: s.info.instanceId, draw: () => this.drawUnit(s, s.lift, now) });
+    const items = this.drawItems;
+    items.length = n;
+    items.sort(depthCompare);
+    for (const it of items) {
+      if (it.unit) this.drawUnit(it.unit, it.lift, now);
+      else if (it.prop) this.drawProp(it.prop, now);
     }
-    for (const it of depthSort(items)) it.draw();
   }
 
   private drawProp(prop: EdgeProp, now: number): void {
@@ -848,7 +962,9 @@ export class ArenaRenderer {
     if (pose.gone) return;
     const feet = toScreen(view, s.x, s.y);
     const ghost = s.info.ghost ? 0.5 : 1;
-    const top = this.blit(baked.frame(pose.state, pose.frame, pose.mirror), baked, feet, width, lift, ghost * pose.alpha * (pose.napping ? 0.75 : 1));
+    const bob =
+      this.options.fx && !this.options.reducedMotion && s.alive && pose.state === 'idle' && !pose.napping ? bobOffset(now, s.bobPhase, width) : 0;
+    const top = this.blit(baked.frame(pose.state, pose.frame, pose.mirror), baked, feet, width, lift + bob, ghost * pose.alpha * (pose.napping ? 0.75 : 1));
     if (!s.alive || lift > 0 || s.info.ghost) return;
 
     // HP bar.
@@ -909,7 +1025,7 @@ export class ArenaRenderer {
     ctx.lineTo(bx + w * 0.4, by + h);
     ctx.fill();
     ctx.fillStyle = '#4C3FA0';
-    ctx.font = `${Math.round(h * 0.55)}px "Press Start 2P", ui-monospace, monospace`;
+    this.setFont(`${Math.round(h * 0.55)}px "Press Start 2P", ui-monospace, monospace`);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('Zz', bx + w / 2, by + h / 2 + 1);

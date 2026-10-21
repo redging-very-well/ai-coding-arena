@@ -2,7 +2,9 @@
 // the shared ArenaRenderer, and a tiny observable snapshot the Preact view
 // renders from. Owns the battle lifecycle: neutral empty zones before START,
 // the "3-2-1 CLASH!" reveal with a delayed drop-in, live frames, the
-// sudden-death banner, napping toasts and the RESULTS replay.
+// sudden-death banner, napping toasts and the RESULTS replay (replay.ts),
+// the synthesized sounds (§12.4) and the join poster. The facilitator can
+// drive the replay and the poster from /admin ('screen' WS commands).
 
 import {
   CORNERS,
@@ -11,15 +13,35 @@ import {
   type MapDTO,
   type BattleRevealDTO,
   type FrameDTO,
+  type FrameEvent,
   type GameStateDTO,
   type JoinInfoDTO,
   type PlaybackDTO,
   type Phase,
+  type ScreenCommandDTO,
+  type SetupInfoDTO,
 } from '@pixel-clash/shared';
 import { api, request } from '../common/api.js';
+import { SoundEngine, type AudioState } from '../common/audio.js';
 import { ArenaRenderer } from '../common/render/arena.js';
+import { isBigHit } from '../common/render/fx.js';
+import { MUTE_KEY_SCREEN, countdownCue, revealCue, shotPitch } from '../common/sfx.js';
 import { GameSocket, type WsStatus } from '../common/ws.js';
-import { REVEAL_DROP_AT_MS, REVEAL_TOTAL_MS } from './model.js';
+import { getSetupInfo } from '../setup/setupApi.js';
+import {
+  REVEAL_DROP_AT_MS,
+  REVEAL_STEPS,
+  REVEAL_STEP_MS,
+  REVEAL_TOTAL_MS,
+  resultsBadgePops,
+  battleSecondsLeft,
+  liveSecondsLeft,
+  newlyDone,
+  rankRows,
+} from './model.js';
+import { ReplayController, type ReplayView } from './replay.js';
+
+export type { ReplayView } from './replay.js';
 
 export interface ScreenToast {
   id: number;
@@ -27,15 +49,6 @@ export interface ScreenToast {
   seat: number;
   level: 'info' | 'warn' | 'error' | 'nap';
   at: number;
-}
-
-export interface ReplayView {
-  round: number;
-  speed: 1 | 2;
-  paused: boolean;
-  loading: boolean;
-  /** true while the replay runs (false once it reached the end or for the static final frame). */
-  playing: boolean;
 }
 
 export interface ScreenSnapshot {
@@ -57,13 +70,32 @@ export interface ScreenSnapshot {
   maxPlayers: number;
   /** performance.now() when sudden death began on screen (banner), or null. */
   suddenDeathAt: number | null;
+  /** The full-screen join poster is up. */
+  poster: boolean;
+  /** Seat terminal links for the poster (GET /api/setup), once loaded. */
+  setup: SetupInfoDTO | null;
+  /** Sound: muted flag (remembered) and whether the browser let audio start yet. */
+  muted: boolean;
+  audio: AudioState;
 }
 
 const PRE_BATTLE: readonly Phase[] = ['LOBBY', 'PLAN', 'PLACEMENT'];
 const TOAST_MS = 4500;
 
+/** prefers-reduced-motion (no shake or bob, fewer particles; CSS handles the rest). */
+export function prefersReducedMotion(): boolean {
+  try {
+    return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+}
+
 export class ScreenController {
   readonly arena: ArenaRenderer;
+  /** Projector sound: on by default, unlocked by the first click or key. */
+  readonly sound = new SoundEngine(MUTE_KEY_SCREEN, false);
+  readonly replays: ReplayController;
   private readonly sock: GameSocket;
   private snap: ScreenSnapshot = {
     conn: 'connecting',
@@ -80,6 +112,10 @@ export class ScreenController {
     ticksPerSecond: 60,
     maxPlayers: MAX_PLAYERS,
     suddenDeathAt: null,
+    poster: false,
+    setup: null,
+    muted: false,
+    audio: 'locked',
   };
   private readonly listeners = new Set<() => void>();
   private pendingFrames: FrameDTO[] | null = null;
@@ -89,11 +125,17 @@ export class ScreenController {
   /** The map last drawn empty (style, players), to redraw when it changes before START. */
   private neutralKey = '';
   private sdWatch: ReturnType<typeof setInterval> | null = null;
+  /** Last countdown reading (phase + seconds), for the last-5-seconds beeps. */
+  private lastCount: { key: string; secs: number | null } = { key: '', secs: null };
+  private readonly offUnlock: () => void;
 
   constructor(canvas: HTMLCanvasElement) {
     this.arena = new ArenaRenderer(canvas, {
       fit: { margin: 16 },
+      fx: true,
+      reducedMotion: prefersReducedMotion(),
       onEvent: (ev, arena) => {
+        this.eventSound(ev, arena);
         if (ev.type !== 'disable') return;
         const info = arena.instance(ev.instanceId);
         if (!info) return;
@@ -102,6 +144,35 @@ export class ScreenController {
     });
     this.neutralZones();
     this.arena.start();
+
+    const arena = this.arena;
+    this.replays = new ReplayController({
+      target: {
+        get tick() {
+          return arena.tick;
+        },
+        get endTick() {
+          return arena.endTick;
+        },
+        get startTick() {
+          return arena.buffer.firstT;
+        },
+        loadReplay: (r) => arena.loadReplay(r),
+        setPlayback: (p) => arena.setPlayback(p),
+        seek: (t) => arena.seek(t),
+      },
+      fetch: (round) => api.replay(round),
+      onChange: (replay) => this.set({ replay }),
+      onLoaded: (replay) => {
+        this.watchedSuddenDeath = false;
+        this.set({ reveal: replay.reveal, suddenDeathAt: null });
+      },
+      onError: () => this.toast("Couldn't load the replay.", 'warn', -1),
+    });
+
+    this.set({ muted: this.sound.muted, audio: this.sound.state });
+    this.sound.subscribe(() => this.set({ muted: this.sound.muted, audio: this.sound.state }));
+    this.offUnlock = this.sound.installUnlock();
 
     this.sock = new GameSocket('screen');
     this.sock.onStatus((conn) => this.set({ conn }));
@@ -113,10 +184,11 @@ export class ScreenController {
       this.set({ end: m.data });
     });
     this.sock.on('toast', (m) => this.toast(m.message, m.level, -1));
+    this.sock.on('screen', (m) => this.onCommand(m.command));
 
     void this.loadRules();
     void this.loadJoin();
-    this.sdWatch = setInterval(() => this.watchSuddenDeath(), 100);
+    this.sdWatch = setInterval(() => this.watch(), 100);
   }
 
   // -------------------------------------------------------------------------
@@ -140,6 +212,7 @@ export class ScreenController {
   destroy(): void {
     this.sock.close();
     this.arena.stop();
+    this.offUnlock();
     if (this.dropTimer) clearTimeout(this.dropTimer);
     if (this.sdWatch) clearInterval(this.sdWatch);
   }
@@ -177,6 +250,7 @@ export class ScreenController {
     const phase = state.phase;
     const changed = phase !== this.lastPhase;
     this.lastPhase = phase;
+    const prevState = this.snap.state;
     const patch: Partial<ScreenSnapshot> = { state, stateAt: performance.now() };
     if (state.battle) patch.playback = state.battle;
     if (changed && PRE_BATTLE.includes(phase)) {
@@ -185,7 +259,8 @@ export class ScreenController {
       this.arena.clearBattle();
       this.neutralKey = '';
       this.neutralZones(state.match?.map ?? null);
-      Object.assign(patch, { reveal: null, revealAt: null, end: null, replay: null, playback: null, suddenDeathAt: null });
+      this.replays.clear();
+      Object.assign(patch, { reveal: null, revealAt: null, end: null, playback: null, suddenDeathAt: null });
       if (phase !== 'PLACEMENT') void this.loadJoin();
       // The host may have changed quick settings (seat limit, sudden death) since.
       void this.loadRules();
@@ -197,15 +272,128 @@ export class ScreenController {
     }
     if (state.lastBattle && !this.snap.end) patch.end = state.lastBattle;
     this.set(patch);
+    this.stateSounds(prevState, state, changed);
     // A reload during RESULTS: show the final frame of the last battle.
     if (changed && (phase === 'RESULTS' || phase === 'MATCH_RESULTS') && this.arena.instanceIds.length === 0 && state.lastBattle) {
-      void this.loadReplay(state.lastBattle.round, { atEnd: true });
+      void this.replays.load(state.lastBattle.round, { atEnd: true });
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Sounds (§12.4)
+  // -------------------------------------------------------------------------
+
+  /** Ready chimes, status blips, the results jingle and badge pops. */
+  private stateSounds(prev: GameStateDTO | null, state: GameStateDTO, changed: boolean): void {
+    if (!prev) return; // first state after (re)connect: nothing "happened"
+    if (!changed) {
+      const done = newlyDone(prev.players, state.players, state.phase);
+      if (done.ready > 0) this.sound.play('ready');
+      else if (done.ticks > 0) this.sound.play('place');
+      return;
+    }
+    if (state.phase === 'MATCH_RESULTS') this.sound.play('victory');
+    if (state.phase === 'RESULTS' && state.lastBattle) {
+      this.sound.play('victory', { gain: 0.7 });
+      const teamMode = (state.lastBattle.teams?.length ?? 0) > 0;
+      for (const delayMs of resultsBadgePops(rankRows(state), { teamMode, reducedMotion: prefersReducedMotion() })) {
+        this.sound.play('badge', { delayMs });
+      }
+    }
+  }
+
+  /** Battle sounds: shots pitched by unit type and range, hits, big hits, deaths. */
+  private eventSound(ev: FrameEvent, arena: ArenaRenderer): void {
+    switch (ev.type) {
+      case 'fire': {
+        const info = arena.instance(ev.instanceId);
+        if (ev.melee) this.sound.play('swing');
+        else this.sound.play('shoot', { pitch: info ? shotPitch(info.stats) : 440 });
+        break;
+      }
+      case 'hit': {
+        const target = arena.instance(ev.targetId);
+        this.sound.play(target && isBigHit(ev.damage, target.stats.maxHealth) ? 'bigHit' : 'hit');
+        break;
+      }
+      case 'death':
+        this.sound.play('death');
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** The countdown beeps: the last 5 seconds of PLAN/PLACEMENT timers and of a live battle. */
+  private watchCountdown(): void {
+    const s = this.snap;
+    const st = s.state;
+    let key = '';
+    let secs: number | null = null;
+    if (st && (st.phase === 'PLAN' || st.phase === 'PLACEMENT')) {
+      key = `${st.phase}:${st.round}`;
+      secs = liveSecondsLeft(st.timer.secondsLeft, s.stateAt, st.timer.paused, performance.now());
+    } else if (st?.phase === 'BATTLE' && !s.replay && this.arena.instanceIds.length > 0 && s.revealAt === null) {
+      const total = s.playback?.totalTicks ?? s.reveal?.totalTicks ?? 0;
+      key = `BATTLE:${st.round}`;
+      secs = total ? battleSecondsLeft(this.arena.tick, total, s.ticksPerSecond) : null;
+    }
+    const prev = this.lastCount.key === key ? this.lastCount.secs : null;
+    this.lastCount = { key, secs };
+    const cue = countdownCue(prev, secs);
+    if (cue) this.sound.play(cue.sfx, { force: true });
+  }
+
+  setMuted(muted: boolean): void {
+    this.sound.setMuted(muted);
+  }
+
+  toggleMuted(): void {
+    this.sound.toggleMuted();
+  }
+
+  // -------------------------------------------------------------------------
+  // Join poster and the /admin remote
+  // -------------------------------------------------------------------------
+
+  /** Show, hide or (no argument) toggle the full-screen join poster. */
+  setPoster(show?: boolean): void {
+    const next = show ?? !this.snap.poster;
+    if (next === this.snap.poster) return;
+    this.set({ poster: next });
+    if (next) {
+      void this.loadJoin();
+      void getSetupInfo().then(
+        (setup) => this.set({ setup }),
+        () => undefined,
+      );
+    }
+  }
+
+  private onCommand(cmd: ScreenCommandDTO): void {
+    switch (cmd.action) {
+      case 'poster':
+        this.setPoster(cmd.show);
+        break;
+      case 'replay':
+        this.setPoster(false);
+        if (cmd.speed) this.setReplaySpeed(cmd.speed);
+        this.playReplay(cmd.speed);
+        break;
+      case 'replaySpeed':
+        this.setReplaySpeed(cmd.speed);
+        break;
+      case 'replayPause':
+        this.toggleReplayPause();
+        break;
     }
   }
 
   private onReveal(reveal: BattleRevealDTO): void {
     this.cancelPendingReveal();
-    this.set({ reveal, end: null, replay: null, suddenDeathAt: null });
+    this.set({ reveal, end: null, suddenDeathAt: null });
+    this.replays.clear();
+    this.watchedSuddenDeath = false;
     const midBattle = (this.snap.state?.battle?.tick ?? 0) > 0;
     if (midBattle) {
       this.arena.setReveal(reveal);
@@ -215,6 +403,11 @@ export class ScreenController {
     // "3-2-1 CLASH!": units drop in on the last count, frames follow (~3 s).
     this.pendingFrames = [];
     this.set({ revealAt: performance.now() });
+    // 3 · 2 · 1 beeps and the CLASH! hit, on the audio clock in step with the overlay.
+    REVEAL_STEPS.forEach((step, i) => {
+      const sfx = revealCue(step);
+      if (sfx) this.sound.play(sfx, { delayMs: i * REVEAL_STEP_MS, force: true });
+    });
     // Build the floor and bake the sprites now, not on the drop-in frame.
     this.arena.prewarm(reveal);
     this.dropTimer = setTimeout(() => this.applyReveal(), REVEAL_DROP_AT_MS);
@@ -276,11 +469,25 @@ export class ScreenController {
   // Sudden death and toasts
   // -------------------------------------------------------------------------
 
+  /** Polled every 100 ms: sudden death, countdown beeps, replay end. */
+  private watch(): void {
+    this.watchSuddenDeath();
+    this.watchCountdown();
+    this.replays.sync();
+  }
+
+  /** Set once per battle (or replay) so a banner that timed out doesn't come back. */
+  private watchedSuddenDeath = false;
+
   private watchSuddenDeath(): void {
     const s = this.snap;
-    const live = s.state?.phase === 'BATTLE' && !s.replay;
-    if (!live || s.suddenDeathAt !== null || this.arena.instanceIds.length === 0) return;
-    if (this.arena.tick >= s.suddenDeathTick) this.set({ suddenDeathAt: performance.now() });
+    const live = (s.state?.phase === 'BATTLE' && !s.replay) || !!(s.replay?.playing && !s.replay.paused);
+    if (!live || this.watchedSuddenDeath || s.suddenDeathAt !== null || this.arena.instanceIds.length === 0) return;
+    if (this.arena.tick >= s.suddenDeathTick && this.arena.tick < this.arena.endTick - 1) {
+      this.watchedSuddenDeath = true;
+      this.set({ suddenDeathAt: performance.now() });
+      this.sound.play('siren', { force: true });
+    }
   }
 
   toast(text: string, level: ScreenToast['level'], seat: number): void {
@@ -293,54 +500,33 @@ export class ScreenController {
   // Replay (RESULTS / MATCH_RESULTS)
   // -------------------------------------------------------------------------
 
-  async loadReplay(round: number, opts: { atEnd?: boolean; speed?: 1 | 2 } = {}): Promise<void> {
-    const speed = opts.speed ?? this.snap.replay?.speed ?? 1;
-    this.set({ replay: { round, speed, paused: false, loading: true, playing: false } });
-    try {
-      const replay = await api.replay(round);
-      if (!this.snap.replay || this.snap.replay.round !== round) return;
-      this.set({ reveal: replay.reveal });
-      this.arena.loadReplay(replay);
-      this.arena.setPlayback({ speed });
-      if (opts.atEnd) {
-        this.arena.seek(replay.end.endTick);
-        this.arena.setPlayback({ paused: true });
-      }
-      this.set({ replay: { round, speed, paused: !!opts.atEnd, loading: false, playing: !opts.atEnd } });
-    } catch {
-      this.set({ replay: null });
-      if (!opts.atEnd) this.toast("Couldn't load the replay.", 'warn', -1);
-    }
-  }
-
-  /** The Replay button: play the last battle from the start. */
-  playReplay(): void {
+  /** The Replay button / R key / admin remote: play the last battle from the start. */
+  playReplay(speed?: 1 | 2): void {
     const round = this.snap.state?.lastBattle?.round ?? this.snap.end?.round;
-    if (round) void this.loadReplay(round, { speed: this.snap.replay?.speed ?? 1 });
+    if (speed) this.replays.setSpeed(speed);
+    void this.replays.play(round);
   }
 
   setReplaySpeed(speed: 1 | 2): void {
-    this.arena.setPlayback({ speed });
-    if (this.snap.replay) this.set({ replay: { ...this.snap.replay, speed } });
+    this.replays.setSpeed(speed);
   }
 
   toggleReplayPause(): void {
-    const r = this.snap.replay;
-    if (!r || r.loading) return;
-    if (r.paused && this.arena.tick >= this.arena.endTick - 1) {
-      this.playReplay();
-      return;
-    }
-    this.arena.setPlayback({ paused: !r.paused });
-    this.set({ replay: { ...r, paused: !r.paused } });
+    this.replays.togglePause();
+  }
+
+  /** Progress-bar click: jump to that point of the replay. */
+  seekReplay(fraction: number): void {
+    this.replays.seekFraction(fraction);
+  }
+
+  /** 0..1 through the replay (progress bar). */
+  replayProgress(): number {
+    return this.replays.progress();
   }
 
   /** Mark the replay finished once the clock reaches the end (polled by the view). */
   syncReplay(): void {
-    const r = this.snap.replay;
-    if (r && r.playing && !r.loading && this.arena.tick >= this.arena.endTick - 0.5) {
-      this.arena.setPlayback({ paused: true });
-      this.set({ replay: { ...r, playing: false, paused: true } });
-    }
+    this.replays.sync();
   }
 }

@@ -35,6 +35,10 @@ const lerp = (a: number, b: number, f: number): number => a + (b - a) * f;
 /** Sorted, de-duplicated frames with time lookup and interpolation. */
 export class FrameBuffer {
   private frames: FrameDTO[] = [];
+  /** Id lookups of the last "next" frame sampled: rendering samples it ~3 times per frame batch. */
+  private nextOf: FrameDTO | null = null;
+  private nextUnits = new Map<string, FrameDTO['units'][number]>();
+  private nextProjectiles = new Map<number, FrameProjectile>();
 
   get length(): number {
     return this.frames.length;
@@ -51,6 +55,16 @@ export class FrameBuffer {
 
   clear(): void {
     this.frames = [];
+    this.nextOf = null;
+  }
+
+  private indexNext(b: FrameDTO): void {
+    if (this.nextOf === b) return;
+    this.nextOf = b;
+    this.nextUnits.clear();
+    for (const u of b.units) this.nextUnits.set(u[0], u);
+    this.nextProjectiles.clear();
+    for (const p of b.projectiles) this.nextProjectiles.set(p.id, p);
   }
 
   /** Add frames (any order; a frame with a known `t` replaces the old one). */
@@ -109,13 +123,14 @@ export class FrameBuffer {
       };
     }
     const f = Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t)));
-    const next = new Map(b.units.map((u) => [u[0], u]));
+    this.indexNext(b);
+    const next = this.nextUnits;
     const units = a.units.map(([id, x, y, hp, flags]): SampledUnit => {
       const n = next.get(id);
       if (!n) return { id, x, y, hp, flags };
       return { id, x: lerp(x, n[1], f), y: lerp(y, n[2], f), hp: lerp(hp, n[3], f), flags: n[4] };
     });
-    const nextP = new Map(b.projectiles.map((p) => [p.id, p]));
+    const nextP = this.nextProjectiles;
     const projectiles = a.projectiles.map((p): SampledProjectile => {
       const n = nextP.get(p.id);
       return n ? { ...p, x: lerp(p.x, n.x, f), y: lerp(p.y, n.y, f) } : { ...p };

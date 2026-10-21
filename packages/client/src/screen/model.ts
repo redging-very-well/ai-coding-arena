@@ -305,3 +305,61 @@ export function countUp(target: number, elapsedMs: number, durationMs = 1200): n
   const t = Math.max(0, elapsedMs / durationMs);
   return Math.round(target * (1 - (1 - t) ** 3));
 }
+
+// ---------------------------------------------------------------------------
+// Results animation timing (shared by the view and the badge-pop sounds)
+// ---------------------------------------------------------------------------
+
+/** The points count-up of ranking row `i` starts this long after the ranking shows. */
+export function countUpStartMs(i: number): number {
+  return 300 + i * 250;
+}
+
+/** Badge `j` of ranking row `i` pops in this long after the ranking shows (after its row's count-up). */
+export function badgePopDelayMs(i: number, j: number): number {
+  return 1600 + i * 250 + j * 300;
+}
+
+/** Every badge pop of a ranking (rows in display order), in time order: one "pop" sound each. */
+export function badgePopSchedule(rows: ReadonlyArray<{ badges: readonly unknown[] }>): number[] {
+  const out: number[] = [];
+  rows.forEach((r, i) => r.badges.forEach((_, j) => out.push(badgePopDelayMs(i, j))));
+  return out.sort((a, b) => a - b);
+}
+
+/**
+ * The badge "pop" sounds of RESULTS. Only the free-for-all ranking staggers
+ * its badges; the team tables and reduced motion show them all at once, so
+ * those get a single pop right away (none without badges).
+ */
+export function resultsBadgePops(
+  rows: ReadonlyArray<{ badges: readonly unknown[] }>,
+  opts: { teamMode: boolean; reducedMotion: boolean },
+): number[] {
+  if (!opts.teamMode && !opts.reducedMotion) return badgePopSchedule(rows);
+  return rows.some((r) => r.badges.length > 0) ? [0] : [];
+}
+
+/**
+ * What players finished between two state pushes (projector sounds): how many
+ * became ready (PLACEMENT, a chime) and how many other status ticks turned on
+ * (a new unit or a picked army in PLAN, a blip). Only within the same phase.
+ */
+export function newlyDone(
+  prev: readonly PlayerStatusDTO[] | null | undefined,
+  next: readonly PlayerStatusDTO[],
+  phase: Phase,
+): { ready: number; ticks: number } {
+  if (!prev) return { ready: 0, ticks: 0 };
+  const before = new Map(prev.map((p) => [p.id, p]));
+  let ready = 0;
+  let ticks = 0;
+  for (const p of next) {
+    const b = before.get(p.id);
+    if (!b) continue;
+    if (phase === 'PLACEMENT' && p.ready && !b.ready) ready++;
+    if (phase === 'PLAN' && p.submitted && !b.submitted) ticks++;
+    if ((phase === 'PLAN' || phase === 'PLACEMENT') && p.selected && !b.selected) ticks++;
+  }
+  return { ready, ticks };
+}

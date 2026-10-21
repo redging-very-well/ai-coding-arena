@@ -4,7 +4,7 @@
 //
 // Pushes: `state` (on change, coalesced, plus 1 Hz timer ticks), `private`
 // (own data, coalesced per player), `battle:reveal`, `battle:frames`,
-// `battle:end`, `toast`, `kicked`.
+// `battle:end`, `toast`, `kicked`, `screen` (projector remote).
 //
 // Team mode (§9.2): when a member's private data changes, every teammate's
 // `private` (with the `team` block) is re-sent too, at most 300 ms later. The
@@ -20,6 +20,7 @@ import {
   type BattleRevealDTO,
   type FrameDTO,
   type PlaybackDTO,
+  type ScreenCommandDTO,
   type ServerWsMessage,
   type ViewerRole,
 } from '@pixel-clash/shared';
@@ -302,6 +303,18 @@ export class WsHub implements Notifier {
       c.role = 'screen';
       c.ws.close(4001, 'session ended');
     }
+  }
+
+  /** Projector remote (§12.2): only 'screen' sockets get it (no game data in it). */
+  screenCommand(command: ScreenCommandDTO): number {
+    const text = JSON.stringify({ type: 'screen', command } satisfies ServerWsMessage);
+    let n = 0;
+    for (const c of this.clients) {
+      if (c.role !== 'screen') continue;
+      this.sendRaw(c, text);
+      n++;
+    }
+    return n;
   }
 
   isConnected(playerId: string): boolean {

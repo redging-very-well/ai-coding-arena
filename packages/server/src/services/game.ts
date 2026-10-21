@@ -10,6 +10,7 @@ import {
   type FrameDTO,
   type GameConfig,
   type PlaybackDTO,
+  type ScreenCommandDTO,
 } from '@pixel-clash/shared';
 import type { RunnerFactory } from '../sandbox/runner.js';
 import type { SessionOpener } from '../sandbox/session.js';
@@ -48,6 +49,8 @@ export interface Notifier {
   isConnected(playerId: string): boolean;
   /** Open WebSocket connections of any role (diagnostics, GET /admin/metrics). */
   clientCount?(): number;
+  /** A facilitator command for the projector (§12.2); returns how many sockets got it. */
+  screenCommand?(command: ScreenCommandDTO): number;
 }
 
 const NOOP_NOTIFIER: Notifier = {

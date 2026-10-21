@@ -66,6 +66,8 @@
 //   GET  /admin/overview              -> AdminOverviewDTO
 //   POST /admin/wipe {confirm:'WIPE'} -> {ok:true}
 //   PUT  /admin/setup {claudeBoxHost?, preferredUrl?} (null clears) -> SetupInfoDTO
+//   POST /admin/screen ScreenCommandDTO -> {ok:true, screens} (projector remote: replay, 1x/2x, join poster;
+//                                        replay only in RESULTS/MATCH_RESULTS; BAD_REQUEST for an unknown action)
 //
 // WebSocket /ws: send ClientWsMessage `{type:'hello', role}` after open; the
 // cookie decides who you are (a 'player' hello without a valid session is
@@ -770,6 +772,7 @@ export interface PrivateStateDTO {
  *  - 'battle:end'    only when playback reaches the final frame (or Skip).
  *  - 'toast'         short message for the recipient.
  *  - 'kicked'        this player was removed; the session is gone.
+ *  - 'screen'        a facilitator command for the projector (replay, join poster), §12.2.
  */
 export type ServerWsMessage =
   | { type: 'hello'; role: ViewerRole; player?: PlayerDTO }
@@ -780,7 +783,43 @@ export type ServerWsMessage =
   | { type: 'battle:end'; data: BattleEndDTO }
   | { type: 'toast'; level: 'info' | 'warn' | 'error'; message: string }
   | { type: 'kicked' }
-  | { type: 'pong' };
+  | { type: 'pong' }
+  | { type: 'screen'; command: ScreenCommandDTO };
+
+/**
+ * POST /admin/screen → 'screen' WS message (§12.2): the facilitator drives the
+ * projector from /admin. Carries no game data.
+ *  - replay       play the last battle's replay from the start (RESULTS/MATCH_RESULTS).
+ *  - replaySpeed  1x / 2x for the running replay.
+ *  - replayPause  pause/resume the replay.
+ *  - poster       the full-screen join poster: show, hide, or toggle (`show` left out).
+ */
+export type ScreenCommandDTO =
+  | { action: 'replay'; speed?: 1 | 2 }
+  | { action: 'replaySpeed'; speed: 1 | 2 }
+  | { action: 'replayPause' }
+  | { action: 'poster'; show?: boolean };
+
+/** A validated ScreenCommandDTO from an untrusted body, or null. */
+export function parseScreenCommand(raw: unknown): ScreenCommandDTO | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const b = raw as { action?: unknown; speed?: unknown; show?: unknown };
+  const speed = b.speed === 1 || b.speed === 2 ? b.speed : undefined;
+  switch (b.action) {
+    case 'replay':
+      if (b.speed !== undefined && speed === undefined) return null;
+      return speed ? { action: 'replay', speed } : { action: 'replay' };
+    case 'replaySpeed':
+      return speed ? { action: 'replaySpeed', speed } : null;
+    case 'replayPause':
+      return { action: 'replayPause' };
+    case 'poster':
+      if (b.show !== undefined && typeof b.show !== 'boolean') return null;
+      return typeof b.show === 'boolean' ? { action: 'poster', show: b.show } : { action: 'poster' };
+    default:
+      return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Admin

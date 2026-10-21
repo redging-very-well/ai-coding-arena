@@ -1,7 +1,7 @@
 // Facilitator REST routes (cookie pc_admin), mounted at /api/admin.
 
 import { Router } from 'express';
-import { ADMIN_COOKIE, deepMerge, migrateConfigPatch, safeParseConfig, type AdminConfigResponse, type DeepPartial, type GameConfig } from '@pixel-clash/shared';
+import { ADMIN_COOKIE, deepMerge, parseScreenCommand, migrateConfigPatch, safeParseConfig, type AdminConfigResponse, type DeepPartial, type GameConfig } from '@pixel-clash/shared';
 import type { Game } from '../services/game.js';
 import { COOKIE_OPTS, body, cookieOf, requireAdmin, send, sendError, sendValidation, wrap } from './common.js';
 
@@ -119,6 +119,24 @@ export function adminRoutes(game: Game): Router {
 
   r.post('/units/:playerId/:unitId/sprite', (req, res) => {
     send(res, game.units.setSpriteHidden(String(req.params.playerId), String(req.params.unitId), body(req).hidden === true));
+  });
+
+  // Projector remote (§12.2): replay on /screen and the join poster.
+  r.post('/screen', (req, res) => {
+    const command = parseScreenCommand(req.body);
+    if (!command) {
+      return sendError(res, {
+        code: 'BAD_REQUEST',
+        message: 'Unknown screen command.',
+        hint: "Send {action:'replay'|'replaySpeed'|'replayPause'|'poster'}.",
+      });
+    }
+    const phase = game.store.match.phase;
+    if (command.action.startsWith('replay') && phase !== 'RESULTS' && phase !== 'MATCH_RESULTS') {
+      return sendError(res, { code: 'PHASE_CLOSED', message: 'The replay is shown after a battle (RESULTS).', details: { phase } });
+    }
+    const screens = game.notifier.screenCommand?.(command) ?? 0;
+    res.json({ ok: true, screens });
   });
 
   r.get('/overview', (_req, res) => {

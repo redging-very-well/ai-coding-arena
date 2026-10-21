@@ -1,15 +1,16 @@
 // Always-visible header (plan §12.1): name + seat colour and number badge,
 // team chip (team mode), phase banner with countdown, round, map, points, and
-// the connection dot.
+// the sound toggle (muted by default) and the connection dot.
 
 import { mapName, teamOfPlayer } from '../../common/maps.js';
 import { seatStyle } from '../../common/seats.js';
 import { cx, formatClock, PHASE_TEXT, ticksToSeconds } from '../../common/ui.js';
-import { useStore } from '../store.js';
+import { getStore, useStore } from '../store.js';
 import { TeamChip } from './TeamPanel.js';
 
 export function Header() {
   const st = useStore();
+  const sound = getStore().sound;
   const g = st.game;
   const p = st.player;
   const seat = seatStyle(p?.seat);
@@ -73,7 +74,17 @@ export function Header() {
           <span class="small dim">pts</span>
         </div>
       )}
-      <span class={cx('conn', st.socket)} title={st.socket === 'open' ? 'Connected' : 'Reconnecting…'} />
+      <div class="hdr-end">
+        <button
+          class={cx('sound-btn', sound.muted && 'off')}
+          onClick={() => sound.toggleMuted()}
+          aria-pressed={!sound.muted}
+          title={sound.muted ? 'Sounds are off. Click to turn them on' : 'Sounds are on. Click to mute'}
+        >
+          {sound.muted ? '🔇' : '🔊'}
+        </button>
+        <span class={cx('conn', st.socket)} title={st.socket === 'open' ? 'Connected' : 'Reconnecting…'} />
+      </div>
     </header>
   );
 }

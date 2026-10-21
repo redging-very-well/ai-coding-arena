@@ -125,6 +125,18 @@ header.top {
 .clock.paused { opacity: 0.6; }
 .points { display: flex; flex-direction: column; align-items: center; color: var(--accent); }
 .points .pixel { font-size: 18px; }
+.hdr-end { display: flex; align-items: center; gap: 0.5rem; }
+.sound-btn {
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.3rem 0.45rem;
+  background: var(--panel-2, transparent);
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+}
+.sound-btn.off { opacity: 0.65; }
 .conn { width: 10px; height: 10px; border-radius: 50%; background: var(--good); }
 .conn.connecting, .conn.closed { background: var(--warn); animation: pc-pulse 1s steps(2) infinite; }
 .conn.kicked { background: var(--bad); }
