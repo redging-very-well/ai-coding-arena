@@ -342,6 +342,22 @@ describe('cost curve: messages follow curveK', () => {
     expect(tip(4)).toContain('Maxing a stat costs 5× its normal price (half its max costs 2×)');
     expect(tip(0)).not.toMatch(/3×|1\.5×|Maxing a stat/);
   });
+
+  it('the contract sudden-death tip follows suddenDeath config, like get_rules', () => {
+    const sdTip = (cfg: ReturnType<typeof parseConfig>) => buildContract(cfg).notes.find((n) => /^Tip: .*safe circle/.test(n))!;
+    const def = parseConfig({});
+    expect(sdTip(def)).toContain(`After ${def.suddenDeath.startTick / 60} s`);
+    expect(sdTip(def)).toContain(`${def.suddenDeath.damagePctPerSecond}% of max health`);
+    const custom = parseConfig({ suddenDeath: { startTick: 2400, damagePctPerSecond: 5 } });
+    expect(sdTip(custom)).toContain('After 40 s');
+    expect(sdTip(custom)).toContain('5% of max health');
+    expect(buildRules(custom).suddenDeath.text).toContain('From 40 s');
+  });
+
+  it('get_rules carries the live seat limit (the projector hides its join card at it)', () => {
+    expect(buildRules(parseConfig({})).maxPlayers).toBe(8);
+    expect(buildRules(parseConfig({ match: { maxPlayers: 6 } })).maxPlayers).toBe(6);
+  });
 });
 
 describe('cost curve: config guards', () => {

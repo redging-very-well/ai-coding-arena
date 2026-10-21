@@ -177,7 +177,7 @@ describe('integration: validator → ivm runner → engine (M2 acceptance)', () 
     at(2, 0, T()), at(0, 2, T()), at(2, 2, T()),
   ];
 
-  it('template vs template (4 soldiers + 3 towers each) runs 5400 ticks in < 2 s and produces a ranking', async () => {
+  it('template vs template (4 soldiers + 3 towers each) runs a full-length battle in < 2 s and produces a ranking', async () => {
     const config = DEFAULT_CONFIG;
     const zones = assignZones(['a', 'b'], 0);
     const specs: PlayerSpec[] = ['a', 'b'].map((id, seat) => ({
@@ -203,10 +203,12 @@ describe('integration: validator → ivm runner → engine (M2 acceptance)', () 
     );
 
     expectCleanRun(result);
-    // The mirrored armies fight in the middle and the towers outlast the
-    // shrinking circle, so the battle runs the full 90 s (§9 sudden death).
-    expect(result.endTick).toBe(config.timers.battleTicks);
-    expect(result.endReason).toBe('timeout');
+    // The mirrored armies fight in the middle; the towers stay home, and the
+    // shrinking circle (§9 sudden death, from 50 s at 7%/s since M6) takes
+    // both armies' last towers on the same tick shortly before 90 s.
+    expect(result.endTick).toBeGreaterThan(config.suddenDeath.startTick + 1800);
+    expect(result.endTick).toBeLessThanOrEqual(config.timers.battleTicks);
+    expect(result.endReason).toBe('elimination');
     expect(wallMs).toBeLessThan(2000);
     // Combat really happened through the sandbox.
     // (The towers sit too far back to reach the melee in the middle.)
@@ -217,7 +219,7 @@ describe('integration: validator → ivm runner → engine (M2 acceptance)', () 
     for (const r of result.ranking) expect([1, 2]).toContain(r.place);
     expect(frames[0]!.t).toBe(0);
     expect(frames[frames.length - 1]!.t).toBe(result.endTick);
-    expect(frames.length).toBe(config.timers.battleTicks / config.sim.frameEveryTicks + 1);
+    expect(frames.length).toBe(Math.ceil(result.endTick / config.sim.frameEveryTicks) + 1);
 
     // Parity: the fake runner's template brains (used by sim.test.ts) mirror
     // the real templates, so the same battle must be bit-identical. This

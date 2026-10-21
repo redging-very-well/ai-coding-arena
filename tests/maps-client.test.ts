@@ -28,7 +28,7 @@ import { revealMap, revealZones, zoneTint } from '../packages/client/src/common/
 import { FLOOR_CLIFF_PX, FLOOR_K, edgeProps, fitIso, floorColorAt, floorTerrain, renderFloor, toScreen } from '../packages/client/src/common/render/iso.js';
 import { NEUTRAL_SEAT, SEATS, deltaE, patternDash, seatStyle, teamLook } from '../packages/client/src/common/seats.js';
 import { isFrontCell, towardCentre, zoneGrid } from '../packages/client/src/play/logic.js';
-import { mapPreview, roundOneOwners, styleOptions, styleTip, teamModeOptions, unevenNote } from '../packages/client/src/admin/mapPreview.js';
+import { mapPreview, roundOneOwners, selectedStyleOption, styleOptions, styleTip, teamModeOptions, unevenNote } from '../packages/client/src/admin/mapPreview.js';
 import { freeTiles, teamArmyValues, teamRankRows, teamStandings, type ArmyValue } from '../packages/client/src/screen/model.js';
 
 const zonesOfAllMaps = (): MapZone[] => allMapLayouts().flatMap((l) => l.zones);
@@ -279,6 +279,15 @@ describe('admin map preview (§12.3)', () => {
     expect(styleOptions(1)[0]!.label).toBe('Duel (auto for 2 players)');
     expect(teamModeOptions(8).map((o) => o.label)).toEqual(['Free-for-all', '2 teams (4v4)', '4 teams / teams of 2 (2v2v2v2)']);
     expect(teamModeOptions(5).map((o) => o.value)).toEqual(['ffa']);
+  });
+
+  it('shows a draft override equal to the default (or no longer valid) as "auto", not a blank select', () => {
+    // Visual QA: PUT /admin/match/setup {mapStyle:'duel'} with 2 players left the Map dropdown blank.
+    expect(selectedStyleOption(styleOptions(2), 'duel')).toBe('');
+    expect(selectedStyleOption(styleOptions(8), 'ring')).toBe('');
+    expect(selectedStyleOption(styleOptions(8), 'lanes')).toBe('lanes');
+    expect(selectedStyleOption(styleOptions(5), 'lanes')).toBe(''); // Lanes needs 4, 6 or 8
+    expect(selectedStyleOption(styleOptions(4), null)).toBe('');
   });
 
   it("shows each player's round-1 zone, as the server assigns it", () => {

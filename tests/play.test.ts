@@ -294,7 +294,7 @@ describe('round score in kid language (§9, §12.4)', () => {
     const none = scoreLines({ place: 1, placePoints: 3, damage: 40, damageBonus: 0, valueDestroyed: 0, valueBonus: 0 });
     expect(none[0]!.text).toBe('You came 1st: +3 points!');
     expect(none[1]!.text).toBe('You dealt 40 damage: +0 points. Hit harder for a bonus!');
-    expect(none[2]!.text).toContain('no KO points');
+    expect(none[2]!.text).toContain('No knockouts this time');
   });
 
   it('a result saved before the scoring metrics reads as place points only (no undefined / NaN)', () => {
@@ -305,8 +305,8 @@ describe('round score in kid language (§9, §12.4)', () => {
     const lines = scoreLines(legacy).map((l) => l.text);
     expect(lines).toEqual([
       'You came 1st: +3 points!',
-      'Your army did no damage this time: no damage points.',
-      "You didn't knock out any enemy units: no KO points.",
+      'No damage this time: +0 points. Next battle!',
+      'No knockouts this time: +0 points. Next battle!',
     ]);
     expect(lines.join(' ')).not.toMatch(/undefined|NaN/);
   });

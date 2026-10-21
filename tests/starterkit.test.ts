@@ -88,15 +88,14 @@ describe('starter-kit templates (§11)', () => {
     };
     expect(settings.enabledMcpjsonServers).toEqual(['pixel-clash']);
     expect(settings.permissions.allow).toContain('mcp__pixel-clash');
-    // curl is pre-approved only toward the game server's API (§11.1).
-    expect(settings.permissions.allow).toContain('Bash(curl -sS -X POST http://192.168.8.10:8080/api/:*)');
-    expect(settings.permissions.allow).toContain('Bash(curl -sS http://192.168.8.10:8080/api/:*)');
-    expect(settings.permissions.allow.some((r) => r.startsWith('Bash(curl:'))).toBe(false);
-    // Every curl command in CLAUDE.md §9 matches one of the rules.
-    const prefixes = settings.permissions.allow.filter((r) => r.startsWith('Bash(')).map((r) => r.slice(5, -3));
-    const curls = [...fill(claudeMd).matchAll(/^curl .*$/gm)].map((m) => m[0]);
-    expect(curls.length).toBeGreaterThan(0);
-    for (const cmd of curls) expect(prefixes.some((p) => cmd.startsWith(p))).toBe(true);
+    // No Bash rules at all: a prefix rule can't confine curl to the game API
+    // (anything may follow the URL), so the §9 curl fallback asks an adult (§11).
+    expect(settings.permissions.allow.some((r) => r.startsWith('Bash('))).toBe(false);
+    const md = fill(claudeMd);
+    expect([...md.matchAll(/^curl .*$/gm)].length).toBeGreaterThan(0);
+    expect(md).toMatch(/not pre-approved, so each one asks for permission/);
+    // §3's "tools only" rule must not forbid the §9 fallback.
+    expect(md).toContain('(or the §9 `curl` commands if the tools are missing)');
   });
 
   it('only known placeholders are used', () => {

@@ -118,4 +118,18 @@ describe('review regressions', () => {
     const towerStr = checkStats({ ...soldier, type: 'tower', speed: 'zero' }, bounds);
     expect(!towerStr.ok && towerStr.errors[0]!.fix).toContain('Towers never move: set this.speed = 0.');
   });
+
+  it('kid hints for numbers out of range are concrete (§12.4)', () => {
+    const hint = (stats: Record<string, unknown>) => {
+      const r = checkStats({ ...soldier, ...stats }, bounds);
+      return !r.ok && kidHintForIssue(r.errors[0]!);
+    };
+    const maxRange = bounds.range.max;
+    expect(hint({ range: maxRange + 100 })).toBe(`Your unit's range is too big! (${maxRange + 100}, the max is ${maxRange}) Ask Claude to lower it.`);
+    expect(hint({ damage: bounds.damage.max + 1 })).toMatch(/WAY too hard/);
+    expect(hint({ attackCooldown: bounds.attackCooldown.min - 1 })).toMatch(/attacks too fast/);
+    expect(kidHintForIssue({ code: 'UNIT_TOO_EXPENSIVE', field: 'cost', value: 612, allowed: { max: 500 }, message: '', fix: '' })).toBe(
+      'Your unit costs too much! ($612, the max is $500) Ask Claude to make it cheaper.',
+    );
+  });
 });

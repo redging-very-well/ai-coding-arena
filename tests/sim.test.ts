@@ -80,7 +80,8 @@ describe('battles', () => {
     const { result } = await battle(
       [
         { playerId: 'a', seat: 0, zone: 'TL', units: TEMPLATE_UNITS, placements: ARMY_7, brains: TEMPLATE_BRAINS },
-        { playerId: 'b', seat: 1, zone: 'BR', units: TEMPLATE_UNITS, placements: ARMY_7.slice(0, 5), brains: TEMPLATE_BRAINS },
+        // b: the same 4 soldiers, but only its back-corner tower, which sudden death reaches first.
+        { playerId: 'b', seat: 1, zone: 'BR', units: TEMPLATE_UNITS, placements: [...ARMY_7.slice(0, 4), at(2, 2, 'tower')], brains: TEMPLATE_BRAINS },
       ],
       DEFAULT_CONFIG,
     );

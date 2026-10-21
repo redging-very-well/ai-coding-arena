@@ -143,11 +143,11 @@ describe('ranges and the safe circle', () => {
     expect(inRange(soldier, { ...tower, x: 44.6 })).toBe(false);
   });
 
-  it('safe circle shrinks linearly 570 → 60 from tick 3600 to 5400', () => {
+  it('safe circle shrinks linearly 570 → 60 from tick 3000 to 5400', () => {
     const sd = DEFAULT_CONFIG.suddenDeath;
     expect(safeZoneRadius(0, sd)).toBe(570);
-    expect(safeZoneRadius(3600, sd)).toBe(570);
-    expect(safeZoneRadius(4500, sd)).toBe(315);
+    expect(safeZoneRadius(3000, sd)).toBe(570);
+    expect(safeZoneRadius(4200, sd)).toBe(315);
     expect(safeZoneRadius(5400, sd)).toBe(60);
     expect(safeZoneRadius(6000, sd)).toBe(60);
     // 570 covers the whole arena (corner distance ≈ 565.7).
