@@ -1,6 +1,6 @@
 // The headless battle engine (plan §9).
 //
-// The engine owns all game rules. It talks to kid code only through the
+// The engine owns all game rules. It talks to player code only through the
 // PlayerRunner interface (sandbox/runner.ts) and owns the sandbox POLICY:
 // strike counting, disabling culprit units / whole players, and the report.
 //
@@ -320,7 +320,7 @@ export class BattleEngine {
 
   /**
    * Every unit's report counters as they were at recorded frame time `t`
-   * (Skip ranks and reports from the frame the kids were shown, §9).
+   * (Skip ranks and reports from the frame the players were shown, §9).
    */
   countersAt(t: number): CountersAtTick {
     const units = new Map<string, UnitCounters>();
@@ -644,7 +644,7 @@ export class BattleEngine {
 
     if (res.status === 'timeout' && res.hostStall) {
       // The sandbox process was frozen (OS / VM scheduler) for most of the
-      // tick: the units idle, but it's not the kid's code, so no strike and
+      // tick: the units idle, but it's not the player's code, so no strike and
       // no timeout count (§8).
       this.incident(p, tick, 'timeout', 'The game computer paused for a moment (not your code); all units idled this tick.');
       return actions;
@@ -654,7 +654,7 @@ export class BattleEngine {
       p.timeouts += 1;
       const culprit = res.culprit !== undefined ? this.byId.get(res.culprit) : undefined;
       if (culprit && culprit.playerId === p.setup.playerId && !culprit.disabled && culprit.alive) {
-        // One stall can be the host (GC, scheduler), not the kid's code: the
+        // One stall can be the host (GC, scheduler), not the player's code: the
         // first timeout only idles this tick and is reported; a repeat naps.
         // A culprit's own timeouts (forgiven or disabling) don't count toward
         // the player limits, which are for timeouts that CONTINUE after the
@@ -924,7 +924,7 @@ function lastAtOrBefore<T extends { t: number }>(list: readonly T[], tick: numbe
 // ---------------------------------------------------------------------------
 
 /**
- * Skip (§9): the result as of recorded frame `endTick` (the frame the kids were
+ * Skip (§9): the result as of recorded frame `endTick` (the frame the players were
  * shown): survival and living cost from that frame's living units, counters
  * from `counters`, and only the errors and incidents up to that tick. Ranking
  * is left as is (the caller ranks and scores from the frame).

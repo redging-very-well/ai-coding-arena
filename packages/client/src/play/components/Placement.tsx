@@ -110,9 +110,9 @@ export function Placement() {
           dirty.current = false;
           setLocal(null);
           setSaving('error');
-          // The phase just moved on (START): nothing to tell the kid.
+          // The phase just moved on (START): nothing to tell the player.
           if (err instanceof ApiError && err.phaseClosed) return;
-          const msg = err instanceof ApiError ? err.kidMessage : "Couldn't save. Try again!";
+          const msg = err instanceof ApiError ? err.playerMessage : "Couldn't save. Try again!";
           setNote({ text: msg, bad: true });
           store.toast(msg, 'error');
         }
@@ -180,7 +180,7 @@ export function Placement() {
     try {
       await api.setReady(!ready);
     } catch (err) {
-      store.toast(err instanceof ApiError ? err.kidMessage : "Couldn't change READY. Try again!", 'error');
+      store.toast(err instanceof ApiError ? err.playerMessage : "Couldn't change READY. Try again!", 'error');
     } finally {
       setReadyBusy(false);
     }

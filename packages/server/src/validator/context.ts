@@ -1,5 +1,5 @@
 // Shared bits of the validation pipeline: the per-call context and locating
-// a thrown error in the kid's original source.
+// a thrown error in the player's original source.
 
 import type { GameConfig, ValidationError } from '@pixel-clash/shared';
 import type { HarnessError } from '../sandbox/session.js';

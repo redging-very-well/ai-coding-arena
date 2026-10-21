@@ -1,5 +1,5 @@
 // Client-side map and team helpers (plan §9.2, §12): turning the public DTOs
-// back into shared/maps.ts zones, kid words for where a zone sits, map names,
+// back into shared/maps.ts zones, plain words for where a zone sits, map names,
 // and team lookups. DOM-free (imported by tests).
 
 import {
@@ -32,7 +32,7 @@ export function arenaFor(zone: MapZoneDTO, map?: Pick<MapDTO, 'width' | 'zones'>
 }
 
 /**
- * Where a zone sits on the map, in kid words seen top-down (as /screen and
+ * Where a zone sits on the map, in plain words seen top-down (as /screen and
  * the placement grid draw it): "top", "top right", "left", "bottom left", or
  * "middle".
  */

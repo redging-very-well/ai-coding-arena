@@ -75,7 +75,7 @@ export interface Unit extends UnitStats {
 // --- END CONTRACT ---
 
 // ---------------------------------------------------------------------------
-// Engine-side additions (not part of the kid-facing contract text).
+// Engine-side additions (not part of the player-facing contract text).
 // ---------------------------------------------------------------------------
 
 export const UNIT_TYPES: readonly UnitType[] = ['soldier', 'tower'];

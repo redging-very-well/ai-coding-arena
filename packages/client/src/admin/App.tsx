@@ -112,7 +112,7 @@ function Console({ onLoggedOut }: { onLoggedOut: () => void }) {
       </header>
       {sandbox && sandbox !== 'ivm' && (
         <div class="banner-bad" role="alert">
-          Sandbox mode is <b>{sandbox}</b>, not isolated-vm. Kid code is less isolated
+          Sandbox mode is <b>{sandbox}</b>, not isolated-vm. Player code is less isolated
           {sandbox === 'inproc-unsafe' ? ' (UNSAFE: development only, never at the event)' : ''}.
         </div>
       )}

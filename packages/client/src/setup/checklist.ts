@@ -21,7 +21,7 @@ export const CHECKLIST: readonly ChecklistSection[] = [
       { id: 'server-start', title: 'Start the server on the host OS (not the devcontainer)', command: 'npm run build && npm start' },
       { id: 'server-ivm', title: 'The startup banner says sandbox: isolated-vm (no red banner on /admin)' },
       { id: 'server-firewall', title: 'Firewall allows inbound TCP 8080; sleep is disabled' },
-      { id: 'server-reach', title: 'A kid laptop opens the /play address above (scan the QR)' },
+      { id: 'server-reach', title: 'A player laptop opens the /play address above (scan the QR)' },
     ],
   },
   {
@@ -35,7 +35,7 @@ export const CHECKLIST: readonly ChecklistSection[] = [
       {
         id: 'box-up',
         title: 'Start the seat containers (all 8, or only the seats in use)',
-        detail: 'Fewer seats: docker compose up -d seat1 seat2 seat3 (one per kid laptop, matching the seat cards).',
+        detail: 'Fewer seats: docker compose up -d seat1 seat2 seat3 (one per player laptop, matching the seat cards).',
         command: 'docker compose up -d',
       },
       {
@@ -54,11 +54,11 @@ export const CHECKLIST: readonly ChecklistSection[] = [
     ],
   },
   {
-    title: 'Kid laptops',
+    title: 'Player laptops',
     items: [
-      { id: 'kid-cards', title: 'Each laptop has its seat card: /play URL/QR, seat terminal URL and its password' },
-      { id: 'kid-tabs', title: 'Open two tabs per laptop: /play and the seat terminal' },
-      { id: 'kid-projector', title: 'Projector shows /screen in full screen (F11)' },
+      { id: 'laptop-cards', title: 'Each laptop has its seat card: /play URL/QR, seat terminal URL and its password' },
+      { id: 'laptop-tabs', title: 'Open two tabs per laptop: /play and the seat terminal' },
+      { id: 'laptop-projector', title: 'Projector shows /screen in full screen (F11)' },
     ],
   },
   {

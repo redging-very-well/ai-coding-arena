@@ -51,7 +51,7 @@ export function Join() {
               ? 'The game is full right now. Ask a grown-up for help.'
               : e?.code === 'RATE_LIMITED'
                 ? 'Too many tries! Wait a minute, then try again.'
-                : (e?.kidMessage ?? 'Oops, that didn\'t work. Try again!');
+                : (e?.playerMessage ?? 'Oops, that didn\'t work. Try again!');
       setPin('');
       fail(msg);
     } finally {

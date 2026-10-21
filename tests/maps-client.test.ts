@@ -1,6 +1,6 @@
 // Client logic for 2-8 player maps and teams (plan §9.2, §12) that runs
 // without a DOM: the placement grid in its true orientation for every zone of
-// every map (arrow to the centre, front row), kid words for zones, the 8 seat
+// every map (arrow to the centre, front row), plain words for zones, the 8 seat
 // colours and team looks, fit-to-canvas zoom for the bigger arenas, the
 // map-aware floor and props, reveal zones and tints, the admin map preview,
 // and the projector's team helpers.
@@ -96,7 +96,7 @@ describe('placement grid for every map zone (§9.2, §12.1)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Kid words and DTO helpers
+// Plain words and DTO helpers
 // ---------------------------------------------------------------------------
 
 describe('zone words and DTO helpers', () => {
@@ -266,7 +266,7 @@ describe('renderer for bigger arenas (§9.2, §12)', () => {
 // ---------------------------------------------------------------------------
 
 describe('admin map preview (§12.3)', () => {
-  const roster = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `Kid ${i}`, seat: i }));
+  const roster = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, seat: i }));
 
   it('offers only the styles valid for the count, the auto default first', () => {
     // The default is only offered as "auto" (''), never as a pinned override.

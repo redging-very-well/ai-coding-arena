@@ -2,7 +2,7 @@
   "name": "pixel-clash",
   "version": "0.1.0",
   "private": true,
-  "description": "LAN auto-battler where kids design units by prompting Claude Code",
+  "description": "LAN auto-battler where players design units by prompting Claude Code",
   "type": "module",
   "engines": {
     "node": ">=22.13 <23 || >=24 <25"

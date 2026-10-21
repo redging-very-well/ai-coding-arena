@@ -3,7 +3,7 @@
 // warnings, and the invalid-unit error with an "Ask Claude" prompt.
 
 import { useState } from 'preact/hooks';
-import { kidHintFor, kidHintForIssue, sizeOf, type StatBounds, type UnitCardDTO } from '@pixel-clash/shared';
+import { playerHintFor, playerHintForIssue, sizeOf, type StatBounds, type UnitCardDTO } from '@pixel-clash/shared';
 import { resolveSprite } from '../../common/render/sprites.js';
 import { seatStyle } from '../../common/seats.js';
 import { cx, formatMoney } from '../../common/ui.js';
@@ -119,7 +119,7 @@ export function UnitCard(props: UnitCardProps) {
         <ul class="warnings">
           {u.warnings.map((w, i) => (
             <li key={i} title={w.message}>
-              {kidHintFor(w.code, w.field)}
+              {playerHintFor(w.code, w.field)}
             </li>
           ))}
         </ul>
@@ -128,7 +128,7 @@ export function UnitCard(props: UnitCardProps) {
       {invalid && u.error && (
         <div class="unit-error">
           <p>
-            <strong>Can't use this one right now.</strong> {kidHintForIssue(u.error)}
+            <strong>Can't use this one right now.</strong> {playerHintForIssue(u.error)}
           </p>
           {props.borrowedRound === undefined && (
             <CopyButton text={`My unit ${u.name} is invalid: ${u.error.message} Please fix it.`} label="Copy “Ask Claude”" />

@@ -155,7 +155,7 @@ export const ConfigSchema = z.object({
       unitStrikeLimit: posInt(),
       /**
        * Hard timeouts blamed on one unit before that unit is disabled. Below
-       * this the unit's ticks just idle (one stall can be GC, not the kid).
+       * this the unit's ticks just idle (one stall can be GC, not the player).
        */
       timeoutsToDisable: posInt(),
       /** Timeouts in a row (after a culprit was disabled) that disable the player. */

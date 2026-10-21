@@ -324,7 +324,7 @@ describe('ivm runner: memory and crashes', () => {
   });
 });
 
-describe('host hiccups are not the kid\'s fault', () => {
+describe('host hiccups are not the player\'s fault', () => {
   // Regression: the child's tick deadline (hard 12 + grace 10 = 22 ms) used to
   // be a bare wall-clock timer. When the sandbox process was not scheduled for
   // more than ~22 ms mid-tick (a busy laptop, VM preemption), the expired timer
@@ -639,7 +639,7 @@ describe('review regressions (hardening)', () => {
     expect(res).toMatchObject({ status: 'timeout', culprit: '0-0-0' });
   });
 
-  it('kid code cannot reach the harness API: no design swap, no re-entrant tick', async () => {
+  it('player code cannot reach the harness API: no design swap, no re-entrant tick', async () => {
     const r = await create([
       await inlineDesign('a', `export default class A { update() { return { action: 'idle', who: 'a' }; } }`),
       await design('b', 'malicious/design_swap.js'),

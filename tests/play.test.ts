@@ -282,7 +282,7 @@ describe('join form helpers', () => {
   });
 });
 
-describe('round score in kid language (§9, §12.4)', () => {
+describe('round score in friendly language (§9, §12.4)', () => {
   it('explains each part of the points', () => {
     const lines = scoreLines({ place: 2, placePoints: 2, damage: 411.6, damageBonus: 2, valueDestroyed: 300, valueBonus: 1 });
     expect(lines.map((l) => l.text)).toEqual([

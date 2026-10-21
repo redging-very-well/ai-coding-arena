@@ -8,7 +8,7 @@
 //
 // Division of responsibility
 // --------------------------
-// The RUNNER executes kid code and reports FACTS about each tick:
+// The RUNNER executes player code and reports FACTS about each tick:
 //   * which actions/errors each instance produced,
 //   * whether the player's tick timed out (and which instance was running),
 //   * whether it was slow (and which instance was slowest),
@@ -157,7 +157,7 @@ export interface TickInput {
   tick: number;
   /**
    * Sim time in ms (tick * 1000 / 60). Inside the sandbox `Date.now()` returns
-   * this value, so kid code is deterministic (§8).
+   * this value, so player code is deterministic (§8).
    */
   nowMs: number;
   /**
@@ -212,7 +212,7 @@ export interface UnitErrorOutput {
   error: {
     /** The thrown value's message (String(value) for non-Errors), truncated to ~300 chars. */
     message: string;
-    /** 1-based line in the kid's ORIGINAL source when it can be mapped, else in compiled JS. */
+    /** 1-based line in the player's ORIGINAL source when it can be mapped, else in compiled JS. */
     line?: number;
   };
   ms?: number;
@@ -263,7 +263,7 @@ export interface TickResult {
   slow: boolean;
   /**
    * The instance with the largest per-unit time this tick (harness timing via
-   * the real clock, never exposed to kid code). Set when `slow` is true and
+   * the real clock, never exposed to player code). Set when `slow` is true and
    * timings are available; the sim uses it to disable the slowest unit first.
    */
   slowestInstanceId?: string;
@@ -277,7 +277,7 @@ export interface TickResult {
   /**
    * status 'timeout' only: the sandbox process was frozen (not scheduled by
    * the OS or the hypervisor) for most of the tick, so the timeout is the
-   * host's fault, not the kid's code. The tick still idles, but nobody gets a
+   * host's fault, not the player's code. The tick still idles, but nobody gets a
    * strike and it counts toward no timeout limit (§8: "one stall can be the
    * host").
    */

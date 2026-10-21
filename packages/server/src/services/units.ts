@@ -5,7 +5,7 @@
 //
 // `private` is pushed to all the owner's sockets after every submit, retire,
 // re-price and invalidation (§10.3), so a unit Claude submits shows up on the
-// kid's open /play page within a second.
+// player's open /play page within a second.
 
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';

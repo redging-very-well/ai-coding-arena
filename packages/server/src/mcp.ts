@@ -25,24 +25,24 @@ import { originAllowlist } from './util/lan.js';
 import { log } from './util/log.js';
 
 export const MCP_INSTRUCTIONS = [
-  'Pixel Clash: you help a kid (9-13) design battle units. The kid only talks to you; never ask them to type or edit code.',
-  'If you have no apiKey (see .pixel-clash/player.json), ask the kid for their player name and 4-digit PIN and call login.',
+  'Pixel Clash: you help a player (aged 9-13) design battle units. The player only talks to you; never ask them to type or edit code.',
+  'If you have no apiKey (see .pixel-clash/player.json), ask the player for their name and 4-digit PIN and call login.',
   'Save {name, apiKey} from login to .pixel-clash/player.json and pass apiKey on every pixel-clash tool call.',
   'Call get_unit_contract once to learn the unit format, and get_rules for costs and limits.',
   'Always validate_unit before submit_unit, and fix problems using each error\'s "fix" text. validate_unit checks everything (sprite rows included), so never run scripts or shell commands to check a unit file.',
   'submit_unit works only in the PLAN phase (get_game_state shows submissionsOpen). Otherwise keep the unit validated and say "we\'ll send it when Plan starts".',
   'When changing an existing unit, pass its unitId (from list_my_units), even if you rename it.',
   'After a battle, get_battle_report shows errors with unit names and line numbers: fix those units.',
-  'Explain results to the kid in short, simple, cheerful words (cost, what the unit does).',
-  'Selecting and placing units happens on the kid\'s Pixel Clash web page, not here.',
-  'With Open Armory on, list_armory shows other players\' units the kid can borrow (they can\'t be changed): suggest counters or improved versions.',
+  'Explain results to the player in short, simple, cheerful words (cost, what the unit does).',
+  'Selecting and placing units happens on the player\'s Pixel Clash web page, not here.',
+  'With Open Armory on, list_armory shows other players\' units the player can borrow (they can\'t be changed): suggest counters or improved versions.',
 ].join('\n');
 
 const OUTPUT = z.looseObject({ ok: z.boolean() });
 const API_KEY = z.string().optional().describe('The player apiKey from login (needed unless the MCP config sends it as a header).');
 
-/** Kid-facing hint for a service error. */
-function kidHintForService(code: string): string {
+/** Player-facing hint for a service error. */
+function playerHintForService(code: string): string {
   switch (code) {
     case 'PHASE_CLOSED':
       return "We'll send your unit when Plan time starts!";
@@ -73,7 +73,7 @@ function errorBody(e: ServiceError): Record<string, unknown> {
     errors: [{ code: e.code, message: e.message, fix: e.hint ?? e.message, ...(e.details ? { details: e.details } : {}) }],
     warnings: [],
     cost: null,
-    kidHint: kidHintForService(e.code),
+    playerHint: playerHintForService(e.code),
   };
 }
 
@@ -148,7 +148,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     'login',
     {
       title: 'Log in',
-      description: "Log in with the kid's player name and 4-digit PIN. Returns the apiKey to save in .pixel-clash/player.json and pass on every later call.",
+      description: "Log in with the player's name and 4-digit PIN. Returns the apiKey to save in .pixel-clash/player.json and pass on every later call.",
       inputSchema: { name: z.string().describe('Player name'), pin: z.string().describe('4-digit PIN') },
       outputSchema: OUTPUT,
     },
@@ -343,7 +343,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
           ? 'Open Armory is off in this match.'
           : entries.length === 0
             ? 'Open Armory is on, but no units are in it yet (units enter when a battle ends).'
-            : `${entries.length} Armory units: ${entries.map((e) => `${e.displayName} $${e.cost}${e.status === 'invalid' ? ' (INVALID)' : ''}`).join(', ')}. The kid picks them on the Pixel Clash page; they can't be changed.`;
+            : `${entries.length} Armory units: ${entries.map((e) => `${e.displayName} $${e.cost}${e.status === 'invalid' ? ' (INVALID)' : ''}`).join(', ')}. The player picks them on the Pixel Clash page; they can't be changed.`;
         return toolResult({ ok: true, enabled, entries }, summary);
       }),
   );

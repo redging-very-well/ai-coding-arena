@@ -2,7 +2,7 @@
 //
 // Bot players for rehearsals and load tests ONLY (plan §14 dress rehearsal,
 // §15 "fill the rest with npm run bots"); never offered in real games. Each
-// bot joins over REST like a kid's browser would (POST /players, then its
+// bot joins over REST like a player's browser would (POST /players, then its
 // Bearer key), and plays until MATCH_RESULTS:
 //   PLAN       submits 3 home-made designs (once per match; varied stats and
 //              update() logic: chase, focus the weakest, kite, turrets, all
@@ -107,7 +107,7 @@ const BEHAVIOURS: Record<Behaviour, string> = {
 
 const SPRITE_ROWS = ['..oooo..', '.occcco.', 'occwwcco', 'occwwcco', 'occccdco', 'ocdccdco', '.occcco.', '..oooo..'];
 
-/** The JS source a bot submits (what Claude would write for a kid, minus the comments). */
+/** The JS source a bot submits (what Claude would write for a player, minus the comments). */
 export function botSource(name: string, d: BotDesign): string {
   const safe = d.type === 'soldier'
     ? `

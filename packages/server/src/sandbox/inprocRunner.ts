@@ -8,12 +8,12 @@
 //
 // The harness is the same as in isolated-vm. Strings are the only values the
 // host hands to the context (via the `__in` slot), so no host object (and no
-// host Function constructor) is ever reachable from kid code through us.
+// host Function constructor) is ever reachable from player code through us.
 //
 // The harness API object returned by `setup` is bound to a top-level `const`
 // with a random name. Later scripts in the same context can use it (scripts
 // share the global lexical scope), but it is not a property of globalThis, so
-// kid code can't find it.
+// player code can't find it.
 
 import { randomBytes } from 'node:crypto';
 import vm from 'node:vm';
@@ -55,7 +55,7 @@ export class VmSession implements SandboxSession {
     // 'afterEvaluate' runs microtasks inside each call, under its timeout.
     const context = vm.createContext({}, { microtaskMode: 'afterEvaluate', codeGeneration: { strings: true, wasm: false } });
     const api = `__api_${randomBytes(16).toString('hex')}`;
-    // Runs no kid code: evaluate setup, call it, keep its API in a lexical binding.
+    // Runs no player code: evaluate setup, call it, keep its API in a lexical binding.
     vm.runInContext(`const ${api} = (${HARNESS_SOURCE})(${opts.seed >>> 0});`, context, { filename: 'harness.js', timeout: 1000 });
     return Promise.resolve(new VmSession(context, api));
   }
@@ -104,7 +104,7 @@ export class VmSession implements SandboxSession {
     }
   }
 
-  /** Write the `__in` slot (a non-configurable data property, so never a kid setter). */
+  /** Write the `__in` slot (a non-configurable data property, so never a player setter). */
   private setInput(value: unknown): void {
     (this.context as Record<string, unknown>)[HARNESS_GLOBALS.input] = value;
   }

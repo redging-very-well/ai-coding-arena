@@ -1,7 +1,7 @@
-// Error codes, the §7 error object format, and kid-friendly hint templates.
+// Error codes, the §7 error object format, and friendly hint templates.
 //
 // Errors are written for Claude first (precise `message` + actionable `fix`)
-// and the kid second (`kidHint`). Every validation failure is a
+// and the player second (`playerHint`). Every validation failure is a
 // `ValidationIssue`; every service failure is a `ServiceError` (§10.1).
 
 import type { CostBreakdown } from './cost.js';
@@ -153,7 +153,7 @@ export interface ValidationSuccess {
     sprite: SpriteSpec | null;
   };
   warnings: ValidationWarning[];
-  kidHint: string;
+  playerHint: string;
 }
 
 /** Failed §7 result (HTTP 422 body, MCP isError result). */
@@ -162,7 +162,7 @@ export interface ValidationFailure {
   errors: ValidationError[];
   warnings: ValidationWarning[];
   cost: number | null;
-  kidHint: string;
+  playerHint: string;
 }
 
 export type ValidationResult = ValidationSuccess | ValidationFailure;
@@ -220,7 +220,7 @@ export function httpStatusFor(code: ErrorCode): number {
 }
 
 // ---------------------------------------------------------------------------
-// Kid hints: one short, cheerful sentence per code. `{field}` is replaced
+// Player hints: one short, cheerful sentence per code. `{field}` is replaced
 // with a friendly stat name.
 // ---------------------------------------------------------------------------
 
@@ -237,7 +237,7 @@ const FRIENDLY_FIELD: Record<string, string> = {
   shape: 'shape',
 };
 
-const KID_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
+const PLAYER_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
   SOURCE_TOO_LARGE: 'That unit is HUGE! Ask Claude to make the code shorter.',
   EMPTY_SOURCE: "Oops, there's no code yet! Ask Claude to write your unit.",
   SYNTAX_ERROR: "There's a typo in the code. Ask Claude to fix it!",
@@ -280,14 +280,14 @@ const KID_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
   W_STAT_NEAR_MAX: 'Tip: a maxed-out stat costs up to 3 times as much. Two medium units usually beat one giant one!',
 };
 
-/** Kid hint for a code, with `{field}` filled in. */
-export function kidHintFor(code: ValidationErrorCode | WarningCode, field?: string): string {
+/** Player hint for a code, with `{field}` filled in. */
+export function playerHintFor(code: ValidationErrorCode | WarningCode, field?: string): string {
   const name = field ? (FRIENDLY_FIELD[field] ?? field) : 'stats';
-  return KID_HINTS[code].replaceAll('{field}', name);
+  return PLAYER_HINTS[code].replaceAll('{field}', name);
 }
 
 /** Special-cased hints that read better than the generic templates. */
-export function kidHintForIssue(issue: ValidationIssue): string {
+export function playerHintForIssue(issue: ValidationIssue): string {
   // Enum fields: "too big or too small" makes no sense for a word.
   if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'type') {
     return 'Your unit must be a soldier or a tower. Ask Claude to fix its type.';
@@ -315,8 +315,8 @@ export function kidHintForIssue(issue: ValidationIssue): string {
   if (issue.code === 'UNIT_TOO_EXPENSIVE' && value !== undefined && max !== undefined) {
     return `Your unit costs too much! ($${value}, the max is $${max}) Ask Claude to make it cheaper.`;
   }
-  return kidHintFor(issue.code, issue.field);
+  return playerHintFor(issue.code, issue.field);
 }
 
-export const SUCCESS_KID_HINT =
+export const SUCCESS_PLAYER_HINT =
   'Your unit is ready! Find it in My Units on your Pixel Clash page.';

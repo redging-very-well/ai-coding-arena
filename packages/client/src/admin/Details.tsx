@@ -87,7 +87,7 @@ function ArmoryDetails({ armory }: { armory: AdminArmoryEntryDTO[] }) {
           <div key={e.unitId} class={cx('unit-card', e.status === 'invalid' && 'invalid')}>
             <div class="unit-top">
               <div class="sprites">
-                <SpriteThumb sprite={e.sprite} stats={e.stats} title="The kid's sprite" />
+                <SpriteThumb sprite={e.sprite} stats={e.stats} title="The player's sprite" />
                 {e.spriteHidden && <SpriteThumb sprite={e.sprite} stats={e.stats} showFallback size={32} title="What everyone sees (fallback)" />}
               </div>
               <div>
@@ -131,7 +131,7 @@ function UnitDetails({ playerId, unit, selected }: { playerId: string; unit: Ove
     <div class={cx('unit-card', unit.status === 'invalid' && 'invalid', selected && 'selected')}>
       <div class="unit-top">
         <div class="sprites">
-          <SpriteThumb sprite={unit.sprite} stats={st} title="The kid's sprite" />
+          <SpriteThumb sprite={unit.sprite} stats={st} title="The player's sprite" />
           {unit.spriteHidden && <SpriteThumb sprite={unit.sprite} stats={st} showFallback size={32} title="What everyone sees (fallback)" />}
         </div>
         <div>

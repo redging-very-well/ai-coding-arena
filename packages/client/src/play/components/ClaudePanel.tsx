@@ -46,7 +46,7 @@ function useClaudeBox(): { host: string | null; urls: Map<number, string> } {
       if (timer) clearTimeout(timer);
     };
   }, [phase]);
-  // Server seats are 0-7; kids see "Seat 1-8".
+  // Server seats are 0-7; players see "Seat 1-8".
   const urls = new Map((info?.seatTerminals ?? []).map((t) => [t.seat + 1, t.url]));
   return { host: info?.settings?.claudeBoxHost ?? null, urls };
 }

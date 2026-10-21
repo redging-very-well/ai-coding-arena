@@ -125,7 +125,7 @@ describe('MCP (stateless Streamable HTTP)', () => {
     expect(bad.s.ok).toBe(false);
     expect(bad.s.errors[0]).toMatchObject({ code: 'STAT_OUT_OF_RANGE' });
     expect(typeof bad.s.errors[0].fix).toBe('string');
-    expect(typeof bad.s.kidHint).toBe('string');
+    expect(typeof bad.s.playerHint).toBe('string');
     const syntax = await call(mcp, 'validate_unit', { source: fixture('bad/syntax_error.js'), apiKey });
     expect(syntax.s.errors[0]).toMatchObject({ code: 'SYNTAX_ERROR' });
     expect(syntax.s.errors[0].line).toBeGreaterThan(0);
@@ -138,10 +138,10 @@ describe('MCP (stateless Streamable HTTP)', () => {
     const r = await call(mcp, 'submit_unit', { source: fixture('good/sniper_tower.js'), apiKey });
     expect(r.isError).toBe(true);
     expect(r.s.errors[0]).toMatchObject({ code: 'PHASE_CLOSED', details: { phase: 'LOBBY', opensIn: 'PLAN' } });
-    expect(r.s.kidHint).toContain('Plan');
+    expect(r.s.playerHint).toContain('Plan');
   });
 
-  it('in PLAN, submit works and the kid\'s open page gets `private` within 1 s', async () => {
+  it('in PLAN, submit works and the player\'s open page gets `private` within 1 s', async () => {
     const admin = await adminClient(srv.url);
     expect((await admin.post('/admin/match', { rounds: 2 })).body.phase).toBe('PLAN');
     const ws = await WsRecorder.open(srv.url, 'player', player.client.cookieHeader());

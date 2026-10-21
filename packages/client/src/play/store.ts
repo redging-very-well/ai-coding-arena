@@ -139,7 +139,7 @@ export class PlayStore {
     } catch (err) {
       if (err instanceof ApiError && err.status === 0) {
         // Server unreachable: try again shortly.
-        this.toast(err.kidMessage, 'error');
+        this.toast(err.playerMessage, 'error');
         setTimeout(() => void this.boot(), 3000);
         return;
       }

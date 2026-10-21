@@ -67,7 +67,7 @@ export class MatchService {
     if (next[phase] === opensIn && secs !== null) details.secondsLeft = secs;
     const hint =
       op === 'submit'
-        ? "Tell the kid: we'll send it when the Plan phase starts. Keep the unit validated (validate_unit works any time) and submit it once get_game_state says submissionsOpen is true."
+        ? "Tell the player: we'll send it when the Plan phase starts. Keep the unit validated (validate_unit works any time) and submit it once get_game_state says submissionsOpen is true."
         : `Wait for the ${opensIn} phase.`;
     return fail('PHASE_CLOSED', `${OP_TEXT[op]} is closed right now (phase ${phase}). It opens in the ${opensIn} phase.`, {
       hint,

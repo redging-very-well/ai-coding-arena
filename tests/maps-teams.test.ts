@@ -452,7 +452,7 @@ describe('the LOBBY draft never gets stuck (fixes)', () => {
         toasts.push(text);
         return (orig as (...a: unknown[]) => unknown)(to, kind, text, ...rest);
       }) as typeof notifier.toast;
-      await players(srv.url, 1, 4); // a 5th kid joins: lanes and teams2 both stop fitting
+      await players(srv.url, 1, 4); // a 5th player joins: lanes and teams2 both stop fitting
       const setup = (await admin.get('/admin/match/setup')).body as MatchSetupDTO;
       expect(setup).toMatchObject({ mapStyle: null, teamMode: 'ffa', teams: null, map: { style: 'ring', players: 5 } });
       expect(toasts).toContain('Team mode reset to free-for-all and map reset to auto (Ring) for 5 players');

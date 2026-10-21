@@ -40,7 +40,7 @@ export async function verifyPin(pin: string, stored: string): Promise<boolean> {
 }
 
 /**
- * 400 kid-friendly words: 3 words give 400^3 = 64,000,000 passwords (~26 bits),
+ * 400 simple words: 3 words give 400^3 = 64,000,000 passwords (~26 bits),
  * which together with the admin login rate limit makes guessing infeasible.
  */
 export const PASSWORD_WORDS: readonly string[] = [
@@ -210,12 +210,12 @@ export class AuthService {
 
 export function authRequired(): Result<never> {
   return fail('AUTH_REQUIRED', 'You are not logged in to Pixel Clash.', {
-    hint: 'Ask the kid for their player name and 4-digit PIN and call login, then pass the apiKey it returns.',
+    hint: 'Ask the player for their name and 4-digit PIN and call login, then pass the apiKey it returns.',
   });
 }
 
 export function keyInvalid(): Result<never> {
   return fail('KEY_INVALID', 'This Pixel Clash key is not valid (it may have been reset).', {
-    hint: "Call login again with the kid's name and PIN. If that fails, ask a grown-up.",
+    hint: "Call login again with the player's name and PIN. If that fails, ask a grown-up.",
   });
 }

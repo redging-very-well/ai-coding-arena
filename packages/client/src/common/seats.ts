@@ -11,7 +11,7 @@ import { TEAM_STYLES, type TeamPattern } from '@pixel-clash/shared';
 
 export interface SeatStyle {
   seat: number;
-  /** Kid-facing colour name ("Sky"). */
+  /** Player-facing colour name ("Sky"). */
   name: string;
   /** The seat-number badge ("1"-"8"): the non-colour cue on tiles, zones and HP bars. */
   symbol: string;

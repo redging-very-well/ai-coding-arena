@@ -239,7 +239,7 @@ describe('MCP replies (§10.4)', () => {
       const tmpl = await call('validate_unit', { source: fixture('good/pixel_bat.js'), unitId: 'basic-soldier', apiKey: p.apiKey });
       expect(tmpl.isError).toBe(true);
       expect(tmpl.s.errors[0].code).toBe('TEMPLATE_PROTECTED');
-      expect(tmpl.s.kidHint).not.toContain('Something went wrong');
+      expect(tmpl.s.playerHint).not.toContain('Something went wrong');
 
       const fresh = await call('validate_unit', { source: fixture('good/pixel_bat.js'), apiKey: p.apiKey });
       expect(fresh.isError).toBe(false);
@@ -249,10 +249,10 @@ describe('MCP replies (§10.4)', () => {
       expect(fresh.text.length).toBeLessThan(4000);
 
       const badLogin = await call('login', { name: 'Mia', pin: '0000' });
-      expect(badLogin.s.kidHint).toContain('PIN');
+      expect(badLogin.s.playerHint).toContain('PIN');
       const report = await call('get_battle_report', { apiKey: p.apiKey });
       expect(report.s.errors[0].code).toBe('NOT_FOUND');
-      expect(report.s.kidHint).toBe('Nothing to show yet!');
+      expect(report.s.playerHint).toBe('Nothing to show yet!');
     } finally {
       await mcp.close();
       await srv.close();

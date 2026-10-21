@@ -1,4 +1,4 @@
-// A kid-planted Object.prototype.toJSON that throws a 12 MB message. It runs
+// A player-planted Object.prototype.toJSON that throws a 12 MB message. It runs
 // when the harness serializes the returned action; the error must stay a
 // short, bounded unit error (never a 12 MB string through the host).
 Object.prototype.toJSON = function () {

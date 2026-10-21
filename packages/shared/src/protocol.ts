@@ -485,7 +485,7 @@ export interface HealthDTO {
   phase: Phase;
 }
 
-/** GET /join: where kids join (projector QR, §12.2). */
+/** GET /join: where players join (projector QR, §12.2). */
 export interface JoinInfoDTO {
   /** `http://<lan-ip>:<port>/play` (the request's Host when it is not localhost). */
   joinUrl: string;

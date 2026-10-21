@@ -64,7 +64,7 @@ export class PlayersService {
     if (typeof pinIn !== 'string' || !PIN_RE.test(pinIn)) {
       return fail('BAD_PIN_FORMAT', 'The PIN must be exactly 4 digits.', { hint: 'For example 4821.' });
     }
-    // Hash first: everything after this point is synchronous, so kids joining
+    // Hash first: everything after this point is synchronous, so players joining
     // at the same moment can't be given the same seat or name.
     const pinHash = await hashPin(pinIn);
     const store = this.game.store;

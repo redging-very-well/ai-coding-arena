@@ -74,11 +74,11 @@ export function SetupPage() {
           <>
             <div class="qr big" dangerouslySetInnerHTML={{ __html: info.playQrSvg }} />
             <div>
-              <div class="label">Kids open</div>
+              <div class="label">Players open</div>
               <div class="huge-url">{info.playUrl}</div>
               {info.lanUrls.length > 1 && (
                 <p class="dim small">
-                  This machine has several addresses: {info.lanUrls.join(', ')}. Pick the one the kids' Wi-Fi reaches in /admin.
+                  This machine has several addresses: {info.lanUrls.join(', ')}. Pick the one the players' Wi-Fi reaches in /admin.
                 </p>
               )}
               {info.lanUrls.length === 0 && <p class="warn-text">No LAN address found: is this machine on the event network?</p>}

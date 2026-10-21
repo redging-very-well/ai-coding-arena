@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG, computeCost, type CostStats } from '@pixel-clash/shared';
 
-// The kid-facing kit templates (plan §11). sessions/entrypoint.sh and (later)
+// The player-facing kit templates (plan §11). sessions/entrypoint.sh and (later)
 // services/kit.ts fill {{HOST}} and rename *.tmpl.
 const kitFile = (rel: string) => readFileSync(new URL(`../packages/starter-kit/${rel}`, import.meta.url), 'utf8');
 const fill = (text: string) => text.replaceAll('{{HOST}}', '192.168.8.10:8080');

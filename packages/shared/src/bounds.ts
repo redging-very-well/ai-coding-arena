@@ -1,7 +1,7 @@
 // §7 step 6: hard guards on the stats read from a constructed unit.
 //
 // Input is the JSON-copied bag of own data properties produced by step 5
-// (values are `unknown`: kid code can set anything). No coercion: the string
+// (values are `unknown`: player code can set anything). No coercion: the string
 // "100" is STAT_WRONG_TYPE, not 100. Every problem found is reported (not just
 // the first), each as a §7 error object with code/field/value/allowed/message/fix.
 

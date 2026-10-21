@@ -8,7 +8,7 @@ import {
   WARNING_CODES,
   checkSprite,
   fallbackSprite,
-  kidHintFor,
+  playerHintFor,
   noSpriteWarning,
   type SpriteSpec,
   type ValidationError,
@@ -119,12 +119,12 @@ describe('checkSprite (§5.1 validation rules)', () => {
     expect(checkSprite({ ...good(), frames: { idle: [f, f, f, f], walk: [f, f, f, f], hit: [f] } }).ok).toBe(true);
   });
 
-  it('codes, warning and kid hint are registered', () => {
+  it('codes, warning and player hint are registered', () => {
     for (const c of ['SPRITE_THREW', 'SPRITE_BAD_GRID', 'SPRITE_BAD_PALETTE', 'SPRITE_BAD_FRAME', 'SPRITE_TOO_MANY_FRAMES', 'SPRITE_EMPTY', 'SPRITE_NOT_STABLE']) {
       expect(VALIDATION_ERROR_CODES).toContain(c);
     }
     expect(WARNING_CODES).toContain('W_NO_SPRITE');
-    expect(kidHintFor('W_NO_SPRITE')).toBe('Ask Claude to draw a pixel-art sprite for your unit!');
+    expect(playerHintFor('W_NO_SPRITE')).toBe('Ask Claude to draw a pixel-art sprite for your unit!');
     expect(noSpriteWarning().code).toBe('W_NO_SPRITE');
   });
 });

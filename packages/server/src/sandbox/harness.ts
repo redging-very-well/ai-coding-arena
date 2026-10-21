@@ -4,15 +4,15 @@
 //
 // The source is ONE function expression `(function setup(seed) { … })`. The
 // host evaluates it, calls it once with the PRNG seed, and only THEN evaluates
-// kid code. Everything the harness relies on (JSON.parse/stringify, Map and its
+// player code. Everything the harness relies on (JSON.parse/stringify, Map and its
 // methods, Reflect.apply/construct, the real clock…) is captured in the
-// closure before any kid code exists, so kid code that patches globals or
+// closure before any player code exists, so player code that patches globals or
 // prototypes cannot change how the harness works.
 //
 // `setup` RETURNS the harness API; nothing callable is published on
-// globalThis, so kid code (including microtasks that run after a call) can
+// globalThis, so player code (including microtasks that run after a call) can
 // never reach it. The host keeps the API (isolated-vm: References taken before
-// kid code runs; node:vm: a lexical binding with a random name):
+// player code runs; node:vm: a lexical binding with a random name):
 //   load(unitId, wrapperFn)    evaluate one design's CJS wrapper, keep its default export
 //   seal()                     refuse every later load (the host calls it after loading)
 //   spawn(instanceId, unitId)  construct one copy, keep it in a Map
@@ -30,14 +30,14 @@
 //               returned a Promise (so a microtask loop still has a culprit)
 //   __in        a writable data slot the node:vm host uses to pass a value
 //
-// All results are JSON *strings* built by concatenation, so the only kid
+// All results are JSON *strings* built by concatenation, so the only player
 // controlled parts are individual JSON values (an action, an error message);
 // the host still parses everything defensively.
 //
 // Hardening notes:
 //  - `Math.random` is a seeded mulberry32 PRNG; `Date.now()`, `new Date()` and
 //    Intl.DateTimeFormat's default date are the sim time. The real clock is
-//    kept only for per-unit timing and never exposed to kid code.
+//    kept only for per-unit timing and never exposed to player code.
 //  - Memory that bypasses the isolate's memory limit is removed:
 //    WebAssembly, SharedArrayBuffer, Atomics, and resizable ArrayBuffers
 //    (the ArrayBuffer constructor ignores its options argument).
@@ -46,7 +46,7 @@
 //    therefore never writes to arrays by index or calls prototype methods.
 //  - The tick input carries enemies/world/allies as ready-made JSON strings, so
 //    the harness never JSON.stringify()s an object outside a unit's try/catch
-//    (a kid-planted Object.prototype.toJSON can only run inside update()).
+//    (a player-planted Object.prototype.toJSON can only run inside update()).
 
 /** Names of the harness globals (used by the hosts). */
 export const HARNESS_GLOBALS = {
@@ -75,7 +75,7 @@ export const MAX_ERROR_MESSAGE = 300;
 
 export const HARNESS_SOURCE = String.raw`(function setup(seed) {
   'use strict';
-  // ---- Intrinsics captured before any kid code runs ----------------------
+  // ---- Intrinsics captured before any player code runs ----------------------
   var G = globalThis;
   var defineProperty = Object.defineProperty;
   var gopd = Object.getOwnPropertyDescriptor;
@@ -111,7 +111,7 @@ export const HARNESS_SOURCE = String.raw`(function setup(seed) {
   // ---- Memory the isolate's memoryLimit does not count -------------------
   // WebAssembly.Memory, SharedArrayBuffer and resizable ArrayBuffers are
   // allocated outside isolated-vm's ArrayBuffer allocator, so a unit could
-  // use gigabytes despite the 32 MB limit. Remove them before kid code runs.
+  // use gigabytes despite the 32 MB limit. Remove them before player code runs.
   var gone = ['WebAssembly', 'SharedArrayBuffer', 'Atomics'];
   for (var gi = 0; gi < gone.length; gi++) {
     try { delete G[gone[gi]]; } catch (_) { /* not configurable: leave it */ }
@@ -463,7 +463,7 @@ export const HARNESS_SOURCE = String.raw`(function setup(seed) {
 
 /**
  * Wrap a design's compiled CJS so evaluating the script only CREATES the
- * function; kid code runs when the harness calls it from `__load`. The
+ * function; player code runs when the harness calls it from `__load`. The
  * wrapper adds one line before the code (see WRAPPER_LINE_OFFSET).
  */
 export function wrapUnit(compiledJs: string): string {

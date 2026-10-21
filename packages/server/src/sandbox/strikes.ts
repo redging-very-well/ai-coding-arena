@@ -119,14 +119,14 @@ export class StrikeTracker {
         return this.push(out);
       case 'timeout': {
         if (result.hostStall) {
-          // The sandbox process was frozen, not the kid's code: idle, no blame.
+          // The sandbox process was frozen, not the player's code: idle, no blame.
           out.push({ kind: 'timeout', tick, elapsedMs: result.elapsedMs, hostStall: true });
           return this.push(out);
         }
         out.push({ kind: 'timeout', tick, elapsedMs: result.elapsedMs, ...(result.culprit ? { culprit: result.culprit } : {}) });
         const culprit = result.culprit;
         if (culprit && !this.disabled.has(culprit)) {
-          // A single stall can be the host (GC, scheduler), not the kid's code:
+          // A single stall can be the host (GC, scheduler), not the player's code:
           // the first one only idles this tick and is reported; a repeat naps.
           const timeouts = (this.unitTimeouts.get(culprit) ?? 0) + 1;
           this.unitTimeouts.set(culprit, timeouts);

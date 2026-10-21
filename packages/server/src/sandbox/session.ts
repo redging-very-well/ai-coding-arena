@@ -121,7 +121,7 @@ export function asHarnessError(v: unknown): HarnessError {
  * The wire format of a tick input (what the harness `tick` parses). Enemies,
  * world and each ally are sent as ready-made JSON strings, so the harness only
  * ever JSON.parse()s them and never re-serializes an object outside a unit's
- * try/catch (a kid-planted Object.prototype.toJSON can't run there).
+ * try/catch (a player-planted Object.prototype.toJSON can't run there).
  */
 export function encodeTickInput(input: Pick<TickInput, 'nowMs' | 'selves' | 'enemies' | 'allies' | 'world'>): string {
   return JSON.stringify({
@@ -346,7 +346,7 @@ export class SessionPlayerRunner implements PlayerRunner {
     }
   }
 
-  /** Map a harness error's stack to a line in the kid's original source. */
+  /** Map a harness error's stack to a line in the player's original source. */
   private errorWithLine(err: HarnessError): { message: string; line?: number } {
     const frame = findUnitFrame(err.stack);
     const mapper = frame ? this.mappers[frame.index] : undefined;
@@ -437,11 +437,11 @@ export class SessionPlayerRunner implements PlayerRunner {
         return { status: 'bad-output', outputs: [], elapsedMs: out.elapsedMs, slow: false, forged: 0, detail: capMessage(out.message) };
       case 'ok': {
         const parsed = parseTickOutput(out.value, input.selves);
-        // A slow strike needs the kid code ITSELF to be slow: the wall time
+        // A slow strike needs the player code ITSELF to be slow: the wall time
         // around the async call (thread hops, IPC, a busy host) AND the time
         // the harness measured around the update() calls inside the isolate
         // must both be over the soft limit. A host hiccup alone is not the
-        // kid's fault (only wall time would be inflated, not the units' own).
+        // player's fault (only wall time would be inflated, not the units' own).
         const slow = out.elapsedMs > softTimeoutMs && unitMsTotal(parsed.outputs) > softTimeoutMs;
         if (!parsed.ok) {
           return {
@@ -453,7 +453,7 @@ export class SessionPlayerRunner implements PlayerRunner {
             ...(parsed.detail ? { detail: parsed.detail } : {}),
           };
         }
-        // Map error lines back to the kid's source.
+        // Map error lines back to the player's source.
         const outputs = parsed.outputs.map((o): UnitOutput => {
           if (!('error' in o)) return o;
           const stack = parsed.stacks.get(o.instanceId);

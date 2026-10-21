@@ -1,4 +1,4 @@
-// Map positions in compiled unit code back to the kid's original source.
+// Map positions in compiled unit code back to the player's original source.
 //
 // The validator's transpile step appends an inline source map to
 // `compiledJs` (esbuild reprints code, so lines move). Errors thrown inside a

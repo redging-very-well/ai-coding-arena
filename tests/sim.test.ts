@@ -381,19 +381,19 @@ describe('ranking and points', () => {
     const t = design('t', TOWER);
     const s = design('s', SOLDIER);
     const specs: FakePlayerSpec[] = [
-      { playerId: 'kid', seat: 0, zone: 'TL', units: [t], placements: [at(0, 0, 't'), at(1, 0, 't'), at(0, 1, 't')], brains: { t: idleBrain } },
+      { playerId: 'player', seat: 0, zone: 'TL', units: [t], placements: [at(0, 0, 't'), at(1, 0, 't'), at(0, 1, 't')], brains: { t: idleBrain } },
       { playerId: 'b', seat: 1, zone: 'TR', units: [s], placements: [at(0, 0, 's')], brains: { s: idleBrain } },
       { playerId: 'c', seat: 2, zone: 'BR', units: [t], placements: [at(0, 0, 't')], brains: { t: idleBrain } },
     ];
-    const { result } = await battle(specs, cfg({}, 60), 3, new Set(['kid']));
+    const { result } = await battle(specs, cfg({}, 60), 3, new Set(['player']));
     // 2 ranked players (the kicked one doesn't count): 1 / 0.
     expect(result.ranking.map((r) => [r.playerId, r.place, r.pointsGained])).toEqual([['c', 1, 1], ['b', 2, 0]]);
     // The kick can also land after the sim finished: re-rank the same result.
     const plain = rankResult(result);
-    expect(plain[0]!.playerId).toBe('kid');
-    expect(scoreRanking(rankResult(result, new Set(['kid'])), playerMetrics(result), S)).toEqual(result.ranking);
+    expect(plain[0]!.playerId).toBe('player');
+    expect(scoreRanking(rankResult(result, new Set(['player'])), playerMetrics(result), S)).toEqual(result.ranking);
     // The kicked player's units still fought (they are in the frames and the report).
-    expect(result.units.filter((u) => u.playerId === 'kid')).toHaveLength(3);
+    expect(result.units.filter((u) => u.playerId === 'player')).toHaveLength(3);
   });
 });
 
@@ -566,7 +566,7 @@ describe('sandbox policy (runner envelope → strikes, disable, report)', () => 
   });
 
   it('host stalls (the sandbox process was frozen) idle the tick but blame nobody and count toward no limit', async () => {
-    // 6 host-stall timeouts, 3+ in a row, naming a culprit: none of them is the kid's code.
+    // 6 host-stall timeouts, 3+ in a row, naming a culprit: none of them is the player's code.
     const hook = (input: { tick: number }) =>
       input.tick >= 5 && input.tick < 11
         ? { status: 'timeout' as const, outputs: [], elapsedMs: 40, slow: false, forged: 0, culprit: '0-0-0', hostStall: true }

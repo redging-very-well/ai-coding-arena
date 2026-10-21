@@ -36,7 +36,7 @@ export function PlayersTable() {
     <section class="panel players">
       <h2>Players</h2>
       {rows.length === 0 ? (
-        <p class="dim">No players yet. Kids join on /play (see /setup for the address and QR).</p>
+        <p class="dim">No players yet. Players join on /play (see /setup for the address and QR).</p>
       ) : (
         <div class="table-wrap">
           <table>
@@ -131,7 +131,7 @@ function PlayerActions({ player, phase, onGone }: { player: OverviewPlayer; phas
     <div class="player-actions">
       <div class="action-group">
         <h3>Reset PIN</h3>
-        <p class="dim small">Logs the kid out of /play. Their Claude key keeps working.</p>
+        <p class="dim small">Logs the player out of /play. Their Claude key keeps working.</p>
         <div class="btn-row">
           <input
             class="pin"
@@ -193,7 +193,7 @@ function PlayerActions({ player, phase, onGone }: { player: OverviewPlayer; phas
 
       <div class="action-group">
         <h3>Claude key</h3>
-        <p class="dim small">Rotate only if the key leaked: the kid's Claude has to log in again.</p>
+        <p class="dim small">Rotate only if the key leaked: the player's Claude has to log in again.</p>
         <div class="btn-row">
           <button
             class="btn"

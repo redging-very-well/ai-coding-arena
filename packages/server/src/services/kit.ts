@@ -57,14 +57,14 @@ function settingsJson(opts: KitOptions): string {
 function fallbackClaudeMd(opts: KitOptions): string {
   const who = opts.player
     ? `You are helping the player **${opts.player.name}**. The MCP server already sends their key.`
-    : 'First read `.pixel-clash/player.json`. If it is missing, or a tool says AUTH_REQUIRED or KEY_INVALID, ask the kid for their player name and 4-digit PIN, call `login`, save `{name, apiKey}` to `.pixel-clash/player.json`, and pass `apiKey` on every pixel-clash tool call.';
+    : 'First read `.pixel-clash/player.json`. If it is missing, or a tool says AUTH_REQUIRED or KEY_INVALID, ask the player for their name and 4-digit PIN, call `login`, save `{name, apiKey}` to `.pixel-clash/player.json`, and pass `apiKey` on every pixel-clash tool call.';
   return `# Pixel Clash
 
-A kid (about 9-13) is playing Pixel Clash. They only talk to you: never ask them to type or edit code.
+A player (aged about 9-13) is playing Pixel Clash. They only talk to you: never ask them to type or edit code.
 
 ${who}
 
-Workflow: call \`get_game_state\` → write or edit \`units/<name>.js\` → \`validate_unit\` → fix using each error's \`fix\` → \`submit_unit\` (only when \`submissionsOpen\`) → tell the kid the cost and remind them to select and place it on the web page. When changing an existing unit, always pass its \`unitId\` (from \`list_my_units\`).
+Workflow: call \`get_game_state\` → write or edit \`units/<name>.js\` → \`validate_unit\` → fix using each error's \`fix\` → \`submit_unit\` (only when \`submissionsOpen\`) → tell the player the cost and remind them to select and place it on the web page. When changing an existing unit, always pass its \`unitId\` (from \`list_my_units\`).
 
 Call \`get_unit_contract\` for the full unit contract and \`get_rules\` for the rules.
 

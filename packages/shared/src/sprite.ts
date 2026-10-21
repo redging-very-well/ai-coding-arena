@@ -4,7 +4,7 @@
 // facilitator). Shared by the server (validation) and the client (fallback).
 //
 // Input to `checkSprite` is the JSON copy of what sprite() returned (values
-// are `unknown`: kid code can return anything). Errors are written for Claude
+// are `unknown`: player code can return anything). Errors are written for Claude
 // first: every SPRITE_BAD_FRAME names the state, frame, row and col (all
 // counted from 0, like array indexes) so Claude can jump straight to the bad
 // pixel.

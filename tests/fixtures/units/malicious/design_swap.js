@@ -1,4 +1,4 @@
-// Tries to reach the harness entry points from kid code: a microtask queued at
+// Tries to reach the harness entry points from player code: a microtask queued at
 // the top level (it runs after loading finished) tries to replace another
 // design with code that was never validated, and update() tries to call the
 // tick function re-entrantly. The harness API is not on globalThis, so none of

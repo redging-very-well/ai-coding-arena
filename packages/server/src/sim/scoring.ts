@@ -53,7 +53,7 @@ export interface UnitMetricInput {
 /**
  * Per-player metrics from per-unit counters. `playerIds` fixes the output
  * order (and includes players without units). Damage is rounded to a whole
- * number here, so what the kids see is exactly what the bonus was computed on.
+ * number here, so what the players see is exactly what the bonus was computed on.
  */
 export function sumMetrics(playerIds: readonly string[], units: Iterable<UnitMetricInput>): PlayerMetricsDTO[] {
   const by = new Map<string, PlayerMetricsDTO & { rawDamage: number }>(

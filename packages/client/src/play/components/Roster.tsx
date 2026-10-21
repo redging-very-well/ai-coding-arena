@@ -12,7 +12,7 @@ import { getStore, useStore } from '../store.js';
 import { UnitCard } from './UnitCard.js';
 
 // ---------------------------------------------------------------------------
-// "new!" badges: remember which version of each unit the kid has seen.
+// "new!" badges: remember which version of each unit the player has seen.
 // ---------------------------------------------------------------------------
 
 function seenKey(playerId: string): string {
@@ -108,7 +108,7 @@ export function Roster(props: { phase: Phase }) {
       await api.setSelection(r.selection);
     } catch (err) {
       setPending(null);
-      const msg = err instanceof ApiError ? err.kidMessage : "Your pick didn't save. Try again!";
+      const msg = err instanceof ApiError ? err.playerMessage : "Your pick didn't save. Try again!";
       doShake(u.unitId, msg);
     }
   };
@@ -118,7 +118,7 @@ export function Roster(props: { phase: Phase }) {
       await api.retireUnit(u.unitId);
       store.toast(`${u.name} was removed.`);
     } catch (err) {
-      store.toast(err instanceof ApiError ? err.kidMessage : "Couldn't remove it. Try again!", 'error');
+      store.toast(err instanceof ApiError ? err.playerMessage : "Couldn't remove it. Try again!", 'error');
     }
   };
 

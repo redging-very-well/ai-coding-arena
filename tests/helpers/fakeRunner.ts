@@ -2,7 +2,7 @@
 //
 // It implements the Runner interface from packages/server/src/sandbox/runner.ts
 // without any isolate: each design is a "brain" factory, one brain object is
-// constructed per spawned instance (so `this` state persists like in kid
+// constructed per spawned instance (so `this` state persists like in player
 // code), and update() is called with fresh deep copies of the inputs, with
 // the unit itself removed from `allies`, exactly like the real harness.
 // A `hook` can replace a whole tick's result to simulate timeouts, crashes,

@@ -226,10 +226,10 @@ async function playRound(admin: Admin, bots: Bot[], observers: Observer[], speed
       rssMax = m.rssMb;
       heapAtPeak = { used: m.heapUsedMb, total: m.heapTotalMb, external: m.externalMb };
     }
-    const kids = childRssMb(m.pid);
-    if (kids) {
-      children = Math.max(children ?? 0, kids.length);
-      if (kids.length) childMax = Math.max(childMax ?? 0, ...kids);
+    const childMbs = childRssMb(m.pid);
+    if (childMbs) {
+      children = Math.max(children ?? 0, childMbs.length);
+      if (childMbs.length) childMax = Math.max(childMax ?? 0, ...childMbs);
     }
     if (m.battle && m.battle.round === round) last = m;
     if (m.phase !== 'BATTLE') break;
@@ -343,7 +343,7 @@ async function main(): Promise<void> {
     checks.push([`${tag}: WS frames reach every client`, r.clientFramesPerSecMin > 25 * r.speed * 0.8, `${r.wsClients} clients, ${f1(r.clientFramesPerSecMin)}-${f1(r.clientFramesPerSecAvg)} frames/s (expect ${30 * r.speed}), ${Math.round(r.wsKBPerClient)} KB/client`]);
     checks.push([`${tag}: server RSS < ${TARGETS.serverRssMb} MB`, r.serverRssMaxMb < TARGETS.serverRssMb, `max ${f1(r.serverRssMaxMb)} MB (JS heap ${f1(r.serverHeapAtPeakMb.used)} used / ${f1(r.serverHeapAtPeakMb.total)} total, external ${f1(r.serverHeapAtPeakMb.external)})`]);
     // Plan §14 also asks for < 100 MB per sandbox child. A child is a whole Node
-    // process (~70 MB before any kid code) plus a 32 MB isolate, so this is a
+    // process (~70 MB before any player code) plus a 32 MB isolate, so this is a
     // warning, not a failure (docs/load.md).
     if (r.childRssMaxMb !== null) checks.push([`${tag}: each sandbox child < ${TARGETS.childRssMb} MB`, r.childRssMaxMb < TARGETS.childRssMb, `${r.children} sandbox children, max ${f1(r.childRssMaxMb)} MB`, true]);
   }

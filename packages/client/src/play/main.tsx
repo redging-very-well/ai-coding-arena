@@ -1,4 +1,4 @@
-// /play entry (plan §12.1): Preact app for the kids' laptops and tablets.
+// /play entry (plan §12.1): Preact app for the players' laptops and tablets.
 
 import { render } from 'preact';
 import '../common/theme.css';

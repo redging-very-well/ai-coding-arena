@@ -20,11 +20,11 @@
 import { createHash } from 'node:crypto';
 import {
   STAT_FIELDS,
-  SUCCESS_KID_HINT,
+  SUCCESS_PLAYER_HINT,
   checkStats,
   computeCost,
-  kidHintFor,
-  kidHintForIssue,
+  playerHintFor,
+  playerHintForIssue,
   nearMaxWarnings,
   tooExpensiveError,
   type GameConfig,
@@ -115,7 +115,7 @@ export async function validateDetailed(source: unknown, opts: ValidateOptions, c
   try {
     session = await open({ memoryLimitMb: config.sandbox.memoryLimitMb, seed: VALIDATION_SEED });
   } catch (err) {
-    // Infrastructure failure, not the kid's fault.
+    // Infrastructure failure, not the player's fault.
     throw new Error(`could not start the validation sandbox: ${err instanceof Error ? err.message : String(err)}`);
   }
   try {
@@ -206,7 +206,7 @@ async function runSandboxSteps(
     errors.push(...dr.errors);
     warnings.push(...dr.warnings);
   }
-  // Pricing tips last: they are the least urgent (the kid hint uses warnings[0]).
+  // Pricing tips last: they are the least urgent (the player hint uses warnings[0]).
   warnings.push(...nearMaxWarnings(stats, priced, ctx.config.cost, ctx.config.stats.bounds));
 
   if (errors.length > 0) {
@@ -223,7 +223,7 @@ async function runSandboxSteps(
       sprite: sp.sprite,
     },
     warnings,
-    kidHint: warnings[0] ? `${SUCCESS_KID_HINT} ${kidHintFor(warnings[0].code)}` : SUCCESS_KID_HINT,
+    playerHint: warnings[0] ? `${SUCCESS_PLAYER_HINT} ${playerHintFor(warnings[0].code)}` : SUCCESS_PLAYER_HINT,
   };
 }
 
@@ -234,12 +234,12 @@ function failure(errors: ValidationError[], warnings: ValidationWarning[] = [], 
     errors,
     warnings,
     cost,
-    kidHint: first ? kidHintForIssue(first) : 'Something went wrong. Ask Claude to check the unit.',
+    playerHint: first ? playerHintForIssue(first) : 'Something went wrong. Ask Claude to check the unit.',
   };
 }
 
 // ---------------------------------------------------------------------------
-// Thrown errors, located in the kid's source
+// Thrown errors, located in the player's source
 // ---------------------------------------------------------------------------
 
 const at = (loc: { line?: number }) => (loc.line !== undefined ? ` on line ${loc.line}` : '');

@@ -52,8 +52,8 @@ export class ApiError extends Error {
   get unauthenticated(): boolean {
     return this.code === 'AUTH_REQUIRED' || this.code === 'KEY_INVALID' || this.code === 'ADMIN_REQUIRED';
   }
-  /** Kid-friendly text: the hint when there is one, else the message. */
-  get kidMessage(): string {
+  /** Friendly text: the hint when there is one, else the message. */
+  get playerMessage(): string {
     return this.hint ?? this.message;
   }
 }
@@ -107,7 +107,7 @@ export async function request<T>(method: HttpMethod, path: string, body?: unknow
   if (res.status === 422 && isValidationFailure(data)) {
     if (opts.validationAsResult) return data as T;
     const first = data.errors[0];
-    throw new ApiError(422, first?.code ?? 'VALIDATION_FAILED', first?.message ?? 'The unit did not pass the checks.', data.kidHint, undefined, data);
+    throw new ApiError(422, first?.code ?? 'VALIDATION_FAILED', first?.message ?? 'The unit did not pass the checks.', data.playerHint, undefined, data);
   }
   if (isErrorBody(data)) {
     const e = data.error;

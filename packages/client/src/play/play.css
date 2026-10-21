@@ -509,7 +509,7 @@ main.join {
 .score-lines .sl-total { background: none; font-size: 1.05rem; }
 .sl-icon { width: 1.5em; text-align: center; }
 .my-badges { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; }
-.kid-badge {
+.player-badge {
   display: flex; gap: 0.6rem; align-items: center;
   padding: 0.5rem 0.9rem; border-radius: 8px;
   background: color-mix(in srgb, var(--accent) 22%, var(--bg-2));
@@ -521,7 +521,7 @@ main.join {
   from { transform: scale(0) rotate(-15deg); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
-@media (prefers-reduced-motion: reduce) { .kid-badge { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .player-badge { animation: none; } }
 .unit-stats { width: 100%; border-collapse: collapse; font-size: 1rem; }
 .unit-stats th, .unit-stats td { padding: 4px 6px; text-align: right; border-bottom: 1px solid var(--border); }
 .unit-stats th:first-child, .unit-stats td:first-child { text-align: left; }

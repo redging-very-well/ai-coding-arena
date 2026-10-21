@@ -59,7 +59,7 @@ export const QUICK_GROUPS: QuickGroup[] = [
       {
         path: 'match.maxPlayers',
         label: 'Max players (seats)',
-        help: 'How many kids can join one match (2-8). The map and arena size follow the player count automatically; a full game answers "All seats are taken".',
+        help: 'How many players can join one match (2-8). The map and arena size follow the player count automatically; a full game answers "All seats are taken".',
         min: 2,
         max: 8,
         step: 1,

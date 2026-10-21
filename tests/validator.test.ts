@@ -42,7 +42,7 @@ function errorWith(r: ValidationResult, code: string, want: { field?: string | n
   if (!e) throw new Error(`expected ${code}, got ${JSON.stringify(f.errors.map((x) => x.code))}`);
   expect(e.message.length).toBeGreaterThan(5);
   expect(e.fix.length).toBeGreaterThan(5);
-  expect(typeof f.kidHint).toBe('string');
+  expect(typeof f.playerHint).toBe('string');
   if (want.field !== undefined) expect(e.field ?? null).toBe(want.field);
   if (typeof want.fix === 'string') expect(e.fix).toContain(want.fix);
   else if (want.fix) expect(e.fix).toMatch(want.fix);
@@ -69,7 +69,7 @@ describe('validator: good units', () => {
     expect(r.unit.breakdown.sum).toBeCloseTo(91.1403084, 6);
     expect(r.unit.breakdown.parts.maxHealth.text).toBe('maxHealth 120 costs $33.46: $30 base + $3.46 for being at 24% of the max');
     expect(r.warnings).toEqual([]);
-    expect(r.kidHint).toMatch(/ready/);
+    expect(r.playerHint).toMatch(/ready/);
   });
 
   it('Basic Tower template: $198', async () => {
@@ -125,7 +125,7 @@ describe('validator: good units', () => {
     const r = expectOk(await run(template('basic_soldier.js').replace('this.maxHealth = 120;', 'this.maxHealth = 480;')));
     const w = r.warnings.find((x) => x.code === 'W_STAT_NEAR_MAX');
     expect(w?.message).toBe('maxHealth is at 96% of max and costs 2.84× its normal price; two medium units usually beat one maxed one.');
-    expect(r.kidHint).toContain('Two medium units usually beat one giant one!');
+    expect(r.playerHint).toContain('Two medium units usually beat one giant one!');
   });
 
   it('cheapest tower (damage 0) gets W_ZERO_DAMAGE', async () => {
@@ -273,7 +273,7 @@ describe('validator: bad fixtures (one per error code)', () => {
     ]);
     expect(r.cost).toBeNull();
     expect(r.warnings).toEqual([]);
-    expect(r.kidHint).toBe('Whoa, that unit hits WAY too hard! Ask Claude to lower its damage.');
+    expect(r.playerHint).toBe('Whoa, that unit hits WAY too hard! Ask Claude to lower its damage.');
   });
 
   it('STAT_OUT_OF_RANGE: -5', async () => {
@@ -403,7 +403,7 @@ describe('validator: warnings (§7 step 10)', () => {
     expect(r.warnings.map((w) => w.code)).toEqual(['W_NEVER_ATTACKS', 'W_NEVER_MOVES']);
     expect(r.warnings[0]).toMatchObject({ field: 'update', fix: expect.stringContaining("action: 'attack'") });
     expect(r.warnings[1]).toMatchObject({ field: 'update', fix: expect.stringContaining("action: 'move'") });
-    expect(r.kidHint).toMatch(/never attacks/);
+    expect(r.playerHint).toMatch(/never attacks/);
   });
 
   it('W_NEVER_MOVES alone for a soldier that attacks but never walks', async () => {
@@ -584,7 +584,7 @@ describe('validator: sprites (§7 step 8b)', () => {
     expect(r.unit.sprite).toBeNull();
     const w = r.warnings.find((x) => x.code === 'W_NO_SPRITE');
     expect(w?.fix).toMatch(/sprite\(\)/);
-    expect(r.kidHint).toContain('Ask Claude to draw a pixel-art sprite for your unit!');
+    expect(r.playerHint).toContain('Ask Claude to draw a pixel-art sprite for your unit!');
   });
 
   it('SPRITE_BAD_FRAME: wrong row length names state, frame, row and col', async () => {

@@ -29,7 +29,7 @@ export function ServerInfo() {
           <div class="join-row">
             <div class="qr" dangerouslySetInnerHTML={{ __html: setup.playQrSvg }} />
             <div>
-              <div class="label">Kids join at</div>
+              <div class="label">Players join at</div>
               <div class="big-url">{setup.playUrl}</div>
               <div class="dim small">
                 Sandbox: <b class={setup.sandboxMode === 'ivm' ? 'yes' : 'error'}>{setup.sandboxMode === 'ivm' ? 'isolated-vm ✓' : setup.sandboxMode}</b>

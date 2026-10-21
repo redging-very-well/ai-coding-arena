@@ -5,7 +5,7 @@
 // patterns (e.g. `new Array(5e8).fill(0)`, a Map or object growing in an
 // endless loop) make V8 abort the WHOLE process instead of disposing the
 // isolate, despite `memoryLimit`. The isolated-vm README says the same. So the
-// server never runs kid code through this class directly: ivmRunner.ts runs
+// server never runs player code through this class directly: ivmRunner.ts runs
 // each IvmSession inside its own child process (ivmChild.ts). Use the inline
 // mode only for trusted code (benchmarks, tests of the templates).
 
@@ -106,8 +106,8 @@ export class IvmSession implements SandboxSession {
 
   /**
    * Create an isolate, install the harness and take References to the API
-   * object `setup` returns, BEFORE any kid code is evaluated (§8 hardening
-   * rules). The API is never published on globalThis, so kid code can't call it.
+   * object `setup` returns, BEFORE any player code is evaluated (§8 hardening
+   * rules). The API is never published on globalThis, so player code can't call it.
    * `onCatastrophicError` is called if V8 loses control of the isolate.
    */
   static async open(opts: SessionOptions, onCatastrophicError?: (message: string) => void): Promise<IvmSession> {
@@ -151,7 +151,7 @@ export class IvmSession implements SandboxSession {
     if (this.disposed) return { kind: 'crashed', detail: this.crashedDetail ?? 'sandbox disposed' };
     let fn: IVM.Reference<unknown>;
     try {
-      // Evaluating the wrapper only creates the function; no kid code runs yet.
+      // Evaluating the wrapper only creates the function; no player code runs yet.
       const script = await this.isolate.compileScript(wrapUnit(compiledJs), { filename });
       fn = (await script.run(this.context, { reference: true, timeout: timeoutMs })) as IVM.Reference<unknown>;
       script.release();
@@ -255,7 +255,7 @@ export class IvmSession implements SandboxSession {
   }
 
   private failure(err: unknown, elapsedMs: number, opts: CallOptions, stalledMs = 0): CallOutcome {
-    // Never pass an unbounded string on (a kid can throw a 12 MB message).
+    // Never pass an unbounded string on (a player can throw a 12 MB message).
     const message = capMessage(err instanceof Error ? err.message : String(err));
     if (this.catastrophic || this.isolate.isDisposed) {
       this.kill(message);

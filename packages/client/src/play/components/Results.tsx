@@ -10,7 +10,7 @@ import { ApiError, api } from '../../common/api.js';
 import { teamOfPlayer } from '../../common/maps.js';
 import { seatStyle } from '../../common/seats.js';
 import { PLACE_MEDALS, cx, ordinal } from '../../common/ui.js';
-import { BADGE_KID_TEXT, groupErrors, scoreLines, scoreParts, unitPrompts } from '../logic.js';
+import { BADGE_PLAYER_TEXT, groupErrors, scoreLines, scoreParts, unitPrompts } from '../logic.js';
 import { getStore, useStore } from '../store.js';
 import { ArenaView } from './Battle.js';
 import { CopyButton } from './CopyButton.js';
@@ -122,7 +122,7 @@ export function Results() {
       setReplaying(true);
       store.arena.loadReplay(replay);
     } catch (err) {
-      store.toast(err instanceof ApiError ? err.kidMessage : 'No replay yet.', 'warn');
+      store.toast(err instanceof ApiError ? err.playerMessage : 'No replay yet.', 'warn');
     }
   };
 
@@ -179,13 +179,13 @@ export function Results() {
           {mine.badges.length > 0 && (
             <div class="my-badges">
               {mine.badges.map((b, i) => (
-                <div key={b} class="kid-badge" style={{ animationDelay: `${400 + i * 300}ms` }}>
+                <div key={b} class="player-badge" style={{ animationDelay: `${400 + i * 300}ms` }}>
                   <span class="kb-emoji">{BADGES[b].emoji}</span>
                   <span>
                     <strong>{BADGES[b].title}</strong>
                     <br />
                     <span class="dim small">
-                      {BADGE_KID_TEXT[b]}
+                      {BADGE_PLAYER_TEXT[b]}
                       {b === 'inventor' && mine.inventorUsedBy ? ` Used by ${mine.inventorUsedBy} player${mine.inventorUsedBy === 1 ? '' : 's'}.` : ''}
                     </span>
                   </span>

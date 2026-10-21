@@ -9,7 +9,7 @@
 // unused imports (`import fs from 'fs'` must be rejected, not ignored).
 //
 // The output keeps an inline source map (no sourcesContent) so runtime errors
-// can be mapped back to the kid's original line numbers (sandbox/sourcemap.ts).
+// can be mapped back to the player's original line numbers (sandbox/sourcemap.ts).
 
 import { transform, type Message } from 'esbuild';
 import type { ValidationError } from '@pixel-clash/shared';

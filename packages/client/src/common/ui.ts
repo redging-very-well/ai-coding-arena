@@ -1,5 +1,5 @@
 // Small UI helpers shared by /play, /screen, /admin and /setup: formatting,
-// kid-friendly phase labels, clipboard, debounce. DOM-free except `copyText`
+// friendly phase labels, clipboard, debounce. DOM-free except `copyText`
 // and `ensureFonts`, which check for the browser at call time.
 
 import type { Phase } from '@pixel-clash/shared';
@@ -30,7 +30,7 @@ export function ordinal(n: number): string {
 
 export const PLACE_MEDALS = ['🥇', '🥈', '🥉', '🎖️'] as const;
 
-/** Kid language for each phase (plan §12.4): banner title and a one-line hint. */
+/** Friendly language for each phase (plan §12.4): banner title and a one-line hint. */
 export const PHASE_TEXT: Readonly<Record<Phase, { title: string; hint: string }>> = {
   LOBBY: { title: 'Get ready!', hint: 'The game starts soon. Say hi to Claude!' },
   PLAN: { title: 'Plan time!', hint: 'Ask Claude for new units, then pick up to 3.' },

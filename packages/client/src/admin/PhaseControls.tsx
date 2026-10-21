@@ -13,8 +13,8 @@ import { MatchSetup } from './MatchSetup.js';
 
 const PHASE_HELP: Record<Phase, string> = {
   LOBBY: 'Players join (up to 8). Pick the map and teams, then start the match when 2-8 players are in.',
-  PLAN: 'Kids ask Claude for units and pick up to 3. Ends when the timer runs out, or press Next.',
-  PLACEMENT: 'Kids place their armies and press READY. START when everyone is ready, or Force start.',
+  PLAN: 'Players ask Claude for units and pick up to 3. Ends when the timer runs out, or press Next.',
+  PLACEMENT: 'Players place their armies and press READY. START when everyone is ready, or Force start.',
   BATTLE: 'The battle is playing. Pause, 1x/2x, or Skip to the results.',
   RESULTS: 'Round results. Press Next for the next round (or the final results).',
   MATCH_RESULTS: 'The match is over. New match keeps players and units, resets points.',

@@ -109,7 +109,7 @@ export function isFrontCell(zone: ZoneRef, col: number, row: number): boolean {
   return row === 0 || (facing === 'diag' && col === 0);
 }
 
-/** Kid words for a corner (top-down, matching the placement grid). */
+/** Plain words for a corner (top-down, matching the placement grid). */
 export const CORNER_WORDS: Readonly<Record<Corner, string>> = {
   TL: 'top-left',
   TR: 'top-right',
@@ -387,7 +387,7 @@ export function claudeTerminalUrl(address: string | null | undefined, claudeSeat
 export const NAME_RE = /^[A-Za-z0-9 _-]{1,16}$/;
 export const PIN_RE = /^\d{4}$/;
 
-/** Kid-friendly problem with a name, or null when it's fine. */
+/** Friendly problem with a name, or null when it's fine. */
 export function nameProblem(name: string): string | null {
   const n = name.trim();
   if (!n) return 'Type your player name.';
@@ -405,7 +405,7 @@ export function pinKey(pin: string, key: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Round score in kid language (§9 Points, Badges; §12.4 kid language)
+// Round score in friendly language (§9 Points, Badges; §12.4 friendly language)
 // ---------------------------------------------------------------------------
 
 function pts(n: number): string {
@@ -479,8 +479,8 @@ export function scoreLines(raw: Pick<RankingEntryDTO, 'place'> & Partial<ScorePa
   ];
 }
 
-/** What each badge means, said to the kid who won it. */
-export const BADGE_KID_TEXT: Readonly<Record<BadgeId, string>> = {
+/** What each badge means, said to the player who won it. */
+export const BADGE_PLAYER_TEXT: Readonly<Record<BadgeId, string>> = {
   lastStanding: 'You came 1st!',
   biggestHitter: 'You dealt the most damage!',
   giantSlayer: 'Your knockouts were worth the most $!',

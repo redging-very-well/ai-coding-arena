@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CONFIG, checkStats, kidHintForIssue } from '@pixel-clash/shared';
+import { DEFAULT_CONFIG, checkStats, playerHintForIssue } from '@pixel-clash/shared';
 
 const bounds = DEFAULT_CONFIG.stats.bounds;
 const soldier = {
@@ -108,27 +108,27 @@ describe('review regressions', () => {
     expect(r.errors[0]!.message).toContain('it is 25 characters');
   });
 
-  it('kid hints for enum fields and the tower speed fix make sense', () => {
+  it('player hints for enum fields and the tower speed fix make sense', () => {
     const type = checkStats({ ...soldier, type: 'wizard' }, bounds);
     const shape = checkStats({ ...soldier, shape: 'star' }, bounds);
-    expect(!type.ok && kidHintForIssue(type.errors[0]!)).toBe('Your unit must be a soldier or a tower. Ask Claude to fix its type.');
-    expect(!shape.ok && kidHintForIssue(shape.errors[0]!)).toMatch(/circle, square, triangle or diamond/);
+    expect(!type.ok && playerHintForIssue(type.errors[0]!)).toBe('Your unit must be a soldier or a tower. Ask Claude to fix its type.');
+    expect(!shape.ok && playerHintForIssue(shape.errors[0]!)).toMatch(/circle, square, triangle or diamond/);
     const tower = checkStats({ ...soldier, type: 'tower', speed: NaN }, bounds);
     expect(!tower.ok && tower.errors[0]).toMatchObject({ code: 'STAT_NOT_FINITE', field: 'speed', fix: 'Towers never move: set this.speed = 0.' });
     const towerStr = checkStats({ ...soldier, type: 'tower', speed: 'zero' }, bounds);
     expect(!towerStr.ok && towerStr.errors[0]!.fix).toContain('Towers never move: set this.speed = 0.');
   });
 
-  it('kid hints for numbers out of range are concrete (§12.4)', () => {
+  it('player hints for numbers out of range are concrete (§12.4)', () => {
     const hint = (stats: Record<string, unknown>) => {
       const r = checkStats({ ...soldier, ...stats }, bounds);
-      return !r.ok && kidHintForIssue(r.errors[0]!);
+      return !r.ok && playerHintForIssue(r.errors[0]!);
     };
     const maxRange = bounds.range.max;
     expect(hint({ range: maxRange + 100 })).toBe(`Your unit's range is too big! (${maxRange + 100}, the max is ${maxRange}) Ask Claude to lower it.`);
     expect(hint({ damage: bounds.damage.max + 1 })).toMatch(/WAY too hard/);
     expect(hint({ attackCooldown: bounds.attackCooldown.min - 1 })).toMatch(/attacks too fast/);
-    expect(kidHintForIssue({ code: 'UNIT_TOO_EXPENSIVE', field: 'cost', value: 612, allowed: { max: 500 }, message: '', fix: '' })).toBe(
+    expect(playerHintForIssue({ code: 'UNIT_TOO_EXPENSIVE', field: 'cost', value: 612, allowed: { max: 500 }, message: '', fix: '' })).toBe(
       'Your unit costs too much! ($612, the max is $500) Ask Claude to make it cheaper.',
     );
   });
