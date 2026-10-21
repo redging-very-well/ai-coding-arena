@@ -3,7 +3,7 @@
 // 2-round match to MATCH_RESULTS, and restart recovery.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { GameStateDTO, PrivateStateDTO } from '@pixel-clash/shared';
+import { legacyCornerOf, type GameStateDTO, type PrivateStateDTO } from '@pixel-clash/shared';
 import type { RunningServer } from '../packages/server/src/server.js';
 import {
   Client,
@@ -214,7 +214,7 @@ describe('phase gates (§10.2)', () => {
     expect((await a.client.post('/units', { source: namedUnit('Late') })).body.error.code).toBe('PHASE_CLOSED');
     expect((await a.client.put('/round/selection', { unitIds: [] })).body.error.code).toBe('PHASE_CLOSED');
     const st = (await a.client.get('/state')).body as GameStateDTO;
-    expect(st.me?.myZone).toMatch(/^(TL|BR)$/);
+    expect(legacyCornerOf(st.me!.myZone!)).toMatch(/^(TL|BR)$/);
     expect(st.me?.selection).toEqual(['gate-tank', 'basic-soldier']);
 
     const put = (placements: unknown) => a.client.put('/round/placement', { placements });
@@ -277,11 +277,11 @@ describe('a scripted 2-player, 2-round match', () => {
     // PLACEMENT via the PLAN timer running out (set to 0 s).
     await admin.post('/admin/timer', { setSeconds: 0 });
     s = await waitForState(a.client, (x) => x.phase === 'PLACEMENT');
-    const zoneA1 = s.me!.myZone;
+    const zoneA1 = legacyCornerOf(s.me!.myZone!);
     expect(zoneA1).toMatch(/^(TL|BR)$/);
     const sb = (await b.client.get('/state')).body as GameStateDTO;
     expect(sb.me!.selection).toEqual(['basic-soldier', 'basic-tower']);
-    expect(sb.me!.myZone).not.toBe(zoneA1);
+    expect(legacyCornerOf(sb.me!.myZone!)).not.toBe(zoneA1);
     await a.client.put('/round/placement', {
       placements: [
         { unitId: 'big-tank', col: 0, row: 0 },
@@ -301,14 +301,15 @@ describe('a scripted 2-player, 2-round match', () => {
     expect(s.lastBattle?.round).toBe(1);
     expect(s.lastBattle?.ranking).toHaveLength(2);
     const pts1 = s.scoreboard.reduce((sum, e) => sum + e.points, 0);
-    expect(pts1).toBeGreaterThanOrEqual(3);
+    expect(pts1).toBeGreaterThanOrEqual(1); // 2 players: 1st gets 1 place point (§9 Points)
     // Round points = place + damage bonus + value bonus (§9); the scoreboard adds them up.
     const r1 = s.lastBattle!.ranking;
     for (const r of r1) {
       expect(r.pointsGained).toBe(r.placePoints + r.damageBonus + r.valueBonus);
-      expect(r.placePoints).toBe(r.place === 1 ? 3 : 2);
+      // 2 players: place 1/0, bonus maxima 2 × 2/4 = 1 and round(1 × 2/4) = 1.
+      expect(r.placePoints).toBe(r.place === 1 ? 1 : 0);
       expect(r.damageBonus).toBeGreaterThanOrEqual(0);
-      expect(r.damageBonus).toBeLessThanOrEqual(2);
+      expect(r.damageBonus).toBeLessThanOrEqual(1);
       expect(r.valueBonus).toBeLessThanOrEqual(1);
       const board = s.scoreboard.find((e) => e.playerId === r.playerId)!;
       expect(board).toMatchObject({ points: r.pointsGained, damage: r.damage });
@@ -346,7 +347,7 @@ describe('a scripted 2-player, 2-round match', () => {
     s = (await admin.post('/admin/phase/next')).body as GameStateDTO;
     expect(s.phase).toBe('PLACEMENT');
     const sa2 = (await a.client.get('/state')).body as GameStateDTO;
-    expect(sa2.me!.myZone).not.toBe(zoneA1);
+    expect(legacyCornerOf(sa2.me!.myZone!)).not.toBe(zoneA1);
     expect(sa2.me!.selection).toEqual(['big-tank']);
     expect(sa2.me!.hasLastLayout).toBe(true);
     await a.client.post('/round/ready', { ready: true });

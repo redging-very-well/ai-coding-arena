@@ -82,15 +82,15 @@ afterEach(() => {
 
 function selfView(id: string, unitId: string, x = 100, y = 100): SelfView {
   return {
-    id, unitId, ownerId: 'p0', type: 'soldier', name: unitId, x, y, radius: 10, hp: 120, maxHp: 120,
+    id, unitId, ownerId: 'p0', teamId: 0, type: 'soldier', name: unitId, x, y, radius: 10, hp: 120, maxHp: 120,
     damage: 10, range: 40, speed: 1.5, attackCooldown: 60, cooldownRemaining: 0,
   };
 }
 function otherView(id: string, ownerId: string, x: number, y: number): OtherView {
-  return { id, ownerId, type: 'soldier', name: 'x', x, y, radius: 10, hp: 120, maxHp: 120, range: 40 };
+  return { id, ownerId, teamId: ownerId === 'p0' ? 0 : 1, type: 'soldier', name: 'x', x, y, radius: 10, hp: 120, maxHp: 120, range: 40 };
 }
 const WORLD: WorldView = {
-  width: 800, height: 800, tick: 0, ticksLeft: 5400, myCorner: { x: 120, y: 120 },
+  width: 800, height: 800, tick: 0, ticksLeft: 5400, mapStyle: 'corners', myCorner: { x: 120, y: 120 },
   center: { x: 400, y: 400 }, safeZone: { x: 400, y: 400, radius: 570 },
 };
 
@@ -358,6 +358,8 @@ describe('host hiccups are not the kid\'s fault', () => {
       // 'timeout' is the forgiven-once hard timeout (isolated-vm's own timer
       // saw the pause); a 'crashed' would disable the whole player.
       expect(['ok', 'timeout'], `pause after ${pauseAfterMs} ms: ${res.detail ?? ''}`).toContain(res.status);
+      // The whole process was stopped, so a timeout is recognised as the host's fault.
+      if (res.status === 'timeout') expect(res.hostStall, `pause after ${pauseAfterMs} ms`).toBe(true);
       expect(runner.disposed).toBe(false);
       // The isolate is still alive and answering.
       expect(['ok', 'timeout']).toContain((await runner.tick(input(2, [selfView('0-0-0', 'light')]))).status);
@@ -444,6 +446,16 @@ describe('strikes', () => {
     expect(second.find((e) => e.kind === 'unit-disabled')).toMatchObject({ instanceId: '0-0-0', reason: 'timeout' });
     expect(t.isDisabled('0-0-0')).toBe(true);
     expect(t.isDisabled('0-0-1')).toBe(false);
+    expect(t.playerDisabled).toBe(false);
+  });
+
+  it('a host-stall timeout is reported but gives no strike and counts toward no limit', () => {
+    const t = new StrikeTracker(STRIKE_LIMITS, () => 'Zappy');
+    const hostStall: TickResult = { status: 'timeout', outputs: [], elapsedMs: 40, slow: false, forged: 0, culprit: 'a', hostStall: true };
+    expect(t.record(0, hostStall)).toEqual([{ kind: 'timeout', tick: 0, elapsedMs: 40, hostStall: true }]);
+    for (let i = 1; i < 10; i++) t.record(i, hostStall);
+    expect(t.strikesOf('a')).toBe(0);
+    expect(t.isDisabled('a')).toBe(false);
     expect(t.playerDisabled).toBe(false);
   });
 

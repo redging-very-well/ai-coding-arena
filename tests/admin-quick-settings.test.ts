@@ -42,7 +42,7 @@ describe('quick settings field table', () => {
       expect(f.help.length).toBeGreaterThan(0);
     }
     expect(new Set(QUICK_FIELDS.map((f) => f.path)).size).toBe(QUICK_FIELDS.length);
-    expect(QUICK_GROUPS.map((g) => g.title)).toEqual(['Economy', 'Timers', 'Costs', 'Scoring', 'Sudden death']);
+    expect(QUICK_GROUPS.map((g) => g.title)).toEqual(['Match', 'Economy', 'Timers', 'Costs', 'Scoring', 'Sudden death']);
   });
 
   it('default values sit inside each field’s own bounds', () => {
@@ -82,32 +82,38 @@ describe('quick settings field table', () => {
   });
 
   it('reads and writes array paths without touching the original', () => {
-    const base = cfg();
-    expect(getPath(base, 'scoring.placePoints.0')).toBe(3);
-    expect(getPath(base, 'scoring.placePoints.3')).toBe(0);
+    // The config has no arrays any more (place points became a formula); paths still handle them.
+    const base = { ...cfg(), extra: { table: [3, 2, 1, 0] } };
+    expect(getPath(base, 'extra.table.0')).toBe(3);
+    expect(getPath(base, 'extra.table.3')).toBe(0);
     expect(getPath(base, 'nope.deeper')).toBeUndefined();
-    const next = setPath(base, 'scoring.placePoints.1', 5);
-    expect(next.scoring.placePoints).toEqual([3, 5, 1, 0]);
-    expect(Array.isArray(next.scoring.placePoints)).toBe(true);
-    expect(base.scoring.placePoints).toEqual([3, 2, 1, 0]);
+    const next = setPath(base, 'extra.table.1', 5);
+    expect(next.extra.table).toEqual([3, 5, 1, 0]);
+    expect(Array.isArray(next.extra.table)).toBe(true);
+    expect(base.extra.table).toEqual([3, 2, 1, 0]);
     expect(next.caps).toBe(base.caps); // untouched branches are shared
   });
 });
 
 describe('quick settings edits → patch', () => {
-  it('a form edit produces the minimal patch (arrays sent whole)', () => {
+  it('a form edit produces the minimal patch', () => {
     const base = cfg();
     let draft = applyField(base, 'caps.budget', 1200);
-    draft = applyField(draft, 'scoring.placePoints.0', 4);
+    draft = applyField(draft, 'scoring.damageBonusMax', 4);
     draft = applyField(draft, 'timers.planFirstRoundSec', fromDisplay(field('timers.planFirstRoundSec'), 10, draft));
     const patch = configDiff(base, draft);
-    expect(patch).toEqual({ caps: { budget: 1200 }, timers: { planFirstRoundSec: 600 }, scoring: { placePoints: [4, 2, 1, 0] } });
+    expect(patch).toEqual({ caps: { budget: 1200 }, timers: { planFirstRoundSec: 600 }, scoring: { damageBonusMax: 4 } });
     const r = safeParseConfig(patch, DEFAULT_CONFIG);
     expect(r.success).toBe(true);
     expect(fieldChanged(field('caps.budget'), base, draft)).toBe(true);
     expect(fieldChanged(field('caps.unitCost'), base, draft)).toBe(false);
-    expect(fieldChanged(field('scoring.placePoints.0'), base, draft)).toBe(true);
-    expect(fieldChanged(field('scoring.placePoints.1'), base, draft)).toBe(false);
+    expect(fieldChanged(field('scoring.damageBonusMax'), base, draft)).toBe(true);
+    expect(fieldChanged(field('scoring.valueBonusMax'), base, draft)).toBe(false);
+  });
+
+  it('arrays in a diff are sent whole', () => {
+    const base = { list: [3, 2, 1, 0], keep: 1 };
+    expect(configDiff(base, { list: [4, 2, 1, 0], keep: 1 })).toEqual({ list: [4, 2, 1, 0] });
   });
 
   it('battle length drags the sudden-death end along when they were equal', () => {
@@ -140,10 +146,10 @@ describe('quick settings validation', () => {
   });
 
   it('maps zod schema issues to the quick fields', () => {
-    const bad = setPath(setPath(cfg(), 'caps.budget', 0.5), 'scoring.placePoints.2', -1);
+    const bad = setPath(setPath(cfg(), 'caps.budget', 0.5), 'scoring.valueBonusMax', -1);
     const r = validateDraft(bad);
     expect(r.byField['caps.budget']?.length).toBeGreaterThan(0);
-    expect(r.byField['scoring.placePoints.2']?.length).toBeGreaterThan(0);
+    expect(r.byField['scoring.valueBonusMax']?.length).toBeGreaterThan(0);
     expect(r.other).toEqual([]);
     // Object-level rule: start must be before end → shown on the sudden-death fields.
     const late = setPath(cfg(), 'suddenDeath.startTick', 6000);
@@ -193,7 +199,7 @@ describe('quick settings validation', () => {
     const base = cfg();
     const refusal = { code: 'TEMPLATE_WOULD_BREAK', message: 'That change would make a starter template invalid.', hint: 'Loosen the bounds.' };
     // Price: only the cost/cap fields that changed, not the unrelated scoring edit.
-    const priced = applyField(applyField(base, 'cost.range', 3), 'scoring.placePoints.0', 9);
+    const priced = applyField(applyField(base, 'cost.range', 3), 'scoring.damageBonusMax', 9);
     expect(Object.keys(refusalIssues(refusal, base, priced).byField)).toEqual(['cost.range']);
     // Bounds (edited in the JSON): not pinned on the quick field that also changed.
     const bounded = applyField(setPath(base, 'stats.bounds.range.max', 100), 'caps.budget', 1200);

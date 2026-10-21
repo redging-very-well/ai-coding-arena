@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG, checkSprite, checkStats, computeCost } from '@pixel-clash/shared';
 
@@ -37,6 +38,18 @@ describe('starter-kit templates (§6 stats)', () => {
     const tSelf = { ...self, radius: 14, range: 180 };
     expect(tower.update(tSelf, [far, near], [], world)).toEqual({ action: 'attack', targetId: '1-0-1' });
     expect(tower.update(tSelf, [{ ...far, x: 700 }], [], world)).toEqual({ action: 'idle' });
+  });
+
+  it('no template assumes the 800 arena: with no enemies the soldier walks to world.center of a 1200 map', async () => {
+    const soldier = (await load('basic_soldier.js')) as unknown as { update: (...a: unknown[]) => unknown };
+    const world = { width: 1200, height: 1200, tick: 0, ticksLeft: 5400, mapStyle: 'ring', myCorner: { x: 600, y: 120 }, center: { x: 600, y: 600 }, safeZone: { x: 600, y: 600, radius: 855 } };
+    const self = { id: '0-0-0', teamId: 0, x: 600, y: 220, radius: 10, range: 40, cooldownRemaining: 0 };
+    expect(soldier.update(self, [], [], world)).toEqual({ action: 'move', destination: { x: 600, y: 600 } });
+    for (const file of ['basic_soldier.js', 'basic_tower.js']) {
+      const src = readFileSync(new URL(`../packages/starter-kit/units/${file}`, import.meta.url), 'utf8');
+      const code = src.replace(/\/\/.*$/gm, ''); // comments may mention the sizes
+      expect(code).not.toMatch(/\b(800|400)\b/);
+    }
   });
 });
 

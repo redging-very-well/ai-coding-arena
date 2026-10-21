@@ -462,10 +462,12 @@ describe('frame interpolation', () => {
 });
 
 describe('seat palette', () => {
-  it('has 4 distinct seat colours plus a neutral, and reads seats from instance ids', () => {
-    expect(new Set(SEATS.map((s) => s.color)).size).toBe(4);
-    expect(seatStyle(7).seat).toBe(-1);
+  it('has 8 distinct seat colours plus a neutral, and reads seats from instance ids', () => {
+    expect(new Set(SEATS.map((s) => s.color)).size).toBe(8);
+    expect(seatStyle(7).seat).toBe(7);
+    expect(seatStyle(8).seat).toBe(-1);
     expect(seatOfInstance('2-3-4')).toBe(2);
+    expect(seatOfInstance('7-0-0')).toBe(7);
     expect(seatOfInstance('x')).toBe(-1);
   });
 });

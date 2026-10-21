@@ -3,19 +3,28 @@
 //   → ivmRunner (isolates in child processes, §8) → BattleEngine (§9).
 //
 // Checks: a template-vs-template battle produces a ranking, a 5400-tick
-// battle finishes in < 2 s of wall time, and a 4-player × 8-unit battle's
-// per-tick cost (p50/p99) is logged for the §14 load-test budget (8 ms p99).
+// battle finishes in < 2 s of wall time, and the per-tick cost (p50/p99) of
+// a 4-player × 8-unit battle and of the §9.2 / §14 load shape (8 players × 12
+// copies = 96 units on Ring 8 and as 4v4 on Lanes 8, 1200 arena) stays within
+// the 8 ms p99 budget.
 
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   DEFAULT_CONFIG,
+  assignMapZones,
+  assignTeamZones,
   assignZones,
+  autoBalance,
   cellCenter,
+  mapFor,
   parseConfig,
-  type Corner,
   type GameConfig,
+  type MapLayout,
+  type MapStyle,
   type PlacementDTO,
+  type TeamMode,
+  type ZoneRef,
 } from '@pixel-clash/shared';
 import { validateDetailed } from '../packages/server/src/validator/validate.js';
 import { createIvmRunnerFactory } from '../packages/server/src/sandbox/ivmRunner.js';
@@ -58,13 +67,14 @@ const template = (file: string) => readFileSync(new URL(file, TEMPLATE_DIR), 'ut
 interface PlayerSpec {
   playerId: string;
   seat: number;
-  zone: Corner;
+  zone: ZoneRef;
+  teamId?: number;
   designs: StoredDesign[];
   placements: PlacementDTO[];
 }
 
 /** Create real ivm runners and run one battle; returns the result and timings. */
-async function realBattle(specs: PlayerSpec[], config: GameConfig, seed: number) {
+async function realBattle(specs: PlayerSpec[], config: GameConfig, seed: number, map?: Pick<MapLayout, 'style' | 'width'>) {
   const runners = await createBattleRunners(
     ivm,
     specs.map((s) => ({ playerId: s.playerId, seat: s.seat, units: s.designs.map((d) => d.runner) })),
@@ -77,6 +87,7 @@ async function realBattle(specs: PlayerSpec[], config: GameConfig, seed: number)
     playerId: s.playerId,
     seat: s.seat,
     zone: s.zone,
+    ...(s.teamId !== undefined ? { teamId: s.teamId } : {}),
     units: s.designs.map((d) => d.battle),
     placements: s.placements,
     runner: runners.get(s.playerId)!,
@@ -100,7 +111,7 @@ async function realBattle(specs: PlayerSpec[], config: GameConfig, seed: number)
     };
   }
 
-  const engine = new BattleEngine({ players, config, seed });
+  const engine = new BattleEngine({ players, config, seed, ...(map ? { map } : {}) });
   const t0 = performance.now();
   const result = await engine.run();
   const wallMs = performance.now() - t0;
@@ -118,7 +129,10 @@ function percentile(values: number[], p: number): number {
  * No unit misbehaved: templates must never throw or get disabled. With
  * `maxTimeouts`, up to that many hard timeouts (a host GC/scheduler stall
  * under load) are tolerated across the battle; each must be the forgiven
- * first one ("…took too long once", §8), so nothing gets disabled.
+ * first one ("…took too long once", §8), so nothing gets disabled. The
+ * players tick in lockstep, so ONE host stall can time out every player that
+ * was ticking at that moment: one stall's worth is one timeout per player.
+ * (Stalls the sandbox detects itself are `hostStall` ticks and not counted.)
  */
 function expectCleanRun(result: BattleResult, { maxTimeouts = 0 } = {}): void {
   const timeouts = result.players.reduce((n, p) => n + p.timeouts, 0);
@@ -236,8 +250,9 @@ describe('integration: validator → ivm runner → engine (M2 acceptance)', () 
     expectCleanRun(result);
     expect(result.endReason).toBe('elimination');
     expect(result.ranking).toEqual([
-      expect.objectContaining({ playerId: 'strong', place: 1, placePoints: config.scoring.placePoints[0] }),
-      expect.objectContaining({ playerId: 'weak', place: 2, placePoints: config.scoring.placePoints[1] }),
+      // 2 players: place points 1/0 (§9 Points: 1st gets P − 1).
+      expect.objectContaining({ playerId: 'strong', place: 1, placePoints: 1 }),
+      expect.objectContaining({ playerId: 'weak', place: 2, placePoints: 0 }),
     ]);
   }, 30_000);
 
@@ -268,10 +283,62 @@ describe('integration: validator → ivm runner → engine (M2 acceptance)', () 
     );
     // One stall (GC/scheduler) may cross the 12 ms hard timeout under load;
     // §8 forgives a culprit's first timeout, so it must not disable anything.
-    expectCleanRun(result, { maxTimeouts: 1 });
+    expectCleanRun(result, { maxTimeouts: specs.length });
     expect(result.ranking).toHaveLength(4);
     expect(tickMs.length).toBe(result.endTick);
     // §14 load-test budget: sim p99 < 8 ms/tick.
     expect(p99).toBeLessThan(8);
   }, 60_000);
+
+  // §9.2 Performance / §14 loadtest: 8 players × 12 copies = 96 units on the
+  // 1200 arena, every update() looping over all enemies; once free-for-all on
+  // Ring 8 and once as 4v4 on Lanes 8 (allies/enemies serialised once per side).
+  const twelve = (): PlacementDTO[] => [
+    ...[0, 1, 2, 3, 4, 5].map((c) => at(c, 0, S())),
+    at(0, 1, S()), at(1, 1, S()),
+    at(2, 1, T()), at(3, 1, T()), at(0, 2, T()), at(1, 2, T()),
+  ];
+  const ids8 = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'];
+  const loadSpecs = (style: MapStyle, mode: TeamMode): { specs: PlayerSpec[]; layout: MapLayout } => {
+    const layout = mapFor(style, 8);
+    const teams = autoBalance(ids8, mode);
+    const zones = teams ? assignTeamZones(layout, teams, 1) : assignMapZones(layout, ids8, 1);
+    const teamOf = new Map(teams?.flatMap((t) => t.members.map((m) => [m, t.teamId] as const)) ?? []);
+    const specs = ids8.map((id, seat) => ({
+      playerId: id,
+      seat,
+      zone: zones.get(id)!,
+      ...(teamOf.has(id) ? { teamId: teamOf.get(id)! } : {}),
+      designs: [soldier, tower],
+      placements: twelve(),
+    }));
+    return { specs, layout };
+  };
+
+  for (const [style, mode, label] of [
+    ['ring', 'ffa', '8p×12 Ring 8 free-for-all'],
+    ['lanes', 'teams2', '8p×12 Lanes 8 4v4'],
+  ] as const) {
+    it(`${label}: sim p99 < 8 ms/tick (96 units, 1200 arena)`, async () => {
+      const config: GameConfig = parseConfig({});
+      const { specs, layout } = loadSpecs(style, mode);
+      expect(layout.width).toBe(1200);
+      const { result, wallMs, tickMs } = await realBattle(specs, config, 8812, { style, width: layout.width });
+      const p50 = percentile(tickMs, 50);
+      const p99 = percentile(tickMs, 99);
+      console.log(
+        `[integration] ${label}: ${result.units.length} units, ${result.endTick} ticks (${result.endReason}) in ${wallMs.toFixed(0)} ms ` +
+          `(${(wallMs / Math.max(1, result.endTick)).toFixed(3)} ms/tick avg); tick p50 ${p50.toFixed(3)} ms, p99 ${p99.toFixed(3)} ms, ` +
+          `max ${Math.max(...tickMs).toFixed(2)} ms`,
+      );
+      expect(result.units).toHaveLength(96);
+      expectCleanRun(result, { maxTimeouts: specs.length });
+      if (mode === 'ffa') expect(result.teams).toBeUndefined();
+      else expect(result.teams?.map((t) => t.members.length)).toEqual([4, 4]);
+      expect(result.ranking).toHaveLength(8);
+      expect(tickMs.length).toBe(result.endTick);
+      // §9.2 Performance: sim p99 < 8 ms/tick with 8 players × 12 copies.
+      expect(p99).toBeLessThan(8);
+    }, 120_000);
+  }
 });

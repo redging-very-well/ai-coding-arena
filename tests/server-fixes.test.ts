@@ -7,7 +7,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseConfig, type GameStateDTO, type PlacementDTO } from '@pixel-clash/shared';
+import { legacyCornerOf, parseConfig, type GameStateDTO, type PlacementDTO } from '@pixel-clash/shared';
 import { PASSWORD_WORDS, generatePassword } from '../packages/server/src/services/auth.js';
 import { BattleEngine, buildBattleReport, resultAtTick } from '../packages/server/src/sim/engine.js';
 import { frameAt } from '../packages/server/src/sim/frames.js';
@@ -89,7 +89,7 @@ describe('kicks, zones and new match', () => {
       expect((await admin.post(`/admin/players/${c.id}/kick`, {})).body.effective).toBe('now');
       const za = ((await a.client.get('/state')).body as GameStateDTO).me!.myZone;
       const zb = ((await b.client.get('/state')).body as GameStateDTO).me!.myZone;
-      expect([za, zb].sort()).toEqual(['BR', 'TL']);
+      expect([za, zb].map((z) => legacyCornerOf(z!)).sort()).toEqual(['BR', 'TL']);
     } finally {
       await srv.close();
       removeDir(dir);

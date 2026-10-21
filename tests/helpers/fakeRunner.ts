@@ -29,7 +29,7 @@ import type {
   UnitOutput,
 } from '../../packages/server/src/sandbox/runner.js';
 import type { BattlePlayerSetup, BattleUnitDesign } from '../../packages/server/src/sim/engine.js';
-import type { Corner, PlacementDTO } from '@pixel-clash/shared';
+import type { PlacementDTO, ZoneRef } from '@pixel-clash/shared';
 
 export interface Brain {
   update(self: SelfView, enemies: OtherView[], allies: OtherView[], world: WorldView): unknown;
@@ -183,7 +183,10 @@ export function design(unitId: string, s: StatsSnapshot, cost?: number, config: 
 export interface FakePlayerSpec {
   playerId: string;
   seat: number;
-  zone: Corner;
+  /** A Corner of the 800 Corners map, or a zone of any §9.2 map. */
+  zone: ZoneRef;
+  /** Team mode (§9.2): give it to every player or to none. */
+  teamId?: number;
   units: BattleUnitDesign[];
   placements: PlacementDTO[];
   brains: Record<string, BrainFactory>;
@@ -196,7 +199,7 @@ export function fakePlayers(specs: FakePlayerSpec[], battleSeed = 1): { setups: 
   const setups = specs.map((s) => {
     const runner = new FakePlayerRunner({ playerId: s.playerId, seat: s.seat, seed: battleSeed + s.seat }, s.brains, s.hook);
     runners.set(s.playerId, runner);
-    return { playerId: s.playerId, seat: s.seat, zone: s.zone, units: s.units, placements: s.placements, runner };
+    return { playerId: s.playerId, seat: s.seat, zone: s.zone, ...(s.teamId !== undefined ? { teamId: s.teamId } : {}), units: s.units, placements: s.placements, runner };
   });
   return { setups, runners };
 }
