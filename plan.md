@@ -177,6 +177,8 @@ Players' units are one JS module (TS syntax is tolerated) with a default-exporte
 // packages/shared/src/contract.ts
 export type UnitType = 'soldier' | 'tower' | 'wall' | 'factory';   // §5.2
 export type BodyType = UnitType | 'minion'; // minions are made by factories: you see them, you never submit one
+export type MinionKind = 'grunt' | 'archer' | 'runner' | 'brute';  // what a factory builds (§5.3)
+export type MinionOrder = 'attack' | 'defend' | 'swarm' | 'guard'; // what a factory's minions do (§5.3)
 export type MapStyle = 'duel' | 'triangle' | 'corners' | 'ring' | 'lanes' | 'islands'; // §9.2
 export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 
@@ -190,6 +192,8 @@ export interface UnitStats {
   speed?: number;        // soldier: required, 0.5-5 px per tick (60 ticks = 1 s). tower/wall/factory: 0 or leave it out
   attackCooldown?: number;// soldier/tower: required, integer ticks between attacks. wall/factory: leave it out
   productionInterval?: number; // factory only, required: integer ticks between two minions, 600-1800 (10-30 s)
+  produces?: MinionKind; // factory only, optional (default 'grunt'): the minion it builds; the price follows (§6)
+  burst?: number;        // factory only, optional (default 1): integer 1-4; minions wait inside until this many are ready, then leave together
   color: string;         // "#RRGGBB": projectiles, particles, fallback sprite; a wall's block colour; a factory's minion colour
   size?: number;         // soldier/tower: body radius in px = hitbox AND drawn size, 6-20 (default 10 / 14), $0.5 per px above 6. Walls always fill their 40 px cell, factories are always 18: size is ignored for them.
   shape?: Shape;         // optional; only used by the fallback sprite when sprite() is missing
@@ -213,8 +217,13 @@ export interface FactoryView {
   productionInterval: number;
   nextMinionIn: number;  // ticks until the next minion (it waits while you hold, or while the factory is full)
   minionsLeft: number;   // minions this factory can still make this battle
-  minionsAlive: number; maxAlive: number;
-  rally: { x: number; y: number }; // where its minions go; starts at world.center
+  minionsAlive: number; maxAlive: number; // minionsAlive = out on the field; maxAlive caps minionsAlive + stored
+  stored: number;        // built minions waiting inside: safe from attacks, but LOST if the factory is destroyed
+  burst: number;         // stored minions leave together when stored reaches burst (or on { action: 'release' })
+  produces: MinionKind;
+  order: MinionOrder;    // starts 'attack'; a swarm whose target died becomes 'attack', a guard whose ally died 'defend'
+  orderTargetId: string | null; // swarm: the enemy, guard: the ally, else null
+  rally: { x: number; y: number }; // where 'attack' minions go; starts at world.center
 }
 export interface SelfView {
   id: string;            // instanceId of this copy, e.g. "2-0-3"
@@ -233,6 +242,7 @@ export interface OtherView {
 }
 // A wall has radius 20: for range it counts as a circle of radius 20 (so inRange works unchanged),
 // but its body blocks the whole 40×40 square. Walls and factories have range 0.
+// A minion's name is its kind: 'Grunt', 'Archer', 'Runner' or 'Brute'. Stored minions are invisible.
 export interface WorldView {
   width: number; height: number;        // arena size this battle: 800 (2-4 players), 1040 (5-6), 1200 (7-8), §9.2
   tick: number; ticksLeft: number;
@@ -250,7 +260,9 @@ export type Action =
   | { action: 'idle' }
   | { action: 'move'; destination: { x: number; y: number } }   // soldiers
   | { action: 'attack'; targetId: string }                     // soldiers and towers
-  | { action: 'rally'; destination: { x: number; y: number } }  // factories: send my minions here
+  | { action: 'rally'; destination: { x: number; y: number } }  // factories: order 'attack' and send my minions here
+  | { action: 'command'; order: MinionOrder; targetId?: string; destination?: { x: number; y: number } } // factories: squad order; swarm/guard need targetId
+  | { action: 'release' }                                       // factories: send the stored minions out now
   | { action: 'hold' };                                         // factories: don't build this tick
 
 export interface Unit extends UnitStats {
@@ -273,6 +285,8 @@ Rules (enforced by the engine, and written into CLAUDE.md):
 5. No `import`, `require`, network, timers, or `async update`. None of them exist in the sandbox.
 
 **Walls and factories (M8.5).** The block above is the M8.5 contract (`tests/config.test.ts` keeps it identical to `shared/contract.ts`, `tests/starterkit.test.ts` to the kit's CLAUDE.md): it adds the two building types `wall` and `factory`, engine-made minions (`BodyType`), `SelfView.blockedBy/blockedTicks/factory` and the factory actions `rally` / `hold`. §5.2 has the per-type rules. Rule 4 for the new actions: `rally` (factories only; a finite destination, clamped to the arena, kept until changed) and `hold` (factories only; pauses production for the tick); `move`/`attack` from a factory and `rally`/`hold` from a soldier or tower are an idle without a strike.
+
+**Minion kinds, squad orders and burst (M8.6).** The block also carries M8.6 (§5.3): `MinionKind`, `MinionOrder`, the optional factory stats `produces` and `burst`, `FactoryView.stored/burst/produces/order/orderTargetId`, and the factory actions `command` and `release`. Rule 4 for them: `command` (factories only) needs `order` to be one of the four orders; `swarm` and `guard` also need a string `targetId`, and `attack` may carry a finite `destination` (the new rally point, clamped like `rally`); anything else is malformed (an idle that keeps the previous order, no strike). `release` (factories only) asks the factory to send its stored minions out. `command`/`release` from a soldier or tower are an idle without a strike. `rally` now also sets the order to `attack`.
 
 ### Stat bounds (config: `stats.bounds`)
 
@@ -422,6 +436,53 @@ export interface Unit extends UnitStats {
 - Every minion move goes round towers and factories: a minion touching one (of any side) whose centre lies within 15% of their radii of its straight line ahead steps 90° sideways instead (away from the building, or +90° from its heading when exactly in line), so separation can slide it round rather than pushing it straight back (`sidestep` in `sim/minion.ts`).
 - Minions are fighters, use the same wall steering and separation as soldiers, are hit by sudden death, never get strikes and cost no isolate time.
 - **Value:** `minionCost` = the soldier price formula (§6) applied to the minion stats with the current soldier coefficients = **$55** (raw 54.05). `minionValue = ceil(minionCost × cost.factory.minionDiscount)` = ceil(55 × 0.5) = **$28**. It is used for factory prices, timeout value and value destroyed.
+- **M8.6:** this built-in minion is now the **grunt**, one of four minion kinds a factory can pick (§5.3). Everything above stays true for grunts (the default), so existing factories play and cost exactly as before.
+
+### 5.3 Minion kinds, squad orders and burst (M8.6)
+
+Factories felt limited: every factory made the same minion and could only move a rally point. M8.6 gives the factory three choices, all optional and backward compatible (a factory without them is exactly an M8.5 factory: grunts, order `attack`, burst 1, same price).
+
+**1. Minion kinds: `this.produces`.** A factory builds one of four preset kinds (config `factory.minions.<kind>`, the same for everyone, each kept inside the soldier bounds by the config schema). Default `'grunt'` when omitted.
+
+| Kind (`produces`) | name in views | HP | Damage | Range | Speed | Cooldown | Size | Aggro | Impatient | Wall damage | Role |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `grunt` (default) | Grunt | 40 | 5 | 20 (melee) | 1.5 | 60 | 8 | 120 | 120 ticks | ×1 | today's minion: cheap all-rounder |
+| `archer` | Archer | 24 | 5 | **110 (ranged: homing projectile)** | 1.2 | 60 | 7 | 150 | 120 | ×1 | fragile, shoots from behind walls and soldiers |
+| `runner` | Runner | 28 | 4 | 20 (melee) | **2.6** | 60 | 6 | 120 | 120 | ×1 | fast scout: reaches far targets first |
+| `brute` | Brute | **110** | 8 | 20 (melee) | **0.9** | 60 | 11 | 120 | **30** | **×3** | slow tank that breaks walls |
+
+- **Ranged archers** use the existing projectile system unchanged: their range 110 is above `sim.meleeMaxRange` (50), so their attacks spawn homing projectiles (10 px/tick) that fly over walls (§9).
+- **Brutes break walls:** every brute hit on a **wall** deals `damage × wallDamageMultiplier` (8 × 3 = 24, so one brute takes a 400-HP Basic Wall down in 17 s, four brutes in about 4 s); other targets take the plain 8. They also lose patience with a blocking enemy wall after 30 ticks instead of 120 (`impatientTicks`). The multiplier is engine-side: it is not in the soldier formula, so the brute's price doesn't see it; its slow speed (0.9, the slowest kind) is the trade-off, and the balance test checks brute factories don't dominate (§14).
+- **Look:** each kind has its own built-in sprite (`shared/buildings.ts` `MINION_SPRITES`: grunt 12×12 as today, archer 12×12 with a bow, runner 12×12 lean with a headband, brute 12×12 bulky with a club), drawn at its own size and tinted with the factory colour like the grunt.
+- **Names and ids:** a minion's `name` in views is its kind's name (Grunt, Archer, Runner, Brute; `type` stays `'minion'`), its id stays `${factoryId}-mN`.
+- **Price** (§6): the factory pays `minionValue(kind) × E`, minionValue(kind) = ceil(minionCost(kind) × 0.5), minionCost(kind) = the soldier formula on that kind's stats: grunt $55 → $28, archer $69 → $35, runner $76 → $38, brute $72 → $36.
+
+**2. Squad orders: `{ action: 'command', order, targetId?, destination? }`.** The factory's `update()` can give its minions one of four orders instead of only a rally point. The order belongs to the factory, applies to all its minions (out now and made later) and is kept until changed, like the rally point. It starts as `attack`.
+
+| Order | Return | What the minions do |
+|---|---|---|
+| `attack` (default) | `{ action: 'command', order: 'attack' }` or `{ action: 'rally', destination }` (= attack + new rally point; `command` may carry `destination` too) | the M8.5 behaviour: hunt the nearest enemy fighter (not a wall) within their aggro range or within 200 px of the rally point, else walk to the rally point and wait there |
+| `defend` | `{ action: 'command', order: 'defend' }` | stay near the factory: fight the nearest non-wall enemy within **160 px** of the factory's centre (`factory.defendRadius`), else go back and wait within 48 px of it (`factory.defendArriveRadius`) |
+| `swarm` | `{ action: 'command', order: 'swarm', targetId: enemy.id }` | every minion goes for that one enemy, wherever it is (walls and buildings included: a brute swarm on a wall is a battering ram), ignoring everything else except an enemy wall that blocks them (impatience). When the target dies (or isn't a living enemy) the order falls back to `attack` |
+| `guard` | `{ action: 'command', order: 'guard', targetId: ally.id }` | stay near that ally (any of my or my teammates' living bodies, the factory itself included) and fight the nearest non-wall enemy within **120 px** of it (`factory.guardRadius`), else follow it and wait within 16 px of its edge (`factory.guardArriveGap`). When the ally dies (or isn't a living ally) the order falls back to `defend` |
+
+- The fallback happens in the engine at the start of the next tick and is visible: `self.factory.order` becomes `'attack'` / `'defend'` and `orderTargetId` null. Player code can then pick a new target.
+- `rally` and `hold` keep working: `rally` = `command attack` with a destination; `hold` pauses production as before (and can be combined over ticks with any order).
+- **Why `command` and not more fields on `rally`:** one action per idea reads best for players and Claude (`rally` = "go there", `command` = "do this", `release` = "go now"), the old two actions keep their exact meaning, and the dry run can tell exactly which field is wrong.
+- Every order keeps the M8.5 rules that are not about choosing targets: an enemy in range is hit first (for `swarm`: only the swarm target), the impatience rule (smash an enemy wall that blocked the minion for `impatientTicks`), the sidestep round towers and factories, and the safe circle (an `attack` rally point or a `defend` factory outside the circle is replaced by the circle's centre; `swarm` and `guard` follow their target wherever it is).
+
+**3. Burst: `this.burst` (integer 1-4, default 1).** How many minions leave the factory at once.
+- **Stored inside.** A finished minion goes into the factory's store unless it completes a burst: with `burst` B, the first B − 1 minions wait inside (`self.factory.stored` counts them) and the B-th one leaves **together with them**, all at once (B spawn events in one tick and one `release` event, §9.3). Burst 1 = release each as it is made (M8.5 behaviour, bit for bit).
+- **Stored minions are safe but at risk:** they are not bodies (not in any `enemies`/`allies` list, can't be hit, take no sudden-death damage), but **they are lost if the factory is destroyed** (counted in `minionsLost`, and the killer's value destroyed includes them, §9.3). Saving up is a real gamble.
+- **They count toward the alive caps:** per factory `minionsAlive + stored ≤ maxAlivePerFactory` (4, so burst 4 just fits; the cap is not raised) and per player alive + stored ≤ min(6, floor(40 / players)). So the per-battle 40-minion cap is unchanged.
+- **Early release:** `{ action: 'release' }` sends the stored minions out at once (it is remembered until it happens, e.g. when no spawn spot is free this tick). `release` with nothing stored does nothing.
+- **Automatic release** (no deadlocks): a factory also releases what it has stored when its store can't grow any more: no minions left to make, no time left to build another (`canMake` = 0), or an alive cap is full (e.g. two burst-4 factories sharing the per-player cap of 6).
+- `hold` pauses production but doesn't release; stored minions stay inside.
+- **Price: burst is free.** Saving up doesn't add minions (E is the same) and costs time (the first minions sit idle inside) and risk (they die with the factory), so it is a tactic, not a stat. A burst never changes the factory's price.
+
+**FactoryView (§5 block):** `stored`, `burst`, `produces`, `order`, `orderTargetId` join the M8.5 fields. `minionsAlive` counts only minions out on the field; `maxAlive` caps `minionsAlive + stored`.
+
+**Choosing well (CLAUDE.md tips, §11):** archers behind walls or towers (`defend`/`guard` a tower); runners with `swarm` on the weakest or most valuable far target (a burst of 4 runners arrives together); brutes with `swarm` on the wall that blocks your soldiers (or `attack`: they smash any wall that blocks them after 0.5 s); grunts for a cheap steady stream.
 
 ---
 
@@ -538,6 +599,48 @@ Factories (minionValue $28; "Body" = BaseF + cF·HP with its curve):
 
 The built-in minion priced as a soldier: HP 40, damage 5, range 20, speed 1.5, size 8, cooldown 60 → linear 50.5, curve +3.55, sum 54.05 → **minionCost $55**, **minionValue $28**.
 
+### Minion kinds and factory prices (M8.6)
+
+The factory formula keeps its shape; only minionValue now follows the factory's `produces` (§5.3):
+
+```
+factory:  cost        = ceil(bodyRaw − 1e-9) + minionValue(kind) × E
+          minionValue(kind) = ceil(minionCost(kind) × minionDiscount − 1e-9)
+          minionCost(kind)  = the unit formula on factory.minions.<kind> (a soldier, current coefficients and curve)
+          kind        = this.produces, default 'grunt'; burst never changes the price
+```
+
+Each kind priced as a soldier (CD 60 for all, so the factor is 1; "Linear" = Base + Σ c·x):
+
+| Kind | HP | Dmg | Range | Speed | Size | Linear | Curve | Sum = raw | **minionCost** | **minionValue** (× 0.5) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| grunt | 40 | 5 | 20 | 1.5 | 8 | 50.5 | +3.55 | 54.05 | **$55** | **$28** |
+| archer | 24 | 5 | 110 | 1.2 | 7 | 60.4 | +7.71 | 68.11 | **$69** | **$35** |
+| runner | 28 | 4 | 20 | 2.6 | 6 | 58.2 | +17.01 | 75.21 | **$76** | **$38** |
+| brute | 110 | 8 | 20 | 0.9 | 11 | 66.8 | +4.46 | 71.26 | **$72** | **$36** |
+
+The brute's ×3 wall damage and the kinds' aggro / impatience are behaviour, not priced stats (§5.3).
+
+Reference factories per kind (body as in the table above: HP 300 → $53, HP 600 → $134):
+
+| Factory | produces | HP | Interval | E | Body | Production | **Cost** |
+|---|---|---|---|---|---|---|---|
+| Basic Factory (template, `produces` omitted) | grunt | 300 | 900 | 5 | $53 | 5 × $28 = $140 | **$193** (unchanged) |
+| Archer Factory | archer | 300 | 900 | 5 | $53 | 5 × $35 = $175 | **$228** |
+| Runner Factory | runner | 300 | 900 | 5 | $53 | 5 × $38 = $190 | **$243** |
+| Brute Factory | brute | 300 | 900 | 5 | $53 | 5 × $36 = $180 | **$233** |
+| Swarm Factory | grunt | 300 | 600 | 8 | $53 | 8 × $28 = $224 | **$277** (unchanged) |
+| Archer Nest | archer | 300 | 600 | 8 | $53 | 8 × $35 = $280 | **$333** |
+| Runner Rush | runner | 300 | 600 | 8 | $53 | 8 × $38 = $304 | **$357** |
+| Brute Forge | brute | 300 | 600 | 8 | $53 | 8 × $36 = $288 | **$341** |
+| Slow Brutes | brute | 300 | 1200 | 4 | $53 | 4 × $36 = $144 | **$197** |
+| Armoured Runner Rush | runner | 600 | 600 | 8 | $134 | 8 × $38 = $304 | **$438** |
+| Maxed runner factory | runner | 1000 | 600 | 8 | $370 | 8 × $38 = $304 | **$674, rejected** (> $500) |
+
+`burst` (1-4) never changes these prices. Why: burst adds no minions (E is unchanged), it delays the first ones (they wait inside instead of fighting) and risks them (they die with the factory), so it trades time and risk for a stronger arrival. Pricing it would charge twice for a choice that already costs something.
+
+Breakdown text per kind: "Production: 5 archers × $35 (half of a $69 archer, because they arrive during the battle) = $175". `UNIT_TOO_EXPENSIVE` on a factory whose production is the bigger cost also names a cheaper kind when one fits ("Making grunts instead of runners saves $50").
+
 Example armies with buildings (all within $1,000 and the §5.2 caps): **Wall fortress** 10 Basic Walls + 3 Basic Towers = $914 (13 bodies, 3 fighters). **Factory swarm** 2 Swarm Factories + 4 Basic Soldiers = $922 (up to 8 + 4 minions alive). **Mixed** 4 Basic Soldiers + 2 Basic Towers + 6 Basic Walls = $956. **All four templates** 1 Basic Factory + 5 Basic Soldiers + 1 Basic Tower + 4 Basic Walls = $979.
 
 ### Caps and rules
@@ -584,6 +687,13 @@ Steps 1-8 ship in M1. Steps 9-10 and the full malicious fixture set ship in M6 (
 - **Step 9 (dry run):** walls are **skipped** (they have no code; an `update` on a wall gives `W_UPDATE_IGNORED` and is never called, in validation or battle). Factories run the same 3 worlds with `self.factory` filled in (`minionsLeft` 5, `rally` = centre); valid returns are `rally` (finite destination) / `hold` / `idle` / undefined; `move` or `attack` from a factory, or `rally`/`hold` from a soldier or tower, gives `W_ACTION_NOT_FOR_TYPE` (non-fatal: the engine idles). The worlds include one enemy wall and one enemy minion, so code that assumes every enemy has `damage` or a `size` stat still runs. Missing `update()` on a soldier, tower or factory stays `UPDATE_MISSING`.
 - **Step 10 (warnings):** `W_NEVER_ATTACKS`, `W_NEVER_MOVES` and `W_ZERO_DAMAGE` apply to soldiers and towers only. A factory that never rallies gets no warning (the default rally point, the arena centre, is a fine plan).
 - **Stored unit:** `stats` includes `productionInterval` for factories; the snapshot fills the §5.2 defaults (walls: damage/range/speed/attackCooldown 0, size 20; factories: the same with size 18).
+
+**Minion kinds, orders and burst (M8.6, §5.3).**
+- **Step 5/6 (stats):** `produces` and `burst` are optional factory stats, read like the others (own data properties). `produces` must be a string (`STAT_WRONG_TYPE`) and one of `grunt`, `archer`, `runner`, `brute` (`STAT_OUT_OF_RANGE` with `allowed: {oneOf}`; the fix names the four kinds and, for a near miss such as `'archers'`, `'Archer'` or `'knight'`, the closest one: "Set this.produces = 'archer' (one of 'grunt', 'archer', 'runner', 'brute'), or leave it out for grunts."). `burst` must be a number (`STAT_WRONG_TYPE`), finite, 1-4 (`STAT_OUT_OF_RANGE`, "Set this.burst to a whole number from 1 to 4, e.g. this.burst = 3 (1 = send each minion out as soon as it is made).") and whole (`BURST_NOT_INTEGER`). On a soldier, tower or wall either field gives `W_STAT_IGNORED` ("only factories build minions"). The snapshot of a factory always has both (`produces: 'grunt'`, `burst: 1` when omitted).
+- **Step 8 (cost):** the production line uses the kind's minionValue (§6 Minion kinds); `production` gains `kind`.
+- **Step 9 (dry run):** `self.factory` has `stored: 0`, `burst`, `produces`, `order: 'attack'`, `orderTargetId: null`; the worlds' `allies` include a friendly tower to guard. Valid factory returns add `command` and `release`. `command` with an `order` that isn't one of the four, or `swarm`/`guard` without a string `targetId`, or a non-finite `destination`, is **`BAD_ACTION`** with a fix that shows the right shape ("swarm needs targetId: the id of an ENEMY, e.g. { action: 'command', order: 'swarm', targetId: target.id }. When there is no enemy, return { action: 'command', order: 'attack' } instead."). A `swarm` whose `targetId` is not an enemy in that world, or a `guard` whose `targetId` is not an ally, gives the non-fatal **`W_ORDER_TARGET`** ("swarm targets must come from `enemies`, guard targets from `allies` (or self.id)"); the engine would fall back to attack / defend. `command`/`release` from a soldier or tower give `W_ACTION_NOT_FOR_TYPE` like `rally`.
+- **Step 10 (warnings):** **`W_BURST_NEVER_FULL`** when `burst` > E ("This factory makes only 2 minions per battle, so a burst of 4 never fills up: they leave when it runs out. Lower burst to 2 or make minions faster.").
+- **Stored unit:** `stats.produces` and `stats.burst` for factories (older stored factories without them are read as grunt / 1). The dry run records which orders `update()` gave (`dryRunOrders`, e.g. `['swarm', 'attack']`) so the /play card can show them (§12.5).
 
 A stored unit is `{ unitId, ownerId, version, status: "valid"|"invalid", source, compiledJs, stats: StatsSnapshot (Object.freeze, includes the resolved size), sprite: SpriteSpec | null, spriteHidden: boolean, cost, breakdown, sha256, createdAt }`.
 
@@ -834,6 +944,24 @@ Code: `sim/walls.ts` (wall grid and wall push), `sim/steering.ts`, `sim/factory.
 
 **Config additions (M8.5, `config/default.json`, zod schema):** `cost.wall {base: 4, hp: 0.06}`, `cost.factory {base: 10, hp: 0.12, minionDiscount: 0.5}`, `stats.bounds.wallHealth {min: 50, max: 1500}`, `stats.bounds.factoryHealth {min: 100, max: 1000}`, `stats.bounds.productionInterval {min: 600, max: 1800}`, `caps.maxUnitTypes: 4`, `caps.maxBuildingTypes: 4` (`caps.maxTypes` removed), `caps.maxWallCopies: 12`, `caps.maxFactoryCopies: 2` (`caps.maxCopies: 12` now counts fighters), `factory {maxMinionsPerFactory: 8, maxAlivePerFactory: 4, maxAlivePerPlayer: 6, maxAlivePerBattle: 40, rallyGuardRadius: 200, rallyArriveRadius: 24, minion: {maxHealth: 40, damage: 5, range: 20, speed: 1.5, attackCooldown: 60, size: 8, aggroRange: 120, impatientTicks: 120}}`, `sim.slideMemoryTicks: 45`. Wall size (40 px block) and factory radius (18) are code constants. The schema keeps the minion stats inside the soldier bounds and refuses a config where the Basic Wall or Basic Factory template would become invalid.
 
+**Minion kinds, orders and burst in the sim (M8.6, §5.3).** Code: `sim/factory.ts` (store and release), `sim/minion.ts` (per-kind stats and the order AI), `sim/engine.ts` (order bookkeeping, wall damage).
+
+| Item | Spec |
+|---|---|
+| Factory state | `FactoryState` gains `kind`, `burst`, `stored`, `released` (ids handed out), `order`, `orderTargetId`, `releaseRequested`, `storedLost`. Minions carry `kind`; their stats are `minionStats(config, color, kind)` (name = the kind's name) and their `cost` = minionValue(kind). |
+| Orders (tick step 3) | `rally` → order `attack` + rally point. `command`: `attack` (+ optional destination → rally point), `defend`, `swarm` + targetId, `guard` + targetId. A `swarm` target that is not a living enemy, or a `guard` target that is not a living ally (same `teamId`), falls back at once (`attack` / `defend`, targetId null). `release` sets `releaseRequested`. Actions are applied in seat, then instanceId order like all others; the minions decided in step 2 from the start-of-tick order. |
+| Order fallback (tick step 1) | Before the views are built, every factory whose `swarm` target is dead becomes `attack`, every `guard` whose ally is dead becomes `defend` (targetId null). So `self.factory.order` always names an order that works, and the minions read the same order the player code sees. A dead factory's minions keep its last order (the fallback still runs on it). |
+| Minion AI per order (step 2) | **attack:** M8.5 rules 1-5 unchanged (rally point, safe-circle fallback, aggro or 200 px of the rally point). **defend:** anchor F = the factory's centre (the circle's centre if F is outside the safe circle); target = nearest non-wall enemy within `defendRadius` (160) of F; in range → attack; impatience; out of range → move to it; no target → move to F until within `defendArriveRadius` (48), then idle. **swarm:** target T = the order's target; in range → attack T; impatience (an enemy wall that is not T); else move to T. **guard:** anchor A = the ally; target = nearest non-wall enemy within `guardRadius` (120) of A; in range → attack; impatience; move to it; no target → follow A until within A.radius + own radius + `guardArriveGap` (16), then idle. Ties by instanceId; no PRNG. The sidestep round towers and factories applies to every move. Each kind uses its own `aggroRange` (attack) and `impatientTicks`. |
+| Wall damage (step 6) | A minion hit on a wall deals `damage × wallDamageMultiplier` of its kind (brute 3, others 1), for melee and projectiles alike; the effective-damage metric, kills and value destroyed use the multiplied hit. |
+| Store and release (step 9b) | Per living factory, in instanceId order, after the timer step: caps count **alive + stored** (`full` = per-factory or per-player cap reached). (1) **Build:** timer full, minions left, not `full`: if `stored + 1 < burst` and no release is requested, the minion goes into the store (`stored += 1`, `minionsLeft −= 1`, timer 0; no spawn spot needed); otherwise it completes a burst: it needs a free spawn spot (else `noSpot`, wait with a full timer as in M8.5), then `stored + 1` minions leave at once. (2) **Release without building:** `stored > 0` and (a release was requested, or the store can't grow: `minionsLeft = 0`, `full`, or no time to build another, i.e. `canMakeOf` = 0) → the stored minions leave (needs a free spawn spot, else they wait and it retries every tick). Leaving minions take the free spawn candidates in the M8.5 order (θ toward the order's focus: rally point / factory facing / target / ally), cycling when fewer spots than minions are free (separation spreads them), get ids `${factory}-m${released + 1…}` and act from the next tick. `releaseRequested` clears when the store is empty. |
+| Factory death | Its stored minions are lost at once: `minionsLost += stored`, `storedLost = stored`, `stored = 0`; a `lost {factoryId, count}` event is recorded for the screen. Value destroyed for the killer = the factory's living value at death, which includes them (below). |
+| Fighters and living value | A factory is a fighter while `canMake > 0` **or `stored > 0`**. Living value = body + minionValue × (`canMake` + `stored`): stored minions are built and paid for, so they count (the auto-release empties the store when `canMake` hits 0, so at the time limit they are normally out on the field anyway). Stored minions are no bodies: not in views, not hit, no sudden-death damage, not separated. |
+| Frames | `fac` gains three entries: `[factoryId, progress, minionsLeft, focusX, focusY, holding, canMake, stored, burst, order]` with `order` 0 attack, 1 defend, 2 swarm, 3 guard, and (focusX, focusY) the order's focus (attack: the rally point as before; defend: the factory; swarm: the target; guard: the ally), so the rally flag on screen follows the order. Events: `release {factoryId, count}` when 2+ minions leave together, `lost {factoryId, count}` when a factory dies with minions inside. `spawn` events of minions gain `kind`. `battle:reveal`: factory stats carry `produces` and `burst`; `minions: {[kind]: {stats, value}}` for every kind fielded (`minion` stays = grunt, for older clients). |
+| Determinism | Orders, fallbacks, store and release use instanceId order and no PRNG; identical inputs give identical frames (`tests/minion-kinds.test.ts`). |
+| Performance | Unchanged worst case: stored minions are not bodies, so the 40-minion and 232-body ceilings hold. Orders cost one lookup per minion; archers add projectiles (≤ 40 in flight from minions). The timing pass (8 players, max factories) runs one archer, one runner, one brute and one grunt factory mix with burst and must stay under p99 8 ms/tick. |
+
+**Config additions (M8.6):** `factory.minion` becomes `factory.minions {grunt, archer, runner, brute}`, each `{maxHealth, damage, range, speed, attackCooldown, size, aggroRange, impatientTicks, wallDamageMultiplier}` (§5.3 table; an old `factory.minion` patch is migrated to `factory.minions.grunt`), plus `factory.defendRadius: 160`, `factory.defendArriveRadius: 48`, `factory.guardRadius: 120`, `factory.guardArriveGap: 16` and `stats.bounds.burst {min: 1, max: 4}` (the schema refuses `burst.max > factory.maxAlivePerFactory`). Every kind must stay inside the soldier bounds, `wallDamageMultiplier` 1-5.
+
 ---
 
 ## 10. API and MCP
@@ -982,6 +1110,19 @@ Selection and placement are **not** MCP tools. Players do those on the web page.
 | Validation errors | new codes `BUILDING_CANNOT_ATTACK`, `BUILDING_CANNOT_MOVE`, `INTERVAL_NOT_INTEGER`, `NO_FIGHTERS`; warnings `W_STAT_IGNORED`, `W_UPDATE_IGNORED`, `W_ACTION_NOT_FOR_TYPE`, `W_TRAPPED`. Each has a `fix` and a `playerHint` (§7 format). |
 | MCP descriptions and server `instructions` | mention the four types in one line ("soldier, tower, wall, factory; see get_unit_contract"); no new tools. Selection and placement stay on the web page. |
 | `GET/PUT /admin/config` | the §9.3 config keys; the "refuse if a template becomes invalid" check covers all four templates. |
+
+**M8.6 (minion kinds, orders, burst, §5.3):**
+
+| Where | Change |
+|---|---|
+| Shared types | `MinionKind`, `MinionOrder`; `StatsSnapshot` gains optional `produces`, `burst` (always set for factories validated from M8.6); `FactoryView` gains `stored`, `burst`, `produces`, `order`, `orderTargetId`; `Action` gains `command` and `release`; `FrameFactory` gains `stored`, `burst`, `order`; events `release`, `lost`; `CostProduction.kind`; `UnitCardDTO.orders?` (from the dry run). |
+| `GET /rules`, MCP `get_rules` | `factories.minionKinds`: per kind its stats, `wallDamageMultiplier`, `minionCost`, `minionValue` and a one-line role; `factories.orders` (the four orders with their radii and one line each); `factories.burst {min, max, default: 1, note}`; `minionCost`/`minionValue`/`minion` stay (= grunt) for older readers. |
+| `GET /contract`, MCP `get_unit_contract` | the §5 block (with kinds, orders, burst); the strategy tips gain "pick `produces` for the job: archers behind walls, runners to swarm far targets, brutes to smash walls", "`swarm` focuses every minion on one enemy; `guard` sticks to an ally; `defend` stays home", "burst saves minions inside and sends them together, but they die with the factory". |
+| Unit cards, `list_my_units` | factories show `produces` and `burst` (in `stats`), the kind's minionValue in the breakdown, and `orders` (the orders the dry run saw). |
+| Visibility | `produces`, `burst` and `orders` are part of a design: hidden from other players until START like every stat; the reveal carries `produces`/`burst` in the stats of fielded factories and `minions` for fielded kinds only. Orders and stored counts exist only in battle frames (after START). |
+| Battle report | per factory type `storedLost` (minions lost inside) and a hint when it is > 0 ("Your Runner Rush was destroyed with 3 runners inside. Release earlier, or guard the factory."). |
+| Validation errors | `BURST_NOT_INTEGER` (error), `W_ORDER_TARGET`, `W_BURST_NEVER_FULL` (warnings); `produces`/`burst` reuse `STAT_WRONG_TYPE`, `STAT_OUT_OF_RANGE`, `W_STAT_IGNORED`; `BAD_ACTION` texts for `command`. Each with `fix` and `playerHint`. |
+| `GET/PUT /admin/config` | `factory.minions.*`, the order radii, `stats.bounds.burst`; the template check is unchanged (the Basic Factory makes grunts). Admin quick settings gain per-kind HP, damage and speed, plus the brute's wall multiplier. |
 
 
 ---
@@ -1199,6 +1340,11 @@ export default class BasicFactory {
 
 `PROMPTS.md` gains: "Build me a stone wall to protect my towers." · "Make a factory that sends lots of tiny robots at the strongest enemy." · "My soldiers keep getting stuck behind walls. Make them smash through." · "Make a super-tough castle wall that's still cheap."
 
+**M8.6 kit changes (minion kinds, orders, burst, §5.3).**
+- **`units/basic_factory.js`** keeps its stats and price ($193: grunts, burst 1, order attack). Its header comment lists the options, commented out in the constructor (`// this.produces = 'archer';  // 'grunt' (default), 'archer', 'runner' or 'brute': the price follows` and `// this.burst = 3;  // 1-4: save up minions inside and send them out together`), and `update()` shows the order shape in comments (`// return { action: 'command', order: 'swarm', targetId: target.id };` / `'defend'` / `'guard'` with an ally id / `{ action: 'release' }`). It still returns `rally` toward the nearest non-wall enemy, so its behaviour is unchanged.
+- **CLAUDE.md 4c** gains a "Factories: minion kinds, orders and burst" part: the kinds table in player words (HP, damage, speed, role, minion price), the four orders with one return line each, the burst rules (stored inside, lost with the factory, count toward the caps, leave together, `release` early, burst is free), and three short examples: an archer factory that guards a tower (`produces = 'archer'`, `guard` the nearest own tower, fall back to `defend`), a runner factory that saves up 4 and rushes the weakest enemy (`burst = 4`, `swarm` the lowest-hp non-wall enemy), and a brute factory that swarms the enemy wall nearest to its own soldiers' path (`produces = 'brute'`, `swarm` a wall, else `attack`). Tips: "swarm/guard need a `targetId`: when there is none, return `{ action: 'command', order: 'attack' }`", "`self.factory.order` tells you when a swarm target died (it becomes 'attack')", "stored minions die with the factory: keep a burst factory at the back or behind walls", "burst 4 needs at least 4 minions per battle (productionInterval ≤ 1200)". **Section 5** gains the per-kind minion prices and the four example factory prices.
+- **`PROMPTS.md`** gains: "Make a factory that builds archers to guard my towers." · "Make a runner factory that saves up 4 and then rushes the weakest enemy." · "Make brutes that smash through walls."
+
 **/setup page** (open, for facilitators):
 - Big LAN URL + QR code (`http://<ip>:<port>/play`). If several interfaces are found, the admin picks the preferred one for the QR in /admin.
 - "Download Claude kit" (generic zip, address from the Host header).
@@ -1322,6 +1468,13 @@ Retro arcade look: dark background, a pixel font (bundled "Press Start 2P", OFL)
 - **Results and reports:** top-damage cards name factories "Basic Factory + minions"; the /play report shows `minionsMade` / `minionsLost` per factory and the "got stuck behind walls" hint with an Ask-Claude prompt.
 - **Sound (§12.4):** wall hit (stone tick), wall crumble (thud), factory spawn (pop). Same mute rules.
 
+**M8.6 (minion kinds, orders, burst, §5.3):**
+- **/play factory card:** a minion-kind chip with the kind's mini sprite tinted with the factory colour and its name and icon (👊 Grunts, 🎯 Archers, 💨 Runners, 🔨 Brutes), "Burst 3" (or "one at a time"), and the orders its code gives ("Orders: swarm, attack", from the dry run; none = "attack"). The breakdown's production line names the kind. The code editor's cost panel follows `produces`; `produces`/`burst` squiggles use the §7 codes.
+- **Placement palette and the roster:** the same kind chip on factory tiles.
+- **Iso arena (/screen, /play battle view, replay):** each kind has its own built-in sprite (`MINION_SPRITES`, tinted with the factory colour, drawn at the kind's size), archers' shots use the usual projectile in the factory colour, brute hits on walls shake the block a little more. A factory with minions inside shows a **stored-count badge** (a small round badge with "3/4" (stored / burst) in the seat colour above the sprite). When 2+ minions leave together (`release` event) the factory flashes, the minions pop out with a ring burst and a "release!" text floats up in the seat colour; a factory that dies with minions inside shows "−3" in grey (`lost`). The rally flag follows the order's focus; the flag shows the order: a flag for attack, a shield over the factory for defend, a target reticle on the swarm target, a small heart-shield over the guarded ally.
+- **Battle view frames:** `fac` entries without the M8.6 fields (older replays) read as stored 0, burst 1, attack.
+- **Admin quick settings:** per kind HP, damage and speed, and the brute wall multiplier (`factory.minions.<kind>.*`).
+
 ---
 
 ## 13. Tech stack and repo layout
@@ -1392,7 +1545,7 @@ Scripts (root `package.json`):
 | `start` | `UV_THREADPOOL_SIZE=8 node --no-node-snapshot packages/server/dist/index.js` (set cross-platform via a tiny launcher). Binds `0.0.0.0:${PORT:-8080}` and prints every non-internal IPv4 URL, a terminal QR for `/play`, the `/setup` and `/admin` URLs, the admin password, and the sandbox mode |
 | `test` | vitest run |
 | `loadtest` | §14 load test against a running server |
-| `bots` | `npm run bots -- --players 3` joins template bots (1-8, for rehearsals or empty seats); `--strategy mixed` (default) rotates brawl, rush, turtle, swarm and, from M8.5, `fortress` (walls between archers and turrets) and `factory` (workshops behind brawlers and darts) |
+| `bots` | `npm run bots -- --players 3` joins template bots (1-8, for rehearsals or empty seats); `--strategy mixed` (default) rotates brawl, rush, turtle, swarm and, from M8.5, `fortress` (walls between archers and turrets) and `factory` (workshops behind brawlers and darts); from M8.6 the factory bots pick minion kinds, orders and bursts (archer guards, burst-4 runner swarms, brute wall-breakers) |
 | `wipe` | deletes `data/` |
 
 Persistence: `data/state.json` (players, PIN hashes, keys, match state; debounced writes, atomic rename), `data/units/<player>/<unit>@v<n>.js`, and `data/replays/`. On restart the server reloads, and a running battle is reset to PLACEMENT. MCP holds no session state (stateless transport, identity per request), so connected Claude Code clients keep working after a restart.
@@ -1425,6 +1578,11 @@ Persistence: `data/state.json` (players, PIN hashes, keys, match state; debounce
 | `api.test.ts` / `privacy.test.ts` additions (M8.5) | selection 4 + 4 limits with `TOO_MANY_TYPES` `details.group`; placement caps with `TOO_MANY_COPIES` `details.group` (13th fighter, 3rd factory, 13th wall); `NO_FIGHTERS` for PLAN and PLACEMENT Ready; `W_TRAPPED` in the placement result; auto-place never places walls and adds fighters to a walls-only layout; selection fallback adds a fighter; no wall/factory/minion data leaks before START (reveal carries `minion` only after START) |
 | Client tests (M8.5) | roster grouping and the per-group pick limit reducer; palette counters; `render.test.ts` draws a wall block (top + 2 sides, joins with a neighbour), the production ring and rally flag, and a tinted minion sprite; frame decoding keeps wall state across frames that omit walls |
 | `test:perf` / `loadtest.ts` additions (M8.5) | **buildings worst case**: 8 players on Ring 8, each with 10 soldiers + 2 Swarm Factories (12 fighters) + 12 walls (forming lines in front), minions at the cap (5 per player, 40 total), update loops over all enemies: **sim p99 < 8 ms/tick**, playback never stalls at 1x/2x, frame size and server RSS within the §14 limits. The perf pass of `npm test` runs a shortened version (1,200 ticks) |
+| `minion-kinds.test.ts` (M8.6, unit + headless sim) | per-kind stats from config (names, sizes, the kind on minions and spawn events); archers fire homing projectiles from 110 px and don't melee; runners outrun grunts to a far rally point; brutes deal ×3 on walls only (a Basic Wall falls in 17 s to one brute) and smash a blocking enemy wall after 30 ticks; **orders**: `rally` = attack, `command attack` with a destination moves the rally point; `defend` stays within 160 px of the factory, chases intruders and returns; `swarm` sends every minion to one far target past nearer enemies, onto a wall too, and falls back to `attack` on the tick after the target dies (`self.factory.order` shows it); `swarm` on an ally and `guard` on an enemy fall back at once; `guard` follows a moving ally, fights enemies within 120 px of it, and falls back to `defend` when the ally dies; malformed commands idle and keep the order; `command`/`release` from a soldier idle; **burst**: burst 3 releases 3 together at ticks 3I (one `release` event, ids m1-m3), stored minions are invisible and untouchable (no views, no sudden death), early `release` sends them out, a full alive cap releases what is stored (two burst-4 factories sharing the per-player cap of 6 never deadlock), no time left / no minions left releases, the factory's death loses them (`minionsLost`, `storedLost`, `lost` event, killer credited body + stored value), stored minions keep a factory a fighter; burst 1 is frame-identical to M8.5; per-factory (4) and per-player caps count stored minions; **determinism**: shuffled placements give identical frames with all kinds, orders and bursts |
+| `buildings-cost.test.ts` / `validator-buildings.test.ts` additions (M8.6) | every row of the §6 minion-kind and factory tables ($55/$28, $69/$35, $76/$38, $72/$36; 193, 228, 243, 233, 277, 333, 357, 341, 197, 438, 674 → reject), burst doesn't change the price, the template keeps $193, a kind retune re-prices only factories of that kind, an old `factory.minion` patch migrates to grunt, a kind outside the soldier bounds and `burst.max` > `maxAlivePerFactory` are refused; validator: `produces` wrong type / unknown (with the near-miss fix) / ignored on a soldier, `burst` 0, 5, 2.5 (`BURST_NOT_INTEGER`), "3" (`STAT_WRONG_TYPE`), defaults in the snapshot, `W_BURST_NEVER_FULL`, dry-run `command` shapes (`BAD_ACTION` for an unknown order and for swarm/guard without targetId, `W_ORDER_TARGET`, `W_ACTION_NOT_FOR_TYPE` for command/release from a soldier), `orders` recorded |
+| Client tests (M8.6) | the factory card's kind chip, burst text and orders line; `fac` decoding with and without the M8.6 fields; the stored badge text; the release and lost effects are queued from events; per-kind sprites differ and are tinted; admin quick settings for `factory.minions.*` |
+| `balance.test.ts` additions (M8.6) | four kind archetypes join the round robin: **archer nest** (2 Archer Factories guarding towers behind walls), **runner swarm** (2 Runner Rush factories with burst 4 swarming the weakest enemy), **brute breakers** (2 Brute Forges swarming walls, with soldiers), and **grunt defend** (2 Swarm Factories on defend with towers). The existing assertions and caps hold unchanged (≤ 70% round-robin wins, no exception for any building archetype, no walls-only winner). Stated outcomes: brute breakers beat the sealed fortress in ≥ 3 of 4 duels; the archer nest beats the rush; burst-4 runners lose fewer minions per kill than burst-1 runners. Matrix in `docs/balance.md` |
+| `test:perf` additions (M8.6) | the buildings worst case fields one archer, runner, brute and grunt factory per player pair with burst 2-4 and all four orders; p99 < 8 ms/tick unchanged |
 | Real-Claude dry run | starting in M3 (submit path) and fully in M4: one laptop with Claude Code + the kit. Run the 6 example prompts and record how many tool calls it takes to reach a valid submit. Tune `fix` texts and CLAUDE.md until each prompt submits in ≤ 3 validate attempts. Include "make it cheaper" on an existing unit and check Claude passes `unitId`. |
 
 ### Dress-rehearsal checklist (on the event hardware, ≥ 1 day before)
@@ -1488,6 +1646,7 @@ Order: de-risk first (isolated-vm and the MCP path), then a vertical slice that 
 | M7 | Polish | Retro theme, synthesized sounds, reveal/hit/death/sudden-death/results animations, replay at 1x/2x, podium and confetti, projector QR poster view. No regressions in tests. |
 | M7.5 | **Embedded Claude terminal (§11.2)** | `sessions/`: `SEAT_SECRET` replaces `TTYD_PASS_N` (compose, `.env.example`, README incl. migration and the inbound firewall option), entrypoint `-b /terminal/$SEAT` and the new title. **Spike first** (real ttyd 1.7.7 behind a 30-line relay): the page works under `-b`, `-O` passes with rewritten `Origin`/`Host`, the `AuthToken` rewrite authenticates, `location.search` reaches the ws URL (pane id), close code 1000 doesn't auto-reconnect, and the iframe isn't blocked by any ttyd header. Then: `terminal/` proxy + relay + registry (newest wins, flap guard) + probe + friendly pages, `claudeSeats` service + REST + `terminal`/`terminals` WS pushes, `seatSecret` setting, `/setup` seat-card QRs (`/play?seat=N`, all 8 seats); /play split view / tabs, Claude pane states, badges, focus, Open in new tab; /admin Claude seats panel and rescue tab. `terminal-proxy.test.ts` and `claude-seats.test.ts` green, `npm test`, typecheck and build green. On the LAN: two laptops play a round using only `/play`, with one terminal opened in a new tab and taken back. |
 | M8.5 | **Walls, factories and minions (§5.2, §6, §7, §9.3, §10.5, §11, §12.5)**. Added after the plan was built; it runs **before** the M8 dress rehearsal, which then includes one round with walls and factories | Contract: §5.2's block replaces §5's in `plan.md` and `shared/contract.ts` together (`config.test.ts` keeps them identical), `UnitType` + `BodyType`, `SelfView.blockedBy/blockedTicks/factory`, `rally`/`hold` actions. Config keys of §9.3 with zod limits; `caps.maxTypes` replaced. `shared/cost.ts` per-type pricing with the factory production part; `bounds.ts` per-type guards and the new codes; validator per type (walls skip the dry run, factory dry run). Templates `basic_wall.js` and `basic_factory.js` with sprites, pre-registered (migration: existing players get them on server start), soldier/tower templates wall-aware with unchanged stats. Sim: wall grid, steering, wall push, spatial hash, factory production, minion AI, fighters-based elimination with crumble, living value and value destroyed per type, frames (`fac`, wall deltas, `spawn`/`crumble`, `blocked` flag), reveal `minion`. Services: selection 4 + 4, copy caps per group, `NO_FIGHTERS`, `W_TRAPPED`, auto-place rules, selection fallback, armory with buildings, reports (`minionsMade`, stuck hint), `topUnits` for factories. REST/MCP texts, `get_rules`/`get_unit_contract`, kit CLAUDE.md 4c/5/6 and PROMPTS. UI §12.5 (grouped roster and palette, wall blocks, factory ring, rally flag, minions, crumble). Tests: every M8.5 row of §14 green, the existing suites unchanged (soldier/tower prices, maps, teams, privacy); **balance with the two new archetypes passes**; **buildings worst case p99 < 8 ms/tick**; `npm test`, `npm run typecheck` and `npm run build` green. On the LAN: a 4-player round with walls and factories from real Claude prompts ("build me a wall", "make a factory"), each reaching a valid submit in ≤ 3 validate attempts. |
+| M8.6 | **Minion kinds, squad orders and burst (§5.3, §6, §7, §9.3, §10.5, §11, §12.5)**: requested after M8.5 ("factories felt limited"); runs before the dress rehearsal | Contract (`MinionKind`, `MinionOrder`, `produces`, `burst`, FactoryView additions, `command`/`release`) in `plan.md`, `shared/contract.ts` and CLAUDE.md together. Config `factory.minions.*`, order radii, `stats.bounds.burst`, migration of `factory.minion`. Per-kind cost; validator `produces`/`burst`/`command`. Sim: kinds, wall multiplier, order AI and fallbacks, store/release, frames and events. Server rules/contract/MCP texts, reveal `minions`, report `storedLost`. Kit: basic_factory comments, CLAUDE.md 4c/5, PROMPTS. Client: card chip, kind sprites, stored badge, release effect, order flag, admin settings. Tests: every M8.6 row of §14, balance archetypes, timing pass under 8 ms; bots use kinds/orders/burst; three real Claude prompts reach a valid submit in ≤ 3 validates. |
 | M8 | Dress rehearsal | The full §14 checklist is ticked on the event hardware. Printed materials are ready. |
 
 **Explicitly deferrable** ("if time" at the end of M7, cut first): replay scrubbing, drag-drop placement (tap-to-place stays), wall tap-drag painting (M8.5; tap per cell stays), the live re-price preview UI (`PUT /admin/config` stays), Rotate key, and the `processRunner` fallback unless M0 failed.
@@ -1612,6 +1771,18 @@ Max 8 designs (templates don't count) and 12 placed copies per player. 4-digit P
 | Balance (M8.5) | Defaults confirmed by the balance test, no retune: walls stop melee (a sealed fortress holds the rush), range, minions and sudden death break walls, minions lose to big bodies; no building archetype needs a dominance exception. Plan §14's "rush beats the fortress" holds for the open U fortress, not for a fully sealed one (`docs/balance.md`). |
 | Performance | Up to 232 bodies at 8 players (still ≤ 96 running code): wall grid, spatial hash, wall deltas in frames; the target stays sim p99 < 8 ms/tick, with a buildings worst-case load test. |
 | Templates | `basic_wall.js` and `basic_factory.js` with 16×16 sprites (stone bricks; a workshop with chimney smoke and a door that lights up on spawn), pre-registered; soldier and tower templates become wall-aware with unchanged stats. |
+
+### Resolved in the factory request (2026-10-23)
+
+| Topic | Decision |
+|---|---|
+| Scope | The player chose **minion kinds**, **squad orders** and a **burst** ("hold back dispatching until a number have been accumulated"). All three are optional factory choices; an M8.5 factory source behaves and costs exactly as before. |
+| Minion kinds | `this.produces` = `'grunt'` (default, the M8.5 minion), `'archer'` (fragile, ranged 110 with projectiles), `'runner'` (fast, small), `'brute'` (slow, 110 HP, ×3 damage to walls, impatient after 0.5 s). Preset stats in config `factory.minions.<kind>`, each a legal soldier. |
+| Kind pricing | Same formula shape: minionValue(kind) = ceil(soldier price of the kind × 0.5), factory = body + minionValue(kind) × E. Grunt $28, archer $35, runner $38, brute $36. The brute's wall multiplier is unpriced (its slow speed is the cost; the balance test watches it). |
+| Orders | A new action `{ action: 'command', order, targetId?, destination? }` with `attack` (default; = M8.5), `defend` (160 px round the factory), `swarm` (one target, falls back to attack), `guard` (an ally, 120 px, falls back to defend). `rally` = attack + rally point and `hold` keep working. Chosen over extra `rally` fields because each action then means one thing and the dry run can name the wrong field. |
+| Burst | `this.burst` 1-4 (default 1). Minions wait **inside** the factory (no body: untargetable, shown as a count badge) until `stored` reaches `burst`, then leave together; `{ action: 'release' }` sends them early; the store also empties itself when it can't grow (caps full, nothing left to make, no time). **Lost if the factory is destroyed** (the killer gets their value). Stored minions count toward the per-factory (4) and per-player alive caps; `maxAlivePerFactory` stays 4 and the 40-per-battle cap holds. |
+| Burst price | Free: it adds no minions, delays them and risks them, so it already costs time and risk. |
+| UI | Kind chip, burst and the dry-run orders on the /play card; per-kind sprites tinted with the factory colour; stored badge, "release!" burst effect, order-aware rally flag on the arena. |
 
 ### Open items
 1. **isolated-vm on the game server's host OS**: confirmed only by the M0 check. (It already works in the devcontainer on Node 24 / arm64 with isolated-vm 6.1.2.) Otherwise the process fallback is built and used, with its documented residual risk.
