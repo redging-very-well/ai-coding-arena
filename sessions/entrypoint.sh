@@ -10,9 +10,10 @@
 #
 # Environment:
 #   PIXEL_CLASH_URL   game server base URL, e.g. http://192.168.8.10:8080 (required)
-#   TTYD_PASS         basic-auth word for this seat's terminal (required for serve)
+#   TTYD_PASS         the shared seat password (SEAT_SECRET in sessions/.env, the
+#                     same value as /admin -> Claude seats); required for serve
 #   TTYD_USER         basic-auth user (default: player)
-#   SEAT              seat number, shown in the terminal title (default: ?)
+#   SEAT              seat number 1-8: ttyd base path /terminal/$SEAT and the title
 #   CLAUDE_PERMISSION_MODE  optional: default | acceptEdits | plan (M0 spike decides)
 #   CLAUDE_CONTINUE   1 (default) = reopen the seat's last conversation after a
 #                     restart or page reload; 0 = always start fresh
@@ -94,17 +95,22 @@ render_kit() {
 }
 
 serve() {
-  [ -n "${TTYD_PASS:-}" ] || die "TTYD_PASS is not set. Put TTYD_PASS_${SEAT} in sessions/.env (a short word for the seat card)."
-  [[ "${TTYD_PASS}" =~ ^[^[:space:]:]+$ ]] || die "TTYD_PASS must be one word with no spaces or ':'"
-  local user="${TTYD_USER:-player}"
+  [[ "$SEAT" =~ ^[1-8]$ ]] || die "SEAT must be 1-8 (got '$SEAT'); it sets the base path /terminal/\$SEAT"
+  [ -n "${TTYD_PASS:-}" ] || die "TTYD_PASS is not set. Put SEAT_SECRET=<password> in sessions/.env (compose passes it as TTYD_PASS)."
+  [[ "${TTYD_PASS}" =~ ^[A-Za-z0-9._~-]{12,64}$ ]] \
+    || die "SEAT_SECRET must be 12-64 characters of A-Z a-z 0-9 . _ ~ - (no spaces or ':'), e.g. otter-lamp-quartz-ninety"
+  local user="${TTYD_USER:-player}" base="/terminal/${SEAT}"
   render_kit
-  log "ttyd on :7781 (user '$user'); claude starts in $KIT_DIR"
-  # -W writable, -O same-origin websockets only, -c basic auth, -w start dir.
-  # Each browser connection gets its own claude-loop (and so its own claude).
-  exec ttyd -W -O -p 7781 -w "$KIT_DIR" \
+  log "ttyd on :7781${base}/ (user '$user'); claude starts in $KIT_DIR"
+  # -W writable, -O same-origin websockets only (the game server's proxy
+  # rewrites Origin/Host to pass it), -b base path so the page, token and ws
+  # all live under /terminal/N/ (behind the proxy and directly), -c basic auth,
+  # -w start dir. Each browser connection gets its own claude-loop (and so its
+  # own claude); the proxy keeps one live terminal per seat (plan §11.2).
+  exec ttyd -W -O -p 7781 -b "$base" -w "$KIT_DIR" \
     -c "${user}:${TTYD_PASS}" \
     -t fontSize=18 \
-    -t "titleFixed=Pixel Clash seat ${SEAT}" \
+    -t "titleFixed=Pixel Clash · Claude · seat ${SEAT}" \
     -t disableLeaveAlert=true \
     /usr/local/bin/pixel-clash-seat claude-loop
 }

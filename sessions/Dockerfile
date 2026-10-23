@@ -94,9 +94,10 @@ USER player
 WORKDIR /kit
 EXPOSE 7781
 
-# ttyd answers 401 without the basic-auth word; any HTTP answer means it is up.
+# ttyd serves under its base path /terminal/$SEAT/ and answers 401 there
+# without the seat password; 200 or 401 means it is up.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7781/)" && [ "$code" = 200 ] || [ "$code" = 401 ]
+  CMD code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:7781/terminal/${SEAT}/")" && { [ "$code" = 200 ] || [ "$code" = 401 ]; }
 
 ENTRYPOINT ["/usr/local/bin/pixel-clash-seat"]
 CMD ["serve"]

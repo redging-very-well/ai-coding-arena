@@ -1,11 +1,13 @@
 # Pixel Clash Claude box: one container per seat (plan §11.1).
 #
-#   cp .env.example .env    # then edit PIXEL_CLASH_URL and the eight TTYD_PASS_N words
+#   cp .env.example .env    # then edit PIXEL_CLASH_URL and SEAT_SECRET
 #   docker compose up -d --build                          # all 8 seats
 #   docker compose up -d --build seat1 seat2 seat3        # or only the seats in use
 #
-# Seat N (1-8) is http://<claude-box>:778N (basic auth: player / TTYD_PASS_N).
-# See README.md for the pre-event login, resets and the wipe.
+# Players reach seat N (1-8) through the game server's proxy, inside /play
+# (/terminal/N/). Directly (adults' fallback): http://<claude-box>:778N/terminal/N/
+# with basic auth player / SEAT_SECRET. Enter the same SEAT_SECRET in
+# /admin -> Claude seats. See README.md for the login, resets, firewall and wipe.
 
 name: pixel-clash-seats
 
@@ -18,7 +20,7 @@ x-seat: &seat
   image: pixel-clash-seat:local
   # Always (re)build on `up`, so a plain `docker compose up -d` can't keep
   # running an image built from older sessions/ files (e.g. the old ttyd
-  # port). Layers are cached, so this is quick after the first build.
+  # port or base path). Layers are cached, so this is quick after the first build.
   pull_policy: build
   init: true # tini as PID 1: reaps the claude processes ttyd spawns
   restart: unless-stopped
@@ -37,6 +39,9 @@ x-seat: &seat
 x-seat-env: &seat-env
   PIXEL_CLASH_URL: ${PIXEL_CLASH_URL:?set PIXEL_CLASH_URL in sessions/.env}
   TTYD_USER: player
+  # One shared seat password for all 8 seats (plan §11.2). The game server's
+  # proxy injects it; players never see it. Old TTYD_PASS_N lines are ignored.
+  TTYD_PASS: ${SEAT_SECRET:?set SEAT_SECRET in sessions/.env}
   CLAUDE_PERMISSION_MODE: ${CLAUDE_PERMISSION_MODE:-}
   CLAUDE_CONTINUE: ${CLAUDE_CONTINUE:-1}
 
@@ -47,7 +52,6 @@ services:
     environment:
       <<: *seat-env
       SEAT: "1"
-      TTYD_PASS: ${TTYD_PASS_1:?set TTYD_PASS_1 in sessions/.env}
     ports: ["7781:7781"]
     volumes:
       - kit1:/kit
@@ -59,7 +63,6 @@ services:
     environment:
       <<: *seat-env
       SEAT: "2"
-      TTYD_PASS: ${TTYD_PASS_2:?set TTYD_PASS_2 in sessions/.env}
     ports: ["7782:7781"]
     volumes:
       - kit2:/kit
@@ -71,7 +74,6 @@ services:
     environment:
       <<: *seat-env
       SEAT: "3"
-      TTYD_PASS: ${TTYD_PASS_3:?set TTYD_PASS_3 in sessions/.env}
     ports: ["7783:7781"]
     volumes:
       - kit3:/kit
@@ -83,7 +85,6 @@ services:
     environment:
       <<: *seat-env
       SEAT: "4"
-      TTYD_PASS: ${TTYD_PASS_4:?set TTYD_PASS_4 in sessions/.env}
     ports: ["7784:7781"]
     volumes:
       - kit4:/kit
@@ -95,7 +96,6 @@ services:
     environment:
       <<: *seat-env
       SEAT: "5"
-      TTYD_PASS: ${TTYD_PASS_5:?set TTYD_PASS_5 in sessions/.env}
     ports: ["7785:7781"]
     volumes:
       - kit5:/kit
@@ -107,7 +107,6 @@ services:
     environment:
       <<: *seat-env
       SEAT: "6"
-      TTYD_PASS: ${TTYD_PASS_6:?set TTYD_PASS_6 in sessions/.env}
     ports: ["7786:7781"]
     volumes:
       - kit6:/kit
@@ -119,7 +118,6 @@ services:
     environment:
       <<: *seat-env
       SEAT: "7"
-      TTYD_PASS: ${TTYD_PASS_7:?set TTYD_PASS_7 in sessions/.env}
     ports: ["7787:7781"]
     volumes:
       - kit7:/kit
@@ -131,7 +129,6 @@ services:
     environment:
       <<: *seat-env
       SEAT: "8"
-      TTYD_PASS: ${TTYD_PASS_8:?set TTYD_PASS_8 in sessions/.env}
     ports: ["7788:7781"]
     volumes:
       - kit8:/kit
