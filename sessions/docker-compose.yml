@@ -16,6 +16,10 @@ x-seat: &seat
     context: ..
     dockerfile: sessions/Dockerfile
   image: pixel-clash-seat:local
+  # Always (re)build on `up`, so a plain `docker compose up -d` can't keep
+  # running an image built from older sessions/ files (e.g. the old ttyd
+  # port). Layers are cached, so this is quick after the first build.
+  pull_policy: build
   init: true # tini as PID 1: reaps the claude processes ttyd spawns
   restart: unless-stopped
   cap_drop: [ALL]

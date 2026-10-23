@@ -148,6 +148,7 @@ Check with `docker compose run --rm seat1 check` (game server and Anthropic must
 |---|---|
 | `docker compose` says `set PIXEL_CLASH_URL` / `set TTYD_PASS_N` | Create `.env` from `.env.example` in this folder. |
 | A seat keeps restarting | `docker compose logs seatN`. The entrypoint prints a clear `ERROR:` (bad `PIXEL_CLASH_URL`, missing or bad `TTYD_PASS`). |
+| Seat shows `Up (healthy)` but `curl http://<claude-box>:778N` is refused, and `docker compose exec seatN curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7781/` prints `000` | The container runs an image built from older `sessions/` files (e.g. before the port moved from 768x to 778x). `docker compose up -d --build --force-recreate`. Logins and kits are kept in the volumes. The compose file sets `pull_policy: build`, so a plain `up -d` rebuilds from now on. |
 | Browser shows 401 / asks again for a password | Wrong seat word. User is `player`. |
 | Terminal opens but Claude asks to log in, or shows the trust dialog | That seat wasn't logged in or trusted: do step 2 for it, then `docker compose restart seatN`. |
 | Claude asks for permission to use the pixel-clash tools or to write `units/…` | The folder isn't trusted: Claude Code ignores the kit's `.claude/settings.json` allowlist in an untrusted folder. Do step 2 (accept the trust dialog) for that seat, then `docker compose restart seatN`. |
