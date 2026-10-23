@@ -26,7 +26,7 @@ import {
 } from '../claudePane.js';
 import { getStore, useStore } from '../store.js';
 import { Battle } from './Battle.js';
-import { ClaudeKit, ClaudePane } from './ClaudePanel.js';
+import { ClaudePane } from './ClaudePanel.js';
 import { Header } from './Header.js';
 import { Join } from './Join.js';
 import { Placement } from './Placement.js';
@@ -281,7 +281,6 @@ function PlayShell() {
               <p class="note">You joined partway through a round. You're in from the next round!</p>
             )}
             <Main phase={phase} />
-            <ClaudeKit />
           </main>
         </section>
         {/* While dragging, a shield over everything so the iframe doesn't swallow the pointer. */}

@@ -306,16 +306,19 @@ main.join {
 .unit-error p { margin: 0 0 0.4rem; }
 .card-foot { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .cost {
-  padding: 4px 10px;
-  border-radius: 8px;
-  border: 2px solid var(--accent);
-  background: transparent;
   color: var(--accent);
   font-weight: 800;
-  font-size: 1.05rem;
+  font-size: 1.15rem;
 }
-.cost.open { background: var(--accent); color: #1b1600; }
-.cost.open .dim { color: #1b1600; }
+.cost-info {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+.cost-info.open { border-color: var(--accent); color: var(--accent); }
 .last-battle { font-size: 1rem; }
 .retire-confirm { margin-left: auto; font-size: 0.85rem; }
 .card-foot > .mini.ghost:last-child { margin-left: auto; }
@@ -577,20 +580,6 @@ button.btn.primary { background: var(--accent); border-color: var(--accent); col
 button.btn.big { font-size: 1.1rem; min-height: 52px; padding-inline: 1.4em; }
 button.btn.small, a.btn.small { min-height: 34px; padding: 0.25em 0.75em; font-size: 0.95rem; }
 .btn-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.kit-toggle {
-  display: flex;
-  width: 100%;
-  justify-content: space-between;
-  align-items: center;
-  background: none;
-  border: 0;
-  padding: 0;
-  text-align: left;
-}
-.kit-toggle h2 { margin: 0; }
-.kit-body { display: grid; gap: 0.6rem; margin-top: 0.75rem; justify-items: start; }
-.api-key { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-.api-key code { padding: 3px 8px; border-radius: 6px; background: var(--bg); border: 1px solid var(--border); font-size: 0.95rem; word-break: break-all; }
 
 /* ------------------------------------------------------------------------ */
 /* Claude + game layout (§11.2 d): split view / tabs                         */

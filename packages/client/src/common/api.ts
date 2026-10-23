@@ -134,7 +134,6 @@ export const api = {
   replay: (round: number | 'latest') => request<ReplayDTO>('GET', `/battles/${round}/replay`),
   /** URLs for downloads (use as <a href>, not fetch). */
   setupKitUrl: () => `${BASE}/setup/kit.zip`,
-  kitUrl: () => `${BASE}/kit.zip`,
 
   // --- player -------------------------------------------------------------
   me: () => request<MeResponse>('GET', '/me'),

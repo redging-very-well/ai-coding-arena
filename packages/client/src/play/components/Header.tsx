@@ -1,6 +1,6 @@
 // Always-visible header (plan §12.1): name + seat colour and number badge,
 // team chip (team mode), phase banner with countdown, round, map, points, and
-// the sound toggle (muted by default) and the connection dot.
+// the sound toggle (muted by default), the connection dot and Log out.
 
 import { mapName, teamOfPlayer } from '../../common/maps.js';
 import { seatStyle } from '../../common/seats.js';
@@ -87,6 +87,11 @@ export function Header() {
           {sound.muted ? '🔇' : '🔊'}
         </button>
         <span class={cx('conn', st.socket)} title={st.socket === 'open' ? 'Connected' : 'Reconnecting…'} />
+        {p && (
+          <button class="mini ghost" onClick={() => void getStore().logout()} title="Log out of this laptop">
+            Log out
+          </button>
+        )}
       </div>
     </header>
   );

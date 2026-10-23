@@ -5,10 +5,9 @@
 // holds the seat: loading it takes the seat over). Pane states: seat picker, not
 // ready, the terminal (with a "box down" strip), and "open in another tab"
 // with "Use it here instead". "Open in new tab" opens the same terminal as its
-// own browser tab. Also "Get my Claude kit" (API key reveal + kit download, §11).
+// own browser tab.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { api } from '../../common/api.js';
 import { cx } from '../../common/ui.js';
 import {
   claudeView,
@@ -308,48 +307,5 @@ function Elsewhere({ view }: { view: Extract<ClaudeView, { kind: 'elsewhere' }> 
         <p class="dim small">Claude remembers your chat, it just restarts for a moment.</p>
       </div>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Claude kit
-// ---------------------------------------------------------------------------
-
-export function ClaudeKit() {
-  const st = useStore();
-  const store = getStore();
-  const [open, setOpen] = useState(false);
-  const [showKey, setShowKey] = useState(false);
-  const key = st.me?.apiKey ?? '';
-
-  return (
-    <section class="panel claude-kit">
-      <button class="kit-toggle" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <h2>Get my Claude kit</h2>
-        <span class="dim">{open ? '▾' : '▸'}</span>
-      </button>
-      {open && (
-        <div class="kit-body">
-          <p class="dim small">
-            Only needed on a laptop with Claude Code installed. In the Claude terminal on this page, just tell Claude your name and PIN.
-          </p>
-          <a class="btn" href={api.kitUrl()} download="pixel-clash-kit.zip">
-            ⬇ Download my Claude kit
-          </a>
-          <div class="api-key">
-            <span>API key:</span>
-            <code class={showKey ? '' : 'hidden-key'}>{showKey ? key : '••••••••••••••••'}</code>
-            <button class="mini" onClick={() => setShowKey((v) => !v)}>
-              {showKey ? 'Hide' : 'Show'}
-            </button>
-            {showKey && key && <CopyButton text={key} />}
-          </div>
-          <p class="dim small">Keep your key secret, like a password.</p>
-          <button class="mini ghost" onClick={() => void store.logout()}>
-            Log out
-          </button>
-        </div>
-      )}
-    </section>
   );
 }

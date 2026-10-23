@@ -1,5 +1,6 @@
 // A roster card (plan §12.1): animated sprite (idle, walk on hover), name,
-// size, stat bars, cost with a tap-to-open breakdown, version, "new!" badge,
+// size, stat bars, cost (a plain label; a separate "How much?" button opens
+// the breakdown), version, "new!" badge,
 // warnings, and the invalid-unit error with an "Ask Claude" prompt.
 
 import { useState } from 'preact/hooks';
@@ -137,8 +138,17 @@ export function UnitCard(props: UnitCardProps) {
       )}
 
       <div class="card-foot">
-        <button class={cx('cost', showCost && 'open')} onClick={stop(() => setShowCost((v) => !v))} aria-expanded={showCost}>
-          {formatMoney(u.cost)} <span class="dim">{showCost ? '▾' : 'ⓘ'}</span>
+        {/* The price is just a label: tapping it picks the card like the rest of
+            it. The breakdown has its own small button so it isn't mistaken for
+            the picker. */}
+        <span class="cost">{formatMoney(u.cost)}</span>
+        <button
+          class={cx('cost-info', showCost && 'open')}
+          onClick={stop(() => setShowCost((v) => !v))}
+          aria-expanded={showCost}
+          title="How the price is worked out"
+        >
+          {showCost ? '▾ Hide price' : 'ⓘ How much?'}
         </button>
         {u.lastBattle && (
           <span class="last-battle dim" title={`Round ${u.lastBattle.round}`}>
