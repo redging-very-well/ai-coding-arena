@@ -235,3 +235,104 @@ server, the battle sim, 7 bots and 3 Chromium pages.
 Screenshots and logs (`pol-*` and `rm-*`, plus `*-notes.txt` with the measured numbers):
 `/tmp/claude-1000/-workspaces-kidscodingday/9c9e875f-8be6-4b5a-93eb-d016b9d3d229/scratchpad/visual/final-polish/`
 and `.../visual/rm1/` (reduced motion).
+
+## Embedded terminal
+
+End-to-end run of the Claude seat terminal (plan §11.2) against a **real ttyd 1.7.7**: the pinned
+aarch64 static binary from the GitHub release, checked against `TTYD_SHA256_ARM64` in
+`sessions/Dockerfile`. Not committed.
+
+### How it was run
+
+- **Two seats:** ttyd on 7781 and 7782, with the entrypoint's flags (`-W -O -p 778N -b /terminal/N
+  -c player:<secret> -t fontSize=18 -t titleFixed=… -t disableLeaveAlert=true`). Instead of Claude,
+  each one ran a fake `claude`, a `read`/`echo` loop that prints `ECHO[N]: <line>`.
+- **Game server:** built with `npm run build`, run on :18080 with a fresh data dir. `/admin` was set
+  to Claude box `127.0.0.1` with the matching seat password.
+- **Browser:** Playwright Chromium, installed outside the repo. Terminal text was read from ttyd's
+  `window.term` buffer, so "typing round-trips" means the echo line appeared in xterm.
+- **Scripts and screenshots:**
+  `/tmp/claude-1000/-workspaces-kidscodingday/9c9e875f-8be6-4b5a-93eb-d016b9d3d229/scratchpad/e2e/`
+  (`s1`-`s6.cjs`, `shots/`).
+
+### Checked and working
+
+- **Seat cards:** Ada joined from `/play?seat=1` and Bo from `/play?seat=2`. Each claimed that seat,
+  and `?seat` was removed from the URL.
+- **Split view at 1920×1080:** Claude is on the left, the game on the right, and each player sees
+  only their own terminal (`s1-split-seat1.png`). Typing round-trips through the proxy.
+  - The iframe title is "Pixel Clash · Claude · seat N".
+  - `/token` through the proxy answers `{"token":"pixel-clash"}`.
+- **Tabs at 1366×768:** you can type on the Claude tab, and switching to Game and back does not
+  reload the iframe (same Claude process). After switching back, the keyboard is in xterm.
+- **Open in new tab:** opens `/terminal/1/` in its own tab, titled "Pixel Clash · Claude · seat 1",
+  and typing round-trips there.
+  - The embedded pane switches to "Your Claude terminal is open in another tab". Its terminal shows
+    the takeover lines (`s2-embedded-elsewhere.png`).
+  - **Use it here instead** reconnects in the pane. The standalone tab gets "opened in another tab /
+    Press Enter" and does **not** reconnect by itself, even 9 s later.
+  - Pressing Enter in the standalone tab takes the seat back, and the pane shows "elsewhere" again.
+  - The pane stays "elsewhere" after that tab is closed, which is the intended sticky behaviour.
+- **Two standalone tabs for one seat:** the newer tab wins. The older one shows the friendly
+  takeover text and stays closed (`s4-tabA-taken.png`).
+- **Access:**
+
+  | Who and what | Result |
+  |---|---|
+  | No login | 401 page or JSON, no `WWW-Authenticate` (no browser password box) |
+  | Ada → `/terminal/2/` | 403 page "This is Claude seat 2 · Yours is seat 1 · Open Claude seat 1" (`s3-ada-not-yours.png`) |
+  | Ada → `/terminal/2/token` | 403 |
+  | Ada → `/terminal/1/%2e%2e/2/` | 403 |
+  | Ada → `/terminal/9/` | 404 |
+  | WebSocket, Ada → seat 2 | 403 `CLAUDE_SEAT_NOT_YOURS` |
+  | WebSocket, anonymous | 401 |
+  | WebSocket, foreign `Origin` | 403 `TERMINAL_BAD_ORIGIN` |
+  | Admin → seat 2 | 200, typing round-trips (`s3-admin-seat2.png`) |
+
+- **Admin rescue on a seat in use:** the player's pane shows "A grown-up is helping on your Claude
+  terminal" (`s3-grownup.png`). **Get it back** reconnects it, and `/admin` shows who holds each
+  live terminal.
+- **ttyd killed (box down):**
+  - The "Claude's computer isn't answering" strip appears within 50 ms. The Claude tab gets ⚠
+    while the Game tab is showing (`s6-claude-warn.png`).
+  - Reloading `/play` puts the friendly "Waking up Claude…" page in the iframe.
+  - After ttyd restarts, the pane comes back **without a key press**: 3.6 s for the friendly page,
+    4-10 s for a live ttyd page (the 10 s seat probe). Typing round-trips again.
+- **Badges** (Claude tab showing):
+  - Starting the match adds **Plan!** to the Game tab.
+  - A unit sent over REST as Ada adds **1 new**, and the keyboard stays in the terminal.
+  - PLACEMENT changes Plan! to **Place!** and shows the "Time to place your army → Game" strip
+    (`s4-badge-place.png`). Clicking the strip opens Game and clears the badges.
+- **/admin Claude seats:** status per seat, with ECONNREFUSED for seats 3-8, which had no ttyd.
+  The panel also shows the player dropdowns and the live holder (`s6-admin-panel.png`).
+- **Direct access:** `http://127.0.0.1:7781/` answers 401 without the password and 404 with it.
+  Only `/terminal/1/` is served, as the README says.
+
+### Bugs found and fixed
+
+| # | Where | Bug | Fix | Evidence |
+|---|---|---|---|---|
+| 21 | Proxy, HEAD | **Real ttyd 1.7.7 sends the body after a `HEAD` answer.** Node's parser rejects that (`HPE_INVALID_CONSTANT`), so the proxy cut the connection: `curl -I` got an empty reply and Chrome got `ERR_EMPTY_RESPONSE`. The friendly "not answering" page checks with `HEAD` before reloading, so it **never reloaded** after the box came back. | For `HEAD`, `proxy.ts` sends ttyd's headers, ends the response and drops the upstream connection. The fake ttyd in `tests/seat-proxy.test.ts` now copies the real behaviour, and that test fails without the fix. | Recovery 3.6 s; it never recovered before |
+| 22 | /play, box restart | ttyd's page retries a dropped connection **only once, right away**. While the box is still down that fails, and it waits on "Press ⏎ to Reconnect". The strip said "Trying again by itself…", but nothing did. | When the seat goes from `down` to `up` and nobody holds it, `/play` reloads the iframe (`reloadOnRecovery()` in `claudePane.ts`, with a test in `tests/claude-pane.test.ts`). | Comes back by itself in 4-10 s; never did before (`s5-*`) |
+| 23 | /play overlay | ttyd's light "Press ⏎ to Reconnect" pill showed through the "open in another tab" and "grown-up is helping" overlays, behind the text. | The overlay is opaque. | `s6-elsewhere.png` |
+| 24 | Admin's rescue tab | When the player took the seat back, the admin's tab said "Your Claude terminal was opened in another tab". | The admin's tab now says "The player took their Claude terminal back", with a separate text in `registry.ts`. | s3 run |
+| 25 | /admin | The "Open terminal ↗" links were underlined, unlike the "Open terminal…" button next to them. | `a.btn` in `admin.css` has no underline. | `s6-admin-panel.png` |
+
+### Notes (not fixed)
+
+- **Expected console errors:** Chrome logs failed loads and handshakes itself. These come from
+  status codes the design uses on purpose, not from the code:
+  - 401 on `/api/me` before login. This already happened before the embedded terminal.
+  - The deliberate 403 page.
+  - A 502 WebSocket handshake or page while the box is down.
+
+  No page errors and no other console errors occurred.
+- **ttyd warns about the pane id:** it logs `maybe unknown option: pane=…` once per iframe load,
+  because it reads query parameters as client options. This is harmless: `?pane=` does reach the
+  WebSocket URL (`/terminal/N/ws?pane=…`). That settles open item 4 of the plan: the proxy tells the
+  embedded pane from a standalone tab correctly with real ttyd.
+- **Standalone tab after a box restart:** it shows ttyd's own "Press ⏎ to Reconnect", because there
+  is no `/play` around it to reload it. Pressing Enter reconnects.
+- **Toasts overlap the pane header:** in tabs mode the phase toast ("Place your army!") briefly
+  covers "Open in new tab" and "Change seat" (`s4-badge-place.png`). Toasts behaved this way before
+  the terminal was added.
