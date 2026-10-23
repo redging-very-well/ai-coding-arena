@@ -141,7 +141,7 @@ export function unitTypeRules(config: GameConfig): Record<string, unknown> {
     walls: [
       'Walls block EVERY body, your own and your teammates\' too: leave a gap of one empty cell (two for size 19-20 bodies).',
       'Enemies (soldiers, towers and minions) can attack and break walls. Shots fly over walls.',
-      'A unit that bumps into a wall slides along it; self.blockedBy is that wall\'s id and self.blockedTicks counts the ticks it has been in the way.',
+      'Units walk round walls by themselves: a move goes the shortest open way (gaps one cell wide, two for size 19-20). self.pathing is \'direct\', \'detour\' (going round walls) or \'no-route\' (walled off: it walks to the best wall to break and waits there); self.blockedBy is the wall that stopped it and self.blockedTicks counts the ticks it has been stopped.',
       'Sudden death hurts walls too (they crumble in about 14 s outside the circle).',
     ],
     factories: {

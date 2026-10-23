@@ -105,8 +105,9 @@ export interface SelfView {
   x: number; y: number; radius: number; hp: number; maxHp: number;
   damage: number; range: number; speed: number;
   attackCooldown: number; cooldownRemaining: number; // 0 = can attack this tick
-  blockedBy: string | null; // id of the wall that stopped or turned my last move, else null
-  blockedTicks: number;     // ticks in a row a wall has been in my way (0 = free)
+  blockedBy: string | null; // id of the wall that stopped my last move, else null
+  blockedTicks: number;     // ticks in a row a wall has stopped me (no progress; 0 = free)
+  pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls by a route the game found, or walled off (smash self.blockedBy)
   factory: FactoryView | null; // factories only
 }
 export interface OtherView {
@@ -276,12 +277,12 @@ export default class Knight {
 - **Factories** are a circle of radius 18. Every `productionInterval` ticks a factory builds one **Minion** (40 HP, 5 damage, melee, speed 1.5, size 8), at most 4 alive per factory. Minions have built-in brains (you never write their code): they chase enemies near them or near the rally point, otherwise they walk to the rally point. An enemy wall that blocks them for 2 s gets smashed, so minions can break into a walled-in enemy. The factory's `update()` returns `{ action: 'rally', destination: { x, y } }` to move the rally point (it starts at `world.center` and stays until changed) or `{ action: 'hold' }` to pause building for a tick. `self.factory` shows `nextMinionIn`, `minionsLeft`, `minionsAlive`, `maxAlive` and `rally`. The factory's `color` is also its minions' colour. See `units/basic_factory.js`. Destroying a factory stops it; its minions keep going. A factory that holds too long (or is walled in so no minion can get out) stops counting as a fighter once it no longer has time to build one.
 - **A factory's `productionInterval` sets how many minions it buys:** 600 = 8 minions, 900 = 5, 1200 = 4, 1800 = 2 per battle, and the price follows (section 5).
 - `enemies` and `allies` can now hold `type: 'wall'`, `'factory'` and `'minion'` bodies. Walls and factories have `range` 0.
-- **Getting past walls:** when a soldier bumps into a wall, the game slides it along the wall towards its destination. `self.blockedBy` is the id of the wall in the way (or `null`) and `self.blockedTicks` counts the ticks it has been stuck.
+- **Getting past walls:** just `move` to where you want to go. When walls are in the way, the game walks your soldier (and minions) **round them by the shortest open way**, through gaps one cell wide (two cells for size 19-20). `self.pathing` says how the last move went: `'direct'` (straight there), `'detour'` (going round walls) or `'no-route'` (walls close the way off completely: the unit walks to the best wall to break and waits there). `self.blockedBy` is the id of the wall that stopped it (or `null`) and `self.blockedTicks` counts the ticks it has been stopped; a unit that is just walking round a wall is not stopped.
 
 Tips:
 - **Walls block your own units too: leave a gap** of one empty cell (two for size 19-20) so your soldiers and minions can get out. The web page warns when a unit is walled in.
 - **Walls protect fighters, they don't win.** Walls are worth $0 at the end, and a player with only walls left is out. Every army needs at least one soldier, tower or factory.
-- **When choosing targets, skip `enemy.type === 'wall'`**, unless `self.blockedBy` is an enemy wall (it is still in `enemies`) and `self.blockedTicks` is high (120 = 2 s): then smash it.
+- **When choosing targets, skip `enemy.type === 'wall'`**, unless `self.blockedBy` is an enemy wall (it is still in `enemies`) and `self.blockedTicks` is high (120 = 2 s): then smash it. With `self.pathing === 'no-route'` the unit can't get there any other way, so you may smash at once.
 - **Minions** show up in `enemies` as `type: 'minion'`: weak (40 HP) but many.
 - **Shots fly over walls**, so towers behind walls still shoot. Walls are great for funnelling enemies past your towers.
 - **Factories pay off over time:** their minions arrive during the battle, so a factory is a slow start and a strong finish. Rally minions at the nearest enemy to attack, or just in front of your towers to defend.
