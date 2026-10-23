@@ -210,6 +210,8 @@ export function Roster(props: { phase: Phase }) {
             isNew={isNew(u)}
             onSeen={() => markSeen(u)}
             onRetire={planning ? () => void retire(u) : undefined}
+            onEdit={() => store.openEditor({ mode: 'edit', unitId: u.unitId, name: u.name })}
+            onCopy={() => store.openEditor({ mode: 'copy', templateId: u.unitId, templateName: u.name })}
           />
         ))}
       </div>

@@ -27,6 +27,7 @@ import {
 import { getStore, useStore } from '../store.js';
 import { Battle } from './Battle.js';
 import { ClaudePane } from './ClaudePanel.js';
+import { EditorHost } from './EditorHost.js';
 import { Header } from './Header.js';
 import { Join } from './Join.js';
 import { PastBattles, PastBattlesButton } from './PastBattles.js';
@@ -284,9 +285,13 @@ function PlayShell() {
             {st.priv && !st.priv.active && !st.priv.benched && phase !== 'LOBBY' && phase !== 'PLACEMENT' && (
               <p class="note">You joined partway through a round. You're in from the next round!</p>
             )}
-            <PastBattlesButton open={pastOpen} onToggle={() => setPastOpen(!pastOpen)} />
-            {pastOpen && <PastBattles onClose={() => setPastOpen(false)} />}
-            <Main phase={phase} />
+            {/* The code editor (§12.1) takes the game's place; the game stays mounted underneath. */}
+            {st.editor && <EditorHost target={st.editor} />}
+            <div class="game-view" hidden={!!st.editor}>
+              <PastBattlesButton open={pastOpen} onToggle={() => setPastOpen(!pastOpen)} />
+              {pastOpen && <PastBattles onClose={() => setPastOpen(false)} />}
+              <Main phase={phase} />
+            </div>
           </main>
         </section>
         {/* While dragging, a shield over everything so the iframe doesn't swallow the pointer. */}

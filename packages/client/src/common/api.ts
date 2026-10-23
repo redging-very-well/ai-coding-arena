@@ -122,6 +122,12 @@ export async function request<T>(method: HttpMethod, path: string, body?: unknow
 
 const enc = encodeURIComponent;
 
+/** {source, unitId?, baseVersion?} for validate/submit (baseVersion only with a unitId). */
+function unitBody(source: string, unitId?: string, baseVersion?: number): { source: string; unitId?: string; baseVersion?: number } {
+  if (!unitId) return { source };
+  return baseVersion === undefined ? { source, unitId } : { source, unitId, baseVersion };
+}
+
 /** All REST endpoints, typed. */
 export const api = {
   // --- public -------------------------------------------------------------
@@ -139,11 +145,13 @@ export const api = {
   // --- player -------------------------------------------------------------
   me: () => request<MeResponse>('GET', '/me'),
   /** Dry run; resolves with the §7 result (ok or not) instead of throwing on 422. */
-  validateUnit: (source: string, unitId?: string) =>
-    request<ValidationResult>('POST', '/units/validate', unitId ? { source, unitId } : { source }, { validationAsResult: true }),
-  /** Submit (PLAN only). A failed validation throws ApiError with `validation` set. */
-  submitUnit: (source: string, unitId?: string) =>
-    request<SubmitUnitResponse>('POST', '/units', unitId ? { source, unitId } : { source }),
+  validateUnit: (source: string, unitId?: string, baseVersion?: number) =>
+    request<ValidationResult>('POST', '/units/validate', unitBody(source, unitId, baseVersion), { validationAsResult: true }),
+  /**
+   * Submit (PLAN only). A failed validation throws ApiError with `validation` set.
+   * With `baseVersion`, a unit changed meanwhile is ApiError UNIT_CHANGED (409, details.version).
+   */
+  submitUnit: (source: string, unitId?: string, baseVersion?: number) => request<SubmitUnitResponse>('POST', '/units', unitBody(source, unitId, baseVersion)),
   units: () => request<UnitCardDTO[]>('GET', '/units'),
   unit: (unitId: string) => request<UnitSourceDTO>('GET', `/units/${enc(unitId)}`),
   retireUnit: (unitId: string) => request<{ ok: true }>('DELETE', `/units/${enc(unitId)}`),
@@ -191,7 +199,7 @@ export const api = {
     resetPin: (playerId: string, pin: string) => request<{ ok: true }>('POST', `/admin/players/${enc(playerId)}/pin`, { pin }),
     rotateKey: (playerId: string) => request<{ apiKey: string }>('POST', `/admin/players/${enc(playerId)}/rotate-key`),
     /** Validate (dryRun) or submit on behalf of a player; 422 results are returned, not thrown. */
-    playerUnit: (playerId: string, source: string, opts: { unitId?: string; dryRun?: boolean } = {}) =>
+    playerUnit: (playerId: string, source: string, opts: { unitId?: string; baseVersion?: number; dryRun?: boolean } = {}) =>
       request<ValidationResult | SubmitUnitResponse>('POST', `/admin/players/${enc(playerId)}/units`, { source, ...opts }, { validationAsResult: true }),
     hideSprite: (playerId: string, unitId: string, hidden: boolean) =>
       request<{ ok: true }>('POST', `/admin/units/${enc(playerId)}/${enc(unitId)}/sprite`, { hidden }),

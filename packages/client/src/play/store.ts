@@ -85,6 +85,12 @@ export interface MyBattleUnit {
   napping: boolean;
 }
 
+/** What the code editor (plan §12.1) has open. */
+export type EditorTarget =
+  | { mode: 'edit'; unitId: string; name: string }
+  /** A copy of a starter template: saving makes a new design. */
+  | { mode: 'copy'; templateId: string; templateName: string };
+
 export interface PlayCaps {
   budget: number;
   maxTypes: number;
@@ -130,6 +136,8 @@ export interface PlayState {
   badges: GameBadges;
   /** Bumped on phase changes while the split view shows the game (flash the banner once). */
   phaseFlash: number;
+  /** The code editor's unit (it replaces the game view in the Game pane), or null. */
+  editor: EditorTarget | null;
 }
 
 type Listener = () => void;
@@ -161,6 +169,7 @@ export class PlayStore {
     boxHost: null,
     badges: NO_BADGES,
     phaseFlash: 0,
+    editor: null,
   };
   /** This page's terminal iframe id (`?pane=`): tells our own terminal from another tab's. */
   readonly pane = newPaneId();
@@ -219,6 +228,15 @@ export class PlayStore {
     const others = this.state.toasts.filter((x) => x.message !== message);
     this.set({ toasts: [...others.slice(-2), t] });
     setTimeout(() => this.dismiss(t.id), ms);
+  }
+
+  /** Open the code editor on a unit (the editor itself asks before throwing changes away). */
+  openEditor(target: EditorTarget): void {
+    this.set({ editor: target });
+  }
+
+  closeEditor(): void {
+    if (this.state.editor) this.set({ editor: null });
   }
 
   dismiss(id: number): void {
@@ -621,6 +639,7 @@ const LOGGED_OUT: Partial<PlayState> = {
   seatAsk: null,
   seatError: null,
   badges: NO_BADGES,
+  editor: null,
 };
 
 let store: PlayStore | null = null;

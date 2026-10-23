@@ -1,7 +1,8 @@
 // A roster card (plan §12.1): animated sprite (idle, walk on hover), name,
 // size, stat bars, cost (a plain label; a separate "How much?" button opens
 // the breakdown), version, "new!" badge,
-// warnings, and the invalid-unit error with an "Ask Claude" prompt.
+// warnings, the invalid-unit error with an "Ask Claude" prompt, and the code
+// editor buttons ("✏️ Edit code" on own units, "Copy to a new unit" on starters).
 
 import { useState } from 'preact/hooks';
 import { playerHintFor, playerHintForIssue, sizeOf, type StatBounds, type UnitCardDTO } from '@pixel-clash/shared';
@@ -26,6 +27,10 @@ export interface UnitCardProps {
   onRetire?: () => void;
   /** A borrowed Open Armory unit (§9.1): the round it was added (it can't be changed). */
   borrowedRound?: number;
+  /** Own units: open the code editor. */
+  onEdit?: () => void;
+  /** Starter templates: open the editor on a copy that becomes a new unit. */
+  onCopy?: () => void;
 }
 
 export function specKeyOf(u: Pick<UnitCardDTO, 'unitId' | 'version' | 'spriteHidden' | 'sprite'>): string {
@@ -173,6 +178,22 @@ export function UnitCard(props: UnitCardProps) {
             </button>
           ))}
       </div>
+
+      {(props.onEdit || props.onCopy) && props.borrowedRound === undefined && (
+        <div class="card-actions">
+          {u.isTemplate
+            ? props.onCopy && (
+                <button class="mini edit-btn" onClick={stop(() => props.onCopy?.())} title="Start a new unit from this starter's code">
+                  📄 Copy to a new unit
+                </button>
+              )
+            : props.onEdit && (
+                <button class="mini edit-btn" onClick={stop(() => props.onEdit?.())} title="Change this unit's stats and moves yourself">
+                  ✏️ Edit code
+                </button>
+              )}
+        </div>
+      )}
 
       {showCost && (
         <table class="breakdown" onClick={(e) => e.stopPropagation()}>

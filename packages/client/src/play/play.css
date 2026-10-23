@@ -906,3 +906,74 @@ button.btn.small, a.btn.small { min-height: 34px; padding: 0.25em 0.75em; font-s
   .top-row .top-dmg { grid-column: 3; }
 }
 .past-battles .btn.on, .replay-controls .btn.on { border-color: var(--accent); color: var(--accent); }
+
+/* ------------------------------------------------------------------------ */
+/* Code editor (§12.1 "✏️ Edit code")                                       */
+/* ------------------------------------------------------------------------ */
+
+.game-view { display: grid; gap: 1rem; min-width: 0; }
+.game-view[hidden] { display: none; }
+.card-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.edit-btn { font-size: 0.95rem; padding: 4px 10px; }
+
+.unit-editor {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.unit-editor .note { margin: 0; }
+.editor-head h2 { margin: 0; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; line-height: 1.6; }
+.tag.warn-tag { background: #3a3110; border-color: var(--warn); color: var(--warn); }
+.note.confirm { border-left-color: var(--warn); }
+.note.confirm p { margin: 0 0 0.5rem; }
+.note.warn { border-left-color: var(--warn); }
+.note.conflict { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; justify-content: space-between; }
+.note.lock-note { border-left-color: var(--accent); }
+button.btn.bad { background: var(--bad); border-color: var(--bad); color: #1a0b0b; }
+.bad-text { color: var(--bad); }
+.copy-form { display: grid; gap: 0.5rem; max-width: 28rem; }
+.copy-form p { margin: 0; }
+
+.editor-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+}
+@container (min-width: 760px) {
+  .editor-body { grid-template-columns: minmax(0, 1fr) minmax(15rem, 19rem); }
+}
+.code-box { min-width: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.code-host {
+  height: clamp(320px, calc(100dvh - 300px), 900px);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.code-host:focus-within { border-color: var(--accent); }
+.code-help { margin: 0; font-size: 0.9rem; }
+
+.editor-side { display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
+.check-status { margin: 0; padding: 0.5rem 0.75rem; border-radius: 8px; background: var(--panel-2); font-weight: 700; }
+.check-status.good { color: var(--good); }
+.check-status.bad { color: var(--bad); }
+.check-status.checking { color: var(--text-dim); }
+.editor-banner { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.editor-banner li { padding: 0.45rem 0.6rem; border-radius: 8px; background: #3b1414; font-size: 0.95rem; }
+.editor-banner li.warning { background: #3a3110; }
+.editor-banner .sev { font-weight: 900; }
+.editor-banner details { margin-top: 0.25rem; }
+.editor-banner summary { cursor: pointer; color: var(--text-dim); font-size: 0.85rem; }
+.editor-banner pre { white-space: pre-wrap; font-size: 0.8rem; margin: 0.25rem 0 0; color: var(--text-dim); }
+.cost-panel { padding: 0.6rem 0.75rem; border-radius: 8px; background: var(--bg-2); border: 2px solid var(--border); }
+.cost-panel.over { border-color: var(--bad); }
+.cost-panel.over .cost { color: var(--bad); }
+.cost-total { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.35rem; }
+.cost-panel .breakdown { font-size: 0.95rem; }
+.cost-panel tr.near-max th, .cost-panel tr.near-max td { color: var(--warn); }
+.cost-panel p { margin: 0.4rem 0 0; font-size: 0.9rem; }
+.editor-foot { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.save-why { font-size: 0.95rem; }
+/* Lint squiggles: red errors, yellow warnings (CodeMirror's own classes). */
+.unit-editor .cm-lintRange-error { background-image: none; text-decoration: underline wavy var(--bad); text-underline-offset: 3px; }
+.unit-editor .cm-lintRange-warning { background-image: none; text-decoration: underline wavy var(--warn); text-underline-offset: 3px; }
