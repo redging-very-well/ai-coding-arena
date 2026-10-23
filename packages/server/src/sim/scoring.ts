@@ -43,6 +43,7 @@ export type ScoringConfig = GameConfig['scoring'];
 /** One unit's contribution to its owner's metrics. */
 export interface UnitMetricInput {
   playerId: string;
+  /** Its living value while alive (§9.3; the unit cost for soldiers and towers). */
   cost: number;
   alive: boolean;
   damageDealt: number;
@@ -76,7 +77,8 @@ export function playerMetrics(result: Pick<BattleResult, 'players' | 'units'>): 
     result.players.map((p) => p.playerId),
     result.units.map((u) => ({
       playerId: u.playerId,
-      cost: u.cost,
+      // Living value (§9.3: walls $0, factories body + unbuilt minions); older reports: the cost.
+      cost: u.livingValue ?? u.cost,
       alive: u.survived,
       damageDealt: u.damageDealt,
       kills: u.kills,

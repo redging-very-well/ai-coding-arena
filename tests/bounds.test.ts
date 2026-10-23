@@ -111,7 +111,7 @@ describe('review regressions', () => {
   it('player hints for enum fields and the tower speed fix make sense', () => {
     const type = checkStats({ ...soldier, type: 'wizard' }, bounds);
     const shape = checkStats({ ...soldier, shape: 'star' }, bounds);
-    expect(!type.ok && playerHintForIssue(type.errors[0]!)).toBe('Your unit must be a soldier or a tower. Ask Claude to fix its type.');
+    expect(!type.ok && playerHintForIssue(type.errors[0]!)).toBe('Your unit must be a soldier, tower, wall or factory. Ask Claude to fix its type.');
     expect(!shape.ok && playerHintForIssue(shape.errors[0]!)).toMatch(/circle, square, triangle or diamond/);
     const tower = checkStats({ ...soldier, type: 'tower', speed: NaN }, bounds);
     expect(!tower.ok && tower.errors[0]).toMatchObject({ code: 'STAT_NOT_FINITE', field: 'speed', fix: 'Towers never move: set this.speed = 0.' });

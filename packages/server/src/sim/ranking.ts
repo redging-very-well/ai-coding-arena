@@ -20,6 +20,7 @@
 import type { FrameDTO } from '@pixel-clash/shared';
 import { frameAt } from './frames.js';
 import { compareIds, type BattleResult } from './types.js';
+import { aliveInFrame, factoryLeftIn, fighterAt, livingValueAt } from './value.js';
 
 export interface Standing {
   playerId: string;
@@ -156,26 +157,29 @@ export function standingsOf(result: Pick<BattleResult, 'players'>): Standing[] {
 }
 
 /**
- * Rank from a recorded frame, as a timeout (§9 Skip): players with units in
- * the frame are survivors ranked by the full cost of those units; the others
- * keep their elimination tick (which is ≤ frame.t by construction).
+ * Rank from a recorded frame, as a timeout (§9 Skip): players with fighters
+ * in the frame (§9.3: not walls, not spent factories) are survivors ranked by
+ * the living value of their bodies there; the others keep their elimination
+ * tick (which is ≤ frame.t by construction).
  */
 export function rankFromFrame(
   frame: FrameDTO,
   result: Pick<BattleResult, 'players' | 'units'>,
   excluded: ReadonlySet<string> = new Set(),
 ): Placing[] {
-  const unitInfo = new Map(result.units.map((u) => [u.instanceId, u]));
+  const listed = new Set(frame.units.map((u) => u[0]));
+  const left = factoryLeftIn(frame);
   const living = new Map<string, number>();
-  for (const [instanceId] of frame.units) {
-    const u = unitInfo.get(instanceId);
-    if (!u) continue;
-    living.set(u.playerId, (living.get(u.playerId) ?? 0) + u.cost);
+  const fighting = new Set<string>();
+  for (const u of result.units) {
+    if (!aliveInFrame(u, frame, listed)) continue;
+    living.set(u.playerId, (living.get(u.playerId) ?? 0) + livingValueAt(u, left));
+    if (fighterAt(u, left)) fighting.add(u.playerId);
   }
   return rankStandings(
     result.players.map((p) => {
-      const cost = living.get(p.playerId);
-      const alive = cost !== undefined;
+      const alive = fighting.has(p.playerId);
+      const cost = alive ? (living.get(p.playerId) ?? 0) : undefined;
       let eliminatedAtTick: number | null = null;
       if (!alive) {
         eliminatedAtTick =

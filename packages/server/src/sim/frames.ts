@@ -6,8 +6,13 @@
 // `events` holds everything that happened since the previous frame (spawn,
 // fire, hit, death, disable). Coordinates and hp are rounded to 2 decimals to
 // keep the stream small; the sim itself keeps full precision.
+//
+// M8.5 (§9.3 Frames): walls are listed only in the first frame and in frames
+// where their (rounded) hp changed, `fac` lists the living factories, and the
+// flags gain BLOCKED (a wall turned the move) and PRODUCED (a factory made a
+// minion).
 
-import { FRAME_FLAGS, type FrameDTO, type FrameEvent, type FrameUnit } from '@pixel-clash/shared';
+import { FRAME_FLAGS, type FrameDTO, type FrameEvent, type FrameFactory, type FrameUnit } from '@pixel-clash/shared';
 import type { Projectile, SimUnit } from './types.js';
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
@@ -19,6 +24,8 @@ export function unitFlags(u: SimUnit): number {
   if (u.facingLeft) flags |= FRAME_FLAGS.FACING_LEFT;
   if (u.disabled) flags |= FRAME_FLAGS.DISABLED;
   if (u.outsideSafeZone) flags |= FRAME_FLAGS.OUTSIDE_SAFE_ZONE;
+  if (u.blockedSinceFrame) flags |= FRAME_FLAGS.BLOCKED;
+  if (u.factory?.spawnedSinceFrame) flags |= FRAME_FLAGS.PRODUCED;
   return flags;
 }
 
@@ -36,10 +43,27 @@ export class FrameRecorder {
    * Resets each unit's `firedSinceFrame` and `movedSinceFrame` flags.
    */
   record(t: number, livingUnits: readonly SimUnit[], projectiles: readonly Projectile[], safeZoneRadius: number): FrameDTO {
-    const units: FrameUnit[] = livingUnits.map((u) => [u.id, round2(u.x), round2(u.y), round2(u.hp), unitFlags(u)]);
+    const first = this.frames.length === 0;
+    const units: FrameUnit[] = [];
+    let fac: FrameFactory[] | undefined;
+    for (const u of livingUnits) {
+      const hp = round2(u.hp);
+      if (u.type === 'wall') {
+        if (!first && u.frameHp === hp) continue;
+        u.frameHp = hp;
+      }
+      units.push([u.id, round2(u.x), round2(u.y), hp, unitFlags(u)]);
+      const f = u.factory;
+      if (f) {
+        const progress = f.minionsLeft > 0 ? Math.floor((f.timer * 100) / f.productionInterval) : 100;
+        (fac ??= []).push([u.id, progress, f.minionsLeft, round2(f.rally.x), round2(f.rally.y), f.holding ? 1 : 0, f.canMake]);
+      }
+    }
     for (const u of livingUnits) {
       u.firedSinceFrame = false;
       u.movedSinceFrame = false;
+      u.blockedSinceFrame = false;
+      if (u.factory) u.factory.spawnedSinceFrame = false;
     }
     const frame: FrameDTO = {
       t,
@@ -48,6 +72,7 @@ export class FrameRecorder {
       safeZoneRadius: round2(safeZoneRadius),
       events: this.pending,
     };
+    if (fac) frame.fac = fac;
     this.pending = [];
     this.frames.push(frame);
     return frame;
@@ -73,4 +98,28 @@ export function frameAt(frames: readonly FrameDTO[], t: number): FrameDTO | unde
     }
   }
   return found;
+}
+
+/**
+ * The frame at or before `t` for a late joiner (§9.3 Frames): frames list a
+ * wall only when its hp changes, so a lone mid-battle frame would leave out
+ * the walls that haven't been hit lately. This copy of it also lists every
+ * body still alive at `t` that it doesn't (their last listed row), so the
+ * catch-up frame holds every living wall and the client can trust it alone.
+ */
+export function catchUpFrame(frames: readonly FrameDTO[], t: number): FrameDTO | undefined {
+  const at = frameAt(frames, t);
+  if (!at || at === frames[0]) return at;
+  const last = new Map<string, FrameUnit>();
+  for (const f of frames) {
+    if (f.t > at.t) break;
+    for (const u of f.units) last.set(u[0], u);
+    for (const e of f.events) {
+      if (e.type === 'death') last.delete(e.instanceId);
+      else if (e.type === 'crumble') for (const id of e.ids) last.delete(id);
+    }
+  }
+  for (const u of at.units) last.delete(u[0]);
+  if (last.size === 0) return at;
+  return { ...at, units: [...at.units, ...[...last.values()].map((u): FrameUnit => [u[0], u[1], u[2], u[3], 0])] };
 }

@@ -14,9 +14,22 @@
 // The cooldown factor scales the whole stat sum and is clamped at 1, so slow
 // attackers (cooldown > 60) get no discount. An omitted size is priced at its
 // type default (soldier 10, tower 14).
+//
+// Walls and factories (M8.5, §6 Walls and factories) have their own formulas
+// with the same curve k and no cooldown factor (they can't attack):
+//
+//   wall:     raw = BaseW + cW·HP·(1 + k·(HP/1500)²)
+//   factory:  cost = ceil(BaseF + cF·HP·(1 + k·(HP/1000)²)) + minionValue × E
+//             E = min(maxMinionsPerFactory, floor((battleTicks − 1) / productionInterval))
+//             minionValue = ceil(minionCost × minionDiscount), minionCost = the
+//             unit formula above on the built-in minion's stats.
+//
+// The factory price depends on more than `cost` (the minion stats, the battle
+// length), so `computeCost` takes an optional `PricingContext`; pass
+// `pricingOf(config)` whenever a full config is at hand.
 
-import { DEFAULT_CONFIG, type CostCoefficients, type StatBounds } from './config.js';
-import { sizeOf, type CostStats } from './contract.js';
+import { DEFAULT_CONFIG, type CostCoefficients, type FactoryConfig, type GameConfig, type StatBounds } from './config.js';
+import { isNonCombatBuilding, sizeOf, type CostStats, type UnitType } from './contract.js';
 import type { ValidationError, ValidationWarning } from './errors.js';
 
 /** Size is free up to this radius; each px above it costs `cSize` (§6). */
@@ -76,8 +89,26 @@ export interface CostStatPart {
   text: string;
 }
 
+/** A factory's production part (§6): what it pays up front for its minions. */
+export interface CostProduction {
+  /** Ticks between two minions. */
+  interval: number;
+  /** The built-in minion priced as a soldier (rounded). */
+  minionCost: number;
+  /** ceil(minionCost × minionDiscount): what one expected minion costs the factory. */
+  minionValue: number;
+  /** E: minions the factory can make in one battle. */
+  expected: number;
+  /** minionValue × expected. */
+  total: number;
+  /** "Production: 5 minions × $28 (half of a $55 minion, because they arrive during the battle) = $140". */
+  text: string;
+}
+
 /** Everything shown on a unit card / returned by validate & submit. */
 export interface CostBreakdown {
+  /** Which formula priced it: 'unit' (soldier, tower), 'wall' or 'factory' (§6). */
+  formula: 'unit' | 'wall' | 'factory';
   terms: CostTerms;
   /** Per-stat detail: linear part and curve surcharge. */
   parts: Record<PricedStat, CostStatPart>;
@@ -89,8 +120,12 @@ export interface CostBreakdown {
   factor: number;
   /** sum * factor, unrounded. */
   raw: number;
-  /** Whole credits: ceil(raw - 1e-9). */
+  /** Whole credits: ceil(raw - 1e-9) (factories: the rounded body plus production). */
   cost: number;
+  /** Factories only: the body's rounded price (base + HP). */
+  body?: number;
+  /** Factories only: the production part. */
+  production?: CostProduction;
 }
 
 export interface CostResult {
@@ -144,8 +179,122 @@ function statPart(stats: CostStats, stat: PricedStat, coeffs: CostCoefficients):
   return { value, ratio, linear, curve, total, multiplier: linear === 0 ? 1 : multiplier, text };
 }
 
-/** Price a unit. Pure; callers check finiteness and the cap. */
-export function computeCost(stats: CostStats, coeffs: CostCoefficients): CostResult {
+/** What a factory's price depends on besides `cost` (§6 Re-pricing). */
+export interface PricingContext {
+  battleTicks: number;
+  factory: Pick<FactoryConfig, 'maxMinionsPerFactory' | 'minion'>;
+}
+
+/** The pricing context of the default config. */
+export const DEFAULT_PRICING: PricingContext = {
+  battleTicks: DEFAULT_CONFIG.timers.battleTicks,
+  factory: DEFAULT_CONFIG.factory,
+};
+
+/** The pricing context of a config. */
+export function pricingOf(config: Pick<GameConfig, 'timers' | 'factory'>): PricingContext {
+  return { battleTicks: config.timers.battleTicks, factory: config.factory };
+}
+
+/** HP curve maxima of the buildings (fixed to the default bounds, like CURVE_MAX). */
+export const BUILDING_HP_CURVE_MAX: Readonly<Record<'wall' | 'factory', number>> = {
+  wall: B.wallHealth.max,
+  factory: B.factoryHealth.max,
+};
+
+/** Where a stat's curve reaches 1 for a unit type (walls and factories price HP on their own max). */
+export function curveMaxFor(type: UnitType, stat: PricedStat): number {
+  if (stat === 'maxHealth' && isNonCombatBuilding(type)) return BUILDING_HP_CURVE_MAX[type];
+  return CURVE_MAX[stat];
+}
+
+/** E (§6): the minions a factory with this interval can make in one battle. */
+export function expectedMinions(productionInterval: number, pricing: PricingContext = DEFAULT_PRICING): number {
+  if (!(productionInterval > 0)) return 0;
+  return Math.max(0, Math.min(pricing.factory.maxMinionsPerFactory, Math.floor((pricing.battleTicks - 1) / productionInterval)));
+}
+
+/** The built-in minion's stats as a soldier (for its price, §5.2). */
+export function minionCostStats(pricing: PricingContext = DEFAULT_PRICING): CostStats {
+  const m = pricing.factory.minion;
+  return { type: 'soldier', maxHealth: m.maxHealth, damage: m.damage, range: m.range, speed: m.speed, attackCooldown: m.attackCooldown, size: m.size };
+}
+
+/** minionCost (the soldier price of a minion) and minionValue (what a factory pays per expected minion, §6). */
+export function minionPrice(coeffs: CostCoefficients, pricing: PricingContext = DEFAULT_PRICING): { minionCost: number; minionValue: number } {
+  const minionCost = computeCost(minionCostStats(pricing), coeffs, pricing).cost;
+  return { minionCost, minionValue: roundCost(minionCost * coeffs.factory.minionDiscount) };
+}
+
+const ZERO_STATS: readonly PricedStat[] = ['damage', 'range', 'speed', 'size'];
+
+function freePart(stat: PricedStat): CostStatPart {
+  return { value: 0, ratio: 0, linear: 0, curve: 0, total: 0, multiplier: 1, text: `${stat} costs $0 (buildings that can't attack don't pay for it)` };
+}
+
+/** Price a wall or factory (§6 Walls and factories). */
+function computeBuildingCost(stats: CostStats & { type: 'wall' | 'factory' }, coeffs: CostCoefficients, pricing: PricingContext): CostResult {
+  const c = stats.type === 'wall' ? coeffs.wall : coeffs.factory;
+  const hp = stats.maxHealth;
+  const ratio = hp / BUILDING_HP_CURVE_MAX[stats.type];
+  const linear = hp * c.hp;
+  const multiplier = curveMultiplier(ratio, coeffs.curveK);
+  const total = linear * multiplier;
+  const curve = total - linear;
+  const pct = Math.round(ratio * 100);
+  const hpPart: CostStatPart = {
+    value: hp,
+    ratio,
+    linear,
+    curve,
+    total,
+    multiplier: linear === 0 ? 1 : multiplier,
+    text:
+      linear === 0
+        ? `maxHealth ${fmt(hp)} costs $0`
+        : `maxHealth ${fmt(hp)} costs $${fmt(total)}: $${fmt(linear)} base + $${fmt(curve)} for being ` +
+          (ratio >= NEAR_MAX_RATIO ? `near the max (${pct}% of max)` : `at ${pct}% of the max`),
+  };
+  const parts = { maxHealth: hpPart } as Record<PricedStat, CostStatPart>;
+  for (const st of ZERO_STATS) parts[st] = freePart(st);
+  const terms: CostTerms = { base: c.base, maxHealth: total, damage: 0, range: 0, speed: 0, size: 0 };
+  const sum = c.base + total;
+  if (stats.type === 'wall') {
+    const cost = roundCost(sum);
+    return { raw: sum, cost, breakdown: { formula: 'wall', terms, parts, curveK: coeffs.curveK, sum, factor: 1, raw: sum, cost } };
+  }
+  const body = roundCost(sum);
+  const interval = stats.productionInterval ?? 0;
+  const expected = expectedMinions(interval, pricing);
+  const { minionCost, minionValue } = minionPrice(coeffs, pricing);
+  const prodTotal = minionValue * expected;
+  const share = coeffs.factory.minionDiscount === 0.5 ? 'half' : `${fmt(coeffs.factory.minionDiscount * 100)}%`;
+  const production: CostProduction = {
+    interval,
+    minionCost,
+    minionValue,
+    expected,
+    total: prodTotal,
+    text:
+      `Production: ${expected} minion${expected === 1 ? '' : 's'} × $${minionValue} (${share} of a $${minionCost} minion, ` +
+      `because they arrive during the battle) = $${prodTotal}`,
+  };
+  const raw = sum + prodTotal;
+  const cost = body + prodTotal;
+  return {
+    raw,
+    cost,
+    breakdown: { formula: 'factory', terms, parts, curveK: coeffs.curveK, sum, factor: 1, raw, cost, body, production },
+  };
+}
+
+/**
+ * Price a unit (§6). Pure; callers check finiteness and the cap. Walls and
+ * factories use their own formulas; `pricing` (default: the default config's)
+ * sets the battle length and minion stats a factory's production is priced on.
+ */
+export function computeCost(stats: CostStats, coeffs: CostCoefficients, pricing: PricingContext = DEFAULT_PRICING): CostResult {
+  if (isNonCombatBuilding(stats.type)) return computeBuildingCost(stats as CostStats & { type: 'wall' | 'factory' }, coeffs, pricing);
   const parts = {} as Record<PricedStat, CostStatPart>;
   for (const stat of PRICED_STATS) parts[stat] = statPart(stats, stat, coeffs);
   const terms: CostTerms = {
@@ -160,7 +309,7 @@ export function computeCost(stats: CostStats, coeffs: CostCoefficients): CostRes
   const factor = cooldownFactor(stats.attackCooldown, coeffs);
   const raw = sum * factor;
   const cost = roundCost(raw);
-  return { raw, cost, breakdown: { terms, parts, curveK: coeffs.curveK, sum, factor, raw, cost } };
+  return { raw, cost, breakdown: { formula: 'unit', terms, parts, curveK: coeffs.curveK, sum, factor, raw, cost } };
 }
 
 /** The largest stat term (excluding base), used to name the biggest lever. */
@@ -181,13 +330,13 @@ const SUGGEST_STEP: Record<PricedStat, number> = { maxHealth: 10, damage: 1, ran
 function statMin(stats: CostStats, stat: PricedStat, bounds: StatBounds): number {
   switch (stat) {
     case 'maxHealth':
-      return bounds.maxHealth.min;
+      return stats.type === 'wall' ? bounds.wallHealth.min : stats.type === 'factory' ? bounds.factoryHealth.min : bounds.maxHealth.min;
     case 'damage':
       return bounds.damage.min;
     case 'range':
       return bounds.range.min;
     case 'speed':
-      return stats.type === 'tower' ? 0 : bounds.soldierSpeed.min;
+      return stats.type === 'soldier' ? bounds.soldierSpeed.min : 0;
     case 'size':
       return bounds.size.min;
   }
@@ -225,13 +374,14 @@ export function suggestLowerStat(
   cap: number,
   coeffs: CostCoefficients,
   bounds: StatBounds = DEFAULT_CONFIG.stats.bounds,
+  pricing: PricingContext = DEFAULT_PRICING,
 ): StatSuggestion | null {
   const from = stat === 'size' ? sizeOf(stats) : stats[stat];
   const step = SUGGEST_STEP[stat];
   const min = statMin(stats, stat, bounds);
   if (!(from > min)) return null;
-  const now = computeCost(stats, coeffs).cost;
-  const costAt = (v: number) => computeCost(withStat(stats, stat, v), coeffs).cost;
+  const now = computeCost(stats, coeffs, pricing).cost;
+  const costAt = (v: number) => computeCost(withStat(stats, stat, v), coeffs, pricing).cost;
   let to: number | undefined;
   if (costAt(min) <= cap) {
     // Cost is non-decreasing in the stat: walk down from the current value.
@@ -260,15 +410,17 @@ function leverSentence(
   cap: number,
   coeffs: CostCoefficients,
   bounds: StatBounds,
+  pricing: PricingContext,
 ): string {
   const { breakdown } = result;
   const order = [...PRICED_STATS].sort((a, b) => breakdown.terms[b] - breakdown.terms[a]);
   const big = order[0]!;
   const part = breakdown.parts[big];
   let s =
-    `The most expensive stat is ${big}: ${fmt(part.value)} costs $${fmt(part.total)} before the factor ` +
+    // Walls and factories have no cooldown factor (§6), so "before the factor" would only confuse.
+    `The most expensive stat is ${big}: ${fmt(part.value)} costs $${fmt(part.total)}${breakdown.formula === 'unit' ? ' before the factor' : ''} ` +
     `($${fmt(part.linear)} base + $${fmt(part.curve)} for being ${Math.round(part.ratio * 100)}% of the max).`;
-  const sug = suggestLowerStat(stats, big, cap, coeffs, bounds);
+  const sug = suggestLowerStat(stats, big, cap, coeffs, bounds, pricing);
   if (sug && sug.saves > 0) {
     s += ` Lowering ${big} from ${fmt(sug.from)} to ${fmt(sug.to)} saves $${sug.saves} ($${sug.newCost})`;
     if (sug.fits) s += '.';
@@ -278,6 +430,38 @@ function leverSentence(
     }
   }
   return s;
+}
+
+/**
+ * The factory production lever (§6 Breakdown): the smallest slower
+ * productionInterval (a multiple of 60 ticks) that fits under the cap, e.g.
+ * "Raising productionInterval from 600 to 900 makes 5 minions instead of 8 and saves $84."
+ */
+function productionLever(
+  stats: CostStats,
+  result: CostResult,
+  cap: number,
+  coeffs: CostCoefficients,
+  bounds: StatBounds,
+  pricing: PricingContext,
+): string {
+  const from = stats.productionInterval ?? bounds.productionInterval.min;
+  const max = bounds.productionInterval.max;
+  const fromE = expectedMinions(from, pricing);
+  let to = max;
+  for (let v = Math.ceil((from + 1) / 60) * 60; v <= max; v += 60) {
+    if (computeCost({ ...stats, productionInterval: v }, coeffs, pricing).cost <= cap) {
+      to = v;
+      break;
+    }
+  }
+  if (to <= from) return `The production of ${fromE} minions is the biggest cost; lower maxHealth instead.`;
+  const next = computeCost({ ...stats, productionInterval: to }, coeffs, pricing);
+  const toE = expectedMinions(to, pricing);
+  return (
+    `The production (${fromE} minions × $${result.breakdown.production?.minionValue ?? 0}) is the biggest cost: ` +
+    `raising productionInterval from ${fmt(from)} to ${to} makes ${toE} minion${toE === 1 ? '' : 's'} instead of ${fromE} and saves $${result.cost - next.cost} ($${next.cost}).`
+  );
 }
 
 /**
@@ -294,18 +478,23 @@ export function tooExpensiveError(
   cap: number,
   coeffs: CostCoefficients,
   bounds: StatBounds = DEFAULT_CONFIG.stats.bounds,
+  pricing: PricingContext = DEFAULT_PRICING,
 ): ValidationError {
   const { breakdown } = result;
-  const statSentence = leverSentence(stats, result, cap, coeffs, bounds);
+  const statSentence = leverSentence(stats, result, cap, coeffs, bounds, pricing);
   let fix: string;
 
-  if (breakdown.factor > 1) {
+  const prod = breakdown.production;
+  if (prod && prod.total >= breakdown.terms.maxHealth) {
+    // Factory whose production is the bigger lever: a slower interval buys fewer minions.
+    fix = `Cost is $${result.cost} but the max is $${cap}. ${productionLever(stats, result, cap, coeffs, bounds, pricing)} ${statSentence}`;
+  } else if (breakdown.factor > 1) {
     // Try doubling the cooldown until it fits or the factor reaches 1.
     let cd = stats.attackCooldown;
     let next: CostResult | undefined;
     while (cd < coeffs.referenceCooldown) {
       cd = Math.min(coeffs.referenceCooldown, Math.ceil(cd * 2));
-      next = computeCost({ ...stats, attackCooldown: cd }, coeffs);
+      next = computeCost({ ...stats, attackCooldown: cd }, coeffs, pricing);
       if (next.cost <= cap) break;
     }
     if (next && next.cost <= cap) {
@@ -348,20 +537,22 @@ export function nearMaxWarnings(
   result: CostResult,
   coeffs: CostCoefficients,
   bounds: StatBounds = DEFAULT_CONFIG.stats.bounds,
+  pricing: PricingContext = DEFAULT_PRICING,
 ): ValidationWarning[] {
   const out: ValidationWarning[] = [];
   for (const stat of PRICED_STATS) {
     const part = result.breakdown.parts[stat];
     if (part.ratio < NEAR_MAX_RATIO || part.linear === 0 || part.multiplier <= 1) continue;
+    const curveMax = curveMaxFor(stats.type, stat);
     // Suggest 60% of the max (1 + k·0.36 ≈ 1.7× with k = 2).
-    const target = Math.max(statMin(stats, stat, bounds), floorTo(0.6 * CURVE_MAX[stat] + (stat === 'size' ? MIN_PRICED_SIZE : 0), SUGGEST_STEP[stat]));
-    const lower = target < part.value ? computeCost(withStat(stats, stat, target), coeffs) : undefined;
+    const target = Math.max(statMin(stats, stat, bounds), floorTo(0.6 * curveMax + (stat === 'size' ? MIN_PRICED_SIZE : 0), SUGGEST_STEP[stat]));
+    const lower = target < part.value ? computeCost(withStat(stats, stat, target), coeffs, pricing) : undefined;
     const saving = lower ? result.cost - lower.cost : 0;
     out.push({
       code: 'W_STAT_NEAR_MAX',
       field: stat,
       value: part.value,
-      allowed: { max: stat === 'size' ? CURVE_MAX.size + MIN_PRICED_SIZE : CURVE_MAX[stat], ratio: Math.round(part.ratio * 100) / 100 },
+      allowed: { max: stat === 'size' ? CURVE_MAX.size + MIN_PRICED_SIZE : curveMax, ratio: Math.round(part.ratio * 100) / 100 },
       message:
         `${stat} is at ${Math.round(part.ratio * 100)}% of max and costs ${fmt(part.multiplier)}× its normal price; ` +
         'two medium units usually beat one maxed one.',

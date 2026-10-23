@@ -2,7 +2,9 @@
 // player (all copies of that design summed), ranked by effective damage, at
 // the released tick (a Skip uses the counters at the shown playback tick, as
 // the ranking does). Public once the result is released: fielded types were
-// revealed at START already; never source code.
+// revealed at START already; never source code. Minions are reported under
+// their factory's design, so a factory's row sums its minions' damage and is
+// named "<factory> + minions".
 
 import type { BattleRevealDTO, TopUnitDTO, UnitBattleSummaryDTO } from '@pixel-clash/shared';
 
@@ -26,7 +28,8 @@ export function topUnits({ reveal, summaries, kicked, shown }: TopUnitsInput): T
       const row: TopUnitDTO = {
         rank: 0,
         unitId,
-        displayName: type?.name ?? s.name ?? unitId,
+        // A factory's row includes its minions' damage and KOs (§9.3): "Basic Factory + minions".
+        displayName: `${type?.name ?? s.name ?? unitId}${type?.stats.type === 'factory' ? ' + minions' : ''}`,
         playerId: p.playerId,
         playerName: p.name,
         seat: p.seat,

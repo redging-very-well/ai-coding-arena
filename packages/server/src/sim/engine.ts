@@ -34,6 +34,14 @@
 // attacking a teammate idles, a team is eliminated with its last unit, the
 // battle ends when ≤ 1 side has units, and sides are ranked (team living cost
 // on timeout).
+//
+// Walls, factories and minions (M8.5, §9.3): walls never run code (no spawn,
+// no update) and live in a wall grid; soldiers and minions steer round them
+// (step 4, sim/steering.ts) and separation ends with a wall push (step 5);
+// minions decide in step 2 from the same snapshot (sim/minion.ts); factories
+// accept rally/hold in step 3 and produce after the dead are removed (step
+// 9b, sim/factory.ts); elimination (step 10) counts fighters only, and an
+// eliminated side's walls and spent factories crumble.
 
 import {
   ARENA,
@@ -41,9 +49,12 @@ import {
   cellCenter,
   computeCost,
   instanceIdFor,
+  pricingOf,
+  runsCode,
   scaleSuddenDeath,
   sizeOf,
   zoneCenterOf,
+  type FactoryView,
   type BattleReportDTO,
   type FrameDTO,
   type GameConfig,
@@ -54,6 +65,7 @@ import {
   type Point,
   type RankingEntryDTO,
   type SelfView,
+  type UnitType,
   type WorldView,
   type ZoneRef,
 } from '@pixel-clash/shared';
@@ -70,8 +82,13 @@ import {
 import { createSplitRunner, needsSplit } from '../sandbox/splitRunner.js';
 import { timedOutOnceMessage } from '../sandbox/strikes.js';
 import { resolveAction, type ResolvedAction } from './actions.js';
+import { alivePerPlayerCap, canMakeOf, spawnSpot, zoneFacingDir } from './factory.js';
 import { FrameRecorder, frameAt } from './frames.js';
-import { separate, stepToward } from './movement.js';
+import { minionAction, minionStats, minionValueOf } from './minion.js';
+import { isFixedBody, separate } from './movement.js';
+import { steerToward } from './steering.js';
+import { aliveInFrame, factoryLeftIn, isFighter, livingValueAt, livingValueOf } from './value.js';
+import { WallGrid } from './walls.js';
 import { deriveSeed, mulberry32, type Rng } from './prng.js';
 import { applyHit, moveProjectiles, resolveHits, type PendingHit } from './projectiles.js';
 import { rankResult } from './ranking.js';
@@ -129,8 +146,10 @@ export async function createBattleRunners(
   const settled = await Promise.allSettled(
     players.map((p) => {
       const player = { playerId: p.playerId, seat: p.seat, seed: battleSeed + p.seat };
+      // Walls have no code: they are never loaded into a sandbox (§5.2).
+      const units = p.units.filter((u) => runsCode(u.stats.type));
       // Borrowed Armory units get sandboxes of their own (§9.1 Source).
-      return needsSplit(p.units) ? createSplitRunner(factory, player, p.units, limits) : factory.create(player, p.units, limits);
+      return needsSplit(units) ? createSplitRunner(factory, player, units, limits) : factory.create(player, units, limits);
     }),
   );
   const out = new Map<string, PlayerRunner>();
@@ -176,7 +195,7 @@ export function buildInstances(player: Pick<BattlePlayerSetup, 'seat' | 'zone' |
 
 /** Convenience for tests and bots: a design with its cost computed from config. */
 export function designFor(unitId: string, stats: BattleUnitDesign['stats'], config: GameConfig): BattleUnitDesign {
-  return { unitId, stats, cost: computeCost(stats, config.cost).cost };
+  return { unitId, stats, cost: computeCost(stats, config.cost, pricingOf(config)).cost };
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +271,12 @@ export class BattleEngine {
   private readonly onFrame: ((frame: FrameDTO) => void) | undefined;
   private readonly kicked: ReadonlySet<string>;
   private readonly yieldEvery: number;
+  /** Living walls by arena cell (§9.3). */
+  private readonly walls: WallGrid;
+  /** What a factory pays per minion; a minion's value (§6). */
+  private readonly minionValue: number;
+  /** Alive minions allowed per player (§5.2 (c)). */
+  private readonly minionCapPerPlayer: number;
 
   /** Per-unit counters at each frame where they changed (for `countersAt`). */
   private readonly unitCounterLog = new Map<string, Array<UnitCounters & { t: number }>>();
@@ -281,6 +306,9 @@ export class BattleEngine {
     this.kicked = opts.kickedPlayerIds ?? new Set();
     this.yieldEvery = opts.yieldEveryTicks ?? 30;
     this.frames = this.recorder.frames;
+    this.walls = new WallGrid(this.arena);
+    this.minionValue = minionValueOf(opts.config);
+    this.minionCapPerPlayer = alivePerPlayerCap(opts.config.factory, opts.players.length);
 
     const seats = new Set<number>();
     const ids = new Set<string>();
@@ -310,7 +338,10 @@ export class BattleEngine {
         };
       });
     this.units = this.players.flatMap((p) => p.units).sort((a, b) => compareIds(a.id, b.id));
-    for (const u of this.units) this.byId.set(u.id, u);
+    for (const u of this.units) {
+      this.byId.set(u.id, u);
+      if (u.type === 'wall') this.walls.add(u);
+    }
   }
 
   /** Completed ticks so far (the sim's lead time). */
@@ -344,15 +375,18 @@ export class BattleEngine {
   metricsAt(t: number): PlayerMetricsDTO[] {
     const counters = this.countersAt(t);
     const frame = frameAt(this.frames, t) ?? this.frames[0];
-    const alive = new Set(frame?.units.map((u) => u[0]) ?? []);
+    const listed = new Set(frame?.units.map((u) => u[0]) ?? []);
+    const left = frame ? factoryLeftIn(frame) : new Map<string, number>();
     return sumMetrics(
       this.players.map((p) => p.setup.playerId),
       this.units.map((u) => {
         const c = counters.units.get(u.id);
+        const r = { instanceId: u.id, playerId: u.playerId, cost: u.cost, diedAtTick: u.diedAtTick, type: u.type, spawnedAtTick: u.spawnedAtTick ?? 0, ...(u.factory ? { factory: factoryReport(u) } : {}) };
+        const alive = frame ? aliveInFrame(r, frame, listed) : false;
         return {
           playerId: u.playerId,
-          cost: u.cost,
-          alive: alive.has(u.id),
+          cost: alive ? livingValueAt(r, left) : 0,
+          alive,
           damageDealt: c?.damageDealt ?? 0,
           kills: c?.kills ?? 0,
           valueDestroyed: c?.valueDestroyed ?? 0,
@@ -376,9 +410,12 @@ export class BattleEngine {
 
     try {
       await this.spawnAll();
+      // Checked before the spawn frame, so a side placed without fighters
+      // crumbles in frame 0 (its `crumble` event rides with the spawns).
+      const endedAtStart = this.checkElimination();
       this.emitFrame();
 
-      if (this.checkElimination()) {
+      if (endedAtStart) {
         endReason = 'elimination';
       } else {
         while (this.time < battleTicks) {
@@ -416,7 +453,7 @@ export class BattleEngine {
   private makeUnit(setup: BattlePlayerSetup, design: BattleUnitDesign, inst: PlacedInstance): SimUnit {
     const s = design.stats;
     const center = this.center;
-    return {
+    const u: SimUnit = {
       id: inst.instanceId,
       playerId: setup.playerId,
       seat: setup.seat,
@@ -446,13 +483,44 @@ export class BattleEngine {
       strikes: 0,
       errors: [],
       diedAtTick: null,
+      blockedBy: null,
+      blockedTicks: 0,
+      blockedTicksMax: 0,
+      blockedSinceFrame: false,
+      slide: null,
+      spawnedAtTick: 0,
     };
+    if (s.type === 'factory') {
+      // Priced like the validator does (§6): body + minionValue × E.
+      const priced = computeCost(s, this.config.cost, pricingOf(this.config)).breakdown;
+      const prod = priced.production;
+      u.factory = {
+        productionInterval: s.productionInterval ?? this.config.stats.bounds.productionInterval.max,
+        timer: 0,
+        minionsLeft: prod?.expected ?? 0,
+        canMake: prod?.expected ?? 0,
+        noSpot: false,
+        made: 0,
+        rally: { x: center.x, y: center.y },
+        holding: false,
+        bodyCost: priced.body ?? design.cost,
+        minionValue: prod?.minionValue ?? this.minionValue,
+        spawnedSinceFrame: false,
+        minionsLost: 0,
+      };
+    }
+    return u;
   }
 
   private async spawnAll(): Promise<void> {
     await Promise.all(
       this.players.map(async (p) => {
         for (const u of p.units) {
+          // Walls have no code: nothing to construct (§5.2).
+          if (u.type === 'wall') {
+            u.spawned = true;
+            continue;
+          }
           let res;
           try {
             res = await p.runner.spawn(u.id, u.unitId);
@@ -485,6 +553,7 @@ export class BattleEngine {
     const living = this.living();
     for (const u of living) {
       if (u.cooldownRemaining > 0) u.cooldownRemaining -= 1;
+      if (u.factory) u.factory.holding = false;
     }
     const others = living.map(toOtherView);
     const safeRadius = safeRadiusAt(tick, cfg);
@@ -493,7 +562,19 @@ export class BattleEngine {
     const sideViews = new Map<number, { enemies: OtherView[]; allies: OtherView[] }>();
     const inputs = this.players.map((p) => this.buildInput(p, tick, living, others, safeRadius, sideViews));
 
-    // 2) All runners in parallel; results applied in seat order below.
+    // 2) Minions decide from the same snapshot (engine AI, no isolate), then
+    //    all runners in parallel; results applied in seat order below.
+    const minionRaw = new Map<string, unknown>();
+    const minionWorld = {
+      living,
+      safeCenter: this.center,
+      safeRadius,
+      rangeTolerance: cfg.sim.rangeTolerance,
+      lookup: (id: string) => this.byId.get(id),
+    };
+    for (const u of living) {
+      if (u.type === 'minion') minionRaw.set(u.id, minionAction(u, minionWorld, cfg));
+    }
     const results = await Promise.all(
       this.players.map((p, i) => {
         const input = inputs[i];
@@ -506,29 +587,44 @@ export class BattleEngine {
     this.players.forEach((p, i) => {
       const input = inputs[i];
       const res = results[i];
-      if (!input || !res) return;
-      const raw = this.applyTickResult(p, input, res, tick);
-      for (const self of input.selves) {
-        if (!raw.has(self.id)) continue;
-        const unit = this.byId.get(self.id)!;
-        const action = resolveAction(raw.get(self.id), unit, (id) => this.byId.get(id), cfg.sim.rangeTolerance, this.arena);
-        if (action.kind !== 'idle') pending.push({ unit, action });
+      const raw = input && res ? this.applyTickResult(p, input, res, tick) : new Map<string, unknown>();
+      // The player's code-run units and its minions, in instanceId order.
+      const acting: Array<[SimUnit, unknown]> = [];
+      for (const u of p.units) {
+        if (!u.alive) continue;
+        if (u.type === 'minion') acting.push([u, minionRaw.get(u.id)]);
+        else if (raw.has(u.id)) acting.push([u, raw.get(u.id)]);
+      }
+      for (const [unit, r] of acting) {
+        const action = resolveAction(r, unit, (id) => this.byId.get(id), cfg.sim.rangeTolerance, this.arena);
+        if (action.kind === 'rally') unit.factory!.rally = action.destination;
+        else if (action.kind === 'hold') unit.factory!.holding = true;
+        else if (action.kind !== 'idle') pending.push({ unit, action });
       }
     });
 
-    // 4) Moves (soldiers only; towers were turned into idle in step 3).
+    // 4) Moves (soldiers and minions; other types were turned into idle in
+    //    step 3), sliding along walls (§9.3 Wall steering).
     for (const { unit, action } of pending) {
       if (action.kind !== 'move') continue;
       const sx0 = screenX(unit);
+      const res = steerToward(unit, action.destination, unit.stats.speed, this.walls, this.arena, this.center, cfg.sim.slideMemoryTicks);
       // Sticky until the next frame is recorded (cleared in FrameRecorder.record).
-      if (stepToward(unit, action.destination, unit.stats.speed, this.arena)) unit.movedSinceFrame = true;
+      if (res.moved) unit.movedSinceFrame = true;
+      if (res.blocked) unit.blockedSinceFrame = true;
       const sx1 = screenX(unit);
       if (sx1 < sx0) unit.facingLeft = true;
       else if (sx1 > sx0) unit.facingLeft = false;
     }
 
-    // 5) Separation.
-    separate(living, cfg.sim.separationPasses, this.rng, this.arena);
+    // 5) Separation (circle bodies), each pass ending with the wall push.
+    separate(
+      living.filter((u) => u.type !== 'wall'),
+      cfg.sim.separationPasses,
+      this.rng,
+      this.arena,
+      this.walls,
+    );
 
     // 6) Fire attacks. Melee hits are queued and land in step 7 together with
     //    the projectile impacts, so the first hit in seat, then instanceId
@@ -557,8 +653,8 @@ export class BattleEngine {
       }
     }
 
-    // 7) Projectiles move; then every hit of this tick (melee and impacts)
-    //    lands in attacker order: seat, then instanceId, then projectile id.
+    // 7) Projectiles move (over walls); then every hit of this tick (melee and
+    //    impacts) lands in attacker order: seat, then instanceId, then projectile id.
     const moved = moveProjectiles(this.projectiles, (id) => this.byId.get(id), cfg.sim.projectileSpeed);
     this.projectiles = moved.remaining;
     resolveHits([...hits, ...moved.arrived], (h) => {
@@ -566,21 +662,116 @@ export class BattleEngine {
       this.recorder.event({ type: 'hit', instanceId: h.attackerId, targetId: h.target.id, damage: hit.dealt });
     });
 
-    // 8) Sudden death (credits nobody: no damage, kills or value).
+    // 8) Sudden death on every body, buildings included (credits nobody).
     applySuddenDeath(living, tick, cfg, this.center);
 
     // 9) Remove the dead.
     for (const u of living) {
       if (u.hp <= 0) {
-        u.alive = false;
-        u.hp = 0;
-        u.diedAtTick = tick + 1;
+        this.kill(u, tick + 1);
         this.recorder.event({ type: 'death', instanceId: u.id });
       }
     }
     // Shots at units that just died vanish.
     this.projectiles = this.projectiles.filter((p) => this.byId.get(p.targetId)?.alive);
+
+    // 9b) Factory production (new minions act from the next tick).
+    this.produce(tick + 1);
     // 10) Elimination is checked by the loop (it also decides the frame).
+  }
+
+  /** Mark a body dead at time `t` (kept in the lists for reports). */
+  private kill(u: SimUnit, t: number): void {
+    u.alive = false;
+    u.hp = 0;
+    u.diedAtTick = t;
+    if (u.type === 'wall') this.walls.remove(u);
+    const f = u.minion?.factory.factory;
+    if (f) f.minionsLost += 1;
+  }
+
+  /** Step 9b (§9.3 Factory production). `t` = the time the new minions appear at. */
+  private produce(t: number): void {
+    const fc = this.config.factory;
+    let factories: SimUnit[] | undefined;
+    for (const u of this.units) if (u.alive && u.factory) (factories ??= []).push(u);
+    if (!factories) return;
+    // Alive minions per factory and per player.
+    const perFactory = new Map<string, number>();
+    const perPlayer = new Map<string, number>();
+    for (const u of this.units) {
+      if (!u.alive || !u.minion) continue;
+      const fid = u.minion.factory.id;
+      perFactory.set(fid, (perFactory.get(fid) ?? 0) + 1);
+      perPlayer.set(u.playerId, (perPlayer.get(u.playerId) ?? 0) + 1);
+    }
+    let buildings: SimUnit[] | undefined;
+    for (const fac of factories) {
+      const f = fac.factory!;
+      if (!f.holding) f.timer = Math.min(f.timer + 1, f.productionInterval);
+      if (f.timer < f.productionInterval || f.minionsLeft <= 0) continue;
+      if ((perFactory.get(fac.id) ?? 0) >= fc.maxAlivePerFactory) continue;
+      if ((perPlayer.get(fac.playerId) ?? 0) >= this.minionCapPerPlayer) continue;
+      buildings ??= this.units.filter((b) => b.alive && (b.type === 'tower' || b.type === 'factory'));
+      const zone = this.players.find((p) => p.setup.playerId === fac.playerId)!.setup.zone;
+      const spot = spawnSpot(fac, f.rally, zoneFacingDir(zone), this.arena, fc.minion.size, this.walls, buildings);
+      f.noSpot = !spot;
+      if (!spot) continue;
+      f.minionsLeft -= 1;
+      f.made += 1;
+      f.timer = 0;
+      f.spawnedSinceFrame = true;
+      perFactory.set(fac.id, (perFactory.get(fac.id) ?? 0) + 1);
+      perPlayer.set(fac.playerId, (perPlayer.get(fac.playerId) ?? 0) + 1);
+      this.addMinion(fac, f.made, spot, t);
+    }
+    const ticksLeft = this.config.timers.battleTicks - t;
+    for (const fac of factories) fac.factory!.canMake = canMakeOf(fac.factory!, ticksLeft);
+  }
+
+  /** Create a factory's n-th minion at `spot` (§5.2 Minions). */
+  private addMinion(fac: SimUnit, n: number, spot: Point, t: number): void {
+    const stats = minionStats(this.config, fac.stats.color);
+    const m: SimUnit = {
+      id: `${fac.id}-m${n}`,
+      playerId: fac.playerId,
+      seat: fac.seat,
+      teamId: fac.teamId,
+      unitId: fac.unitId,
+      stats,
+      cost: fac.factory?.minionValue ?? this.minionValue,
+      type: 'minion',
+      radius: stats.size,
+      x: spot.x,
+      y: spot.y,
+      hp: stats.maxHealth,
+      maxHp: stats.maxHealth,
+      cooldownRemaining: 0,
+      alive: true,
+      disabled: false,
+      spawned: true,
+      movedSinceFrame: false,
+      firedSinceFrame: false,
+      facingLeft: screenX(fac.factory!.rally) < screenX(spot),
+      outsideSafeZone: false,
+      damageDealt: 0,
+      kills: 0,
+      valueDestroyed: 0,
+      strikes: 0,
+      errors: [],
+      diedAtTick: null,
+      blockedBy: null,
+      blockedTicks: 0,
+      blockedTicksMax: 0,
+      blockedSinceFrame: false,
+      slide: null,
+      spawnedAtTick: t,
+      minion: { factory: fac, n },
+    };
+    insertSorted(this.units, m);
+    insertSorted(this.players.find((p) => p.setup.playerId === fac.playerId)!.units, m);
+    this.byId.set(m.id, m);
+    this.recorder.event({ type: 'spawn', instanceId: m.id, factoryId: fac.id, x: round2(spot.x), y: round2(spot.y) });
   }
 
   /** The TickInput for one player, or undefined if none of its units can act. */
@@ -593,7 +784,11 @@ export class BattleEngine {
     sideViews: Map<number, { enemies: OtherView[]; allies: OtherView[] }>,
   ): TickInput | undefined {
     if (p.disabled || p.runner.disposed) return undefined;
-    const selves = living.filter((u) => u.playerId === p.setup.playerId && !u.disabled).map(toSelfView);
+    // Only units that run code act through the sandbox: not walls, not minions (§5.2).
+    const cap = this.config.factory.maxAlivePerFactory;
+    const selves = living
+      .filter((u) => u.playerId === p.setup.playerId && !u.disabled && u.type !== 'wall' && u.type !== 'minion')
+      .map((u) => toSelfView(u, u.factory ? factoryView(u, living, cap) : null));
     if (selves.length === 0) return undefined;
     const corner = zoneCenterOf(p.setup.zone);
     const { x: cx, y: cy } = this.center;
@@ -782,17 +977,35 @@ export class BattleEngine {
   }
 
   /**
-   * Step 10: mark newly eliminated players. Returns true when ≤ 1 side (a
-   * free-for-all player, or a team) has living units.
+   * Step 10: mark newly eliminated players. A player (and a side) is out when
+   * it has no living FIGHTERS (§9.3: walls and spent factories don't count).
+   * An eliminated side's leftover walls and spent factories crumble at once
+   * (credited to nobody). Returns true when ≤ 1 side has fighters.
    */
   private checkElimination(): boolean {
-    const sidesWithUnits = new Set<number>();
+    const sidesWithFighters = new Set<number>();
+    const sides = new Set<number>();
     for (const p of this.players) {
-      const alive = p.units.some((u) => u.alive);
-      if (alive) sidesWithUnits.add(p.setup.teamId ?? p.setup.seat);
+      const side = p.setup.teamId ?? p.setup.seat;
+      sides.add(side);
+      if (p.units.some((u) => u.alive && isFighter(u))) sidesWithFighters.add(side);
       else if (p.eliminatedAtTick === null) p.eliminatedAtTick = this.time;
     }
-    return sidesWithUnits.size <= 1;
+    let crumbled: string[] | undefined;
+    for (const p of this.players) {
+      if (sidesWithFighters.has(p.setup.teamId ?? p.setup.seat)) continue;
+      for (const u of p.units) {
+        if (!u.alive) continue;
+        this.kill(u, this.time);
+        (crumbled ??= []).push(u.id);
+      }
+    }
+    if (crumbled) {
+      crumbled.sort(compareIds);
+      this.recorder.event({ type: 'crumble', ids: crumbled });
+      this.projectiles = this.projectiles.filter((p) => this.byId.get(p.targetId)?.alive);
+    }
+    return sidesWithFighters.size <= 1;
   }
 
   private emitFrame(): void {
@@ -831,13 +1044,14 @@ export class BattleEngine {
   private buildResult(endReason: BattleEndReason): BattleResult {
     const players: PlayerOutcome[] = this.players.map((p) => {
       const living = p.units.filter((u) => u.alive);
+      const fighting = living.some((u) => isFighter(u));
       const out: PlayerOutcome = {
         playerId: p.setup.playerId,
         seat: p.setup.seat,
         zone: p.setup.zone,
         ...(p.setup.teamId !== undefined ? { teamId: p.setup.teamId } : {}),
-        eliminatedAtTick: living.length > 0 ? null : p.eliminatedAtTick ?? this.time,
-        livingCost: living.reduce((sum, u) => sum + u.cost, 0),
+        eliminatedAtTick: fighting ? null : p.eliminatedAtTick ?? this.time,
+        livingCost: living.reduce((sum, u) => sum + livingValueOf(u), 0),
         livingUnits: living.length,
         playerStrikes: p.playerStrikes,
         timeouts: p.timeouts,
@@ -855,6 +1069,9 @@ export class BattleEngine {
         unitId: u.unitId,
         unitName: u.stats.name,
         cost: u.cost,
+        type: u.type,
+        livingValue: u.alive ? livingValueOf(u) : 0,
+        spawnedAtTick: u.spawnedAtTick ?? 0,
         survived: u.alive,
         hp: u.hp,
         diedAtTick: u.diedAtTick,
@@ -866,6 +1083,9 @@ export class BattleEngine {
         errors: u.errors,
       };
       if (u.disabledReason) r.disabledReason = u.disabledReason;
+      if (u.minion) r.factoryId = u.minion.factory.id;
+      if (u.factory) r.factory = factoryReport(u);
+      if (u.type === 'soldier' || u.type === 'minion') r.blockedTicksMax = u.blockedTicksMax ?? 0;
       return r;
     });
     const result: BattleResult = { endTick: this.time, endReason, players, units, ranking: [] };
@@ -925,17 +1145,35 @@ function lastAtOrBefore<T extends { t: number }>(list: readonly T[], tick: numbe
 
 /**
  * Skip (§9): the result as of recorded frame `endTick` (the frame the players were
- * shown): survival and living cost from that frame's living units, counters
+ * shown): survival and living value from that frame's living bodies, counters
  * from `counters`, and only the errors and incidents up to that tick. Ranking
  * is left as is (the caller ranks and scores from the frame).
+ *
+ * Pass the frame itself as `shown` (M8.5): walls are listed in a frame only
+ * when their hp changed, and factories' living value needs the frame's `fac`.
+ * A plain set of the frame's unit ids still works for battles without walls
+ * and factories.
  */
-export function resultAtTick(result: BattleResult, counters: CountersAtTick, aliveAtEnd: ReadonlySet<string>, endTick: number): BattleResult {
+export function resultAtTick(
+  result: BattleResult,
+  counters: CountersAtTick,
+  shown: ReadonlySet<string> | Pick<FrameDTO, 't' | 'units' | 'fac'>,
+  endTick: number,
+): BattleResult {
   const zero: UnitCounters = { damageDealt: 0, kills: 0, valueDestroyed: 0, strikes: 0, disabled: false };
+  const frame = isFrame(shown) ? shown : { t: endTick, units: [...shown].map((id): FrameDTO['units'][number] => [id, 0, 0, 0, 0]) };
+  const listed = new Set(frame.units.map((u) => u[0]));
+  const left = isFrame(shown) ? factoryLeftIn(shown) : new Map(result.units.filter((u) => u.factory).map((u) => [u.instanceId, u.factory!.canMake ?? u.factory!.minionsLeft]));
+  const aliveAtEnd = new Set<string>();
+  const valueAt = new Map<string, number>();
   const living = new Map<string, { cost: number; count: number }>();
   for (const u of result.units) {
-    if (!aliveAtEnd.has(u.instanceId)) continue;
+    if (!aliveInFrame(u, frame, listed)) continue;
+    aliveAtEnd.add(u.instanceId);
+    const value = livingValueAt(u, left);
+    valueAt.set(u.instanceId, value);
     const l = living.get(u.playerId) ?? { cost: 0, count: 0 };
-    l.cost += u.cost;
+    l.cost += value;
     l.count += 1;
     living.set(u.playerId, l);
   }
@@ -954,6 +1192,7 @@ export function resultAtTick(result: BattleResult, counters: CountersAtTick, ali
       const r: UnitReport = {
         ...u,
         survived: aliveAtEnd.has(u.instanceId),
+        livingValue: valueAt.get(u.instanceId) ?? 0,
         damageDealt: c.damageDealt,
         kills: c.kills,
         valueDestroyed: c.valueDestroyed,
@@ -992,18 +1231,69 @@ export function buildBattleReport(
   }
   errors.sort((a, b) => a.tick - b.tick || compareIds(a.instanceId, b.instanceId));
   const entry = ranking.find((r) => r.playerId === playerId);
+  // Minions count for damage, KOs and value (credited to the factory type), not as placed units.
+  const placed = units.filter((u) => u.type !== 'minion');
   return {
     round,
-    survived: units.filter((u) => u.survived).length,
+    survived: placed.filter((u) => u.survived).length,
     damageDealt: Math.round(units.reduce((s, u) => s + u.damageDealt, 0)),
     kills: units.reduce((s, u) => s + u.kills, 0),
     valueDestroyed: units.reduce((s, u) => s + u.valueDestroyed, 0),
-    livingValue: units.filter((u) => u.survived).reduce((s, u) => s + u.cost, 0),
+    livingValue: units.filter((u) => u.survived).reduce((s, u) => s + (u.livingValue ?? u.cost), 0),
     score: entry ? roundScoreOf(entry) : null,
     strikes: units.reduce((s, u) => s + u.strikes, 0) + (player?.playerStrikes ?? 0),
-    disabled: units.filter((u) => u.disabled).length,
+    disabled: placed.filter((u) => u.disabled).length,
     errors,
+    ...reportTypes(units, result.endTick),
   };
+}
+
+/** Share of the battle a soldier type may spend blocked by walls before the report hints (§10.5). */
+const STUCK_HINT_SHARE = 0.3;
+
+/**
+ * Per fielded type of one player (M8.5, §10.5): factories with their
+ * minions' output, soldiers with their longest wall block, and the
+ * "got stuck behind walls" hint.
+ */
+function reportTypes(units: readonly UnitReport[], endTick: number): Pick<BattleReportDTO, 'types' | 'hints'> {
+  const byType = new Map<string, NonNullable<BattleReportDTO['types']>[number]>();
+  for (const u of units) {
+    if (u.type === 'minion') continue;
+    let t = byType.get(u.unitId);
+    if (!t) {
+      t = { unitId: u.unitId, name: u.unitName, type: (u.type ?? 'soldier') as UnitType, fielded: 0, survived: 0, damageDealt: 0, kills: 0 };
+      byType.set(u.unitId, t);
+    }
+    t.fielded++;
+    if (u.survived) t.survived++;
+    t.damageDealt += u.damageDealt;
+    t.kills += u.kills;
+    if (u.factory) {
+      t.minionsMade = (t.minionsMade ?? 0) + u.factory.minionsMade;
+      t.minionsLost = (t.minionsLost ?? 0) + u.factory.minionsLost;
+      t.minionDamage ??= 0;
+    }
+    if (u.blockedTicksMax !== undefined && t.type === 'soldier') t.blockedTicksMax = Math.max(t.blockedTicksMax ?? 0, u.blockedTicksMax);
+  }
+  for (const u of units) {
+    if (u.type !== 'minion') continue;
+    const t = byType.get(u.unitId);
+    if (!t) continue;
+    t.damageDealt += u.damageDealt;
+    t.kills += u.kills;
+    t.minionDamage = (t.minionDamage ?? 0) + u.damageDealt;
+  }
+  const types = [...byType.values()].map((t) => ({
+    ...t,
+    damageDealt: Math.round(t.damageDealt),
+    ...(t.minionDamage !== undefined ? { minionDamage: Math.round(t.minionDamage) } : {}),
+  }));
+  if (types.length === 0) return {};
+  const hints = types
+    .filter((t) => t.type === 'soldier' && endTick > 0 && (t.blockedTicksMax ?? 0) > STUCK_HINT_SHARE * endTick)
+    .map((t) => `Your ${t.name} got stuck behind walls a lot. Ask Claude to make it break through (attack self.blockedBy) or go round.`);
+  return { types, ...(hints.length > 0 ? { hints } : {}) };
 }
 
 // ---------------------------------------------------------------------------
@@ -1011,6 +1301,7 @@ export function buildBattleReport(
 // ---------------------------------------------------------------------------
 
 function toOtherView(u: SimUnit): OtherView {
+  // A wall is a circle of radius 20 for range (§5.2); walls and factories have range 0.
   return {
     id: u.id,
     ownerId: u.playerId,
@@ -1026,13 +1317,13 @@ function toOtherView(u: SimUnit): OtherView {
   };
 }
 
-function toSelfView(u: SimUnit): SelfView {
+function toSelfView(u: SimUnit, factory: FactoryView | null): SelfView {
   return {
     id: u.id,
     unitId: u.unitId,
     ownerId: u.playerId,
     teamId: u.teamId, // free-for-all: the seat; team mode: the team (§5, §9.2)
-    type: u.type,
+    type: u.type as SelfView['type'], // never a minion: minions run no player code
     name: u.stats.name,
     x: u.x,
     y: u.y,
@@ -1044,7 +1335,49 @@ function toSelfView(u: SimUnit): SelfView {
     speed: u.stats.speed,
     attackCooldown: u.stats.attackCooldown,
     cooldownRemaining: u.cooldownRemaining,
+    blockedBy: u.blockedBy ?? null,
+    blockedTicks: u.blockedTicks ?? 0,
+    factory,
   };
+}
+
+/** A factory's `self.factory` (§5.2 FactoryView). */
+function factoryView(u: SimUnit, living: readonly SimUnit[], maxAlive: number): FactoryView {
+  const f = u.factory!;
+  let alive = 0;
+  for (const m of living) if (m.minion?.factory === u) alive++;
+  return {
+    productionInterval: f.productionInterval,
+    nextMinionIn: f.productionInterval - f.timer,
+    minionsLeft: f.minionsLeft,
+    minionsAlive: alive,
+    maxAlive,
+    rally: { x: f.rally.x, y: f.rally.y },
+  };
+}
+
+/** A factory's report block. */
+function factoryReport(u: SimUnit): NonNullable<UnitReport['factory']> {
+  const f = u.factory!;
+  return { bodyCost: f.bodyCost, minionValue: f.minionValue, minionsLeft: f.minionsLeft, minionsMade: f.made, minionsLost: f.minionsLost, canMake: f.canMake };
+}
+
+function isFrame(v: ReadonlySet<string> | Pick<FrameDTO, 't' | 'units' | 'fac'>): v is Pick<FrameDTO, 't' | 'units' | 'fac'> {
+  return !(v instanceof Set);
+}
+
+const round2 = (v: number): number => Math.round(v * 100) / 100;
+
+/** Insert into a list sorted by instanceId. */
+function insertSorted(list: SimUnit[], u: SimUnit): void {
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (compareIds(list[mid]!.id, u.id) < 0) lo = mid + 1;
+    else hi = mid;
+  }
+  list.splice(lo, 0, u);
 }
 
 /** tick() must never reject; if a runner breaks that promise, treat it as a crash. */

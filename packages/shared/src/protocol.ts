@@ -112,7 +112,7 @@
 // ===========================================================================
 
 import type { CostBreakdown } from './cost.js';
-import type { MapStyle, SpriteSpec, StatsSnapshot } from './contract.js';
+import type { BodyType, MapStyle, SpriteSpec, StatsSnapshot, UnitGroup, UnitType } from './contract.js';
 import type { ValidationError, ValidationResult, ValidationSuccess, ValidationWarning } from './errors.js';
 import type { Corner } from './geometry.js';
 import type { Facing } from './maps.js';
@@ -189,6 +189,8 @@ export interface UnitCardDTO {
   name: string;
   version: number;
   stats: StatsSnapshot;
+  /** M8.5: 'unit' (soldiers) or 'building' (towers, walls, factories): the two pick limits (§5.2). */
+  group?: UnitGroup;
   cost: number;
   breakdown: CostBreakdown;
   status: UnitStatus;
@@ -298,10 +300,32 @@ export interface SelectionRequest {
 export interface PlacementRequest {
   placements: PlacementDTO[];
 }
+/** Copy counts / caps per group (M8.5, §5.2 Copies): fighters run code, walls don't. */
+export interface CopyCountsDTO {
+  /** Soldiers + towers + factories. */
+  fighters: number;
+  /** Factories (also counted in `fighters`). */
+  factories: number;
+  walls: number;
+}
+
+/** A non-fatal placement warning (M8.5): a soldier or factory boxed in by walls. */
+export interface PlacementWarningDTO {
+  code: 'W_TRAPPED';
+  unitId: string;
+  col: number;
+  row: number;
+  message: string;
+}
+
 export interface PlacementResponse {
   placements: PlacementDTO[];
   spent: number;
   remaining: number;
+  /** M8.5: copies placed per group. */
+  counts?: CopyCountsDTO;
+  /** M8.5: W_TRAPPED for every soldier/factory walled in (non-fatal). */
+  warnings?: PlacementWarningDTO[];
 }
 
 // ---------------------------------------------------------------------------
@@ -459,6 +483,8 @@ export interface MyStateDTO {
   active: boolean;
   /** "Copy last layout" is available (a previous layout exists). */
   hasLastLayout: boolean;
+  /** M8.5: the copy caps per group (§5.2 Copies). */
+  copyCaps?: CopyCountsDTO;
   /** Team mode: own team. */
   teamId?: number;
   /** Joined after Start match in team mode: sits out until the next match (§4). */
@@ -552,7 +578,8 @@ export interface RulesDTO {
   budget: number;
   caps: Record<string, number>;
   costFormula: string;
-  coefficients: Record<string, number>;
+  /** Cost coefficients (§6), incl. the `wall` and `factory` blocks (M8.5). */
+  coefficients: Record<string, number | Record<string, number>>;
   bounds: Record<string, unknown>;
   /** §9 Points: place points + damage bonus + value bonus, badges, standings. */
   scoring: {
@@ -572,7 +599,7 @@ export interface RulesDTO {
 
 export interface ContractDTO {
   typescript: string;
-  templates: { basic_soldier: string; basic_tower: string };
+  templates: { basic_soldier: string; basic_tower: string; basic_wall?: string; basic_factory?: string };
   notes: string[];
 }
 
@@ -592,6 +619,10 @@ export const FRAME_FLAGS = {
    * the arena x axis.
    */
   FACING_LEFT: 16,
+  /** A wall stopped or turned the body's move since the last frame (it is pushing on a wall, §9.3). */
+  BLOCKED: 32,
+  /** A factory made a minion since the last frame (door flash, §12.5). */
+  PRODUCED: 64,
 } as const;
 
 /** [instanceId, x, y, hp, flags] */
@@ -604,8 +635,19 @@ export interface FrameProjectile {
   targetId: string;
 }
 
+/**
+ * A living factory in a frame (§9.3 Frames):
+ * [factoryId, progress 0-100, minionsLeft, rallyX, rallyY, holding 0|1, canMake].
+ * canMake = the minions it can still make before time runs out (its living
+ * value counts these; 0 = no longer a fighter, §9.3). Absent in older frames.
+ */
+export type FrameFactory = [string, number, number, number, number, 0 | 1, number?];
+
 export type FrameEvent =
-  | { type: 'spawn'; instanceId: string }
+  /** A body appears: every placed copy at t = 0, and minions when a factory makes them (`factoryId`, position). */
+  | { type: 'spawn'; instanceId: string; factoryId?: string; x?: number; y?: number }
+  /** An eliminated side's walls and spent factories vanish, credited to nobody (§9.3). */
+  | { type: 'crumble'; ids: string[] }
   | { type: 'fire'; instanceId: string; targetId: string; melee: boolean }
   | { type: 'hit'; instanceId: string; targetId: string; damage: number }
   | { type: 'death'; instanceId: string }
@@ -614,11 +656,21 @@ export type FrameEvent =
 /** One recorded frame: the state after `t` completed ticks (every 2nd tick). */
 export interface FrameDTO {
   t: number;
+  /**
+   * Living bodies. Walls (M8.5) are listed only in the first frame and when
+   * their hp changed since they were last listed: keep the last state of a
+   * wall until it is listed again or a death/crumble event removes it.
+   */
   units: FrameUnit[];
+  /** Living factories (M8.5); absent when there are none. */
+  fac?: FrameFactory[];
   projectiles: FrameProjectile[];
   safeZoneRadius: number;
   events: FrameEvent[];
 }
+
+/** Stats of an engine-made body (the minion): a snapshot whose type is a BodyType. */
+export type StatsSnapshotLike = Omit<StatsSnapshot, 'type'> & { type: BodyType };
 
 /** A fielded design as revealed at START (fielded types only, §3). */
 export interface RevealedUnitDTO {
@@ -629,6 +681,12 @@ export interface RevealedUnitDTO {
   /** null when there is none or it is hidden: draw the fallback (color + shape). */
   sprite: SpriteSpec | null;
   spriteHidden: boolean;
+  /**
+   * Factories: the body's price under this battle's config (§6). Its living
+   * value is bodyCost + minion value × the minions it can still make
+   * (`frame.fac` canMake), as the server counts it.
+   */
+  bodyCost?: number;
   /** A borrowed Armory unit (§9.1): `name` is then "Ogre (Ninja Sam)". */
   borrowedFrom?: { armoryId: string; creatorId: string; creatorName: string };
 }
@@ -636,6 +694,8 @@ export interface RevealedUnitDTO {
 /** Revealed at START: fielded types and placements of every player. */
 export interface BattleRevealDTO {
   round: number;
+  /** M8.5: the built-in minion (same for everyone; its sprite ships with the client). Present when a factory is fielded. */
+  minion?: { stats: StatsSnapshotLike; value: number };
   /** Battle length in ticks. */
   totalTicks: number;
   /** The battle's map (§9.2). */
@@ -781,6 +841,25 @@ export interface BattleReportErrorDTO {
   borrowedFrom?: string;
 }
 
+/** One fielded type in the battle report (M8.5, §10.5): own units only. */
+export interface BattleReportTypeDTO {
+  unitId: string;
+  name: string;
+  type: UnitType;
+  /** Copies placed (minions not counted). */
+  fielded: number;
+  survived: number;
+  /** Effective damage, incl. the factory's minions. */
+  damageDealt: number;
+  kills: number;
+  /** Factories: minions made and lost, and the minions' share of the damage. */
+  minionsMade?: number;
+  minionsLost?: number;
+  minionDamage?: number;
+  /** Soldiers: the most ticks in a row a wall was in the way of one copy. */
+  blockedTicksMax?: number;
+}
+
 /** Own units only (§10.3). */
 export interface BattleReportDTO {
   round: number;
@@ -797,6 +876,10 @@ export interface BattleReportDTO {
   strikes: number;
   disabled: number;
   errors: BattleReportErrorDTO[];
+  /** M8.5: per fielded type (factories with their minions, soldiers' wall time). */
+  types?: BattleReportTypeDTO[];
+  /** M8.5: short tips for Claude, e.g. a soldier type that spent > 30% of the battle stuck behind walls. */
+  hints?: string[];
   /** The round's public top damage units (same as BattleEndDTO.topUnits). */
   topUnits?: TopUnitDTO[];
 }

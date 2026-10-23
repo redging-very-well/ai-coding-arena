@@ -7,7 +7,16 @@
     "speed": 12,
     "size": 0.5,
     "referenceCooldown": 60,
-    "curveK": 2
+    "curveK": 2,
+    "wall": {
+      "base": 4,
+      "hp": 0.06
+    },
+    "factory": {
+      "base": 10,
+      "hp": 0.12,
+      "minionDiscount": 0.5
+    }
   },
   "stats": {
     "bounds": {
@@ -38,6 +47,18 @@
       "size": {
         "min": 6,
         "max": 20
+      },
+      "wallHealth": {
+        "min": 50,
+        "max": 1500
+      },
+      "factoryHealth": {
+        "min": 100,
+        "max": 1000
+      },
+      "productionInterval": {
+        "min": 600,
+        "max": 1800
       }
     }
   },
@@ -45,8 +66,11 @@
     "unitCost": 500,
     "budget": 1000,
     "maxDesigns": 8,
-    "maxTypes": 3,
+    "maxUnitTypes": 4,
+    "maxBuildingTypes": 4,
     "maxCopies": 12,
+    "maxFactoryCopies": 2,
+    "maxWallCopies": 12,
     "maxSourceBytes": 65536
   },
   "timers": {
@@ -78,7 +102,26 @@
     "projectileSpeed": 10,
     "rangeTolerance": 0.5,
     "separationPasses": 2,
-    "frameEveryTicks": 2
+    "frameEveryTicks": 2,
+    "slideMemoryTicks": 45
+  },
+  "factory": {
+    "maxMinionsPerFactory": 8,
+    "maxAlivePerFactory": 4,
+    "maxAlivePerPlayer": 6,
+    "maxAlivePerBattle": 40,
+    "rallyGuardRadius": 200,
+    "rallyArriveRadius": 24,
+    "minion": {
+      "maxHealth": 40,
+      "damage": 5,
+      "range": 20,
+      "speed": 1.5,
+      "attackCooldown": 60,
+      "size": 8,
+      "aggroRange": 120,
+      "impatientTicks": 120
+    }
   },
   "sandbox": {
     "mode": "ivm",

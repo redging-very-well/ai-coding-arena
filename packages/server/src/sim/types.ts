@@ -13,7 +13,7 @@
 //     team mode (every setup carries a `teamId`) a side is a team. Allies,
 //     friendly fire, elimination, End and ranking work on sides.
 
-import type { PlacementDTO, RankingEntryDTO, StatsSnapshot, TeamRoundRankDTO, UnitType, ZoneRef } from '@pixel-clash/shared';
+import type { BodyType, PlacementDTO, Point, RankingEntryDTO, StatsSnapshot, TeamRoundRankDTO, ZoneRef } from '@pixel-clash/shared';
 import type { PlayerRunner } from '../sandbox/runner.js';
 
 /** Deterministic string order used for instanceIds and playerIds. */
@@ -44,7 +44,7 @@ export interface BattlePlayerSetup {
    * or to none; without it every player is their own side (teamId = seat).
    */
   teamId?: number;
-  /** The ≤ 3 designs this player fields. */
+  /** The designs this player fields (≤ 4 unit + ≤ 4 building types, §5.2). */
   units: readonly BattleUnitDesign[];
   /** Zone-local placements (one per cell). Order does not matter. */
   placements: readonly PlacementDTO[];
@@ -77,6 +77,53 @@ export type DisableReason =
   | 'player-slow' // slow strikes continued after the slowest unit was disabled
   | 'crashed'; // the player's sandbox crashed or ran out of memory
 
+/** The stats a body fights with: a design's snapshot, or the built-in minion's (§5.2). */
+export type SimStats = Omit<StatsSnapshot, 'type'> & { readonly type: BodyType };
+
+/** Wall steering memory (§9.3 Wall steering step 5). */
+export interface SlideMemory {
+  /** +1 / −1 along `axis`. */
+  side: 1 | -1;
+  /** The tangent axis the body slides along. */
+  axis: 'x' | 'y';
+  /** The destination when the memory started. */
+  origin: Point;
+  /** Ticks in a row without a wall hit. */
+  quiet: number;
+  /** Already turned back once (dead end). */
+  flipped: boolean;
+}
+
+/** A factory's production state (§5.2, §9.3). */
+export interface FactoryState {
+  productionInterval: number;
+  /** Ticks towards the next minion (0..productionInterval). */
+  timer: number;
+  /** Minions this factory can still make (of the E it paid for). */
+  minionsLeft: number;
+  /**
+   * Minions it can still make before time runs out (`canMakeOf`, §9.3):
+   * ≤ minionsLeft, 0 at the time limit. A factory is a fighter while it is
+   * > 0, and its living value counts these, not minionsLeft.
+   */
+  canMake: number;
+  /** Its timer was full but every spawn spot was covered at the last try (cleared by a spawn). */
+  noSpot: boolean;
+  /** Minions made so far (the next one is `${id}-m${made + 1}`). */
+  made: number;
+  /** Where its minions go; kept after the factory dies (minions keep the last one). */
+  rally: Point;
+  /** Returned `hold` this tick. */
+  holding: boolean;
+  /** Rounded body price (§6): its living value is bodyCost + minionValue × canMake. */
+  bodyCost: number;
+  minionValue: number;
+  /** Spawned a minion since the last recorded frame (the door flash). */
+  spawnedSinceFrame: boolean;
+  /** Minions it made that died (report). */
+  minionsLost: number;
+}
+
 /** One unit on the field (engine-internal, mutable). */
 export interface SimUnit {
   id: string;
@@ -84,10 +131,12 @@ export interface SimUnit {
   seat: number;
   /** The side: the team in team mode, else the seat (§5 `teamId`). */
   teamId: number;
+  /** The design (a minion: its factory's design). */
   unitId: string;
-  stats: StatsSnapshot;
+  stats: SimStats;
+  /** Full price: walls and factories their §6 price, minions minionValue (value destroyed, §9.3). */
   cost: number;
-  type: UnitType;
+  type: BodyType;
   radius: number;
   x: number;
   y: number;
@@ -111,6 +160,8 @@ export interface SimUnit {
   // Report data (§9 Damage metric / Value destroyed).
   /** Effective damage dealt: min(hit, target hp before the hit), credited when the hit lands. */
   damageDealt: number;
+  /** Most ticks in a row a wall blocked it (report hint, §10.5). */
+  blockedTicksMax?: number;
   /** Hits of this unit that took an enemy from > 0 to ≤ 0 hp. */
   kills: number;
   /** Sum of the full unit costs of those kills. */
@@ -118,6 +169,22 @@ export interface SimUnit {
   strikes: number;
   errors: UnitErrorRecord[];
   diedAtTick: number | null;
+  // M8.5 (§9.3). Optional so plain test fixtures stay valid; the engine always sets them.
+  /** The wall that stopped or turned the last move, else null. */
+  blockedBy?: string | null;
+  /** Ticks in a row a wall has been in the way. */
+  blockedTicks?: number;
+  /** A wall turned a move since the last recorded frame (frame `blocked` flag). */
+  blockedSinceFrame?: boolean;
+  slide?: SlideMemory | null;
+  /** Time (completed ticks) the body appeared: 0, or a minion's spawn. */
+  spawnedAtTick?: number;
+  /** Factories. */
+  factory?: FactoryState;
+  /** Minions: the factory that made it (alive or not) and its number there. */
+  minion?: { factory: SimUnit; n: number };
+  /** Walls: hp as last listed in a frame (walls are only listed when it changed, §9.3 Frames). */
+  frameHp?: number;
 }
 
 /** A homing projectile in flight (§9 Attacks). */
@@ -166,7 +233,7 @@ export interface PlayerOutcome {
   teamId?: number;
   /** Time (completed ticks) at which the player's last unit died; null = survived. */
   eliminatedAtTick: number | null;
-  /** Sum of the full costs of the player's living units at the end. */
+  /** Living value of the player's units at the end (§9.3: walls $0, factories body + unbuilt minions). */
   livingCost: number;
   livingUnits: number;
   /** Player-level strikes (forged or malformed sandbox output). */
@@ -183,9 +250,22 @@ export interface PlayerOutcome {
 export interface UnitReport {
   instanceId: string;
   playerId: string;
+  /** The design; a minion carries its factory's (so its damage counts for the factory type, §9.3). */
   unitId: string;
   unitName: string;
   cost: number;
+  /** M8.5: the body type (absent = soldier/tower, for older fixtures). */
+  type?: BodyType;
+  /** Living value at the end (§9.3: walls 0, factories body + minionValue × left); 0 when dead. */
+  livingValue?: number;
+  /** Time the body appeared (minions: their spawn). */
+  spawnedAtTick?: number;
+  /** Minions: the factory's instanceId. */
+  factoryId?: string;
+  /** Factories: price parts and production counters. */
+  factory?: { bodyCost: number; minionValue: number; minionsLeft: number; minionsMade: number; minionsLost: number; canMake?: number };
+  /** Soldiers and minions: the most ticks in a row a wall blocked it. */
+  blockedTicksMax?: number;
   survived: boolean;
   hp: number;
   diedAtTick: number | null;

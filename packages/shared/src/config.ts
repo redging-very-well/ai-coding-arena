@@ -39,6 +39,22 @@ export const CostCoefficientsSchema = z.object({
    * >= 0 (a negative k would make cost fall as a stat rises) and <= 5.
    */
   curveK: nonNeg().refine((n) => n <= 5, 'must be <= 5'),
+  /**
+   * Walls (§6 Walls and factories): raw = base + hp·HP·(1 + curveK·(HP/1500)²).
+   * No cooldown factor (walls can't attack).
+   */
+  wall: z.object({ base: nonNeg(), hp: nonNeg() }),
+  /**
+   * Factories: ceil(base + hp·HP·(1 + curveK·(HP/1000)²)) + minionValue × E,
+   * minionValue = ceil(minionCost × minionDiscount) where minionCost is the
+   * unit formula on the `factory.minion` stats (§6).
+   */
+  factory: z.object({
+    base: nonNeg(),
+    hp: nonNeg(),
+    /** Share of a minion's soldier price a factory pays per expected minion (they arrive during the battle). */
+    minionDiscount: finite().refine((n) => n > 0 && n <= 1, 'must be > 0 and <= 1'),
+  }),
 });
 export type CostCoefficients = z.infer<typeof CostCoefficientsSchema>;
 
@@ -56,8 +72,44 @@ export const StatBoundsSchema = z.object({
   attackCooldown: RangeSchema,
   /** Optional body radius in px (hitbox and drawn size). */
   size: RangeSchema,
+  /** Wall maxHealth (§5.2). */
+  wallHealth: RangeSchema,
+  /** Factory maxHealth (§5.2). */
+  factoryHealth: RangeSchema,
+  /** Factory: integer ticks between two minions (§5.2). */
+  productionInterval: RangeSchema,
 });
 export type StatBounds = z.infer<typeof StatBoundsSchema>;
+
+/** The built-in minion (§5.2): the same for everyone. Kept inside the soldier bounds (refined below). */
+export const MinionStatsSchema = z.object({
+  maxHealth: z.number().positive(),
+  damage: nonNeg(),
+  range: nonNeg(),
+  speed: z.number().positive(),
+  attackCooldown: posInt(),
+  size: z.number().positive(),
+  /** A minion chases enemies within this edge-to-edge distance of itself. */
+  aggroRange: nonNeg(),
+  /** Ticks blocked by an enemy wall before a minion attacks it. */
+  impatientTicks: posInt(),
+});
+export type MinionStats = z.infer<typeof MinionStatsSchema>;
+
+export const FactorySchema = z.object({
+  /** Most minions one factory makes in a battle (E's cap, §6). */
+  maxMinionsPerFactory: posInt(),
+  maxAlivePerFactory: posInt(),
+  /** Alive minions per player: min(this, floor(maxAlivePerBattle / players)). */
+  maxAlivePerPlayer: posInt(),
+  maxAlivePerBattle: posInt(),
+  /** Minions also chase enemies within this distance of their rally point. */
+  rallyGuardRadius: nonNeg(),
+  /** A minion closer than this to its rally point idles there. */
+  rallyArriveRadius: nonNeg(),
+  minion: MinionStatsSchema,
+});
+export type FactoryConfig = z.infer<typeof FactorySchema>;
 
 export const ConfigSchema = z.object({
   cost: CostCoefficientsSchema,
@@ -69,10 +121,16 @@ export const ConfigSchema = z.object({
     budget: posInt(),
     /** Max active designs per player (templates don't count). */
     maxDesigns: posInt(),
-    /** Max unit types fielded per round. */
-    maxTypes: posInt(),
-    /** Max copies placed per player. */
+    /** Max unit types (soldiers) fielded per round (§5.2). */
+    maxUnitTypes: posInt(),
+    /** Max building types (towers, walls, factories) fielded per round (§5.2). */
+    maxBuildingTypes: posInt(),
+    /** Max fighter copies placed per player: soldiers + towers + factories (everything that runs code). */
     maxCopies: posInt(),
+    /** Of those, max factories (§5.2). */
+    maxFactoryCopies: z.number().int().nonnegative(),
+    /** Max walls placed per player, on top of maxCopies (walls run no code). */
+    maxWallCopies: z.number().int().nonnegative(),
     /** Max unit source size in bytes (§7 step 1). */
     maxSourceBytes: posInt(),
   }),
@@ -126,7 +184,11 @@ export const ConfigSchema = z.object({
     separationPasses: z.number().int().nonnegative(),
     /** Record a frame every N ticks. */
     frameEveryTicks: posInt(),
+    /** Wall steering: ticks without a wall hit after which the slide side is forgotten (§9.3). */
+    slideMemoryTicks: posInt(),
   }),
+  /** Factories and their built-in minions (§5.2, §9.3). */
+  factory: FactorySchema,
   sandbox: z.object({
     mode: z.enum(['ivm', 'process', 'inproc-unsafe']),
     memoryLimitMb: posInt(),
@@ -175,13 +237,42 @@ export const ConfigSchema = z.object({
     validatePerSecond: posInt(),
     submitMinIntervalMs: posInt(),
   }),
+}).superRefine((c, ctx) => {
+  // The built-in minion is priced as a soldier (§6), so it must be a legal soldier.
+  const b = c.stats.bounds;
+  const m = c.factory.minion;
+  const within: Array<[keyof MinionStats, { min: number; max: number }]> = [
+    ['maxHealth', b.maxHealth],
+    ['damage', b.damage],
+    ['range', b.range],
+    ['speed', b.soldierSpeed],
+    ['attackCooldown', b.attackCooldown],
+    ['size', b.size],
+  ];
+  for (const [k, r] of within) {
+    if (m[k] < r.min || m[k] > r.max) {
+      ctx.addIssue({ code: 'custom', path: ['factory', 'minion', k], message: `must be within the soldier bounds ${r.min}-${r.max}` });
+    }
+  }
 });
 
 export type GameConfig = z.infer<typeof ConfigSchema>;
 export type SandboxMode = GameConfig['sandbox']['mode'];
 
 export const DEFAULT_CONFIG: GameConfig = {
-  cost: { base: 10, hp: 0.25, damage: 1.5, range: 0.2, speed: 12, size: 0.5, referenceCooldown: 60, curveK: 2 },
+  cost: {
+    base: 10,
+    hp: 0.25,
+    damage: 1.5,
+    range: 0.2,
+    speed: 12,
+    size: 0.5,
+    referenceCooldown: 60,
+    curveK: 2,
+    // §6 Walls and factories (first guesses, checked by tests/balance.test.ts).
+    wall: { base: 4, hp: 0.06 },
+    factory: { base: 10, hp: 0.12, minionDiscount: 0.5 },
+  },
   stats: {
     bounds: {
       nameLength: { min: 1, max: 24 },
@@ -191,14 +282,20 @@ export const DEFAULT_CONFIG: GameConfig = {
       soldierSpeed: { min: 0.5, max: 5 },
       attackCooldown: { min: 10, max: 600 },
       size: { min: 6, max: 20 },
+      wallHealth: { min: 50, max: 1500 },
+      factoryHealth: { min: 100, max: 1000 },
+      productionInterval: { min: 600, max: 1800 },
     },
   },
   caps: {
     unitCost: 500,
     budget: 1000,
     maxDesigns: 8,
-    maxTypes: 3,
+    maxUnitTypes: 4,
+    maxBuildingTypes: 4,
     maxCopies: 12,
+    maxFactoryCopies: 2,
+    maxWallCopies: 12,
     maxSourceBytes: 64 * 1024, // §7 step 1: sprites take room
   },
   timers: {
@@ -233,6 +330,16 @@ export const DEFAULT_CONFIG: GameConfig = {
     rangeTolerance: 0.5,
     separationPasses: 2,
     frameEveryTicks: 2,
+    slideMemoryTicks: 45,
+  },
+  factory: {
+    maxMinionsPerFactory: 8,
+    maxAlivePerFactory: 4,
+    maxAlivePerPlayer: 6,
+    maxAlivePerBattle: 40,
+    rallyGuardRadius: 200,
+    rallyArriveRadius: 24,
+    minion: { maxHealth: 40, damage: 5, range: 20, speed: 1.5, attackCooldown: 60, size: 8, aggroRange: 120, impatientTicks: 120 },
   },
   sandbox: {
     mode: 'ivm',
@@ -288,16 +395,23 @@ export function deepMerge<T>(base: T, patch: unknown): T {
 
 /**
  * Rewrite keys of older config files/patches to the current shape. Today:
- * the fixed place-points table (the top-level `points` array, later
+ * `caps.maxTypes` is dropped (M8.5 replaced it with maxUnitTypes and
+ * maxBuildingTypes, which keep their defaults), and the fixed place-points table (the top-level `points` array, later
  * `scoring.placePoints`) is gone: place points are the §9 formula, so both
  * keys are dropped. Returns a new object; anything that isn't a plain object
  * is returned unchanged.
  */
 export function migrateConfigPatch<T>(patch: T): T {
   if (!isPlainObject(patch)) return patch;
-  const hasLegacyScoring = isPlainObject(patch.scoring) && 'placePoints' in patch.scoring;
-  if (!('points' in patch) && !hasLegacyScoring) return patch;
-  const { points: _points, ...rest } = patch;
+  let out: Record<string, unknown> = patch;
+  // M8.5: caps.maxTypes (≤ 3 types in total) became maxUnitTypes + maxBuildingTypes.
+  if (isPlainObject(out.caps) && 'maxTypes' in out.caps) {
+    const { maxTypes: _maxTypes, ...caps } = out.caps;
+    out = { ...out, caps };
+  }
+  const hasLegacyScoring = isPlainObject(out.scoring) && 'placePoints' in out.scoring;
+  if (!('points' in out) && !hasLegacyScoring) return out as T;
+  const { points: _points, ...rest } = out;
   if (!isPlainObject(rest.scoring)) return rest as T;
   const { placePoints: _placePoints, ...scoring } = rest.scoring;
   return { ...rest, scoring } as T;

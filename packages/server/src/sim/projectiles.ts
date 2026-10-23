@@ -8,13 +8,15 @@
 //
 // Credit (§9 Damage metric / Value destroyed): the attacker is credited the
 // EFFECTIVE damage, min(hit, target hp before the hit), when the hit lands
-// (projectiles on impact), and on a kill the victim's full unit cost. Hits in
+// (projectiles on impact), and on a kill the victim's value (§9.3: its full
+// unit cost; a factory its living value at death). Hits in
 // one tick (melee swipes and projectile impacts together) resolve in attacker
 // instanceId order (= seat, then instanceId), so exactly one attacker gets
 // each kill; a later hit on a target already at ≤ 0 hp deals nothing (a
 // projectile fizzles).
 
 import { compareIds, type Projectile, type SimUnit } from './types.js';
+import { killValueOf } from './value.js';
 
 /** What one hit did, for events and the report. */
 export interface HitOutcome {
@@ -39,7 +41,8 @@ export function applyHit(attacker: SimUnit | undefined, target: SimUnit, damage:
     attacker.damageDealt += dealt;
     if (killed) {
       attacker.kills += 1;
-      attacker.valueDestroyed += target.cost;
+      // Walls their full price, factories their living value at death (§9.3).
+      attacker.valueDestroyed += killValueOf(target);
     }
   }
   return { dealt, killed };

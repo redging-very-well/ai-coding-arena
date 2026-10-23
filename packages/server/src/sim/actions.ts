@@ -4,7 +4,10 @@
 // action becomes idle: undefined, unknown actions, malformed objects, moves by
 // towers, attacks on allies (own units, and in team mode any teammate's,
 // §9.2) / dead / unknown targets, attacks while cooling
-// down, and attacks out of range. Validation runs against the start-of-tick
+// down, and attacks out of range. M8.5 (§5.2): `rally` and `hold` are factory
+// actions; `move` is for soldiers and minions, `attack` for soldiers, towers
+// and minions; any other combination idles (no strike). Walls are valid
+// targets. Validation runs against the start-of-tick
 // snapshot, the same state every unit decided on, so resolution is
 // simultaneous: an attack that was in range in the snapshot fires this tick
 // even if separation nudges a body afterwards.
@@ -15,7 +18,8 @@ import type { SimUnit } from './types.js';
 export type IdleReason =
   | 'idle' // asked for idle (or returned nothing)
   | 'malformed' // not an object / unknown action / bad fields
-  | 'tower-cannot-move'
+  | 'tower-cannot-move' // move from a body that can't move
+  | 'wrong-type' // an action this type can't do (attack from a factory, rally/hold from a fighter)
   | 'no-target' // unknown or dead target
   | 'friendly-target' // own or a teammate's unit (no friendly fire)
   | 'cooling-down'
@@ -25,7 +29,9 @@ export type IdleReason =
 export type ResolvedAction =
   | { kind: 'idle'; reason: IdleReason }
   | { kind: 'move'; destination: Point }
-  | { kind: 'attack'; targetId: string };
+  | { kind: 'attack'; targetId: string }
+  | { kind: 'rally'; destination: Point }
+  | { kind: 'hold' };
 
 const idle = (reason: IdleReason): ResolvedAction => ({ kind: 'idle', reason });
 
@@ -56,13 +62,24 @@ export function resolveAction(
       return idle('idle');
 
     case 'move': {
-      if (actor.type !== 'soldier') return idle('tower-cannot-move');
+      if (actor.type !== 'soldier' && actor.type !== 'minion') return idle('tower-cannot-move');
       const dest = raw['destination'];
       if (!isRecord(dest) || !finite(dest['x']) || !finite(dest['y'])) return idle('malformed');
       return { kind: 'move', destination: clampToArena({ x: dest['x'], y: dest['y'] }, arena) };
     }
 
+    case 'rally': {
+      if (actor.type !== 'factory') return idle('wrong-type');
+      const dest = raw['destination'];
+      if (!isRecord(dest) || !finite(dest['x']) || !finite(dest['y'])) return idle('malformed');
+      return { kind: 'rally', destination: clampToArena({ x: dest['x'], y: dest['y'] }, arena) };
+    }
+
+    case 'hold':
+      return actor.type === 'factory' ? { kind: 'hold' } : idle('wrong-type');
+
     case 'attack': {
+      if (actor.type === 'factory' || actor.type === 'wall') return idle('wrong-type');
       const targetId = raw['targetId'];
       if (typeof targetId !== 'string') return idle('malformed');
       const target = lookup(targetId);

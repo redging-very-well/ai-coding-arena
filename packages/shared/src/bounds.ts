@@ -11,19 +11,21 @@ import {
   DEFAULT_SIZE,
   SHAPES,
   UNIT_TYPES,
+  isNonCombatBuilding,
   type Shape,
   type StatsSnapshot,
   type UnitType,
 } from './contract.js';
-import type { ValidationError } from './errors.js';
+import type { ValidationError, ValidationWarning } from './errors.js';
 
 export const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f-\u009f]/;
 
 export type StatsCheckResult =
-  | { ok: true; stats: StatsSnapshot }
-  | { ok: false; errors: ValidationError[] };
+  /** `warnings`: W_STAT_IGNORED for fields this type doesn't use (§5.2), never stored. */
+  | { ok: true; stats: StatsSnapshot; warnings: ValidationWarning[] }
+  | { ok: false; errors: ValidationError[]; warnings: ValidationWarning[] };
 
 /** JSON-safe rendering of an arbitrary value for the `value` field. */
 function safeValue(v: unknown): unknown {
@@ -42,6 +44,7 @@ function example(field: string, min: number, max: number): number {
     speed: 1.5,
     attackCooldown: 60,
     size: 10,
+    productionInterval: 900,
   };
   const p = preferred[field];
   if (p !== undefined && p >= min && p <= max) return p;
@@ -70,9 +73,9 @@ function checkNumber(
   field: string,
   value: unknown,
   range: { min: number; max: number },
-  opts: { integer?: boolean; fix?: string } = {},
+  opts: { integer?: boolean; integerCode?: 'COOLDOWN_NOT_INTEGER' | 'INTERVAL_NOT_INTEGER'; fix?: string; example?: number } = {},
 ): number | undefined {
-  const eg = example(field, range.min, range.max);
+  const eg = opts.example ?? example(field, range.min, range.max);
   const setFix =
     opts.fix ?? `In the constructor set this.${field} to a number from ${range.min} to ${range.max}, e.g. this.${field} = ${eg}.`;
   if (typeof value !== 'number') {
@@ -104,7 +107,7 @@ function checkNumber(
   if (opts.integer && !Number.isInteger(value)) {
     const rounded = Math.min(range.max, Math.max(range.min, Math.round(value)));
     errors.push({
-      code: 'COOLDOWN_NOT_INTEGER',
+      code: opts.integerCode ?? 'COOLDOWN_NOT_INTEGER',
       field,
       value,
       allowed: { min: range.min, max: range.max, integer: true },
@@ -116,28 +119,83 @@ function checkNumber(
   return value;
 }
 
+/** The fields each type must set (§5.2 stats table). */
+const REQUIRED: Readonly<Record<UnitType, readonly string[]>> = {
+  soldier: ['name', 'type', 'maxHealth', 'damage', 'range', 'speed', 'attackCooldown', 'color'],
+  tower: ['name', 'type', 'maxHealth', 'damage', 'range', 'speed', 'attackCooldown', 'color'],
+  wall: ['name', 'type', 'maxHealth', 'color'],
+  factory: ['name', 'type', 'maxHealth', 'productionInterval', 'color'],
+};
+
+/** Type-specific `fix` for a missing field (§7 step 5). */
+function missingFix(type: UnitType | undefined, field: string): string {
+  if (type === 'factory' && field === 'productionInterval') {
+    return 'A factory needs this.productionInterval: ticks between two minions, 600-1800. Try 900 (one every 15 s).';
+  }
+  if (type === 'wall' && field === 'maxHealth') return 'A wall needs this.maxHealth, from 50 to 1500. Try 400.';
+  if (type === 'factory' && field === 'maxHealth') return 'A factory needs this.maxHealth, from 100 to 1000. Try 300.';
+  return `In the constructor add this.${field} = …; as a plain data property (see the contract).`;
+}
+
+function ignored(field: string, type: UnitType, value: unknown): ValidationWarning {
+  return {
+    code: 'W_STAT_IGNORED',
+    field,
+    value: safeValue(value),
+    message: `A ${type} doesn't use ${field}, so it is ignored.`,
+    fix: `Remove this.${field} from the constructor (a ${type} ${field === 'productionInterval' ? "doesn't build minions" : field === 'size' ? 'has a fixed size' : "can't attack"}).`,
+  };
+}
+
 /**
- * Run the §7 step-6 guards on raw stats. On success returns a frozen
- * `StatsSnapshot` with the trimmed name and the size and shape filled in.
+ * Run the §7 step-6 guards on raw stats, per type (§5.2). On success returns
+ * a frozen `StatsSnapshot` with the trimmed name and the size and shape filled
+ * in; walls and factories get damage, range, speed and attackCooldown 0 and
+ * their fixed size (20 / 18), and only factories keep `productionInterval`.
+ * Fields a type doesn't use give W_STAT_IGNORED warnings.
  *
  * Missing fields (`undefined`) are reported as STAT_MISSING so this function
  * is safe to call on its own; the validator's step 5 normally catches them first.
  */
 export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatBounds): StatsCheckResult {
   const errors: ValidationError[] = [];
+  const warnings: ValidationWarning[] = [];
+  const has = (f: string) => raw[f] !== undefined;
 
-  const required = ['name', 'type', 'maxHealth', 'damage', 'range', 'speed', 'attackCooldown', 'color'];
-  for (const field of required) {
+  // type first: it decides which fields are required (no type → the soldier list; a bad one → the common fields).
+  let type: UnitType | undefined;
+  if (has('type')) {
+    const v = raw.type;
+    if (typeof v !== 'string') {
+      errors.push(wrongType('type', v, 'string', `In the constructor set this.type to "soldier", "tower", "wall" or "factory".`));
+    } else if (!(UNIT_TYPES as readonly string[]).includes(v)) {
+      errors.push({
+        code: 'STAT_OUT_OF_RANGE',
+        field: 'type',
+        value: v,
+        allowed: { oneOf: [...UNIT_TYPES] },
+        message: `type is "${v}" but must be "soldier", "tower", "wall" or "factory".`,
+        fix: `In the constructor set this.type = "soldier" (moves and fights), "tower" (stays and shoots), "wall" (a block that stops everyone) or "factory" (builds minions).`,
+      });
+    } else {
+      type = v as UnitType;
+    }
+  }
+  const building = type !== undefined && isNonCombatBuilding(type);
+
+  // A type that is set but not one of the four: ask only for what every type needs
+  // (the type error comes first; listing soldier stats would send a wall-maker the wrong way).
+  const required = type ?? (has('type') ? 'wall' : 'soldier');
+  for (const field of REQUIRED[required]) {
     if (raw[field] === undefined) {
       errors.push({
         code: 'STAT_MISSING',
         field,
         message: `The unit does not set ${field}.`,
-        fix: `In the constructor add this.${field} = …; as a plain data property (see the contract).`,
+        fix: missingFix(type, field),
       });
     }
   }
-  const has = (f: string) => raw[f] !== undefined;
 
   // name: string, 1-24 chars after trim, no control chars.
   let name: string | undefined;
@@ -165,52 +223,102 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
     }
   }
 
-  // type: 'soldier' | 'tower'.
-  let type: UnitType | undefined;
-  if (has('type')) {
-    const v = raw.type;
-    if (typeof v !== 'string') {
-      errors.push(wrongType('type', v, 'string', `In the constructor set this.type = "soldier" or this.type = "tower".`));
-    } else if (!(UNIT_TYPES as readonly string[]).includes(v)) {
-      errors.push({
-        code: 'STAT_OUT_OF_RANGE',
-        field: 'type',
-        value: v,
-        allowed: { oneOf: [...UNIT_TYPES] },
-        message: `type is "${v}" but must be "soldier" or "tower".`,
-        fix: `In the constructor set this.type = "soldier" (moves) or this.type = "tower" (never moves).`,
-      });
-    } else {
-      type = v as UnitType;
-    }
-  }
-
-  const maxHealth = has('maxHealth') ? checkNumber(errors, 'maxHealth', raw.maxHealth, bounds.maxHealth) : undefined;
-  const damage = has('damage') ? checkNumber(errors, 'damage', raw.damage, bounds.damage) : undefined;
-  const range = has('range') ? checkNumber(errors, 'range', raw.range, bounds.range) : undefined;
-  const attackCooldown = has('attackCooldown')
-    ? checkNumber(errors, 'attackCooldown', raw.attackCooldown, bounds.attackCooldown, { integer: true })
+  const hpRange = type === 'wall' ? bounds.wallHealth : type === 'factory' ? bounds.factoryHealth : bounds.maxHealth;
+  // The example is the type's starter template value (Basic Wall 400, Basic Factory 300).
+  const hpExample = type === 'wall' ? 400 : type === 'factory' ? 300 : undefined;
+  const maxHealth = has('maxHealth')
+    ? checkNumber(errors, 'maxHealth', raw.maxHealth, hpRange, hpExample !== undefined && hpExample >= hpRange.min && hpExample <= hpRange.max ? { example: hpExample } : {})
     : undefined;
 
-  // speed: towers exactly 0, soldiers within soldierSpeed.
+  let damage: number | undefined;
+  let range: number | undefined;
+  let attackCooldown: number | undefined;
   let speed: number | undefined;
-  if (has('speed')) {
-    const v = raw.speed;
-    if (type === 'tower' && typeof v === 'number' && Number.isFinite(v) && v !== 0) {
-      errors.push({
-        code: 'TOWER_CANNOT_MOVE',
-        field: 'speed',
-        value: v,
-        allowed: { equals: 0 },
-        message: `This unit is a tower, so speed must be 0, but it is ${v}.`,
-        fix: `In the constructor set this.speed = 0 for a tower, or change this.type to "soldier" if it should move.`,
-      });
-    } else if (type === 'tower') {
-      speed = checkNumber(errors, 'speed', v, { min: 0, max: 0 }, { fix: 'Towers never move: set this.speed = 0.' });
-    } else {
-      // Unknown or soldier type: check against soldier bounds.
-      speed = checkNumber(errors, 'speed', v, bounds.soldierSpeed);
+  let productionInterval: number | undefined;
+
+  if (building) {
+    const t = type!;
+    // damage: absent or 0.
+    if (has('damage')) {
+      const v = raw.damage;
+      if (typeof v === 'number' && v === 0) {
+        // fine: nothing to attack with
+      } else if (typeof v === 'number' && Number.isFinite(v)) {
+        errors.push({
+          code: 'BUILDING_CANNOT_ATTACK',
+          field: 'damage',
+          value: v,
+          allowed: { equals: 0 },
+          message: `A ${t} can't attack, so damage must be left out (or 0), but it is ${v}.`,
+          fix: `Walls and factories can't attack. Remove this.damage. Want something that shoots? Make a tower.`,
+        });
+      } else {
+        checkNumber(errors, 'damage', v, { min: 0, max: 0 }, { fix: `Remove this.damage: a ${t} can't attack.` });
+      }
     }
+    // speed: absent or 0.
+    if (has('speed')) {
+      const v = raw.speed;
+      if (typeof v === 'number' && v === 0) {
+        // fine: buildings never move
+      } else if (typeof v === 'number' && Number.isFinite(v)) {
+        errors.push({
+          code: 'BUILDING_CANNOT_MOVE',
+          field: 'speed',
+          value: v,
+          allowed: { equals: 0 },
+          message: `A ${t} never moves, so speed must be left out (or 0), but it is ${v}.`,
+          fix: `Remove this.speed: a ${t} is a building and never moves. Want something that walks? Make a soldier.`,
+        });
+      } else {
+        checkNumber(errors, 'speed', v, { min: 0, max: 0 }, { fix: `Remove this.speed: a ${t} never moves.` });
+      }
+    }
+    for (const f of ['range', 'attackCooldown', 'size'] as const) {
+      if (has(f)) warnings.push(ignored(f, t, raw[f]));
+    }
+    if (t === 'factory') {
+      productionInterval = has('productionInterval')
+        ? checkNumber(errors, 'productionInterval', raw.productionInterval, bounds.productionInterval, {
+            integer: true,
+            integerCode: 'INTERVAL_NOT_INTEGER',
+            fix: `In the constructor set this.productionInterval to a whole number of ticks from ${bounds.productionInterval.min} to ${bounds.productionInterval.max}, e.g. this.productionInterval = 900 (one minion every 15 s).`,
+          })
+        : undefined;
+    } else if (has('productionInterval')) {
+      warnings.push(ignored('productionInterval', t, raw.productionInterval));
+    }
+    damage = 0;
+    range = 0;
+    speed = 0;
+    attackCooldown = 0;
+  } else {
+    damage = has('damage') ? checkNumber(errors, 'damage', raw.damage, bounds.damage) : undefined;
+    range = has('range') ? checkNumber(errors, 'range', raw.range, bounds.range) : undefined;
+    attackCooldown = has('attackCooldown')
+      ? checkNumber(errors, 'attackCooldown', raw.attackCooldown, bounds.attackCooldown, { integer: true })
+      : undefined;
+
+    // speed: towers exactly 0, soldiers within soldierSpeed.
+    if (has('speed')) {
+      const v = raw.speed;
+      if (type === 'tower' && typeof v === 'number' && Number.isFinite(v) && v !== 0) {
+        errors.push({
+          code: 'TOWER_CANNOT_MOVE',
+          field: 'speed',
+          value: v,
+          allowed: { equals: 0 },
+          message: `This unit is a tower, so speed must be 0, but it is ${v}.`,
+          fix: `In the constructor set this.speed = 0 for a tower, or change this.type to "soldier" if it should move.`,
+        });
+      } else if (type === 'tower') {
+        speed = checkNumber(errors, 'speed', v, { min: 0, max: 0 }, { fix: 'Towers never move: set this.speed = 0.' });
+      } else {
+        // Unknown or soldier type: check against soldier bounds.
+        speed = checkNumber(errors, 'speed', v, bounds.soldierSpeed);
+      }
+    }
+    if (type !== undefined && has('productionInterval')) warnings.push(ignored('productionInterval', type, raw.productionInterval));
   }
 
   // color: "#RRGGBB".
@@ -233,8 +341,8 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
     }
   }
 
-  // size: optional body radius; the type default applies when it is omitted.
-  const size = has('size') ? checkNumber(errors, 'size', raw.size, bounds.size) : undefined;
+  // size: optional body radius; the type default applies when it is omitted (buildings: fixed).
+  const size = !building && has('size') ? checkNumber(errors, 'size', raw.size, bounds.size) : undefined;
 
   // shape: optional.
   let shape: Shape | undefined;
@@ -265,9 +373,10 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
     range === undefined ||
     speed === undefined ||
     attackCooldown === undefined ||
-    color === undefined
+    color === undefined ||
+    (type === 'factory' && productionInterval === undefined)
   ) {
-    return { ok: false, errors };
+    return { ok: false, errors, warnings };
   }
 
   const stats: StatsSnapshot = Object.freeze({
@@ -278,9 +387,10 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
     range,
     speed,
     attackCooldown,
+    ...(type === 'factory' ? { productionInterval: productionInterval! } : {}),
     color,
-    size: size ?? DEFAULT_SIZE[type],
+    size: building ? DEFAULT_SIZE[type] : (size ?? DEFAULT_SIZE[type]),
     shape: shape ?? DEFAULT_SHAPE[type],
   });
-  return { ok: true, stats };
+  return { ok: true, stats, warnings };
 }

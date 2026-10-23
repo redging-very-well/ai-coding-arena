@@ -33,6 +33,10 @@ export const VALIDATION_ERROR_CODES = [
   'BAD_COLOR',
   'BAD_NAME',
   'TOWER_CANNOT_MOVE',
+  // M8.5 buildings (§5.2)
+  'BUILDING_CANNOT_ATTACK',
+  'BUILDING_CANNOT_MOVE',
+  'INTERVAL_NOT_INTEGER',
   // 7 determinism
   'STATS_NOT_STABLE',
   // 8 cost
@@ -63,6 +67,11 @@ export const WARNING_CODES = [
   'W_SLOW',
   'W_SLOW_NO_DISCOUNT',
   'W_STAT_NEAR_MAX',
+  // M8.5 buildings (§5.2, §7, §9.3)
+  'W_STAT_IGNORED',
+  'W_UPDATE_IGNORED',
+  'W_ACTION_NOT_FOR_TYPE',
+  'W_TRAPPED',
 ] as const;
 export type WarningCode = (typeof WARNING_CODES)[number];
 
@@ -92,6 +101,8 @@ export const SERVICE_ERROR_CODES = [
   'ARMORY_OWN_UNIT',
   'NOT_ALL_READY',
   'NOTHING_SELECTED',
+  // M8.5: only walls selected / placed (§5.2 Fighters).
+  'NO_FIGHTERS',
   'NOT_ENOUGH_PLAYERS',
   'BAD_MAP_STYLE',
   'BAD_TEAM_MODE',
@@ -219,6 +230,7 @@ export function httpStatusFor(code: ErrorCode): number {
     case 'CELL_TAKEN':
     case 'NOT_ALL_READY':
     case 'NOTHING_SELECTED':
+    case 'NO_FIGHTERS':
     case 'NOT_ENOUGH_PLAYERS':
     case 'NO_TEAMS':
     case 'SAME_TEAM':
@@ -261,6 +273,7 @@ const FRIENDLY_FIELD: Record<string, string> = {
   color: 'colour',
   size: 'size',
   shape: 'shape',
+  productionInterval: 'building speed',
 };
 
 const PLAYER_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
@@ -282,6 +295,9 @@ const PLAYER_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
   BAD_COLOR: 'That colour code looks wrong. Ask Claude to pick a colour like #33CC66.',
   BAD_NAME: 'Your unit needs a name from 1 to 24 letters. Ask Claude to rename it.',
   TOWER_CANNOT_MOVE: "Towers can't move! Ask Claude to set the tower's speed to 0.",
+  BUILDING_CANNOT_ATTACK: "Walls and factories can't attack! Ask Claude to remove the damage, or make a tower instead.",
+  BUILDING_CANNOT_MOVE: "Walls and factories can't move! Ask Claude to remove the speed.",
+  INTERVAL_NOT_INTEGER: 'The factory needs a whole number of ticks between minions. Ask Claude to fix it.',
   STATS_NOT_STABLE: 'Your unit changes its stats every time. Ask Claude to use fixed numbers.',
   UNIT_TOO_EXPENSIVE: 'Your unit costs too much! Ask Claude to make it cheaper.',
   SPRITE_THREW: "Drawing your unit's picture crashed. Ask Claude to fix it!",
@@ -304,6 +320,10 @@ const PLAYER_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
   W_SLOW_NO_DISCOUNT:
     "Tip: attacking slower than once a second doesn't make it cheaper. Ask Claude to make it attack once a second.",
   W_STAT_NEAR_MAX: 'Tip: a maxed-out stat costs up to 3 times as much. Two medium units usually beat one giant one!',
+  W_STAT_IGNORED: "Heads up: this kind of unit doesn't use its {field}, so the game ignores it.",
+  W_UPDATE_IGNORED: "Heads up: walls don't think, so the game never runs this wall's update().",
+  W_ACTION_NOT_FOR_TYPE: "Heads up: your unit sometimes gives an order its type can't do, so it waits instead.",
+  W_TRAPPED: 'Walled in! Leave a gap so your unit can get out.',
 };
 
 /** Player hint for a code, with `{field}` filled in. */
@@ -316,7 +336,7 @@ export function playerHintFor(code: ValidationErrorCode | WarningCode, field?: s
 export function playerHintForIssue(issue: ValidationIssue): string {
   // Enum fields: "too big or too small" makes no sense for a word.
   if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'type') {
-    return 'Your unit must be a soldier or a tower. Ask Claude to fix its type.';
+    return 'Your unit must be a soldier, tower, wall or factory. Ask Claude to fix its type.';
   }
   if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'shape') {
     return 'Your unit must be a circle, square, triangle or diamond. Ask Claude to fix its shape.';

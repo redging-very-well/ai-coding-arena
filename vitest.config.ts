@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 const PERF = process.env.PIXEL_CLASH_PERF === '1';
-const TIMING_FILES = ['tests/integration.test.ts', 'tests/sandbox.test.ts'];
+const TIMING_FILES = ['tests/integration.test.ts', 'tests/sandbox.test.ts', 'tests/buildings-perf.test.ts'];
 
 export default defineConfig({
   resolve: {
