@@ -106,3 +106,21 @@ describe('baseVersion / UNIT_CHANGED', () => {
     expect(plain.body).toMatchObject({ ok: true, version: 7 });
   }, T);
 });
+
+describe('Claude is told to fetch the latest code and pass baseVersion', () => {
+  it('in CLAUDE.md, the kit fallback and the MCP instructions/tool descriptions', async () => {
+    const { readFileSync } = await import('node:fs');
+    const md = readFileSync(new URL('../packages/starter-kit/CLAUDE.md.tmpl', import.meta.url), 'utf8');
+    const revising = md.slice(md.indexOf('**Revising a unit:**'), md.indexOf('**The two starter units'));
+    expect(revising).toContain('ALWAYS');
+    expect(revising).toContain('get_unit_source');
+    expect(revising).toContain('baseVersion');
+    expect(revising).toContain('UNIT_CHANGED');
+    expect(md).toContain('/api/units/<UNIT_ID>');
+    const kit = readFileSync(new URL('../packages/server/src/services/kit.ts', import.meta.url), 'utf8');
+    expect(kit).toMatch(/get_unit_source[\s\S]*baseVersion[\s\S]*UNIT_CHANGED/);
+    const { MCP_INSTRUCTIONS } = await import('../packages/server/src/mcp.js');
+    expect(MCP_INSTRUCTIONS).toMatch(/ALWAYS call get_unit_source[\s\S]*baseVersion/);
+    expect(MCP_INSTRUCTIONS).toContain('UNIT_CHANGED');
+  });
+});

@@ -25,13 +25,14 @@ import { originAllowlist } from './util/lan.js';
 import { log } from './util/log.js';
 
 export const MCP_INSTRUCTIONS = [
-  'Pixel Clash: you help a player (aged 9-13) design battle units. The player only talks to you; never ask them to type or edit code.',
+  'Pixel Clash: you help a player (aged 9-13) design battle units. The player talks to you; never ask them to type or edit code (they may choose to tweak units in the web page\'s code editor).',
   'If you have no apiKey (see .pixel-clash/player.json), ask the player for their name and 4-digit PIN and call login.',
   'Save {name, apiKey} from login to .pixel-clash/player.json and pass apiKey on every pixel-clash tool call.',
   'Call get_unit_contract once to learn the unit format, and get_rules for costs and limits.',
   'Always validate_unit before submit_unit, and fix problems using each error\'s "fix" text. validate_unit checks everything (sprite rows included), so never run scripts or shell commands to check a unit file.',
   'submit_unit works only in the PLAN phase (get_game_state shows submissionsOpen). Otherwise keep the unit validated and say "we\'ll send it when Plan starts".',
-  'When changing an existing unit, pass its unitId (from list_my_units), even if you rename it.',
+  'Players can also edit their own units on the web page. So before changing an existing unit ALWAYS call get_unit_source for its latest source and version, change that code, and pass unitId plus baseVersion (that version) to validate_unit and submit_unit, even if you rename it.',
+  'If a call fails with UNIT_CHANGED, the unit was saved meanwhile: call get_unit_source again and re-apply the requested change to the new code (never resubmit the old copy).',
   'After a battle, get_battle_report shows errors with unit names and line numbers: fix those units.',
   'Explain results to the player in short, simple, cheerful words (cost, what the unit does).',
   'Selecting and placing units happens on the player\'s Pixel Clash web page, not here.',
@@ -44,7 +45,7 @@ const BASE_VERSION = z
   .int()
   .positive()
   .optional()
-  .describe('With unitId: the version you revised (from get_unit_source). If the unit changed since, the call fails with UNIT_CHANGED.');
+  .describe('With unitId: the version you revised (from get_unit_source). Always pass it when revising; if the unit changed since, the call fails with UNIT_CHANGED.');
 const API_KEY = z.string().optional().describe('The player apiKey from login (needed unless the MCP config sends it as a header).');
 
 /** Player-facing hint for a service error. */
@@ -199,7 +200,8 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     'validate_unit',
     {
       title: 'Validate a unit',
-      description: 'Check a unit file (dry run, nothing stored). Works in every phase. Returns the cost or errors with a "fix" for each.',
+      description:
+        'Check a unit file (dry run, nothing stored). Works in every phase. Returns the cost or errors with a "fix" for each. When revising, pass unitId and baseVersion (the version from get_unit_source).',
       inputSchema: {
         source: z.string().describe('The full text of the unit file'),
         unitId: z.string().optional().describe('The unitId when revising an existing unit'),
@@ -217,7 +219,8 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     'submit_unit',
     {
       title: 'Submit a unit',
-      description: 'Validate and store a unit (new, or a revision when unitId is given). Only works in the PLAN phase.',
+      description:
+        'Validate and store a unit (new, or a revision when unitId is given). Only works in the PLAN phase. When revising, first call get_unit_source and pass its version as baseVersion; UNIT_CHANGED means the unit was saved meanwhile: fetch it again and re-apply your change.',
       inputSchema: {
         source: z.string().describe('The full text of the unit file'),
         unitId: z.string().optional().describe('The unitId of the design to revise (from list_my_units)'),
@@ -253,7 +256,8 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     'get_unit_source',
     {
       title: 'Unit source',
-      description: "The stored source of one of the player's units (lets you revise it even if the local file is lost).",
+      description:
+        "The latest stored source and version of one of the player's units. Call it before revising a unit (the player may have edited it on the web page) and pass the version as baseVersion to validate_unit/submit_unit.",
       inputSchema: { unitId: z.string().describe('The unitId (from list_my_units)'), apiKey: API_KEY },
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },

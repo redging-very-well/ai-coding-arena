@@ -64,7 +64,7 @@ A player (aged about 9-13) is playing Pixel Clash. They only talk to you: never 
 
 ${who}
 
-Workflow: call \`get_game_state\` → write or edit \`units/<name>.js\` → \`validate_unit\` → fix using each error's \`fix\` → \`submit_unit\` (only when \`submissionsOpen\`) → tell the player the cost and remind them to select and place it on the web page. When changing an existing unit, always pass its \`unitId\` (from \`list_my_units\`).
+Workflow: call \`get_game_state\` → write or edit \`units/<name>.js\` → \`validate_unit\` → fix using each error's \`fix\` → \`submit_unit\` (only when \`submissionsOpen\`) → tell the player the cost and remind them to select and place it on the web page. When changing an existing unit (the player can also edit units on the web page), first call \`get_unit_source\` for its latest \`source\` and \`version\`, change that code, and pass \`unitId\` and \`baseVersion\` (= that version) to \`validate_unit\` and \`submit_unit\`. On \`UNIT_CHANGED\`, fetch the source again and re-apply the change.
 
 Call \`get_unit_contract\` for the full unit contract and \`get_rules\` for the rules.
 
