@@ -94,6 +94,20 @@ export interface SlideMemory {
   flipped: boolean;
 }
 
+/** How the last move went (§5 `SelfView.pathing`, §9.3 Routing round walls). */
+export type PathingMode = 'direct' | 'detour' | 'no-route';
+
+/** A body's current route plan (§9.3 Routing round walls). */
+export interface RoutePlan {
+  mode: PathingMode;
+  /** Where to steer; null = straight at the destination. */
+  waypoint: Point | null;
+  /** no-route: the node (index, size class) of the wall the body goes to break, else -1. */
+  press: number;
+  /** Tick of the next scheduled re-plan. */
+  nextPlan: number;
+}
+
 /** A factory's production state (§5.2, §9.3). */
 export interface FactoryState {
   productionInterval: number;
@@ -192,6 +206,10 @@ export interface SimUnit {
   /** A wall turned a move since the last recorded frame (frame `blocked` flag). */
   blockedSinceFrame?: boolean;
   slide?: SlideMemory | null;
+  /** M8.7: the mode of the last move ('direct' before the first one). */
+  pathing?: PathingMode;
+  /** M8.7: the current route plan (sim/pathing.ts). */
+  route?: RoutePlan | null;
   /** Time (completed ticks) the body appeared: 0, or a minion's spawn. */
   spawnedAtTick?: number;
   /** Factories. */

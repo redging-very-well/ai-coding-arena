@@ -83,7 +83,7 @@ afterEach(() => {
 function selfView(id: string, unitId: string, x = 100, y = 100): SelfView {
   return {
     id, unitId, ownerId: 'p0', teamId: 0, type: 'soldier', name: unitId, x, y, radius: 10, hp: 120, maxHp: 120,
-    damage: 10, range: 40, speed: 1.5, attackCooldown: 60, cooldownRemaining: 0, blockedBy: null, blockedTicks: 0, factory: null,
+    damage: 10, range: 40, speed: 1.5, attackCooldown: 60, cooldownRemaining: 0, blockedBy: null, blockedTicks: 0, pathing: 'direct', factory: null,
   };
 }
 function otherView(id: string, ownerId: string, x: number, y: number): OtherView {

@@ -35,6 +35,27 @@ export function worstCasePlacements(ids = { soldier: 's', factory: 'f', wall: 'w
   return out;
 }
 
+/**
+ * M8.7 maze (plan §14 test:perf): 10 soldiers, 2 factories and 12 walls
+ * forming a U (cols 1 and 4 of rows 0-2 with row 2 between them, a one-cell
+ * gap at (3, 2)), an L at (3, 3)/(2, 4)/(3, 4) and two blocks at (5, 2) and
+ * (0, 5), so most moves out of and into a zone need a route.
+ *
+ *   row 0: S W S S W S
+ *   row 1: S W . . W S
+ *   row 2: . W W . W W
+ *   row 3: S S . W . .
+ *   row 4: F . W W . F
+ *   row 5: W . S . S .
+ */
+export function mazePlacements(ids = { soldier: 's', factory: 'f', wall: 'w' }): PlacementDTO[] {
+  const out: PlacementDTO[] = [];
+  for (const [c, r] of [[0, 0], [2, 0], [3, 0], [5, 0], [0, 1], [5, 1], [0, 3], [1, 3], [2, 5], [4, 5]] as const) out.push(at(c, r, ids.soldier));
+  out.push(at(0, 4, ids.factory), at(5, 4, ids.factory));
+  for (const [c, r] of [[1, 0], [4, 0], [1, 1], [4, 1], [1, 2], [2, 2], [4, 2], [5, 2], [3, 3], [2, 4], [3, 4], [0, 5]] as const) out.push(at(c, r, ids.wall));
+  return out;
+}
+
 /** Factory brain: rally at the nearest enemy that isn't a wall (loops over all enemies). */
 export const swarmFactoryBrain = scripted((self, enemies: OtherView[], _allies, world) => {
   let best = Infinity;

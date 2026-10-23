@@ -182,6 +182,31 @@ export interface SteerResult {
 }
 
 /**
+ * Whether a body of radius `r` can move in a straight line from `p` to `q`
+ * without entering a wall square inflated by `r` (§9.3 Routing round walls:
+ * line of sight for planning and path smoothing).
+ */
+export function segmentClear(p: Point, q: Point, r: number, grid: WallGrid): boolean {
+  if (grid.size === 0) return true;
+  const dx = q.x - p.x;
+  const dy = q.y - p.y;
+  if (dx === 0 && dy === 0) return true;
+  return cast(p.x, p.y, dx, dy, r, grid) === null;
+}
+
+/** What one steering step did (before the blocked bookkeeping). */
+export interface SteerStep {
+  /** The body's position changed. */
+  moved: boolean;
+  /** The wall that stopped or turned the move, else null. */
+  wall: SimUnit | null;
+  /** How far the body got this tick (px). */
+  progress: number;
+  /** The step it tried: min(speed, distance to dest). */
+  step: number;
+}
+
+/**
  * Move a soldier or minion toward `dest` by at most `speed` px, sliding along
  * walls (§9.3 Wall steering), then clamp to the arena. Updates `blockedBy`,
  * `blockedTicks` and the slide memory.
@@ -195,6 +220,37 @@ export function steerToward(
   center: Point,
   memoryTicks: number,
 ): SteerResult {
+  const s = steerStep(u, dest, speed, grid, arena, center, memoryTicks);
+  if (!s.wall) {
+    u.blockedBy = null;
+    u.blockedTicks = 0;
+    return { moved: s.moved, blocked: false };
+  }
+  markBlocked(u, s.wall.id);
+  return { moved: s.moved, blocked: true };
+}
+
+/** A wall stopped the body this tick (rule 6): blockedBy, blockedTicks and the report maximum. */
+export function markBlocked(u: SimUnit, wallId: string): void {
+  u.blockedBy = wallId;
+  u.blockedTicks = (u.blockedTicks ?? 0) + 1;
+  u.blockedTicksMax = Math.max(u.blockedTicksMax ?? 0, u.blockedTicks);
+}
+
+/**
+ * The steering step of `steerToward` (rules 1-5: move, slide, memory)
+ * without the blocked bookkeeping, so the routing layer can decide what
+ * counts as blocked (§9.3 Routing round walls).
+ */
+export function steerStep(
+  u: SimUnit,
+  dest: Point,
+  speed: number,
+  grid: WallGrid,
+  arena: number,
+  center: Point,
+  memoryTicks: number,
+): SteerStep {
   const x0 = u.x;
   const y0 = u.y;
   const dx = dest.x - u.x;
@@ -205,19 +261,23 @@ export function steerToward(
   let mem: SlideMemory | null = u.slide ?? null;
   if (mem && Math.hypot(dest.x - mem.origin.x, dest.y - mem.origin.y) > ORIGIN_DRIFT) mem = null;
 
-  const free = (): SteerResult => {
+  const L = Math.min(speed, dist);
+  const result = (wall: SimUnit | null): SteerStep => ({
+    moved: u.x !== x0 || u.y !== y0,
+    wall,
+    progress: Math.hypot(u.x - x0, u.y - y0),
+    step: L,
+  });
+  const free = (): SteerStep => {
     if (mem) {
       mem.quiet += 1;
       if (mem.quiet > memoryTicks) mem = null;
     }
     u.slide = mem;
-    u.blockedBy = null;
-    u.blockedTicks = 0;
-    return { moved: u.x !== x0 || u.y !== y0, blocked: false };
+    return result(null);
   };
 
   if (dist === 0 || speed <= 0) return free();
-  const L = Math.min(speed, dist);
   const ux = dx / dist;
   const uy = dy / dist;
   const hit = grid.size > 0 ? cast(u.x, u.y, ux * L, uy * L, u.radius, grid) : null;
@@ -270,8 +330,5 @@ export function steerToward(
   }
 
   u.slide = mem;
-  u.blockedBy = hit.wall.id;
-  u.blockedTicks = (u.blockedTicks ?? 0) + 1;
-  u.blockedTicksMax = Math.max(u.blockedTicksMax ?? 0, u.blockedTicks);
-  return { moved: u.x !== x0 || u.y !== y0, blocked: true };
+  return result(hit.wall);
 }

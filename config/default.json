@@ -107,7 +107,8 @@
     "rangeTolerance": 0.5,
     "separationPasses": 2,
     "frameEveryTicks": 2,
-    "slideMemoryTicks": 45
+    "slideMemoryTicks": 45,
+    "replanTicks": 10
   },
   "factory": {
     "maxMinionsPerFactory": 8,

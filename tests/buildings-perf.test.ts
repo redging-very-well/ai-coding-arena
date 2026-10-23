@@ -14,7 +14,7 @@ import { validateDetailed } from '../packages/server/src/validator/validate.js';
 import { createIvmRunnerFactory } from '../packages/server/src/sandbox/ivmRunner.js';
 import type { RunnerUnitDesign } from '../packages/server/src/sandbox/runner.js';
 import { BattleEngine, createBattleRunners, designFor, type BattleUnitDesign } from '../packages/server/src/sim/engine.js';
-import { worstCasePlacements, worstCaseSpecs } from './helpers/buildingsLoad.js';
+import { mazePlacements, worstCasePlacements, worstCaseSpecs } from './helpers/buildingsLoad.js';
 
 const ivm = createIvmRunnerFactory();
 const TICKS = 1900;
@@ -219,6 +219,83 @@ describe('buildings worst case with minion kinds, orders and bursts (M8.6 timing
     expect(releases).toBeGreaterThan(0);
     for (const p of result.players) expect(p.disabled, `${p.playerId} ${p.disabledReason}`).toBe(false);
     expect(minions).toBeLessThanOrEqual(DEFAULT_CONFIG.factory.maxAlivePerBattle);
+    // §9.3 Performance: target unchanged, sim p99 < 8 ms/tick.
+    expect(p99).toBeLessThan(8);
+  }, 180_000);
+});
+
+/**
+ * M8.7 (plan §9.3 Routing round walls, §14 test:perf): the maze worst case.
+ * Every player's 12 walls form a U, an L and blocks across its zone
+ * (`mazePlacements`), the soldiers chase the nearest enemy (template) and the
+ * two kind factories cycle through all four orders, so most moves need a
+ * route round walls: flow fields, path smoothing and re-plans every 10 ticks
+ * for up to 232 bodies. Target unchanged: sim p99 < 8 ms/tick.
+ */
+describe('maze worst case: routing round walls (M8.7 timing)', () => {
+  it('8p × (10 soldiers + 2 kind factories + 12 maze walls) on Ring 8: sim p99 < 8 ms/tick', async () => {
+    const config: GameConfig = deepMerge(DEFAULT_CONFIG, { timers: { battleTicks: TICKS } });
+    const pairs = [
+      ['brute', 'grunt'],
+      ['runner', 'archer'],
+      ['grunt', 'runner'],
+      ['archer', 'brute'],
+    ] as const;
+    const { layout, specs } = worstCaseSpecs();
+    const perSeat = await Promise.all(
+      specs.map((s) => {
+        const [a, b] = pairs[s.seat % pairs.length]!;
+        return Promise.all([
+          submit(SOLDIER_SRC, config, 's'),
+          submit(kindFactory(`${a} works`, a, 1 + (s.seat % 4)), config, 'f'),
+          submit(kindFactory(`${b} works`, b, 1 + ((s.seat + 2) % 4)), config, 'g'),
+          submit(WALL_SRC, config, 'w'),
+        ]);
+      }),
+    );
+    const runners = await createBattleRunners(
+      ivm,
+      specs.map((s, i) => ({ playerId: s.playerId, seat: s.seat, units: perSeat[i]!.map((d) => d.runner) })),
+      config,
+      44,
+    );
+    for (const r of runners.values()) expect([...r.loadErrors]).toEqual([]);
+    const placements = () => {
+      const p = mazePlacements();
+      const second = p.findLastIndex((x) => x.unitId === 'f');
+      p[second] = { ...p[second]!, unitId: 'g' };
+      return p;
+    };
+    const engine = new BattleEngine({
+      players: specs.map((s, i) => ({
+        playerId: s.playerId,
+        seat: s.seat,
+        zone: s.zone,
+        units: perSeat[i]!.map((d) => d.battle),
+        placements: placements(),
+        runner: runners.get(s.playerId)!,
+      })),
+      config,
+      seed: 44,
+      map: { style: layout.style, width: layout.width },
+    });
+    const t0 = performance.now();
+    const result = await engine.run();
+    const wallMs = performance.now() - t0;
+    const tickMs = engine.tickMs;
+    const p50 = percentile(tickMs, 50);
+    const p99 = percentile(tickMs, 99);
+    const minions = Math.max(...engine.frames.map((f) => f.units.filter((u) => u[0].includes('-m')).length));
+    const { plans, built, hits } = engine.pathStats;
+    console.log(
+      `[buildings-perf maze] ${result.units.length} bodies (${minions} minions max at once), ${result.endTick} ticks (${result.endReason}) in ${wallMs.toFixed(0)} ms; ` +
+        `tick p50 ${p50.toFixed(3)} ms, p99 ${p99.toFixed(3)} ms, max ${Math.max(...tickMs).toFixed(2)} ms; routing: ${plans} plans, ${built} fields built, ${hits} cache hits`,
+    );
+    expect(result.units.filter((u) => u.type === 'wall')).toHaveLength(96);
+    // Routing really ran: many plans, and fields were shared (more hits than builds).
+    expect(plans).toBeGreaterThan(1000);
+    expect(hits).toBeGreaterThan(built);
+    for (const p of result.players) expect(p.disabled, `${p.playerId} ${p.disabledReason}`).toBe(false);
     // §9.3 Performance: target unchanged, sim p99 < 8 ms/tick.
     expect(p99).toBeLessThan(8);
   }, 180_000);

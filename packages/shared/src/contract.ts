@@ -63,8 +63,9 @@ export interface SelfView {
   x: number; y: number; radius: number; hp: number; maxHp: number;
   damage: number; range: number; speed: number;
   attackCooldown: number; cooldownRemaining: number; // 0 = can attack this tick
-  blockedBy: string | null; // id of the wall that stopped or turned my last move, else null
-  blockedTicks: number;     // ticks in a row a wall has been in my way (0 = free)
+  blockedBy: string | null; // id of the wall that stopped my last move, else null
+  blockedTicks: number;     // ticks in a row a wall has stopped me (no progress; 0 = free)
+  pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls by a route the game found, or walled off (smash self.blockedBy)
   factory: FactoryView | null; // factories only
 }
 export interface OtherView {

@@ -211,6 +211,8 @@ export const ConfigSchema = z.object({
     frameEveryTicks: posInt(),
     /** Wall steering: ticks without a wall hit after which the slide side is forgotten (§9.3). */
     slideMemoryTicks: posInt(),
+    /** Routing round walls: a body re-plans its route at most every N ticks (plus on reaching its waypoint, §9.3). */
+    replanTicks: posInt(),
   }),
   /** Factories and their built-in minions (§5.2, §9.3). */
   factory: FactorySchema,
@@ -366,6 +368,7 @@ export const DEFAULT_CONFIG: GameConfig = {
     separationPasses: 2,
     frameEveryTicks: 2,
     slideMemoryTicks: 45,
+    replanTicks: 10,
   },
   factory: {
     maxMinionsPerFactory: 8,

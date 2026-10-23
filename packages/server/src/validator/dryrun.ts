@@ -302,6 +302,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
         cooldownRemaining: 0,
         blockedBy: null,
         blockedTicks: 0,
+        pathing: 'direct',
         // §7 step 9 (M8.5): a factory sees its production state (5 minions left, rally = centre).
         factory:
           stats.type === 'factory'

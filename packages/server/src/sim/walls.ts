@@ -14,10 +14,16 @@ export class WallGrid {
   readonly cols: number;
   private readonly cells: Array<SimUnit | undefined>;
   private count = 0;
+  private changes = 0;
 
   constructor(readonly arena: number) {
     this.cols = Math.ceil(arena / CELL_SIZE);
     this.cells = new Array<SimUnit | undefined>(this.cols * this.cols).fill(undefined);
+  }
+
+  /** Goes up by 1 whenever a wall is added or removed (routing caches key on it, §9.3). */
+  get version(): number {
+    return this.changes;
   }
 
   /** Number of living walls. */
@@ -39,6 +45,7 @@ export class WallGrid {
     if (col < 0 || row < 0 || col >= this.cols || row >= this.cols) throw new Error(`wall ${w.id} is outside the arena`);
     if (!this.cells[this.index(col, row)]) this.count++;
     this.cells[this.index(col, row)] = w;
+    this.changes++;
   }
 
   remove(w: SimUnit): void {
@@ -47,7 +54,13 @@ export class WallGrid {
     if (this.cells[i] === w) {
       this.cells[i] = undefined;
       this.count--;
+      this.changes++;
     }
+  }
+
+  /** Whether a cell holds a living wall (cells outside the arena count as free). */
+  has(col: number, row: number): boolean {
+    return this.at(col, row) !== undefined;
   }
 
   /** The living wall in a cell, if any. */

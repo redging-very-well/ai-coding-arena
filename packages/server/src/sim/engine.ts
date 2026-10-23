@@ -93,7 +93,7 @@ import { alivePerPlayerCap, canMakeOf, spawnSpots, zoneFacingDir } from './facto
 import { FrameRecorder, frameAt } from './frames.js';
 import { hitDamage, kindConfig, minionAction, minionStats, minionValueOf } from './minion.js';
 import { isFixedBody, separate } from './movement.js';
-import { steerToward } from './steering.js';
+import { Pathfinder } from './pathing.js';
 import { aliveInFrame, factoryLeftIn, isFighter, livingValueAt, livingValueOf } from './value.js';
 import { WallGrid } from './walls.js';
 import { deriveSeed, mulberry32, type Rng } from './prng.js';
@@ -280,6 +280,8 @@ export class BattleEngine {
   private readonly yieldEvery: number;
   /** Living walls by arena cell (§9.3). */
   private readonly walls: WallGrid;
+  /** Routing round walls: flow fields and plans (§9.3, M8.7). */
+  private readonly paths: Pathfinder;
   /** What a factory pays per minion; a minion's value (§6). */
   private readonly minionValue: number;
   /** Alive minions allowed per player (§5.2 (c)). */
@@ -314,6 +316,10 @@ export class BattleEngine {
     this.yieldEvery = opts.yieldEveryTicks ?? 30;
     this.frames = this.recorder.frames;
     this.walls = new WallGrid(this.arena);
+    this.paths = new Pathfinder(this.walls, this.arena, this.center, {
+      replanTicks: this.config.sim.replanTicks,
+      slideMemoryTicks: this.config.sim.slideMemoryTicks,
+    });
     this.minionValue = minionValueOf(opts.config);
     this.minionCapPerPlayer = alivePerPlayerCap(opts.config.factory, opts.players.length);
 
@@ -349,6 +355,11 @@ export class BattleEngine {
       this.byId.set(u.id, u);
       if (u.type === 'wall') this.walls.add(u);
     }
+  }
+
+  /** Routing counters: plans made, flow fields built, cache hits (§9.3, tests). */
+  get pathStats(): Readonly<{ plans: number; built: number; hits: number }> {
+    return this.paths.stats;
   }
 
   /** Completed ticks so far (the sim's lead time). */
@@ -492,6 +503,8 @@ export class BattleEngine {
       diedAtTick: null,
       blockedBy: null,
       blockedTicks: 0,
+      pathing: 'direct',
+      route: null,
       blockedTicksMax: 0,
       blockedSinceFrame: false,
       slide: null,
@@ -636,11 +649,12 @@ export class BattleEngine {
     });
 
     // 4) Moves (soldiers and minions; other types were turned into idle in
-    //    step 3), sliding along walls (§9.3 Wall steering).
+    //    step 3), routed round walls and sliding along them (§9.3 Routing
+    //    round walls, Wall steering).
     for (const { unit, action } of pending) {
       if (action.kind !== 'move') continue;
       const sx0 = screenX(unit);
-      const res = steerToward(unit, action.destination, unit.stats.speed, this.walls, this.arena, this.center, cfg.sim.slideMemoryTicks);
+      const res = this.paths.move(unit, action.destination, unit.stats.speed, tick);
       // Sticky until the next frame is recorded (cleared in FrameRecorder.record).
       if (res.moved) unit.movedSinceFrame = true;
       if (res.blocked) unit.blockedSinceFrame = true;
@@ -875,6 +889,8 @@ export class BattleEngine {
       blockedTicksMax: 0,
       blockedSinceFrame: false,
       slide: null,
+      pathing: 'direct',
+      route: null,
       spawnedAtTick: t,
       minion: { factory: fac, n, kind },
     };
@@ -1453,6 +1469,7 @@ function toSelfView(u: SimUnit, factory: FactoryView | null): SelfView {
     cooldownRemaining: u.cooldownRemaining,
     blockedBy: u.blockedBy ?? null,
     blockedTicks: u.blockedTicks ?? 0,
+    pathing: u.pathing ?? 'direct',
     factory,
   };
 }
