@@ -60,6 +60,29 @@ describe('get_rules (M8.5)', () => {
     expect(rules.factory).toMatchObject({ maxAlivePerFactory: 4, maxMinionsPerFactory: 8 });
   });
 
+  it('lists the minion kinds with prices, the squad orders and burst (M8.6)', () => {
+    const t = unitTypeRules(DEFAULT_CONFIG) as {
+      types: { factory: { optional: Record<string, string>; update: string } };
+      factories: {
+        minionKinds: Record<string, { name: string; minionCost: number; minionValue: number; maxHealth: number; wallDamageMultiplier: number; role: string }>;
+        orders: Record<string, string>;
+        burst: { min: number; max: number; default: number; text: string };
+      };
+    };
+    expect(Object.keys(t.factories.minionKinds)).toEqual(['grunt', 'archer', 'runner', 'brute']);
+    expect(t.factories.minionKinds.archer).toMatchObject({ name: 'Archer', minionCost: 69, minionValue: 35, range: 110 });
+    expect(t.factories.minionKinds.runner).toMatchObject({ minionCost: 76, minionValue: 38 });
+    expect(t.factories.minionKinds.brute).toMatchObject({ minionValue: 35, wallDamageMultiplier: 3 });
+    expect(Object.keys(t.factories.orders)).toEqual(['text', 'attack', 'defend', 'swarm', 'guard']);
+    expect(t.factories.burst).toMatchObject({ min: 1, max: 4, default: 1 });
+    expect(t.factories.burst.text).toMatch(/LOST if the factory is destroyed/);
+    expect(t.types.factory.optional).toHaveProperty('produces');
+    expect(t.types.factory.update).toContain("action: 'command'");
+    const contract = buildContract(DEFAULT_CONFIG);
+    expect(contract.typescript).toContain("export type MinionKind = 'grunt' | 'archer' | 'runner' | 'brute';");
+    expect(contract.notes.some((n) => n.includes("order: 'swarm'"))).toBe(true);
+  });
+
   it('follows a config retune (minion price and E per interval)', () => {
     const cfg = deepMerge(DEFAULT_CONFIG, { cost: { factory: { minionDiscount: 1 } }, timers: { battleTicks: 3600 } });
     const t = unitTypeRules(cfg) as { factories: { minionValue: number; minionsPerBattle: Record<string, number> } };

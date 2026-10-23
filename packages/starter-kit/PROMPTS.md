@@ -20,6 +20,9 @@ You don't write any code. Just tell Claude what you want, in your own words!
 - "Make a super-tough castle wall that's still cheap."
 - "Make a factory that sends minions to the middle."
 - "Make a factory that sends lots of tiny robots at the strongest enemy."
+- "Make a factory that builds archers to guard my towers."
+- "Make a runner factory that saves up 4 and then rushes the weakest enemy."
+- "Make brutes that smash through walls."
 - "My soldiers keep getting stuck behind walls. Make them smash through."
 
 ## Change how it looks

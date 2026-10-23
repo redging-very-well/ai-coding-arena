@@ -58,7 +58,7 @@ export const HARNESS_GLOBALS = {
 export type HarnessApiFn = 'load' | 'seal' | 'spawn' | 'stats' | 'sprite' | 'tick' | 'reset';
 
 /** The stat fields `stats()` reports, in order (mirrors shared STAT_FIELDS). */
-const STAT_FIELD_LIST = "['name', 'type', 'maxHealth', 'damage', 'range', 'speed', 'attackCooldown', 'productionInterval', 'color', 'size', 'shape']";
+const STAT_FIELD_LIST = "['name', 'type', 'maxHealth', 'damage', 'range', 'speed', 'attackCooldown', 'productionInterval', 'produces', 'burst', 'color', 'size', 'shape']";
 
 /** Max length of one serialized action before it is replaced (keeps output small). */
 export const MAX_ACTION_JSON = 4096;

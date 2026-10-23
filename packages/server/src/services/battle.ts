@@ -41,7 +41,7 @@ import {
 import { catchUpFrame, frameAt } from '../sim/frames.js';
 import { rankAtPlaybackTick, rankResult } from '../sim/ranking.js';
 import { playerMetrics, scoreRanking } from '../sim/scoring.js';
-import { minionReveal } from '../sim/minion.js';
+import { minionReveal, minionsReveal } from '../sim/minion.js';
 import { topUnits } from '../sim/topUnits.js';
 import { log } from '../util/log.js';
 import { ArmoryService, type BorrowedUse, type FieldedDesign } from './armory.js';
@@ -322,6 +322,8 @@ export class BattleService {
       ...(game.teams.active ? { teams: game.teams.publicTeams() } : {}),
       // M8.5: the built-in minion, when a factory is fielded (§9.3 Frames).
       ...(setup.some((s) => s.units.some((u) => u.stats.type === 'factory')) ? { minion: minionReveal(game.config) } : {}),
+      // M8.6: every minion kind a fielded factory builds (§9.3 Frames).
+      ...minionsReveal(setup.flatMap((s) => s.units.map((u) => u.stats)), game.config),
       players: setup.map((s) => ({
         playerId: s.playerId,
         name: game.store.players.get(s.playerId)?.name ?? '?',

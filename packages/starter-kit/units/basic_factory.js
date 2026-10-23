@@ -1,9 +1,25 @@
 // Basic Factory: the starter factory template (Pixel Clash).
 //
-// A factory never moves or attacks. Every productionInterval ticks it builds a Minion
-// (40 HP, 5 damage, fast little melee fighter), at most 4 alive per factory.
-// update() only decides WHERE the minions go: return { action: 'rally', destination }.
-// ({ action: 'hold' } pauses building for a tick.)
+// A factory never moves or attacks. Every productionInterval ticks it builds a minion,
+// at most 4 alive per factory. update() decides what the minions do.
+//
+// Options (all optional; this template uses the defaults):
+//   this.produces = 'grunt'   which minion it builds (the price follows):
+//       'grunt'  40 HP, 5 damage, melee, speed 1.5   $28 each (the default)
+//       'archer' 24 HP, 5 damage, shoots from 110 px  $35 each
+//       'runner' 28 HP, 4 damage, melee, speed 2.6   $38 each
+//       'brute' 110 HP, 8 damage (x3 on walls), slow $36 each
+//   this.burst = 1            1-4: save up minions INSIDE and send them out together
+//                             (free, but stored minions are lost if the factory dies)
+//
+// What update() can return:
+//   { action: 'rally', destination: { x, y } }              attack, gathering at that spot
+//   { action: 'command', order: 'attack' }                   hunt the nearest enemies (default)
+//   { action: 'command', order: 'defend' }                   stay near the factory
+//   { action: 'command', order: 'swarm', targetId: e.id }    all minions go for ONE enemy
+//   { action: 'command', order: 'guard', targetId: a.id }    stay next to an ally (e.g. a tower)
+//   { action: 'release' }                                    send stored minions out now
+//   { action: 'hold' }                                       pause building for a tick
 //
 // Cost = body + production
 //   body       = 10 + maxHealth*0.12 * (1 + 2*(maxHealth/1000)^2) = 10 + 42.48 = 52.48  ->  $53
@@ -19,6 +35,8 @@ export default class BasicFactory {
     this.maxHealth = 300;            // 100-1000
     this.productionInterval = 900;   // 600-1800 ticks between minions (900 = 15 s); faster costs more
     this.color = '#C0A060';          // "#RRGGBB": also the colour of its minions
+    // this.produces = 'archer';     // 'grunt' (default), 'archer', 'runner' or 'brute': the price follows
+    // this.burst = 3;               // 1-4: save up minions inside and send them out together
   }
 
   // Called once per tick. Send the minions at the nearest enemy that isn't a wall.
@@ -32,6 +50,11 @@ export default class BasicFactory {
     }
     const spot = target ? { x: target.x, y: target.y } : world.center;
     return { action: 'rally', destination: spot };
+    // Other ideas:
+    // if (target) return { action: 'command', order: 'swarm', targetId: target.id };  // everyone at one enemy
+    // return { action: 'command', order: 'defend' };                                  // stay home
+    // const tower = allies.find((a) => a.type === 'tower');
+    // if (tower) return { action: 'command', order: 'guard', targetId: tower.id };    // protect a tower
   }
 
   // A little workshop: a chimney puffing smoke, two lit windows, a big door

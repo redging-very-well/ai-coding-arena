@@ -282,6 +282,51 @@ describe('privacy with walls and factories (§3)', () => {
   }, T);
 });
 
+describe('minion kinds stay hidden until START (M8.6)', () => {
+  it("a factory's produces, burst and orders don't leak; the reveal carries them and the kind's minion", async () => {
+    const s = await boot({ playbackRate: 1, config: { timers: { battleTicks: 1200 }, suddenDeath: { startTick: 900, endTick: 1200 } } });
+    const alice = await newPlayer(s.url, 'Alice');
+    const bob = await newPlayer(s.url, 'Bob');
+    const admin = await adminClient(s.url);
+    const wsBob = await WsRecorder.open(s.url, 'player', bob.client.cookieHeader());
+    const wsScreen = await WsRecorder.open(s.url, 'screen');
+    try {
+      await admin.post('/admin/match', { rounds: 1 });
+      const src = renamed('basic_factory.js', 'Basic Factory', 'Sneaky Nest')
+        .replace("this.color = '#C0A060';", "this.color = '#C0A060'; this.produces = 'archer'; this.burst = 3;")
+        .replace("return { action: 'rally', destination: spot };", "return target ? { action: 'command', order: 'swarm', targetId: target.id } : { action: 'command', order: 'defend' };");
+      const facId = await submit(alice.client, src);
+      const card = ((await alice.client.get('/units')).body as Array<{ unitId: string; orders?: string[]; stats: { produces?: string } }>).find((u) => u.unitId === facId)!;
+      expect(card.stats.produces).toBe('archer');
+      expect(card.orders).toEqual(['defend', 'swarm']);
+      await pick(alice.client, [facId, 'basic-soldier']);
+      await pick(bob.client, ['basic-soldier']);
+      await admin.post('/admin/phase/next'); // → PLACEMENT
+      await place(alice.client, [...cells(facId, [[2, 3]]), ...cells('basic-soldier', [[3, 3]])]);
+      await place(bob.client, cells('basic-soldier', [[0, 0]]));
+      await sleep(100);
+      const secret = ['Sneaky Nest', 'sneaky-nest', '"archer"', '"swarm"', '"minions"'];
+      const leaks = (text: string) => secret.filter((w) => text.includes(w));
+      expect(leaks(JSON.stringify({ ...(await state(bob.client)), me: undefined }))).toEqual([]);
+      expect(leaks(JSON.stringify(await state(new Client(s.url))))).toEqual([]);
+      expect(leaks(wsBob.raw.join('\n'))).toEqual([]);
+      expect(leaks(wsScreen.raw.join('\n'))).toEqual([]);
+
+      const reveal = wsScreen.next((m) => m.type === 'battle:reveal');
+      expect((await admin.post('/admin/start', { force: true })).body.phase).toBe('BATTLE');
+      const r = ((await reveal) as { data: BattleRevealDTO }).data;
+      const fac = r.players.find((p) => p.playerId === alice.id)!.units.find((u) => u.unitId === facId)!;
+      expect(fac.stats).toMatchObject({ produces: 'archer', burst: 3 });
+      expect(fac.bodyCost).toBe(53);
+      expect(Object.keys(r.minions!)).toEqual(['archer']);
+      expect(r.minions!.archer).toMatchObject({ value: 35, stats: { name: 'Archer', range: 110 } });
+    } finally {
+      wsBob.close();
+      wsScreen.close();
+    }
+  }, T);
+});
+
 describe('autoPlace with buildings (§9 Auto-place, M8.5)', () => {
   it('never places walls, puts factories last, and fills fighters around a walls-only layout', async () => {
     const { autoPlace } = await import('../packages/server/src/sim/autoPlace.js');

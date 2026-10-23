@@ -101,6 +101,7 @@ export class UnitsService {
       cost: r.unit.cost,
       breakdown: r.unit.breakdown,
       warnings: r.warnings,
+      ...(r.unit.orders ? { orders: r.unit.orders } : {}),
       sha256: d.sha256 ?? '',
       createdAt: 0,
     };
@@ -183,6 +184,7 @@ export class UnitsService {
       status: v.status,
       ...(v.error ? { error: v.error } : {}),
       warnings: v.warnings,
+      ...(v.orders ? { orders: v.orders } : {}),
       isTemplate: d.isTemplate,
       sprite: d.spriteHidden ? null : v.sprite,
       spriteHidden: d.spriteHidden,
@@ -363,6 +365,7 @@ export class UnitsService {
       cost: result.unit.cost,
       breakdown: result.unit.breakdown,
       warnings: result.warnings,
+      ...(result.unit.orders ? { orders: result.unit.orders } : {}),
       sha256: d.sha256 ?? '',
       createdAt: now,
     };

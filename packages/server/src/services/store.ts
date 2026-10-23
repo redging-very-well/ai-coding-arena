@@ -19,6 +19,7 @@ import type {
   GameConfig,
   MapStyle,
   MapZone,
+  MinionOrder,
   Phase,
   PlacementDTO,
   ReplayDTO,
@@ -74,6 +75,8 @@ export interface UnitVersionRecord {
   cost: number;
   breakdown: CostBreakdown;
   warnings: ValidationWarning[];
+  /** M8.6 factories: the squad orders its update() gave in the dry run (§7), for the card. */
+  orders?: MinionOrder[];
   sha256: string;
   createdAt: number;
 }

@@ -21,14 +21,17 @@ import { createHash } from 'node:crypto';
 import {
   STAT_FIELDS,
   SUCCESS_PLAYER_HINT,
+  burstOf,
   checkStats,
   computeCost,
+  expectedMinions,
   playerHintFor,
   playerHintForIssue,
   nearMaxWarnings,
   pricingOf,
   tooExpensiveError,
   type GameConfig,
+  type MinionOrder,
   type StatsSnapshot,
   type ValidationError,
   type ValidationResult,
@@ -203,6 +206,8 @@ async function runSandboxSteps(
   errors.push(...sp.errors);
   warnings.push(...sp.warnings);
 
+  // M8.6: the squad orders a factory's update() gave in the dry run (for its card, §12.5).
+  let orders: MinionOrder[] | undefined;
   // 9-10. Dry-run update() (unless sprite() took the sandbox down). Walls have
   // no code that runs in battle: an update() on one is ignored (§5.2).
   if (stats.type === 'wall') {
@@ -218,6 +223,7 @@ async function runSandboxSteps(
     const dr = await dryRun(session, stats, hasUpdate, ctx);
     errors.push(...dr.errors);
     warnings.push(...dr.warnings);
+    if (stats.type === 'factory') orders = dr.orders;
   }
   // Pricing tips last: they are the least urgent (the player hint uses warnings[0]).
   warnings.push(...nearMaxWarnings(stats, priced, ctx.config.cost, ctx.config.stats.bounds, pricing));
@@ -234,6 +240,7 @@ async function runSandboxSteps(
       cost: priced.cost,
       breakdown: priced.breakdown,
       sprite: sp.sprite,
+      ...(orders ? { orders } : {}),
     },
     warnings,
     playerHint: warnings[0] ? `${SUCCESS_PLAYER_HINT} ${playerHintFor(warnings[0].code)}` : SUCCESS_PLAYER_HINT,
@@ -466,6 +473,8 @@ function exampleFor(field: string): string {
     speed: '1.5',
     attackCooldown: '60',
     productionInterval: '900',
+    produces: "'archer'",
+    burst: '3',
     color: '"#33CC66"',
     size: '10',
     shape: '"circle"',
@@ -485,6 +494,21 @@ function displayValue(v: unknown): unknown {
 
 function statWarnings(stats: StatsSnapshot, config: GameConfig): ValidationWarning[] {
   const out: ValidationWarning[] = [];
+  if (stats.type === 'factory') {
+    // M8.6 (§7 step 10): a burst bigger than the minions it makes never fills up.
+    const made = expectedMinions(stats.productionInterval ?? 0, pricingOf(config));
+    const burst = burstOf(stats);
+    if (burst > 1 && burst > made) {
+      out.push({
+        code: 'W_BURST_NEVER_FULL',
+        field: 'burst',
+        value: burst,
+        allowed: { max: made },
+        message: `This factory makes only ${made} minion${made === 1 ? '' : 's'} per battle, so a burst of ${burst} never fills up: they leave when it runs out.`,
+        fix: `Lower this.burst to ${Math.max(1, made)}, or make minions faster (a smaller this.productionInterval, e.g. 900 makes 5).`,
+      });
+    }
+  }
   // Walls and factories can't attack (§5.2): no damage or cooldown advice for them.
   if (stats.type === 'wall' || stats.type === 'factory') return out;
   if (stats.damage === 0) {

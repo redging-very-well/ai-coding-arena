@@ -7,17 +7,24 @@
 //   C. three enemies far away in the opposite corner (plus an enemy wall and
 //      an enemy minion, M8.5)
 // Factories (M8.5) see `self.factory` filled in and may return rally/hold;
-// walls are never dry-run (no code runs for them).
+// walls are never dry-run (no code runs for them). M8.6 (§5.3): factories may
+// also return command/release; their worlds hold a friendly tower to guard,
+// and the orders they give are recorded for the unit card.
 // update() must not throw or time out, and each return must be a valid Action
 // or undefined. The results also feed the non-fatal warnings.
 
 import {
   ARENA,
   CENTER,
+  MINION_ORDERS,
   UNIT_RADIUS,
+  burstOf,
+  isMinionOrder,
+  producesOf,
   sizeOf,
   zoneCenter,
   type BodyType,
+  type MinionOrder,
   type OtherView,
   type SelfView,
   type StatsSnapshot,
@@ -43,6 +50,8 @@ import { excerptAround } from './normalize.js';
 export interface DryRunResult {
   errors: ValidationError[];
   warnings: ValidationWarning[];
+  /** Factories (M8.6): the squad orders update() gave, in first-seen order (`rally` = attack). */
+  orders?: MinionOrder[];
 }
 
 const TICKS_PER_WORLD = 5;
@@ -82,6 +91,16 @@ function worlds(stats: StatsSnapshot, self: { x: number; y: number; radius: numb
   // Enemy B sits along +x with an edge-to-edge gap of half the range (always in range).
   const gap = stats.range / 2;
   const bx = self.x + self.radius + UNIT_RADIUS.soldier + gap;
+  const list = baseWorlds(stats, self, bx);
+  // M8.6: a factory's worlds also hold a friendly tower, so "guard my tower" code has one to find.
+  if (stats.type === 'factory') {
+    for (const w of list) w.allies.push(other('ally-tower', ME, 'tower', self.x + 60, self.y + 60));
+  }
+  return list;
+}
+
+function baseWorlds(stats: StatsSnapshot, self: { x: number; y: number; radius: number }, bx: number): World[] {
+  void stats;
   return [
     { label: 'no enemies', enemies: [], allies: [other('ally-1', ME, 'soldier', self.x + 40, self.y)], expectAttack: false },
     { label: 'one enemy in range', enemies: [other('enemy-1', ENEMY, 'soldier', bx, self.y)], allies: [], expectAttack: true },
@@ -122,10 +141,40 @@ export function badActionReason(a: unknown): string | undefined {
       return undefined;
     }
     case 'hold':
+    case 'release':
       return undefined;
+    case 'command': {
+      // M8.6 (§5.3): a squad order for a factory's minions.
+      if (!isMinionOrder(o.order)) {
+        return `a command needs order set to one of ${MINION_ORDERS.map((x) => `'${x}'`).join(', ')} (got ${JSON.stringify(o.order) ?? 'nothing'})`;
+      }
+      if ((o.order === 'swarm' || o.order === 'guard') && typeof o.targetId !== 'string') {
+        return o.order === 'swarm'
+          ? 'swarm needs targetId: the id of an ENEMY (a string), e.g. targetId: target.id'
+          : 'guard needs targetId: the id of an ALLY (a string), e.g. targetId: tower.id (or self.id to guard the factory)';
+      }
+      if (o.order === 'attack' && o.destination !== undefined) {
+        const d = o.destination as Record<string, unknown> | null;
+        if (!d || typeof d !== 'object' || typeof d.x !== 'number' || typeof d.y !== 'number' || !Number.isFinite(d.x) || !Number.isFinite(d.y)) {
+          return 'an attack command destination needs finite numbers x and y (or leave destination out)';
+        }
+      }
+      return undefined;
+    }
     default:
-      return `"action" must be "idle", "move", "attack", "rally" or "hold" (got ${JSON.stringify(o.action) ?? 'nothing'})`;
+      return `"action" must be "idle", "move", "attack", "rally", "command", "release" or "hold" (got ${JSON.stringify(o.action) ?? 'nothing'})`;
   }
+}
+
+/** The right shape for a broken factory command (§7 step 9 fix). */
+function commandFix(order: unknown): string {
+  if (order === 'swarm') {
+    return "swarm needs targetId: the id of an ENEMY, e.g. { action: 'command', order: 'swarm', targetId: target.id }. When there is no enemy, return { action: 'command', order: 'attack' } instead.";
+  }
+  if (order === 'guard') {
+    return "guard needs targetId: the id of an ALLY from allies (or self.id), e.g. { action: 'command', order: 'guard', targetId: tower.id }. When there is none, return { action: 'command', order: 'defend' } instead.";
+  }
+  return "Return { action: 'command', order: 'attack' | 'defend' | 'swarm' | 'guard' } (swarm and guard also need targetId), { action: 'rally', destination: { x, y } }, { action: 'release' }, { action: 'hold' } or { action: 'idle' }.";
 }
 
 /** A method definition `update(` (optionally async), or a property `update =` / `update:`. */
@@ -202,6 +251,8 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
   const battleTicks = ctx.config.timers.battleTicks;
   let returnedNothing = false;
   let wrongTypeWarned = false;
+  let orderTargetWarned = false;
+  const orders: MinionOrder[] = [];
   let moved = false;
   let attackedWhenAble = true;
   // W_SLOW: the per-call update() time the harness measures INSIDE the
@@ -260,6 +311,12 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
                 minionsLeft: 5,
                 minionsAlive: 0,
                 maxAlive: ctx.config.factory.maxAlivePerFactory,
+                // M8.6 (§5.3)
+                stored: 0,
+                burst: burstOf(stats),
+                produces: producesOf(stats),
+                order: 'attack',
+                orderTargetId: null,
                 rally: { x: CENTER.x, y: CENTER.y },
               }
             : null,
@@ -363,22 +420,30 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
           allowed: {
             oneOf:
               stats.type === 'factory'
-                ? ["{ action: 'idle' }", "{ action: 'rally', destination: { x, y } }", "{ action: 'hold' }"]
+                ? [
+                    "{ action: 'idle' }",
+                    "{ action: 'rally', destination: { x, y } }",
+                    "{ action: 'command', order: 'attack' | 'defend' | 'swarm' | 'guard', targetId? }",
+                    "{ action: 'release' }",
+                    "{ action: 'hold' }",
+                  ]
                 : ["{ action: 'idle' }", "{ action: 'move', destination: { x, y } }", "{ action: 'attack', targetId }"],
           },
           errorMessage: reason,
           message: `update() returned something that is not a valid action in a practice battle (${world.label}): ${reason}.`,
           fix:
-            stats.type === 'factory'
-              ? "Return exactly one of { action: 'rally', destination: { x: number, y: number } } (where the minions go), { action: 'hold' } (pause building) or { action: 'idle' }."
-              : "Return exactly one of { action: 'idle' }, { action: 'move', destination: { x: number, y: number } } or { action: 'attack', targetId: enemy.id }.",
+            rawKind === 'command'
+              ? commandFix((entry.action as { order?: unknown }).order)
+              : stats.type === 'factory'
+                ? "Return exactly one of { action: 'rally', destination: { x: number, y: number } } (where the minions go), { action: 'command', order: 'attack' | 'defend' | 'swarm' | 'guard', targetId? }, { action: 'release' }, { action: 'hold' } (pause building) or { action: 'idle' }."
+                : "Return exactly one of { action: 'idle' }, { action: 'move', destination: { x: number, y: number } } or { action: 'attack', targetId: enemy.id }.",
         });
         return { errors, warnings };
       }
       const action = entry.action as { action?: string } | undefined;
       // §5.2: rally/hold are factory actions; move/attack are not (the engine idles, no strike).
       const kind = action?.action;
-      const factoryAction = kind === 'rally' || kind === 'hold';
+      const factoryAction = kind === 'rally' || kind === 'hold' || kind === 'command' || kind === 'release';
       if (!wrongTypeWarned && ((stats.type === 'factory' && (kind === 'move' || kind === 'attack')) || (stats.type !== 'factory' && factoryAction))) {
         wrongTypeWarned = true;
         warnings.push({
@@ -388,9 +453,31 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
           message: `update() returned { action: '${kind}' }, which a ${stats.type} can't do, so it waits instead.`,
           fix:
             stats.type === 'factory'
-              ? "A factory can only return { action: 'rally', destination: { x, y } } (where its minions go), { action: 'hold' } or { action: 'idle' }."
-              : "Only factories rally or hold. Soldiers return move/attack/idle; towers attack/idle.",
+              ? "A factory can only return { action: 'rally', destination: { x, y } } (where its minions go), { action: 'command', order, targetId? }, { action: 'release' }, { action: 'hold' } or { action: 'idle' }."
+              : "Only factories rally, command, release or hold. Soldiers return move/attack/idle; towers attack/idle.",
         });
+      }
+      if (stats.type === 'factory' && (kind === 'rally' || kind === 'command')) {
+        const cmd = entry.action as { order?: MinionOrder; targetId?: string };
+        const order: MinionOrder = kind === 'rally' ? 'attack' : cmd.order!;
+        if (!orders.includes(order)) orders.push(order);
+        // A swarm needs an enemy, a guard an ally (or the factory itself): else the engine falls back.
+        const wrongSide =
+          (order === 'swarm' && !world.enemies.some((e) => e.id === cmd.targetId)) ||
+          (order === 'guard' && cmd.targetId !== self.id && !input.allies.some((a) => a.id === cmd.targetId));
+        if (wrongSide && !orderTargetWarned) {
+          orderTargetWarned = true;
+          warnings.push({
+            code: 'W_ORDER_TARGET',
+            field: 'update',
+            value: preview(entry.action),
+            message:
+              order === 'swarm'
+                ? `update() told the minions to swarm "${cmd.targetId}", which is not an enemy in that practice battle (${world.label}), so they would just attack instead.`
+                : `update() told the minions to guard "${cmd.targetId}", which is not an ally in that practice battle (${world.label}), so they would just defend the factory instead.`,
+            fix: 'swarm targets must come from `enemies` (e.g. targetId: enemies[i].id), guard targets from `allies` or self.id. Check the list is not empty first.',
+          });
+        }
       }
       if (action === undefined) returnedNothing = true;
       if (action?.action === 'move') moved = true;
@@ -434,5 +521,5 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
       fix: 'Make update() cheaper: avoid nested loops and big temporary arrays.',
     });
   }
-  return { errors, warnings };
+  return { errors, warnings, ...(stats.type === 'factory' ? { orders } : {}) };
 }

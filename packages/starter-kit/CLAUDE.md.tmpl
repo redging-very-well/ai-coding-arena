@@ -50,6 +50,8 @@ A unit file has **one default-exported class**. The constructor sets the stats a
 ```ts
 export type UnitType = 'soldier' | 'tower' | 'wall' | 'factory';   // §5.2
 export type BodyType = UnitType | 'minion'; // minions are made by factories: you see them, you never submit one
+export type MinionKind = 'grunt' | 'archer' | 'runner' | 'brute';  // what a factory builds (§5.3)
+export type MinionOrder = 'attack' | 'defend' | 'swarm' | 'guard'; // what a factory's minions do (§5.3)
 export type MapStyle = 'duel' | 'triangle' | 'corners' | 'ring' | 'lanes' | 'islands'; // §9.2
 export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 
@@ -63,6 +65,8 @@ export interface UnitStats {
   speed?: number;        // soldier: required, 0.5-5 px per tick (60 ticks = 1 s). tower/wall/factory: 0 or leave it out
   attackCooldown?: number;// soldier/tower: required, integer ticks between attacks. wall/factory: leave it out
   productionInterval?: number; // factory only, required: integer ticks between two minions, 600-1800 (10-30 s)
+  produces?: MinionKind; // factory only, optional (default 'grunt'): the minion it builds; the price follows (§6)
+  burst?: number;        // factory only, optional (default 1): integer 1-4; minions wait inside until this many are ready, then leave together
   color: string;         // "#RRGGBB": projectiles, particles, fallback sprite; a wall's block colour; a factory's minion colour
   size?: number;         // soldier/tower: body radius in px = hitbox AND drawn size, 6-20 (default 10 / 14), $0.5 per px above 6. Walls always fill their 40 px cell, factories are always 18: size is ignored for them.
   shape?: Shape;         // optional; only used by the fallback sprite when sprite() is missing
@@ -86,8 +90,13 @@ export interface FactoryView {
   productionInterval: number;
   nextMinionIn: number;  // ticks until the next minion (it waits while you hold, or while the factory is full)
   minionsLeft: number;   // minions this factory can still make this battle
-  minionsAlive: number; maxAlive: number;
-  rally: { x: number; y: number }; // where its minions go; starts at world.center
+  minionsAlive: number; maxAlive: number; // minionsAlive = out on the field; maxAlive caps minionsAlive + stored
+  stored: number;        // built minions waiting inside: safe from attacks, but LOST if the factory is destroyed
+  burst: number;         // stored minions leave together when stored reaches burst (or on { action: 'release' })
+  produces: MinionKind;
+  order: MinionOrder;    // starts 'attack'; a swarm whose target died becomes 'attack', a guard whose ally died 'defend'
+  orderTargetId: string | null; // swarm: the enemy, guard: the ally, else null
+  rally: { x: number; y: number }; // where 'attack' minions go; starts at world.center
 }
 export interface SelfView {
   id: string;            // instanceId of this copy, e.g. "2-0-3"
@@ -106,6 +115,7 @@ export interface OtherView {
 }
 // A wall has radius 20: for range it counts as a circle of radius 20 (so inRange works unchanged),
 // but its body blocks the whole 40×40 square. Walls and factories have range 0.
+// A minion's name is its kind: 'Grunt', 'Archer', 'Runner' or 'Brute'. Stored minions are invisible.
 export interface WorldView {
   width: number; height: number;        // arena size this battle: 800 (2-4 players), 1040 (5-6), 1200 (7-8), §9.2
   tick: number; ticksLeft: number;
@@ -123,7 +133,9 @@ export type Action =
   | { action: 'idle' }
   | { action: 'move'; destination: { x: number; y: number } }   // soldiers
   | { action: 'attack'; targetId: string }                     // soldiers and towers
-  | { action: 'rally'; destination: { x: number; y: number } }  // factories: send my minions here
+  | { action: 'rally'; destination: { x: number; y: number } }  // factories: order 'attack' and send my minions here
+  | { action: 'command'; order: MinionOrder; targetId?: string; destination?: { x: number; y: number } } // factories: squad order; swarm/guard need targetId
+  | { action: 'release' }                                       // factories: send the stored minions out now
   | { action: 'hold' };                                         // factories: don't build this tick
 
 export interface Unit extends UnitStats {
@@ -258,7 +270,7 @@ export default class Knight {
 | **soldier** | unit | moves and fights | name, type, maxHealth (10-500), damage, range, speed (0.5-5), attackCooldown, color | required |
 | **tower** | building | stays put and shoots | the same, with `speed = 0` | required |
 | **wall** | building | a big solid block that stops everyone; can't attack | name, type, maxHealth (**50-1500**), color. Leave out damage, range, speed, attackCooldown, size | **none** (one is ignored) |
-| **factory** | building | stays put and builds **minions**; can't attack | name, type, maxHealth (**100-1000**), **productionInterval** (whole ticks between minions, **600-1800**), color. Leave out damage, range, speed, attackCooldown, size | required: says where the minions go |
+| **factory** | building | stays put and builds **minions**; can't attack | name, type, maxHealth (**100-1000**), **productionInterval** (whole ticks between minions, **600-1800**), color; optional **produces** (minion kind) and **burst** (1-4). Leave out damage, range, speed, attackCooldown, size | required: gives the minions their orders |
 
 - **Walls** fill their whole 40 × 40 px cell (for range they count as a circle of radius 20). They block **every** body: enemies, your own units and your teammates' units. A wall's `color` is its block colour, and its `sprite()` textures the block's sides (see `units/basic_wall.js`).
 - **Factories** are a circle of radius 18. Every `productionInterval` ticks a factory builds one **Minion** (40 HP, 5 damage, melee, speed 1.5, size 8), at most 4 alive per factory. Minions have built-in brains (you never write their code): they chase enemies near them or near the rally point, otherwise they walk to the rally point. An enemy wall that blocks them for 2 s gets smashed, so minions can break into a walled-in enemy. The factory's `update()` returns `{ action: 'rally', destination: { x, y } }` to move the rally point (it starts at `world.center` and stays until changed) or `{ action: 'hold' }` to pause building for a tick. `self.factory` shows `nextMinionIn`, `minionsLeft`, `minionsAlive`, `maxAlive` and `rally`. The factory's `color` is also its minions' colour. See `units/basic_factory.js`. Destroying a factory stops it; its minions keep going. A factory that holds too long (or is walled in so no minion can get out) stops counting as a fighter once it no longer has time to build one.
@@ -273,6 +285,89 @@ Tips:
 - **Minions** show up in `enemies` as `type: 'minion'`: weak (40 HP) but many.
 - **Shots fly over walls**, so towers behind walls still shoot. Walls are great for funnelling enemies past your towers.
 - **Factories pay off over time:** their minions arrive during the battle, so a factory is a slow start and a strong finish. Rally minions at the nearest enemy to attack, or just in front of your towers to defend.
+
+### Factories: minion kinds, orders and burst
+
+**Minion kinds: `this.produces`** (optional, default `'grunt'`). The factory builds one kind; the price follows (section 5).
+
+| `produces` | Name in `enemies` | HP | Damage | Range | Speed | Size | Price per minion | Good for |
+|---|---|---|---|---|---|---|---|---|
+| `'grunt'` (default) | Grunt | 40 | 5 | 20 (melee) | 1.5 | 8 | $28 | a cheap, steady stream |
+| `'archer'` | Archer | 24 | 5 | **110** (shoots) | 1.2 | 7 | $35 | shooting from behind walls, towers or soldiers |
+| `'runner'` | Runner | 28 | 4 | 20 (melee) | **2.6** | 6 | $38 | reaching far targets first |
+| `'brute'` | Brute | **110** | 8 (**×3 on walls**) | 20 (melee) | 0.9 | 11 | $36 | smashing walls, soaking hits |
+
+Archers' shots fly over walls. Brutes hit walls three times as hard and start smashing a wall that blocks them after 0.5 s (other kinds wait 2 s). Any other value for `produces` is an error (use exactly one of the four words, in quotes).
+
+**Squad orders: `{ action: 'command', order, targetId? }`.** The order goes to all the factory's minions, is kept until changed, and starts as `'attack'`:
+
+| Return | The minions… |
+|---|---|
+| `{ action: 'command', order: 'attack' }` | hunt the nearest enemies near them or near the rally point (the default). `{ action: 'rally', destination: { x, y } }` is also attack, with a new rally point |
+| `{ action: 'command', order: 'defend' }` | stay near the factory and fight anything that comes within 160 px of it |
+| `{ action: 'command', order: 'swarm', targetId: enemy.id }` | **all** go for that one enemy (walls too), wherever it is. When it dies the order becomes `'attack'` |
+| `{ action: 'command', order: 'guard', targetId: ally.id }` | stay next to that ally (from `allies`, or `self.id` for the factory) and fight enemies within 120 px of it. When it dies the order becomes `'defend'` |
+
+`swarm` needs the id of an **enemy** and `guard` the id of an **ally**; both need a `targetId`, so when there is no target return `{ action: 'command', order: 'attack' }` (or `'defend'`). `self.factory.order` and `self.factory.orderTargetId` show the current order, so you can see when a swarm target died.
+
+**Burst: `this.burst`** (optional, whole number 1-4, default 1). With burst 4 the first 3 minions wait **inside** the factory (`self.factory.stored` counts them) and all 4 leave together when the 4th is ready. Burst 1 sends each minion out as soon as it is made.
+- Stored minions can't be hit, but they are **lost if the factory is destroyed**.
+- They count toward the alive limits (4 per factory, minionsAlive + stored), so burst 4 needs the factory to have no minions out.
+- `{ action: 'release' }` sends the stored minions out at once. They also leave on their own when the factory can't store more (the limits are full, or it has no minions or time left).
+- Burst is free: it never changes the price. A burst of 4 needs at least 4 minions per battle (`productionInterval` 1200 or less).
+
+Examples (put the constructor lines next to the template's stats):
+
+```js
+// Archers that guard the nearest of my towers (or stay home without one).
+// constructor: this.produces = 'archer';
+update(self, enemies, allies, world) {
+  let tower = null;
+  let best = Infinity;
+  for (const a of allies) {
+    if (a.type !== 'tower') continue;
+    const d = Math.hypot(a.x - self.x, a.y - self.y);
+    if (d < best) { best = d; tower = a; }
+  }
+  if (tower) return { action: 'command', order: 'guard', targetId: tower.id };
+  return { action: 'command', order: 'defend' };
+}
+```
+
+```js
+// Runners that save up 4 and then rush the weakest enemy together.
+// constructor: this.produces = 'runner'; this.burst = 4; this.productionInterval = 600;
+update(self, enemies, allies, world) {
+  let weakest = null;
+  for (const e of enemies) {
+    if (e.type === 'wall') continue;
+    if (!weakest || e.hp < weakest.hp) weakest = e;
+  }
+  if (weakest) return { action: 'command', order: 'swarm', targetId: weakest.id };
+  return { action: 'command', order: 'attack' };
+}
+```
+
+```js
+// Brutes that smash the nearest enemy wall, then hunt.
+// constructor: this.produces = 'brute';
+update(self, enemies, allies, world) {
+  let wall = null;
+  let best = Infinity;
+  for (const e of enemies) {
+    if (e.type !== 'wall') continue;
+    const d = Math.hypot(e.x - self.x, e.y - self.y);
+    if (d < best) { best = d; wall = e; }
+  }
+  if (wall) return { action: 'command', order: 'swarm', targetId: wall.id };
+  return { action: 'command', order: 'attack' };
+}
+```
+
+Factory tips:
+- Pick the kind for the job: archers behind walls or towers, runners to swarm far targets, brutes against walls, grunts when money is tight.
+- A burst factory is a juicy target (its stored minions die with it): keep it at the back of your zone or behind walls, or release early when it is hurt (`self.hp < self.maxHp / 2`).
+- Two burst-4 factories share the per-player limit (6 alive, fewer with 7-8 players), so the second one may send out fewer at once. That's fine.
 
 ## 5. Cost
 
@@ -309,12 +404,13 @@ Worked examples:
 wall:    cost = 4 + maxHealth × 0.06 × (1 + 2 × (maxHealth / 1500)²)
 factory: cost = body + production
          body       = 10 + maxHealth × 0.12 × (1 + 2 × (maxHealth / 1000)²)   (rounded up)
-         production = minions per battle × $28   (half the $55 price of a minion: they arrive late)
+         production = minions per battle × price per minion   (grunt $28: half the $55 price of a minion, they arrive late; other kinds below)
          minions per battle = min(8, floor(5399 / productionInterval))
 ```
 
 - **Basic Wall** (maxHealth 400): 4 + 24 × 1.1422 = 31.41 → **$32**. A 1000-HP castle wall costs $118; a maxed 1500-HP wall $274.
 - **Basic Factory** (maxHealth 300, productionInterval 900): body 10 + 42.48 = 52.48 → $53, plus 5 minions × $28 = $140 → **$193**. With productionInterval 600 it builds 8 minions: $53 + $224 = **$277**.
+- **The minion kind sets the price per minion** (`produces`, 4c): grunt $28 (half of $55), archer $35 (half of $69), runner $38 (half of $76), brute $36 (half of $72), each half the price of that minion priced as a soldier. Same factory (maxHealth 300, productionInterval 900, 5 minions): grunts **$193**, archers $53 + $175 = **$228**, runners $53 + $190 = **$243**, brutes $53 + $180 = **$233**. With productionInterval 600 (8 minions): archers **$333**, runners **$357**, brutes **$341**. `burst` never changes the price.
 
 Tips:
 - **Maxing a stat costs 3×: spread your stats.** A stat at its max costs 3 times its normal price, and one at half its max costs 1.5 times. Two medium units are cheaper than one giant one, and usually win. If a stat is at 80% of its max or more, `validate_unit` gives the tip `W_STAT_NEAR_MAX`.
@@ -345,7 +441,7 @@ Every round, each player scores **place points + damage bonus + value bonus**:
 - The match winner has the most points after all rounds; equal points are decided by total damage. In team mode there is also a team table (the average of the members' points).
 
 **Strategy tip:** the bonuses are worth about as much as 1st place, so **aggressive units score damage points even if they don't survive**. An army that hits hard and comes 2nd can beat a turtle that hides and survives. A good mix is a few hard hitters to rack up damage plus something tough to stay standing. The exact numbers are in `get_rules` (`scoring`).
-- There is no healing, no shields and no special powers: soldiers move and attack, towers attack, walls block and factories build minions. If the player asks for something like that, explain it kindly and suggest the closest thing that works (e.g. a tough tank instead of a healer).
+- There is no healing, no shields and no special powers: soldiers move and attack, towers attack, walls block and factories build minions (grunts, archers, runners or brutes) and give them orders. If the player asks for something like that, explain it kindly and suggest the closest thing that works (e.g. a tough tank instead of a healer).
 
 ## 7. After a battle
 

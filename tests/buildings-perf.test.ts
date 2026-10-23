@@ -114,3 +114,112 @@ describe('buildings worst case (M8.5 timing)', () => {
     expect(p99).toBeLessThan(8);
   }, 180_000);
 });
+
+/**
+ * M8.6 (§9.3 Performance): the same worst case with the minion kinds, every
+ * squad order and bursts. Each player's two factories build two kinds
+ * (archer + runner, brute + grunt, …) with bursts 2-4, and their update()
+ * switches between swarm (the weakest enemy), guard (a soldier), defend and
+ * attack, releasing early when hurt. Archers add projectiles.
+ */
+const kindFactory = (name: string, kind: string, burst: number) => `
+export default class KindFactory {
+  constructor() {
+    this.name = '${name}';
+    this.type = 'factory';
+    this.maxHealth = 300;
+    this.productionInterval = 600;
+    this.produces = '${kind}';
+    this.burst = ${burst};
+    this.color = '#C0A060';
+  }
+  update(self, enemies, allies, world) {
+    if (self.factory.stored > 0 && self.hp < self.maxHp / 2) return { action: 'release' };
+    let weakest = null;
+    let near = null;
+    let best = Infinity;
+    for (const e of enemies) {
+      if (e.type === 'wall') continue;
+      if (!weakest || e.hp < weakest.hp) weakest = e;
+      const d = Math.hypot(e.x - self.x, e.y - self.y);
+      if (d < best) { best = d; near = e; }
+    }
+    const phase = Math.floor(world.tick / 300) % 4;
+    if (phase === 0 && weakest) return { action: 'command', order: 'swarm', targetId: weakest.id };
+    if (phase === 1) {
+      const buddy = allies.find((a) => a.type === 'soldier');
+      if (buddy) return { action: 'command', order: 'guard', targetId: buddy.id };
+    }
+    if (phase === 2) return { action: 'command', order: 'defend' };
+    return { action: 'rally', destination: near ? { x: near.x, y: near.y } : world.center };
+  }
+}`;
+
+describe('buildings worst case with minion kinds, orders and bursts (M8.6 timing)', () => {
+  it('8p × (10 soldiers + 2 kind factories + 12 walls) on Ring 8: sim p99 < 8 ms/tick', async () => {
+    const config: GameConfig = deepMerge(DEFAULT_CONFIG, { timers: { battleTicks: TICKS } });
+    const pairs = [
+      ['archer', 'runner'],
+      ['brute', 'grunt'],
+      ['runner', 'brute'],
+      ['grunt', 'archer'],
+    ] as const;
+    const designsFor = async (seat: number) => {
+      const [a, b] = pairs[seat % pairs.length]!;
+      return Promise.all([
+        submit(SOLDIER_SRC, config, 's'),
+        submit(kindFactory(`${a} works`, a, 2 + (seat % 3)), config, 'f'),
+        submit(kindFactory(`${b} works`, b, 4 - (seat % 3)), config, 'g'),
+        submit(WALL_SRC, config, 'w'),
+      ]);
+    };
+    const { layout, specs } = worstCaseSpecs();
+    const perSeat = await Promise.all(specs.map((s) => designsFor(s.seat)));
+    const runners = await createBattleRunners(
+      ivm,
+      specs.map((s, i) => ({ playerId: s.playerId, seat: s.seat, units: perSeat[i]!.map((d) => d.runner) })),
+      config,
+      43,
+    );
+    for (const r of runners.values()) expect([...r.loadErrors]).toEqual([]);
+    const placements = () => {
+      const p = worstCasePlacements();
+      const second = p.findLastIndex((x) => x.unitId === 'f');
+      p[second] = { ...p[second]!, unitId: 'g' };
+      return p;
+    };
+    const engine = new BattleEngine({
+      players: specs.map((s, i) => ({
+        playerId: s.playerId,
+        seat: s.seat,
+        zone: s.zone,
+        units: perSeat[i]!.map((d) => d.battle),
+        placements: placements(),
+        runner: runners.get(s.playerId)!,
+      })),
+      config,
+      seed: 43,
+      map: { style: layout.style, width: layout.width },
+    });
+    const t0 = performance.now();
+    const result = await engine.run();
+    const wallMs = performance.now() - t0;
+    const tickMs = engine.tickMs;
+    const p50 = percentile(tickMs, 50);
+    const p99 = percentile(tickMs, 99);
+    const minions = Math.max(...engine.frames.map((f) => f.units.filter((u) => u[0].includes('-m')).length));
+    const shots = Math.max(...engine.frames.map((f) => f.projectiles.length));
+    const kinds = new Set(engine.frames.flatMap((f) => f.events.flatMap((e) => (e.type === 'spawn' && e.kind ? [e.kind] : []))));
+    const releases = engine.frames.flatMap((f) => f.events.filter((e) => e.type === 'release')).length;
+    console.log(
+      `[buildings-perf kinds] ${result.units.length} bodies (${minions} minions max at once, ${shots} shots max, ${releases} bursts, kinds ${[...kinds].join('/')}), ` +
+        `${result.endTick} ticks (${result.endReason}) in ${wallMs.toFixed(0)} ms; tick p50 ${p50.toFixed(3)} ms, p99 ${p99.toFixed(3)} ms, max ${Math.max(...tickMs).toFixed(2)} ms`,
+    );
+    expect(kinds).toEqual(new Set(['grunt', 'archer', 'runner', 'brute']));
+    expect(releases).toBeGreaterThan(0);
+    for (const p of result.players) expect(p.disabled, `${p.playerId} ${p.disabledReason}`).toBe(false);
+    expect(minions).toBeLessThanOrEqual(DEFAULT_CONFIG.factory.maxAlivePerBattle);
+    // §9.3 Performance: target unchanged, sim p99 < 8 ms/tick.
+    expect(p99).toBeLessThan(8);
+  }, 180_000);
+});

@@ -29,7 +29,7 @@ export const MCP_INSTRUCTIONS = [
   'If you have no apiKey (see .pixel-clash/player.json), ask the player for their name and 4-digit PIN and call login.',
   'Save {name, apiKey} from login to .pixel-clash/player.json and pass apiKey on every pixel-clash tool call.',
   'Call get_unit_contract once to learn the unit format, and get_rules for costs and limits.',
-  'Four unit types: soldier, tower, wall, factory (see get_unit_contract). Walls block everyone and never attack; factories build minions and their update() only rallies them. A player needs at least one soldier, tower or factory: walls alone never win.',
+  'Four unit types: soldier, tower, wall, factory (see get_unit_contract). Walls block everyone and never attack; factories build minions (grunt, archer, runner or brute via this.produces) and their update() gives them orders (rally, or command attack/defend/swarm/guard) and can save them up for a burst (this.burst, release). A player needs at least one soldier, tower or factory: walls alone never win.',
   'Always validate_unit before submit_unit, and fix problems using each error\'s "fix" text. validate_unit checks everything (sprite rows included), so never run scripts or shell commands to check a unit file.',
   'submit_unit works only in the PLAN phase (get_game_state shows submissionsOpen). Otherwise keep the unit validated and say "we\'ll send it when Plan starts".',
   'Players can also edit their own units on the web page. So before changing an existing unit ALWAYS call get_unit_source for its latest source and version, change that code, and pass unitId plus baseVersion (that version) to validate_unit and submit_unit, even if you rename it.',
@@ -177,7 +177,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Game rules',
       description:
-        'Phases, timers, budget, caps (4 unit + 4 building types, fighter / factory / wall copies), the cost formula and coefficients for soldier, tower, wall and factory, stat bounds per type, the factory minion, scoring (place points + damage bonus + value-destroyed bonus, badges, match standings), map styles and arena sizes by player count, team modes and team rules, and sudden death.',
+        'Phases, timers, budget, caps (4 unit + 4 building types, fighter / factory / wall copies), the cost formula and coefficients for soldier, tower, wall and factory, stat bounds per type, the factory minion kinds (stats and prices), squad orders and burst, scoring (place points + damage bonus + value-destroyed bonus, badges, match standings), map styles and arena sizes by player count, team modes and team rules, and sudden death.',
       inputSchema: {},
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },

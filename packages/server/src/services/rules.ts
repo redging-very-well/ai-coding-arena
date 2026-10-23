@@ -11,6 +11,8 @@ import {
   MAP_STYLES,
   MAP_STYLE_INFO,
   MAX_PLAYERS,
+  MINION_KINDS,
+  MINION_KIND_NAMES,
   MIN_PLAYERS,
   PHASES,
   TEAM_MODES,
@@ -119,8 +121,13 @@ export function unitTypeRules(config: GameConfig): Record<string, unknown> {
         group: 'building',
         moves: false,
         attacks: false,
-        update: "required: return { action: 'rally', destination } (where its minions go, default world.center), { action: 'hold' } (pause building this tick) or { action: 'idle' }",
+        update:
+          "required: return { action: 'rally', destination } (attack + where its minions go, default world.center), { action: 'command', order: 'attack' | 'defend' | 'swarm' | 'guard', targetId? } (a squad order; swarm needs an enemy id, guard an ally id), { action: 'release' } (send stored minions out now), { action: 'hold' } (pause building this tick) or { action: 'idle' }",
         needs: ['name', 'type', 'maxHealth', 'productionInterval', 'color'],
+        optional: {
+          produces: `one of ${MINION_KINDS.map((k) => `'${k}'`).join(', ')} (default 'grunt'): the minion it builds; the price follows`,
+          burst: `whole number ${b.burst.min}-${b.burst.max} (default 1): minions saved up inside, then sent out together; free`,
+        },
         maxHealth: b.factoryHealth,
         productionInterval: { ...iv, integer: true, unit: 'ticks between two minions' },
         body: `a circle of radius ${FACTORY_RADIUS}`,
@@ -140,9 +147,28 @@ export function unitTypeRules(config: GameConfig): Record<string, unknown> {
     factories: {
       text: `A factory builds one minion every productionInterval ticks, at most ${f.maxAlivePerFactory} alive per factory and ${f.maxAlivePerPlayer} per player (fewer with 7-8 players), up to ${f.maxMinionsPerFactory} per battle. Destroying a factory stops it; its minions keep going.`,
       minionsPerBattle: Object.fromEntries(examples.map((v) => [v, expectedMinions(v, pricing)])),
-      minion: { ...f.minion, type: 'minion', name: 'Minion', note: 'built-in AI: chases enemies near it or near the rally point, otherwise walks to the rally point; you never write minion code' },
+      minion: { ...f.minions.grunt, type: 'minion', name: MINION_KIND_NAMES.grunt, note: 'the grunt (the default kind). Built-in AI: chases enemies near it or near the rally point, otherwise walks to the rally point; you never write minion code' },
       minionCost,
       minionValue,
+      // M8.6 (§5.3): the four kinds a factory can build (this.produces).
+      minionKinds: Object.fromEntries(
+        MINION_KINDS.map((k) => {
+          const price = minionPrice(c, pricing, k);
+          return [k, { ...f.minions[k], name: MINION_KIND_NAMES[k], role: KIND_ROLES[k], minionCost: price.minionCost, minionValue: price.minionValue }];
+        }),
+      ),
+      orders: {
+        text: "A factory gives all its minions one order with { action: 'command', order, targetId? }. It is kept until changed and starts as 'attack'. { action: 'rally', destination } = attack with a new rally point.",
+        attack: `default: hunt the nearest enemy (not a wall) within their aggro range or ${f.rallyGuardRadius} px of the rally point, else wait at the rally point`,
+        defend: `stay home: fight enemies within ${f.defendRadius} px of the factory, else wait next to it`,
+        swarm: "{ order: 'swarm', targetId: enemy.id }: every minion goes for that one enemy (walls too), wherever it is; when it dies the order becomes 'attack'",
+        guard: `{ order: 'guard', targetId: ally.id }: stay next to that ally (or self.id = the factory) and fight enemies within ${f.guardRadius} px of it; when it dies the order becomes 'defend'`,
+      },
+      burst: {
+        ...b.burst,
+        default: 1,
+        text: "this.burst = N: the first N-1 minions wait INSIDE the factory (self.factory.stored; they can't be hit) and leave together with the N-th. { action: 'release' } sends them out early, and they leave on their own when the factory can't store more. Stored minions are LOST if the factory is destroyed. They count toward the alive caps. Burst never changes the price.",
+      },
     },
     fighters:
       'Fighters are soldiers, towers, minions and factories that can still build. Walls are NOT fighters: Ready needs at least one fighter (NO_FIGHTERS), and a side with no fighters left is out (its walls crumble).',
@@ -171,7 +197,7 @@ export function buildRules(config: GameConfig, armoryEnabled = false, match?: Ma
       'raw = (c.base + sum of the terms) * max(1, c.referenceCooldown / attackCooldown); cost = ceil(raw), where c = coefficients and size defaults to bounds.defaultSize[type]. ' +
       curveSentence(config.cost.curveK) +
       ' Walls: cost = ceil(c.wall.base + maxHealth*c.wall.hp*(1 + c.curveK*(maxHealth/1500)^2)). ' +
-      'Factories: cost = ceil(c.factory.base + maxHealth*c.factory.hp*(1 + c.curveK*(maxHealth/1000)^2)) + minionValue * E, where E = the minions it can build in one battle (unitTypes.factories.minionsPerBattle) and minionValue = half the price of a minion priced as a soldier (unitTypes.factories.minionValue).',
+      'Factories: cost = ceil(c.factory.base + maxHealth*c.factory.hp*(1 + c.curveK*(maxHealth/1000)^2)) + minionValue * E, where E = the minions it can build in one battle (unitTypes.factories.minionsPerBattle) and minionValue = half the price of its minion kind priced as a soldier (unitTypes.factories.minionKinds[produces].minionValue: grunt is the default). burst never changes the price.',
     coefficients: { ...config.cost },
     bounds: {
       ...config.stats.bounds,
@@ -274,9 +300,9 @@ export const ENGINE_RULES = [
   '1. Stats are snapshotted at validation. Changing this.damage inside update() has no effect.',
   '2. Extra fields on `this` persist between ticks for that copy. Module-level variables are shared by all your copies of the same type.',
   '3. update() is called once per tick (60 ticks = 1 s) with fresh plain copies. Mutating the inputs does nothing.',
-  "4. The returned action is a request: attack needs a living enemy within range (EDGE to edge, +0.5 px) and cooldownRemaining = 0, else the unit idles. move: soldiers only, at most `speed` px per tick, clamped to the arena; a wall in the way is slid along. rally {destination} and hold: factories only (rally sets where its minions go and is kept until changed; hold pauses building for the tick). An action the type can't do is an idle. Anything else (or a throw) means idle; throws count strikes and 30 strikes disable the unit for the battle.",
+  "4. The returned action is a request: attack needs a living enemy within range (EDGE to edge, +0.5 px) and cooldownRemaining = 0, else the unit idles. move: soldiers only, at most `speed` px per tick, clamped to the arena; a wall in the way is slid along. rally {destination}, command {order, targetId?}, release and hold: factories only (rally = order 'attack' + where its minions go; command gives the squad order attack/defend/swarm/guard, kept until changed; release sends the stored minions out; hold pauses building for the tick). An action the type can't do is an idle. Anything else (or a throw) means idle; throws count strikes and 30 strikes disable the unit for the battle.",
   '5. No import, require, network, timers or async. They do not exist in the sandbox.',
-  '6. Four types: soldier (moves, fights), tower (stays, shoots), wall (a 40x40 block with no update() that blocks everyone; enemies can break it), factory (stays and builds minions; its update() only rallies or holds). Minions are engine-made fighters (type "minion" in enemies/allies): you never write their code.',
+  '6. Four types: soldier (moves, fights), tower (stays, shoots), wall (a 40x40 block with no update() that blocks everyone; enemies can break it), factory (stays and builds minions: grunts, archers, runners or brutes; its update() gives them orders). Minions are engine-made fighters (type "minion" in enemies/allies, named after their kind): you never write their code.',
 ];
 
 /** The costFormula sentence on the curve, built from curveK (k = 0 is linear: no "spread" claim). */
@@ -328,7 +354,18 @@ export const STRATEGY_TIPS = [
   "Skip enemies with type 'wall' when picking targets, unless one blocks you: if self.blockedBy is an enemy wall (still in enemies) and self.blockedTicks is high (120 = 2 s), smash it.",
   "Minions show up in enemies as type 'minion': weak (40 HP) but many. Shots fly over walls, so towers behind walls still shoot.",
   'A factory pays up front for its minions: productionInterval 600 makes 8 per battle, 900 makes 5, 1800 makes 2, and the price follows. Rally them at the nearest enemy to attack, or in front of your towers to defend.',
+  "Pick this.produces for the job: 'archer' (shoots from 110 px, fragile) behind walls or towers, 'runner' (fast) to swarm far targets, 'brute' (tough, 3x damage to walls) to smash walls, 'grunt' (default, cheapest) for a steady stream.",
+  "Squad orders: { action: 'command', order: 'swarm', targetId: enemy.id } sends every minion at one enemy; 'guard' with an ally's id keeps them next to it; 'defend' keeps them home; 'attack' (default) hunts. swarm and guard need a targetId: with no target return { action: 'command', order: 'attack' }.",
+  'this.burst = 4 saves minions inside the factory and sends them out together (a surprise rush), but stored minions die with the factory: keep it safe, or release early with { action: \'release\' }.',
 ];
+
+/** One line per minion kind (get_rules). */
+const KIND_ROLES = {
+  grunt: 'the default: cheap all-rounder, melee',
+  archer: 'ranged (110 px, shots fly over walls), fragile: put it behind walls or soldiers',
+  runner: 'very fast and small, weak: reaches far targets first (great with swarm)',
+  brute: 'slow and tough, hits walls 3x as hard and smashes a blocking wall after 0.5 s',
+} as const;
 
 export function buildContract(config: GameConfig = DEFAULT_CONFIG): ContractDTO {
   return {
