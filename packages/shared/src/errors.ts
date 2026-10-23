@@ -5,7 +5,7 @@
 // `ValidationIssue`; every service failure is a `ServiceError` (§10.1).
 
 import type { CostBreakdown } from './cost.js';
-import type { SpriteSpec, StatsSnapshot } from './contract.js';
+import type { MinionOrder, SpriteSpec, StatsSnapshot } from './contract.js';
 
 /** §7 validation pipeline failure codes, in pipeline order. */
 export const VALIDATION_ERROR_CODES = [
@@ -37,6 +37,8 @@ export const VALIDATION_ERROR_CODES = [
   'BUILDING_CANNOT_ATTACK',
   'BUILDING_CANNOT_MOVE',
   'INTERVAL_NOT_INTEGER',
+  // M8.6 minion kinds, orders and burst (§5.3)
+  'BURST_NOT_INTEGER',
   // 7 determinism
   'STATS_NOT_STABLE',
   // 8 cost
@@ -72,6 +74,9 @@ export const WARNING_CODES = [
   'W_UPDATE_IGNORED',
   'W_ACTION_NOT_FOR_TYPE',
   'W_TRAPPED',
+  // M8.6 (§5.3, §7)
+  'W_ORDER_TARGET',
+  'W_BURST_NEVER_FULL',
 ] as const;
 export type WarningCode = (typeof WARNING_CODES)[number];
 
@@ -176,6 +181,8 @@ export interface ValidationSuccess {
     breakdown: CostBreakdown;
     /** The normalized sprite (§5.1), or null when the unit has no sprite(). */
     sprite: SpriteSpec | null;
+    /** M8.6 factories: the squad orders update() gave in the dry run, in first-seen order (§7). */
+    orders?: MinionOrder[];
   };
   warnings: ValidationWarning[];
   playerHint: string;
@@ -274,6 +281,8 @@ const FRIENDLY_FIELD: Record<string, string> = {
   size: 'size',
   shape: 'shape',
   productionInterval: 'building speed',
+  produces: 'minion kind',
+  burst: 'burst',
 };
 
 const PLAYER_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
@@ -298,6 +307,7 @@ const PLAYER_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
   BUILDING_CANNOT_ATTACK: "Walls and factories can't attack! Ask Claude to remove the damage, or make a tower instead.",
   BUILDING_CANNOT_MOVE: "Walls and factories can't move! Ask Claude to remove the speed.",
   INTERVAL_NOT_INTEGER: 'The factory needs a whole number of ticks between minions. Ask Claude to fix it.',
+  BURST_NOT_INTEGER: 'A burst must be a whole number of minions (1 to 4). Ask Claude to fix it.',
   STATS_NOT_STABLE: 'Your unit changes its stats every time. Ask Claude to use fixed numbers.',
   UNIT_TOO_EXPENSIVE: 'Your unit costs too much! Ask Claude to make it cheaper.',
   SPRITE_THREW: "Drawing your unit's picture crashed. Ask Claude to fix it!",
@@ -324,6 +334,8 @@ const PLAYER_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
   W_UPDATE_IGNORED: "Heads up: walls don't think, so the game never runs this wall's update().",
   W_ACTION_NOT_FOR_TYPE: "Heads up: your unit sometimes gives an order its type can't do, so it waits instead.",
   W_TRAPPED: 'Walled in! Leave a gap so your unit can get out.',
+  W_ORDER_TARGET: 'Heads up: your factory sometimes points its minions at the wrong side (swarm an enemy, guard a friend).',
+  W_BURST_NEVER_FULL: "Heads up: this factory never makes enough minions to fill its burst, so they leave when it runs out.",
 };
 
 /** Player hint for a code, with `{field}` filled in. */
@@ -337,6 +349,9 @@ export function playerHintForIssue(issue: ValidationIssue): string {
   // Enum fields: "too big or too small" makes no sense for a word.
   if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'type') {
     return 'Your unit must be a soldier, tower, wall or factory. Ask Claude to fix its type.';
+  }
+  if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'produces') {
+    return 'A factory can build grunts, archers, runners or brutes. Ask Claude to pick one of those.';
   }
   if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'shape') {
     return 'Your unit must be a circle, square, triangle or diamond. Ask Claude to fix its shape.';

@@ -9,7 +9,7 @@
 // Every soldier or factory cell it doesn't reach gets the non-fatal
 // W_TRAPPED warning on /play. Towers don't move and are never warned.
 
-import type { SpriteSpec, UnitType } from './contract.js';
+import type { MinionKind, SpriteSpec, UnitType } from './contract.js';
 import { CELL_SIZE, GRID_SIZE, type Cell } from './geometry.js';
 import { cellCenter, cornerZone, type ZoneRef } from './maps.js';
 
@@ -149,10 +149,232 @@ export const MINION_SPRITE: SpriteSpec = {
   },
 };
 
-/** The minion sprite with its body in a factory's colour (and a darker shade). */
-export function minionSprite(color: string): SpriteSpec {
+/** Shared palette of the M8.6 kinds: outline, body (tinted), dark (tinted), eyes, wood, string, headband. */
+const KIND_PALETTE = { o: '#1E1A16', b: '#C0A060', d: '#7A6038', w: '#FFFFFF', k: '#000000', n: '#8B5A2B', s: '#E8E8E8', r: '#D23C3C' };
+
+/** Archer (§5.3): a hooded figure with a bow, facing right; the attack frame looses an arrow. */
+const ARCHER_SPRITE: SpriteSpec = {
+  grid: 12,
+  palette: KIND_PALETTE,
+  frames: {
+    idle: [
+      [
+        '............',
+        '....oooo....',
+        '...odddo.n..',
+        '...obwkbo.n.',
+        '...obbbbo.sn',
+        '..obbbbbbosn',
+        '..obddddbosn',
+        '...obbbbo.n.',
+        '...obddbon..',
+        '...oo..oo...',
+        '...oo..oo...',
+        '............',
+      ],
+    ],
+    walk: [
+      [
+        '............',
+        '....oooo....',
+        '...odddo.n..',
+        '...obwkbo.n.',
+        '...obbbbo.sn',
+        '..obbbbbbosn',
+        '..obddddbosn',
+        '...obbbbo.n.',
+        '...obddbon..',
+        '..oo....oo..',
+        '..o......o..',
+        '............',
+      ],
+      [
+        '............',
+        '............',
+        '....oooo....',
+        '...odddo.n..',
+        '...obwkbo.n.',
+        '...obbbbo.sn',
+        '..obbbbbbosn',
+        '..obddddbosn',
+        '...obbbbo.n.',
+        '...obddbon..',
+        '....oooo....',
+        '............',
+      ],
+    ],
+    attack: [
+      [
+        '............',
+        '....oooo....',
+        '...odddo..n.',
+        '...obwkbo..n',
+        '...obbbbos.n',
+        '..obbbbbbwww',
+        '..obddddbs.n',
+        '...obbbbo..n',
+        '...obddbo.n.',
+        '...oo..oo...',
+        '...oo..oo...',
+        '............',
+      ],
+    ],
+  },
+};
+
+/** Runner (§5.3): small and lean with a red headband and speed lines. */
+const RUNNER_SPRITE: SpriteSpec = {
+  grid: 12,
+  palette: KIND_PALETTE,
+  frames: {
+    idle: [
+      [
+        '............',
+        '.....oooo...',
+        '....orrrro..',
+        '....obbwko..',
+        '....obbbbo..',
+        '.ww.obddbo..',
+        '...obbbbbo..',
+        '.ww.obbbo...',
+        '....obddo...',
+        '...oo..oo...',
+        '..oo....oo..',
+        '............',
+      ],
+    ],
+    walk: [
+      [
+        '............',
+        '.....oooo...',
+        '....orrrro..',
+        '....obbwko..',
+        '....obbbbo..',
+        '.ww.obddbo..',
+        '...obbbbbo..',
+        '.ww.obbbo...',
+        '....obddo...',
+        '..oo....oo..',
+        '.oo......oo.',
+        '............',
+      ],
+      [
+        '............',
+        '.....oooo...',
+        '....orrrro..',
+        '....obbwko..',
+        '....obbbbo..',
+        'ww..obddbo..',
+        '...obbbbbo..',
+        'ww..obbbo...',
+        '....obddo...',
+        '....oooo....',
+        '...oo..oo...',
+        '............',
+      ],
+    ],
+    attack: [
+      [
+        '............',
+        '.....oooo...',
+        '....orrrro..',
+        '....obbwko..',
+        '....obbbbo..',
+        '.ww.obddbo..',
+        '...obbbbbooo',
+        '.ww.obbbo...',
+        '....obddo...',
+        '...oo..oo...',
+        '..oo....oo..',
+        '............',
+      ],
+    ],
+  },
+};
+
+/** Brute (§5.3): bulky, with a wooden club over its shoulder; the attack frame swings it down. */
+const BRUTE_SPRITE: SpriteSpec = {
+  grid: 12,
+  palette: KIND_PALETTE,
+  frames: {
+    idle: [
+      [
+        '..oooooo....',
+        '.obbbbbbo.nn',
+        '.obwkbwkonnn',
+        '.obbbbbbo.nn',
+        'obbddddbbon.',
+        'obbbbbbbbon.',
+        'obdbbbbdbon.',
+        'obbbbbbbbo..',
+        '.obddddbo...',
+        '.obbo.obbo..',
+        '.ooo..ooo...',
+        '............',
+      ],
+    ],
+    walk: [
+      [
+        '..oooooo....',
+        '.obbbbbbo.nn',
+        '.obwkbwkonnn',
+        '.obbbbbbo.nn',
+        'obbddddbbon.',
+        'obbbbbbbbon.',
+        'obdbbbbdbon.',
+        'obbbbbbbbo..',
+        '.obddddbo...',
+        '.obbo..obbo.',
+        '.ooo....ooo.',
+        '............',
+      ],
+      [
+        '............',
+        '..oooooo....',
+        '.obbbbbbo.nn',
+        '.obwkbwkonnn',
+        '.obbbbbbo.nn',
+        'obbddddbbon.',
+        'obbbbbbbbon.',
+        'obdbbbbdbon.',
+        'obbbbbbbbo..',
+        '.obddddbo...',
+        '..oooooo....',
+        '............',
+      ],
+    ],
+    attack: [
+      [
+        '..oooooo....',
+        '.obbbbbbo...',
+        '.obwkbwko...',
+        '.obbbbbbo...',
+        'obbddddbbo..',
+        'obbbbbbbbonn',
+        'obdbbbbdbonn',
+        'obbbbbbbbonn',
+        '.obddddbo.nn',
+        '.obbo.obbo..',
+        '.ooo..ooo...',
+        '............',
+      ],
+    ],
+  },
+};
+
+/** The built-in look of every minion kind (§5.3); the grunt is the M8.5 minion. */
+export const MINION_SPRITES: Readonly<Record<MinionKind, SpriteSpec>> = {
+  grunt: MINION_SPRITE,
+  archer: ARCHER_SPRITE,
+  runner: RUNNER_SPRITE,
+  brute: BRUTE_SPRITE,
+};
+
+/** A minion kind's sprite with its body in a factory's colour (and a darker shade). */
+export function minionSprite(color: string, kind: MinionKind = 'grunt'): SpriteSpec {
   const dark = shade(color, 0.6);
-  return { ...MINION_SPRITE, palette: { ...MINION_SPRITE.palette, [MINION_BODY_KEY]: color, d: dark } };
+  const base = MINION_SPRITES[kind] ?? MINION_SPRITE;
+  return { ...base, palette: { ...base.palette, [MINION_BODY_KEY]: color, d: dark } };
 }
 
 function shade(hex: string, f: number): string {

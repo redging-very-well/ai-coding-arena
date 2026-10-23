@@ -9,6 +9,12 @@
 // free; otherwise it waits with a full timer and tries again every tick.
 // A disabled factory keeps producing toward its last rally point: production
 // is engine-side, only its update() naps. A dead factory makes nothing.
+//
+// M8.6 (§5.3, §9.3 Store and release): a minion that doesn't complete the
+// factory's burst waits inside (`stored`, no spawn spot needed); the one
+// that completes it leaves together with the stored ones. Stored minions
+// count toward the alive caps, leave early on `release`, and leave on their
+// own when the store can't grow (caps full, nothing left to make, no time).
 
 import { FACTORY_RADIUS, zoneAxes, type FactoryConfig, type Point, type ZoneRef } from '@pixel-clash/shared';
 import { circleOverlapsWall, type WallGrid } from './walls.js';
@@ -68,6 +74,25 @@ export function spawnSpot(
   grid: WallGrid,
   buildings: readonly SimUnit[],
 ): Point | null {
+  return spawnSpots(fac, rally, facing, arena, minionRadius, grid, buildings, 1)[0] ?? null;
+}
+
+/**
+ * Spots for `count` minions leaving together (§9.3 Store and release): the
+ * free candidates of `spawnSpot` in its order, cycling when fewer are free
+ * than minions leave (separation spreads them). Empty when none is free.
+ */
+export function spawnSpots(
+  fac: SimUnit,
+  rally: Point,
+  facing: Point,
+  arena: number,
+  minionRadius: number,
+  grid: WallGrid,
+  buildings: readonly SimUnit[],
+  count: number,
+): Point[] {
+  const free: Point[] = [];
   let dx = rally.x - fac.x;
   let dy = rally.y - fac.y;
   if (Math.hypot(dx, dy) < 1e-9) {
@@ -87,7 +112,11 @@ export function spawnSpot(
     grid.query(x - minionRadius - 20, y - minionRadius - 20, x + minionRadius + 20, y + minionRadius + 20, near);
     if (near.some((w) => circleOverlapsWall({ x, y }, minionRadius, w))) continue;
     if (buildings.some((b) => b.alive && Math.hypot(b.x - x, b.y - y) < b.radius + minionRadius - 1e-9)) continue;
-    return { x, y };
+    free.push({ x, y });
+    if (free.length >= count) break;
   }
-  return null;
+  if (free.length === 0) return [];
+  const out: Point[] = [];
+  for (let i = 0; i < count; i++) out.push(free[i % free.length]!);
+  return out;
 }

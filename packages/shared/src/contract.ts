@@ -8,6 +8,8 @@
 // --- BEGIN CONTRACT (plan §5, verbatim) ---
 export type UnitType = 'soldier' | 'tower' | 'wall' | 'factory';   // §5.2
 export type BodyType = UnitType | 'minion'; // minions are made by factories: you see them, you never submit one
+export type MinionKind = 'grunt' | 'archer' | 'runner' | 'brute';  // what a factory builds (§5.3)
+export type MinionOrder = 'attack' | 'defend' | 'swarm' | 'guard'; // what a factory's minions do (§5.3)
 export type MapStyle = 'duel' | 'triangle' | 'corners' | 'ring' | 'lanes' | 'islands'; // §9.2
 export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 
@@ -21,6 +23,8 @@ export interface UnitStats {
   speed?: number;        // soldier: required, 0.5-5 px per tick (60 ticks = 1 s). tower/wall/factory: 0 or leave it out
   attackCooldown?: number;// soldier/tower: required, integer ticks between attacks. wall/factory: leave it out
   productionInterval?: number; // factory only, required: integer ticks between two minions, 600-1800 (10-30 s)
+  produces?: MinionKind; // factory only, optional (default 'grunt'): the minion it builds; the price follows (§6)
+  burst?: number;        // factory only, optional (default 1): integer 1-4; minions wait inside until this many are ready, then leave together
   color: string;         // "#RRGGBB": projectiles, particles, fallback sprite; a wall's block colour; a factory's minion colour
   size?: number;         // soldier/tower: body radius in px = hitbox AND drawn size, 6-20 (default 10 / 14), $0.5 per px above 6. Walls always fill their 40 px cell, factories are always 18: size is ignored for them.
   shape?: Shape;         // optional; only used by the fallback sprite when sprite() is missing
@@ -44,8 +48,13 @@ export interface FactoryView {
   productionInterval: number;
   nextMinionIn: number;  // ticks until the next minion (it waits while you hold, or while the factory is full)
   minionsLeft: number;   // minions this factory can still make this battle
-  minionsAlive: number; maxAlive: number;
-  rally: { x: number; y: number }; // where its minions go; starts at world.center
+  minionsAlive: number; maxAlive: number; // minionsAlive = out on the field; maxAlive caps minionsAlive + stored
+  stored: number;        // built minions waiting inside: safe from attacks, but LOST if the factory is destroyed
+  burst: number;         // stored minions leave together when stored reaches burst (or on { action: 'release' })
+  produces: MinionKind;
+  order: MinionOrder;    // starts 'attack'; a swarm whose target died becomes 'attack', a guard whose ally died 'defend'
+  orderTargetId: string | null; // swarm: the enemy, guard: the ally, else null
+  rally: { x: number; y: number }; // where 'attack' minions go; starts at world.center
 }
 export interface SelfView {
   id: string;            // instanceId of this copy, e.g. "2-0-3"
@@ -64,6 +73,7 @@ export interface OtherView {
 }
 // A wall has radius 20: for range it counts as a circle of radius 20 (so inRange works unchanged),
 // but its body blocks the whole 40×40 square. Walls and factories have range 0.
+// A minion's name is its kind: 'Grunt', 'Archer', 'Runner' or 'Brute'. Stored minions are invisible.
 export interface WorldView {
   width: number; height: number;        // arena size this battle: 800 (2-4 players), 1040 (5-6), 1200 (7-8), §9.2
   tick: number; ticksLeft: number;
@@ -81,7 +91,9 @@ export type Action =
   | { action: 'idle' }
   | { action: 'move'; destination: { x: number; y: number } }   // soldiers
   | { action: 'attack'; targetId: string }                     // soldiers and towers
-  | { action: 'rally'; destination: { x: number; y: number } }  // factories: send my minions here
+  | { action: 'rally'; destination: { x: number; y: number } }  // factories: order 'attack' and send my minions here
+  | { action: 'command'; order: MinionOrder; targetId?: string; destination?: { x: number; y: number } } // factories: squad order; swarm/guard need targetId
+  | { action: 'release' }                                       // factories: send the stored minions out now
   | { action: 'hold' };                                         // factories: don't build this tick
 
 export interface Unit extends UnitStats {
@@ -96,6 +108,36 @@ export interface Unit extends UnitStats {
 
 export const UNIT_TYPES: readonly UnitType[] = ['soldier', 'tower', 'wall', 'factory'];
 export const SHAPES: readonly Shape[] = ['circle', 'square', 'triangle', 'diamond'];
+
+/** The minion kinds a factory can build (§5.3), in display order. */
+export const MINION_KINDS: readonly MinionKind[] = ['grunt', 'archer', 'runner', 'brute'];
+/** The squad orders a factory can give (§5.3). Index = the order code in frames (`FrameFactory[9]`). */
+export const MINION_ORDERS: readonly MinionOrder[] = ['attack', 'defend', 'swarm', 'guard'];
+/** A minion's name in views: its kind's name (§5.3). */
+export const MINION_KIND_NAMES: Readonly<Record<MinionKind, string>> = {
+  grunt: 'Grunt',
+  archer: 'Archer',
+  runner: 'Runner',
+  brute: 'Brute',
+};
+/** The default minion kind and burst of a factory that doesn't set them (§5.3). */
+export const DEFAULT_MINION_KIND: MinionKind = 'grunt';
+export const DEFAULT_BURST = 1;
+
+export function isMinionKind(v: unknown): v is MinionKind {
+  return typeof v === 'string' && (MINION_KINDS as readonly string[]).includes(v);
+}
+export function isMinionOrder(v: unknown): v is MinionOrder {
+  return typeof v === 'string' && (MINION_ORDERS as readonly string[]).includes(v);
+}
+/** A factory's minion kind (stored factories from before M8.6 have none: grunt). */
+export function producesOf(stats: { produces?: MinionKind | undefined }): MinionKind {
+  return isMinionKind(stats.produces) ? stats.produces : DEFAULT_MINION_KIND;
+}
+/** A factory's burst (default 1). */
+export function burstOf(stats: { burst?: number | undefined }): number {
+  return typeof stats.burst === 'number' && Number.isInteger(stats.burst) && stats.burst >= 1 ? stats.burst : DEFAULT_BURST;
+}
 
 /** §5.2 groups: soldiers are "units"; towers, walls and factories are "buildings". */
 export type UnitGroup = 'unit' | 'building';
@@ -128,6 +170,8 @@ export const STAT_FIELDS = [
   'speed',
   'attackCooldown',
   'productionInterval',
+  'produces',
+  'burst',
   'color',
   'size',
   'shape',
@@ -148,15 +192,25 @@ export interface CostStats {
   attackCooldown: number;
   size?: number | undefined;
   productionInterval?: number | undefined;
+  /** Factories: the minion kind (§5.3, default grunt); its price sets the production cost. */
+  produces?: MinionKind | undefined;
 }
 
 /**
  * The frozen stats taken at validation time (§5 rule 1). Combat reads only
  * this. `name` is trimmed, and `size` and `shape` are always filled in (type
  * defaults). Walls and factories get damage/range/speed/attackCooldown 0 and
- * their fixed size (20 / 18); `productionInterval` is set for factories only.
+ * their fixed size (20 / 18); `productionInterval`, `produces` and `burst` are set for factories only.
  */
-export type StatsSnapshot = Readonly<Required<Omit<UnitStats, 'productionInterval'>> & { productionInterval?: number }>;
+export type StatsSnapshot = Readonly<
+  Required<Omit<UnitStats, 'productionInterval' | 'produces' | 'burst'>> & {
+    productionInterval?: number;
+    /** Factories (M8.6): always set by the validator; absent in older stored factories (= grunt). */
+    produces?: MinionKind;
+    /** Factories (M8.6): always set by the validator; absent in older stored factories (= 1). */
+    burst?: number;
+  }
+>;
 
 /** Default body radius (`size`) per unit type (§5 bounds table, §5.2). */
 export const DEFAULT_SIZE: Readonly<Record<UnitType, number>> = {

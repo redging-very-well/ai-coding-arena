@@ -59,6 +59,10 @@
       "productionInterval": {
         "min": 600,
         "max": 1800
+      },
+      "burst": {
+        "min": 1,
+        "max": 4
       }
     }
   },
@@ -112,15 +116,55 @@
     "maxAlivePerBattle": 40,
     "rallyGuardRadius": 200,
     "rallyArriveRadius": 24,
-    "minion": {
-      "maxHealth": 40,
-      "damage": 5,
-      "range": 20,
-      "speed": 1.5,
-      "attackCooldown": 60,
-      "size": 8,
-      "aggroRange": 120,
-      "impatientTicks": 120
+    "defendRadius": 160,
+    "defendArriveRadius": 48,
+    "guardRadius": 120,
+    "guardArriveGap": 16,
+    "minions": {
+      "grunt": {
+        "maxHealth": 40,
+        "damage": 5,
+        "range": 20,
+        "speed": 1.5,
+        "attackCooldown": 60,
+        "size": 8,
+        "aggroRange": 120,
+        "impatientTicks": 120,
+        "wallDamageMultiplier": 1
+      },
+      "archer": {
+        "maxHealth": 24,
+        "damage": 5,
+        "range": 110,
+        "speed": 1.2,
+        "attackCooldown": 60,
+        "size": 7,
+        "aggroRange": 150,
+        "impatientTicks": 120,
+        "wallDamageMultiplier": 1
+      },
+      "runner": {
+        "maxHealth": 28,
+        "damage": 4,
+        "range": 20,
+        "speed": 2.6,
+        "attackCooldown": 60,
+        "size": 6,
+        "aggroRange": 120,
+        "impatientTicks": 120,
+        "wallDamageMultiplier": 1
+      },
+      "brute": {
+        "maxHealth": 100,
+        "damage": 8,
+        "range": 20,
+        "speed": 0.9,
+        "attackCooldown": 60,
+        "size": 11,
+        "aggroRange": 120,
+        "impatientTicks": 30,
+        "wallDamageMultiplier": 3
+      }
     }
   },
   "sandbox": {

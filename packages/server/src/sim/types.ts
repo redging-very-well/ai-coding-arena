@@ -13,7 +13,7 @@
 //     team mode (every setup carries a `teamId`) a side is a team. Allies,
 //     friendly fire, elimination, End and ranking work on sides.
 
-import type { BodyType, PlacementDTO, Point, RankingEntryDTO, StatsSnapshot, TeamRoundRankDTO, ZoneRef } from '@pixel-clash/shared';
+import type { BodyType, MinionKind, MinionOrder, PlacementDTO, Point, RankingEntryDTO, StatsSnapshot, TeamRoundRankDTO, ZoneRef } from '@pixel-clash/shared';
 import type { PlayerRunner } from '../sandbox/runner.js';
 
 /** Deterministic string order used for instanceIds and playerIds. */
@@ -109,9 +109,24 @@ export interface FactoryState {
   canMake: number;
   /** Its timer was full but every spawn spot was covered at the last try (cleared by a spawn). */
   noSpot: boolean;
-  /** Minions made so far (the next one is `${id}-m${made + 1}`). */
+  /** Minions made so far (stored ones included). */
   made: number;
-  /** Where its minions go; kept after the factory dies (minions keep the last one). */
+  /** Minions that left the factory so far (the next one is `${id}-m${released + 1}`). */
+  released: number;
+  /** M8.6 (§5.3): the minion kind it builds. */
+  kind: MinionKind;
+  /** Minions saved up inside before they leave together (1 = each leaves at once). */
+  burst: number;
+  /** Built minions waiting inside (no bodies; lost with the factory). */
+  stored: number;
+  /** A `release` was asked for and hasn't happened yet. */
+  releaseRequested: boolean;
+  /** The squad order and its target (swarm: an enemy, guard: an ally); kept after the factory dies. */
+  order: MinionOrder;
+  orderTargetId: string | null;
+  /** Minions lost inside when the factory died (report). */
+  storedLost: number;
+  /** Where its `attack` minions go; kept after the factory dies (minions keep the last one). */
   rally: Point;
   /** Returned `hold` this tick. */
   holding: boolean;
@@ -181,8 +196,8 @@ export interface SimUnit {
   spawnedAtTick?: number;
   /** Factories. */
   factory?: FactoryState;
-  /** Minions: the factory that made it (alive or not) and its number there. */
-  minion?: { factory: SimUnit; n: number };
+  /** Minions: the factory that made it (alive or not), its number there and its kind (§5.3). */
+  minion?: { factory: SimUnit; n: number; kind?: MinionKind };
   /** Walls: hp as last listed in a frame (walls are only listed when it changed, §9.3 Frames). */
   frameHp?: number;
 }
@@ -263,7 +278,7 @@ export interface UnitReport {
   /** Minions: the factory's instanceId. */
   factoryId?: string;
   /** Factories: price parts and production counters. */
-  factory?: { bodyCost: number; minionValue: number; minionsLeft: number; minionsMade: number; minionsLost: number; canMake?: number };
+  factory?: { bodyCost: number; minionValue: number; minionsLeft: number; minionsMade: number; minionsLost: number; canMake?: number; stored?: number; storedLost?: number };
   /** Soldiers and minions: the most ticks in a row a wall blocked it. */
   blockedTicksMax?: number;
   survived: boolean;

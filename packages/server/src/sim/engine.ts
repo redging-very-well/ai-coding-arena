@@ -42,14 +42,21 @@
 // accept rally/hold in step 3 and produce after the dead are removed (step
 // 9b, sim/factory.ts); elimination (step 10) counts fighters only, and an
 // eliminated side's walls and spent factories crumble.
+//
+// Minion kinds, squad orders and burst (M8.6, §5.3, §9.3): factories accept
+// `command`/`release` in step 3, swarm/guard orders whose target died fall
+// back in step 1, minion hits on walls are multiplied per kind in step 6,
+// and step 9b stores minions inside until a burst is complete.
 
 import {
   ARENA,
   arenaCenter,
+  burstOf,
   cellCenter,
   computeCost,
   instanceIdFor,
   pricingOf,
+  producesOf,
   runsCode,
   scaleSuddenDeath,
   sizeOf,
@@ -82,9 +89,9 @@ import {
 import { createSplitRunner, needsSplit } from '../sandbox/splitRunner.js';
 import { timedOutOnceMessage } from '../sandbox/strikes.js';
 import { resolveAction, type ResolvedAction } from './actions.js';
-import { alivePerPlayerCap, canMakeOf, spawnSpot, zoneFacingDir } from './factory.js';
+import { alivePerPlayerCap, canMakeOf, spawnSpots, zoneFacingDir } from './factory.js';
 import { FrameRecorder, frameAt } from './frames.js';
-import { minionAction, minionStats, minionValueOf } from './minion.js';
+import { hitDamage, kindConfig, minionAction, minionStats, minionValueOf } from './minion.js';
 import { isFixedBody, separate } from './movement.js';
 import { steerToward } from './steering.js';
 import { aliveInFrame, factoryLeftIn, isFighter, livingValueAt, livingValueOf } from './value.js';
@@ -494,6 +501,7 @@ export class BattleEngine {
       // Priced like the validator does (§6): body + minionValue × E.
       const priced = computeCost(s, this.config.cost, pricingOf(this.config)).breakdown;
       const prod = priced.production;
+      const kind = producesOf(s);
       u.factory = {
         productionInterval: s.productionInterval ?? this.config.stats.bounds.productionInterval.max,
         timer: 0,
@@ -501,10 +509,19 @@ export class BattleEngine {
         canMake: prod?.expected ?? 0,
         noSpot: false,
         made: 0,
+        released: 0,
+        kind,
+        // A burst never exceeds what one factory may have alive (§5.3).
+        burst: Math.min(burstOf(s), this.config.factory.maxAlivePerFactory),
+        stored: 0,
+        releaseRequested: false,
+        order: 'attack',
+        orderTargetId: null,
+        storedLost: 0,
         rally: { x: center.x, y: center.y },
         holding: false,
         bodyCost: priced.body ?? design.cost,
-        minionValue: prod?.minionValue ?? this.minionValue,
+        minionValue: prod?.minionValue ?? minionValueOf(this.config, kind),
         spawnedSinceFrame: false,
         minionsLost: 0,
       };
@@ -555,6 +572,10 @@ export class BattleEngine {
       if (u.cooldownRemaining > 0) u.cooldownRemaining -= 1;
       if (u.factory) u.factory.holding = false;
     }
+    // M8.6: a swarm whose target died becomes attack, a guard whose ally
+    // died defend, before anyone decides (dead factories too: their minions
+    // keep the last order).
+    for (const u of this.units) if (u.factory) this.checkOrder(u);
     const others = living.map(toOtherView);
     const safeRadius = safeRadiusAt(tick, cfg);
     // enemies/allies are built once per side and shared by its players, so
@@ -597,8 +618,19 @@ export class BattleEngine {
       }
       for (const [unit, r] of acting) {
         const action = resolveAction(r, unit, (id) => this.byId.get(id), cfg.sim.rangeTolerance, this.arena);
-        if (action.kind === 'rally') unit.factory!.rally = action.destination;
-        else if (action.kind === 'hold') unit.factory!.holding = true;
+        const f = unit.factory;
+        if (action.kind === 'rally') {
+          f!.rally = action.destination;
+          f!.order = 'attack';
+          f!.orderTargetId = null;
+        } else if (action.kind === 'command') {
+          f!.order = action.order;
+          f!.orderTargetId = action.targetId;
+          if (action.destination) f!.rally = action.destination;
+          this.checkOrder(unit);
+        } else if (action.kind === 'release') {
+          if (f!.stored > 0) f!.releaseRequested = true;
+        } else if (action.kind === 'hold') f!.holding = true;
         else if (action.kind !== 'idle') pending.push({ unit, action });
       }
     });
@@ -639,8 +671,10 @@ export class BattleEngine {
       if (screenX(target) < screenX(unit)) unit.facingLeft = true;
       else if (screenX(target) > screenX(unit)) unit.facingLeft = false;
       this.recorder.event({ type: 'fire', instanceId: unit.id, targetId: target.id, melee });
+      // Brutes hit walls harder (M8.6, §5.3); everyone else deals plain damage.
+      const damage = hitDamage(unit, target, cfg);
       if (melee) {
-        hits.push({ attackerId: unit.id, target, damage: unit.stats.damage });
+        hits.push({ attackerId: unit.id, target, damage });
       } else {
         this.projectiles.push({
           id: this.nextProjectileId++,
@@ -648,7 +682,7 @@ export class BattleEngine {
           y: unit.y,
           ownerId: unit.id,
           targetId: target.id,
-          damage: unit.stats.damage,
+          damage,
         });
       }
     }
@@ -688,50 +722,125 @@ export class BattleEngine {
     if (u.type === 'wall') this.walls.remove(u);
     const f = u.minion?.factory.factory;
     if (f) f.minionsLost += 1;
+    // Minions waiting inside a factory die with it (M8.6, §5.3).
+    const own = u.factory;
+    if (own && own.stored > 0) {
+      this.recorder.event({ type: 'lost', factoryId: u.id, count: own.stored });
+      own.minionsLost += own.stored;
+      own.storedLost += own.stored;
+      own.stored = 0;
+      own.releaseRequested = false;
+    }
   }
 
-  /** Step 9b (§9.3 Factory production). `t` = the time the new minions appear at. */
+  /**
+   * The order fallbacks (§5.3): a swarm needs a living enemy target, a guard a
+   * living ally (same side); otherwise they become attack / defend.
+   */
+  private checkOrder(fac: SimUnit): void {
+    const f = fac.factory!;
+    if (f.order !== 'swarm' && f.order !== 'guard') return;
+    const t = f.orderTargetId ? this.byId.get(f.orderTargetId) : undefined;
+    const ok = !!t && t.alive && (f.order === 'swarm' ? t.teamId !== fac.teamId : t.teamId === fac.teamId);
+    if (ok) return;
+    f.order = f.order === 'swarm' ? 'attack' : 'defend';
+    f.orderTargetId = null;
+  }
+
+  /** Where a factory's minions head (§9.3 Frames focus): rally point, factory, swarm target or guarded ally. */
+  private focusOf(fac: SimUnit): Point {
+    const f = fac.factory!;
+    if (f.order === 'defend') return { x: fac.x, y: fac.y };
+    if (f.order === 'swarm' || f.order === 'guard') {
+      const t = f.orderTargetId ? this.byId.get(f.orderTargetId) : undefined;
+      if (t && t.alive) return { x: t.x, y: t.y };
+    }
+    return f.rally;
+  }
+
+  /**
+   * Step 9b (§9.3 Factory production, M8.6 Store and release). `t` = the
+   * time the new minions appear at. Caps count alive + stored minions.
+   */
   private produce(t: number): void {
     const fc = this.config.factory;
     let factories: SimUnit[] | undefined;
     for (const u of this.units) if (u.alive && u.factory) (factories ??= []).push(u);
     if (!factories) return;
-    // Alive minions per factory and per player.
+    // Alive (and stored) minions per factory and per player.
     const perFactory = new Map<string, number>();
     const perPlayer = new Map<string, number>();
+    const add = (factoryId: string, playerId: string, n: number) => {
+      perFactory.set(factoryId, (perFactory.get(factoryId) ?? 0) + n);
+      perPlayer.set(playerId, (perPlayer.get(playerId) ?? 0) + n);
+    };
     for (const u of this.units) {
-      if (!u.alive || !u.minion) continue;
-      const fid = u.minion.factory.id;
-      perFactory.set(fid, (perFactory.get(fid) ?? 0) + 1);
-      perPlayer.set(u.playerId, (perPlayer.get(u.playerId) ?? 0) + 1);
+      if (!u.alive) continue;
+      if (u.minion) add(u.minion.factory.id, u.playerId, 1);
+      if (u.factory && u.factory.stored > 0) add(u.id, u.playerId, u.factory.stored);
     }
-    let buildings: SimUnit[] | undefined;
+    const ticksLeft = this.config.timers.battleTicks - t;
+    const buildings = { list: undefined as SimUnit[] | undefined };
     for (const fac of factories) {
       const f = fac.factory!;
       if (!f.holding) f.timer = Math.min(f.timer + 1, f.productionInterval);
-      if (f.timer < f.productionInterval || f.minionsLeft <= 0) continue;
-      if ((perFactory.get(fac.id) ?? 0) >= fc.maxAlivePerFactory) continue;
-      if ((perPlayer.get(fac.playerId) ?? 0) >= this.minionCapPerPlayer) continue;
-      buildings ??= this.units.filter((b) => b.alive && (b.type === 'tower' || b.type === 'factory'));
-      const zone = this.players.find((p) => p.setup.playerId === fac.playerId)!.setup.zone;
-      const spot = spawnSpot(fac, f.rally, zoneFacingDir(zone), this.arena, fc.minion.size, this.walls, buildings);
-      f.noSpot = !spot;
-      if (!spot) continue;
-      f.minionsLeft -= 1;
-      f.made += 1;
-      f.timer = 0;
-      f.spawnedSinceFrame = true;
-      perFactory.set(fac.id, (perFactory.get(fac.id) ?? 0) + 1);
-      perPlayer.set(fac.playerId, (perPlayer.get(fac.playerId) ?? 0) + 1);
-      this.addMinion(fac, f.made, spot, t);
+      const full = (perFactory.get(fac.id) ?? 0) >= fc.maxAlivePerFactory || (perPlayer.get(fac.playerId) ?? 0) >= this.minionCapPerPlayer;
+      const wantRelease = f.releaseRequested && f.stored > 0;
+      if (f.timer >= f.productionInterval && f.minionsLeft > 0 && !full) {
+        if (f.stored + 1 < f.burst && !wantRelease) {
+          // Not a full burst yet: it waits inside (no spawn spot needed).
+          f.stored += 1;
+          f.minionsLeft -= 1;
+          f.made += 1;
+          f.timer = 0;
+          f.noSpot = false;
+          add(fac.id, fac.playerId, 1);
+          continue;
+        }
+        // This one completes the burst (burst 1: every minion): all leave together.
+        if (this.release(fac, f.stored + 1, t, buildings)) {
+          f.minionsLeft -= 1;
+          f.made += 1;
+          f.timer = 0;
+          add(fac.id, fac.playerId, 1);
+        }
+        continue;
+      }
+      // The store can't grow (or a release was asked for): send out what is there.
+      if (f.stored > 0 && (wantRelease || full || f.minionsLeft <= 0 || canMakeOf(f, ticksLeft) === 0)) {
+        this.release(fac, f.stored, t, buildings);
+      }
     }
-    const ticksLeft = this.config.timers.battleTicks - t;
     for (const fac of factories) fac.factory!.canMake = canMakeOf(fac.factory!, ticksLeft);
+  }
+
+  /**
+   * `count` minions leave `fac` together (the stored ones plus any new one):
+   * false (nothing leaves, `noSpot`) when no spawn spot is free.
+   */
+  private release(fac: SimUnit, count: number, t: number, buildings: { list: SimUnit[] | undefined }): boolean {
+    const f = fac.factory!;
+    buildings.list ??= this.units.filter((b) => b.alive && (b.type === 'tower' || b.type === 'factory'));
+    const zone = this.players.find((p) => p.setup.playerId === fac.playerId)!.setup.zone;
+    const size = kindConfig(this.config, f.kind).size;
+    const spots = spawnSpots(fac, this.focusOf(fac), zoneFacingDir(zone), this.arena, size, this.walls, buildings.list, count);
+    f.noSpot = spots.length === 0;
+    if (spots.length === 0) return false;
+    for (const spot of spots) {
+      f.released += 1;
+      this.addMinion(fac, f.released, spot, t);
+    }
+    if (count >= 2) this.recorder.event({ type: 'release', factoryId: fac.id, count });
+    f.stored = 0;
+    f.releaseRequested = false;
+    f.spawnedSinceFrame = true;
+    return true;
   }
 
   /** Create a factory's n-th minion at `spot` (§5.2 Minions). */
   private addMinion(fac: SimUnit, n: number, spot: Point, t: number): void {
-    const stats = minionStats(this.config, fac.stats.color);
+    const kind = fac.factory?.kind ?? 'grunt';
+    const stats = minionStats(this.config, fac.stats.color, kind);
     const m: SimUnit = {
       id: `${fac.id}-m${n}`,
       playerId: fac.playerId,
@@ -752,7 +861,7 @@ export class BattleEngine {
       spawned: true,
       movedSinceFrame: false,
       firedSinceFrame: false,
-      facingLeft: screenX(fac.factory!.rally) < screenX(spot),
+      facingLeft: screenX(this.focusOf(fac)) < screenX(spot),
       outsideSafeZone: false,
       damageDealt: 0,
       kills: 0,
@@ -766,12 +875,12 @@ export class BattleEngine {
       blockedSinceFrame: false,
       slide: null,
       spawnedAtTick: t,
-      minion: { factory: fac, n },
+      minion: { factory: fac, n, kind },
     };
     insertSorted(this.units, m);
     insertSorted(this.players.find((p) => p.setup.playerId === fac.playerId)!.units, m);
     this.byId.set(m.id, m);
-    this.recorder.event({ type: 'spawn', instanceId: m.id, factoryId: fac.id, x: round2(spot.x), y: round2(spot.y) });
+    this.recorder.event({ type: 'spawn', instanceId: m.id, factoryId: fac.id, x: round2(spot.x), y: round2(spot.y), kind });
   }
 
   /** The TickInput for one player, or undefined if none of its units can act. */
@@ -1009,7 +1118,7 @@ export class BattleEngine {
   }
 
   private emitFrame(): void {
-    const frame = this.recorder.record(this.time, this.living(), this.projectiles, safeRadiusAt(this.time, this.config));
+    const frame = this.recorder.record(this.time, this.living(), this.projectiles, safeRadiusAt(this.time, this.config), (u) => this.focusOf(u));
     this.logCounters(frame.t);
     this.onFrame?.(frame);
   }
@@ -1273,6 +1382,7 @@ function reportTypes(units: readonly UnitReport[], endTick: number): Pick<Battle
       t.minionsMade = (t.minionsMade ?? 0) + u.factory.minionsMade;
       t.minionsLost = (t.minionsLost ?? 0) + u.factory.minionsLost;
       t.minionDamage ??= 0;
+      if (u.factory.storedLost) t.storedLost = (t.storedLost ?? 0) + u.factory.storedLost;
     }
     if (u.blockedTicksMax !== undefined && t.type === 'soldier') t.blockedTicksMax = Math.max(t.blockedTicksMax ?? 0, u.blockedTicksMax);
   }
@@ -1292,7 +1402,12 @@ function reportTypes(units: readonly UnitReport[], endTick: number): Pick<Battle
   if (types.length === 0) return {};
   const hints = types
     .filter((t) => t.type === 'soldier' && endTick > 0 && (t.blockedTicksMax ?? 0) > STUCK_HINT_SHARE * endTick)
-    .map((t) => `Your ${t.name} got stuck behind walls a lot. Ask Claude to make it break through (attack self.blockedBy) or go round.`);
+    .map((t) => `Your ${t.name} got stuck behind walls a lot. Ask Claude to make it break through (attack self.blockedBy) or go round.`)
+    .concat(
+      types
+        .filter((t) => (t.storedLost ?? 0) > 0)
+        .map((t) => `Your ${t.name} was destroyed with ${t.storedLost} minion${t.storedLost === 1 ? '' : 's'} inside. Ask Claude to release them earlier (or use a smaller burst), or guard the factory.`),
+    );
   return { types, ...(hints.length > 0 ? { hints } : {}) };
 }
 
@@ -1352,6 +1467,11 @@ function factoryView(u: SimUnit, living: readonly SimUnit[], maxAlive: number): 
     minionsLeft: f.minionsLeft,
     minionsAlive: alive,
     maxAlive,
+    stored: f.stored,
+    burst: f.burst,
+    produces: f.kind,
+    order: f.order,
+    orderTargetId: f.orderTargetId,
     rally: { x: f.rally.x, y: f.rally.y },
   };
 }
@@ -1359,7 +1479,16 @@ function factoryView(u: SimUnit, living: readonly SimUnit[], maxAlive: number): 
 /** A factory's report block. */
 function factoryReport(u: SimUnit): NonNullable<UnitReport['factory']> {
   const f = u.factory!;
-  return { bodyCost: f.bodyCost, minionValue: f.minionValue, minionsLeft: f.minionsLeft, minionsMade: f.made, minionsLost: f.minionsLost, canMake: f.canMake };
+  return {
+    bodyCost: f.bodyCost,
+    minionValue: f.minionValue,
+    minionsLeft: f.minionsLeft,
+    minionsMade: f.made,
+    minionsLost: f.minionsLost,
+    canMake: f.canMake,
+    stored: f.stored,
+    storedLost: f.storedLost,
+  };
 }
 
 function isFrame(v: ReadonlySet<string> | Pick<FrameDTO, 't' | 'units' | 'fac'>): v is Pick<FrameDTO, 't' | 'units' | 'fac'> {

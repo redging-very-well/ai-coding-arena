@@ -59,7 +59,8 @@ describe('factory production (§5.2, §9.3 step 9b)', () => {
     expect(result.units.filter((u) => u.type === 'minion').every((u) => u.unitId === 'f' && u.factoryId === '0-2-2')).toBe(true);
     // fac in the frames: progress, minionsLeft, ..., canMake.
     const f300 = engine.frames.find((fr) => fr.t === 300)!;
-    expect(f300.fac).toEqual([['0-2-2', 50, 8, expect.any(Number), expect.any(Number), 0, 8]]);
+    // M8.6: then stored 0, burst 1, order 0 (attack).
+    expect(f300.fac).toEqual([['0-2-2', 50, 8, expect.any(Number), expect.any(Number), 0, 8, 0, 1, 0]]);
   });
 
   it('at most 4 alive per factory; a full factory waits with a full timer', async () => {
@@ -243,7 +244,7 @@ describe('minion AI (§5.2)', () => {
     ...over,
   });
   const factory = mk({ id: '0-0-0', type: 'factory', x: 100, y: 100, radius: 18 });
-  factory.factory = { productionInterval: 600, timer: 0, minionsLeft: 3, canMake: 3, noSpot: false, made: 1, rally: { x: 400, y: 400 }, holding: false, bodyCost: 53, minionValue: 28, spawnedSinceFrame: false, minionsLost: 0 };
+  factory.factory = { productionInterval: 600, timer: 0, minionsLeft: 3, canMake: 3, noSpot: false, made: 1, released: 1, kind: 'grunt', burst: 1, stored: 0, releaseRequested: false, order: 'attack', orderTargetId: null, storedLost: 0, rally: { x: 400, y: 400 }, holding: false, bodyCost: 53, minionValue: 28, spawnedSinceFrame: false, minionsLost: 0 };
   const minion = (over: Partial<SimUnit> = {}) =>
     mk({ id: '0-0-0-m1', type: 'minion', stats: minionStats(cfgF, '#C0A060'), radius: 8, x: 300, y: 300, minion: { factory, n: 1 }, ...over });
   const world = (living: SimUnit[], safeRadius = 570) => {

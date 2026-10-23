@@ -9,6 +9,9 @@
 //     time runs out); minion = minionValue.
 //   * Value destroyed (credited to the killer): a wall its full price, a
 //     factory its living value at death, everything else its cost.
+//   * M8.6 (§5.3): minions stored inside a factory count like the ones it can
+//     still make: they keep it a fighter and add minionValue each to its
+//     living value (so the killer of a full factory is credited them too).
 
 import type { BodyType, FrameDTO } from '@pixel-clash/shared';
 import type { SimUnit, UnitReport } from './types.js';
@@ -16,14 +19,14 @@ import type { SimUnit, UnitReport } from './types.js';
 /** Whether a living body keeps its side in the battle. */
 export function isFighter(u: Pick<SimUnit, 'type' | 'factory'>): boolean {
   if (u.type === 'wall') return false;
-  if (u.type === 'factory') return (u.factory?.canMake ?? 0) > 0;
+  if (u.type === 'factory') return (u.factory?.canMake ?? 0) > 0 || (u.factory?.stored ?? 0) > 0;
   return true;
 }
 
 /** Living value of a body as it stands now (0 for walls). */
 export function livingValueOf(u: Pick<SimUnit, 'type' | 'cost' | 'factory'>): number {
   if (u.type === 'wall') return 0;
-  if (u.type === 'factory' && u.factory) return u.factory.bodyCost + u.factory.minionValue * u.factory.canMake;
+  if (u.type === 'factory' && u.factory) return u.factory.bodyCost + u.factory.minionValue * (u.factory.canMake + u.factory.stored);
   return u.cost;
 }
 
@@ -39,9 +42,12 @@ export function killValueOf(u: Pick<SimUnit, 'type' | 'cost' | 'factory'>): numb
 type ReportLike = Pick<UnitReport, 'instanceId' | 'playerId' | 'cost' | 'diedAtTick'> &
   Partial<Pick<UnitReport, 'type' | 'factory' | 'spawnedAtTick'>>;
 
-/** canMake per living factory in a frame (`fac`, §9.3 Frames; minionsLeft in frames recorded before it). */
+/**
+ * The minions each living factory in a frame is worth (`fac`, §9.3 Frames):
+ * canMake + stored (minionsLeft in frames recorded before canMake).
+ */
 export function factoryLeftIn(frame: Pick<FrameDTO, 'fac'>): Map<string, number> {
-  return new Map((frame.fac ?? []).map((f) => [f[0], f[6] ?? f[2]]));
+  return new Map((frame.fac ?? []).map((f) => [f[0], (f[6] ?? f[2]) + (f[7] ?? 0)]));
 }
 
 /**

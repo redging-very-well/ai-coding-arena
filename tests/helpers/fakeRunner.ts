@@ -174,7 +174,7 @@ export function stats(over: Partial<UnitStats> & Pick<UnitStats, 'type'>): Stats
         : { name: 'Basic Factory', type: 'factory', maxHealth: 300, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900, color: '#C0A060', size: 18, shape: 'square' };
     return Object.freeze({ ...b, ...over, damage: 0, range: 0, speed: 0, attackCooldown: 0, size: b.size }) as StatsSnapshot;
   }
-  const base: Required<Omit<UnitStats, 'productionInterval'>> =
+  const base: Required<Omit<UnitStats, 'productionInterval' | 'produces' | 'burst'>> =
     over.type === 'tower'
       ? { name: 'Basic Tower', type: 'tower', maxHealth: 150, damage: 15, range: 180, speed: 0, attackCooldown: 45, color: '#FF9933', size: 14, shape: 'square' }
       : { name: 'Basic Soldier', type: 'soldier', maxHealth: 120, damage: 10, range: 40, speed: 1.5, attackCooldown: 60, color: '#3399FF', size: 10, shape: 'circle' };

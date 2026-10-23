@@ -112,7 +112,7 @@
 // ===========================================================================
 
 import type { CostBreakdown } from './cost.js';
-import type { BodyType, MapStyle, SpriteSpec, StatsSnapshot, UnitGroup, UnitType } from './contract.js';
+import type { BodyType, MapStyle, MinionKind, MinionOrder, SpriteSpec, StatsSnapshot, UnitGroup, UnitType } from './contract.js';
 import type { ValidationError, ValidationResult, ValidationSuccess, ValidationWarning } from './errors.js';
 import type { Corner } from './geometry.js';
 import type { Facing } from './maps.js';
@@ -191,6 +191,8 @@ export interface UnitCardDTO {
   stats: StatsSnapshot;
   /** M8.5: 'unit' (soldiers) or 'building' (towers, walls, factories): the two pick limits (§5.2). */
   group?: UnitGroup;
+  /** M8.6 factories: the squad orders its update() gave in the dry run (§7), e.g. ['swarm', 'attack']. */
+  orders?: MinionOrder[];
   cost: number;
   breakdown: CostBreakdown;
   status: UnitStatus;
@@ -637,15 +639,24 @@ export interface FrameProjectile {
 
 /**
  * A living factory in a frame (§9.3 Frames):
- * [factoryId, progress 0-100, minionsLeft, rallyX, rallyY, holding 0|1, canMake].
+ * [factoryId, progress 0-100, minionsLeft, focusX, focusY, holding 0|1, canMake, stored, burst, order].
  * canMake = the minions it can still make before time runs out (its living
- * value counts these; 0 = no longer a fighter, §9.3). Absent in older frames.
+ * value counts these and the stored ones; 0 with nothing stored = no longer a
+ * fighter, §9.3). M8.6: stored = minions waiting inside, burst = its burst,
+ * order = the index in MINION_ORDERS (0 attack, 1 defend, 2 swarm, 3 guard),
+ * and (focusX, focusY) = where its minions head: the rally point (attack), the
+ * factory (defend), the target (swarm) or the ally (guard). Entries from 6 on
+ * are absent in older frames (read as canMake = minionsLeft, 0 stored, burst 1, attack).
  */
-export type FrameFactory = [string, number, number, number, number, 0 | 1, number?];
+export type FrameFactory = [string, number, number, number, number, 0 | 1, number?, number?, number?, number?];
 
 export type FrameEvent =
   /** A body appears: every placed copy at t = 0, and minions when a factory makes them (`factoryId`, position). */
-  | { type: 'spawn'; instanceId: string; factoryId?: string; x?: number; y?: number }
+  | { type: 'spawn'; instanceId: string; factoryId?: string; x?: number; y?: number; kind?: MinionKind }
+  /** M8.6: 2+ stored minions left a factory together (the "release!" burst, §5.3). */
+  | { type: 'release'; factoryId: string; count: number }
+  /** M8.6: a factory died with minions inside; they are lost. */
+  | { type: 'lost'; factoryId: string; count: number }
   /** An eliminated side's walls and spent factories vanish, credited to nobody (§9.3). */
   | { type: 'crumble'; ids: string[] }
   | { type: 'fire'; instanceId: string; targetId: string; melee: boolean }
@@ -694,8 +705,10 @@ export interface RevealedUnitDTO {
 /** Revealed at START: fielded types and placements of every player. */
 export interface BattleRevealDTO {
   round: number;
-  /** M8.5: the built-in minion (same for everyone; its sprite ships with the client). Present when a factory is fielded. */
+  /** M8.5: the built-in minion (same for everyone; its sprite ships with the client). Present when a factory is fielded. M8.6: the grunt. */
   minion?: { stats: StatsSnapshotLike; value: number };
+  /** M8.6: every minion kind a fielded factory builds (stats and value). */
+  minions?: Partial<Record<MinionKind, { stats: StatsSnapshotLike; value: number }>>;
   /** Battle length in ticks. */
   totalTicks: number;
   /** The battle's map (§9.2). */
@@ -856,6 +869,8 @@ export interface BattleReportTypeDTO {
   minionsMade?: number;
   minionsLost?: number;
   minionDamage?: number;
+  /** M8.6 factories: minions lost inside when a copy was destroyed (part of minionsLost). */
+  storedLost?: number;
   /** Soldiers: the most ticks in a row a wall was in the way of one copy. */
   blockedTicksMax?: number;
 }

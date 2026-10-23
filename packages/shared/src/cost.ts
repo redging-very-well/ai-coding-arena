@@ -24,12 +24,16 @@
 //             minionValue = ceil(minionCost × minionDiscount), minionCost = the
 //             unit formula above on the built-in minion's stats.
 //
+// M8.6 (§6 Minion kinds): minionValue follows the factory's `produces` kind
+// (grunt, archer, runner, brute; default grunt), each priced as a soldier
+// on its `factory.minions.<kind>` stats. `burst` never changes the price.
+//
 // The factory price depends on more than `cost` (the minion stats, the battle
 // length), so `computeCost` takes an optional `PricingContext`; pass
 // `pricingOf(config)` whenever a full config is at hand.
 
 import { DEFAULT_CONFIG, type CostCoefficients, type FactoryConfig, type GameConfig, type StatBounds } from './config.js';
-import { isNonCombatBuilding, sizeOf, type CostStats, type UnitType } from './contract.js';
+import { MINION_KIND_NAMES, isNonCombatBuilding, producesOf, sizeOf, type CostStats, type MinionKind, type UnitType } from './contract.js';
 import type { ValidationError, ValidationWarning } from './errors.js';
 
 /** Size is free up to this radius; each px above it costs `cSize` (§6). */
@@ -93,7 +97,9 @@ export interface CostStatPart {
 export interface CostProduction {
   /** Ticks between two minions. */
   interval: number;
-  /** The built-in minion priced as a soldier (rounded). */
+  /** M8.6: the minion kind it builds (`produces`, default grunt). */
+  kind: MinionKind;
+  /** The kind's minion priced as a soldier (rounded). */
   minionCost: number;
   /** ceil(minionCost × minionDiscount): what one expected minion costs the factory. */
   minionValue: number;
@@ -182,7 +188,7 @@ function statPart(stats: CostStats, stat: PricedStat, coeffs: CostCoefficients):
 /** What a factory's price depends on besides `cost` (§6 Re-pricing). */
 export interface PricingContext {
   battleTicks: number;
-  factory: Pick<FactoryConfig, 'maxMinionsPerFactory' | 'minion'>;
+  factory: Pick<FactoryConfig, 'maxMinionsPerFactory' | 'minions'>;
 }
 
 /** The pricing context of the default config. */
@@ -214,16 +220,26 @@ export function expectedMinions(productionInterval: number, pricing: PricingCont
   return Math.max(0, Math.min(pricing.factory.maxMinionsPerFactory, Math.floor((pricing.battleTicks - 1) / productionInterval)));
 }
 
-/** The built-in minion's stats as a soldier (for its price, §5.2). */
-export function minionCostStats(pricing: PricingContext = DEFAULT_PRICING): CostStats {
-  const m = pricing.factory.minion;
+/** A minion kind's stats as a soldier (for its price, §5.2, §6 Minion kinds). */
+export function minionCostStats(pricing: PricingContext = DEFAULT_PRICING, kind: MinionKind = 'grunt'): CostStats {
+  const m = pricing.factory.minions[kind];
   return { type: 'soldier', maxHealth: m.maxHealth, damage: m.damage, range: m.range, speed: m.speed, attackCooldown: m.attackCooldown, size: m.size };
 }
 
-/** minionCost (the soldier price of a minion) and minionValue (what a factory pays per expected minion, §6). */
-export function minionPrice(coeffs: CostCoefficients, pricing: PricingContext = DEFAULT_PRICING): { minionCost: number; minionValue: number } {
-  const minionCost = computeCost(minionCostStats(pricing), coeffs, pricing).cost;
+/** minionCost (the soldier price of a minion of that kind) and minionValue (what a factory pays per expected minion, §6). */
+export function minionPrice(
+  coeffs: CostCoefficients,
+  pricing: PricingContext = DEFAULT_PRICING,
+  kind: MinionKind = 'grunt',
+): { minionCost: number; minionValue: number } {
+  const minionCost = computeCost(minionCostStats(pricing, kind), coeffs, pricing).cost;
   return { minionCost, minionValue: roundCost(minionCost * coeffs.factory.minionDiscount) };
+}
+
+/** "archer" / "archers" etc. for production texts; grunts are just "minion(s)" (the M8.5 wording). */
+export function minionKindWord(kind: MinionKind, count: number): string {
+  const w = kind === 'grunt' ? 'minion' : MINION_KIND_NAMES[kind].toLowerCase();
+  return count === 1 ? w : `${w}s`;
 }
 
 const ZERO_STATS: readonly PricedStat[] = ['damage', 'range', 'speed', 'size'];
@@ -266,17 +282,19 @@ function computeBuildingCost(stats: CostStats & { type: 'wall' | 'factory' }, co
   const body = roundCost(sum);
   const interval = stats.productionInterval ?? 0;
   const expected = expectedMinions(interval, pricing);
-  const { minionCost, minionValue } = minionPrice(coeffs, pricing);
+  const kind = producesOf(stats);
+  const { minionCost, minionValue } = minionPrice(coeffs, pricing, kind);
   const prodTotal = minionValue * expected;
   const share = coeffs.factory.minionDiscount === 0.5 ? 'half' : `${fmt(coeffs.factory.minionDiscount * 100)}%`;
   const production: CostProduction = {
     interval,
+    kind,
     minionCost,
     minionValue,
     expected,
     total: prodTotal,
     text:
-      `Production: ${expected} minion${expected === 1 ? '' : 's'} × $${minionValue} (${share} of a $${minionCost} minion, ` +
+      `Production: ${expected} ${minionKindWord(kind, expected)} × $${minionValue} (${share} of a $${minionCost} ${minionKindWord(kind, 1)}, ` +
       `because they arrive during the battle) = $${prodTotal}`,
   };
   const raw = sum + prodTotal;
@@ -455,12 +473,22 @@ function productionLever(
       break;
     }
   }
-  if (to <= from) return `The production of ${fromE} minions is the biggest cost; lower maxHealth instead.`;
+  const kind = producesOf(stats);
+  // M8.6: a cheaper kind that fits is often the simplest lever.
+  let cheaper = '';
+  if (kind !== 'grunt') {
+    const grunts = computeCost({ ...stats, produces: 'grunt' }, coeffs, pricing);
+    if (grunts.cost < result.cost) {
+      cheaper = ` Making grunts instead of ${minionKindWord(kind, 2)} (this.produces = 'grunt') saves $${result.cost - grunts.cost} ($${grunts.cost}).`;
+    }
+  }
+  if (to <= from) return `The production of ${fromE} ${minionKindWord(kind, fromE)} is the biggest cost; lower maxHealth instead.${cheaper}`;
   const next = computeCost({ ...stats, productionInterval: to }, coeffs, pricing);
   const toE = expectedMinions(to, pricing);
   return (
-    `The production (${fromE} minions × $${result.breakdown.production?.minionValue ?? 0}) is the biggest cost: ` +
-    `raising productionInterval from ${fmt(from)} to ${to} makes ${toE} minion${toE === 1 ? '' : 's'} instead of ${fromE} and saves $${result.cost - next.cost} ($${next.cost}).`
+    `The production (${fromE} ${minionKindWord(kind, fromE)} × $${result.breakdown.production?.minionValue ?? 0}) is the biggest cost: ` +
+    `raising productionInterval from ${fmt(from)} to ${to} makes ${toE} ${minionKindWord(kind, toE)} instead of ${fromE} and saves $${result.cost - next.cost} ($${next.cost}).` +
+    cheaper
   );
 }
 

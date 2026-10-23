@@ -7,12 +7,14 @@
 // down, and attacks out of range. M8.5 (§5.2): `rally` and `hold` are factory
 // actions; `move` is for soldiers and minions, `attack` for soldiers, towers
 // and minions; any other combination idles (no strike). Walls are valid
-// targets. Validation runs against the start-of-tick
+// targets. M8.6 (§5.3): `command` (a squad order) and `release` are factory
+// actions too; a command with an unknown order, or swarm/guard without a
+// string targetId, is malformed (the factory keeps its previous order). Validation runs against the start-of-tick
 // snapshot, the same state every unit decided on, so resolution is
 // simultaneous: an attack that was in range in the snapshot fires this tick
 // even if separation nudges a body afterwards.
 
-import { clampToArena, edgeDistance, type Point } from '@pixel-clash/shared';
+import { clampToArena, edgeDistance, isMinionOrder, type MinionOrder, type Point } from '@pixel-clash/shared';
 import type { SimUnit } from './types.js';
 
 export type IdleReason =
@@ -31,6 +33,8 @@ export type ResolvedAction =
   | { kind: 'move'; destination: Point }
   | { kind: 'attack'; targetId: string }
   | { kind: 'rally'; destination: Point }
+  | { kind: 'command'; order: MinionOrder; targetId: string | null; destination: Point | null }
+  | { kind: 'release' }
   | { kind: 'hold' };
 
 const idle = (reason: IdleReason): ResolvedAction => ({ kind: 'idle', reason });
@@ -77,6 +81,24 @@ export function resolveAction(
 
     case 'hold':
       return actor.type === 'factory' ? { kind: 'hold' } : idle('wrong-type');
+
+    case 'release':
+      return actor.type === 'factory' ? { kind: 'release' } : idle('wrong-type');
+
+    case 'command': {
+      if (actor.type !== 'factory') return idle('wrong-type');
+      const order = raw['order'];
+      if (!isMinionOrder(order)) return idle('malformed');
+      const targetId = raw['targetId'];
+      if ((order === 'swarm' || order === 'guard') && typeof targetId !== 'string') return idle('malformed');
+      let destination: Point | null = null;
+      const dest = raw['destination'];
+      if (order === 'attack' && dest !== undefined) {
+        if (!isRecord(dest) || !finite(dest['x']) || !finite(dest['y'])) return idle('malformed');
+        destination = clampToArena({ x: dest['x'], y: dest['y'] }, arena);
+      }
+      return { kind: 'command', order, targetId: order === 'swarm' || order === 'guard' ? (targetId as string) : null, destination };
+    }
 
     case 'attack': {
       if (actor.type === 'factory' || actor.type === 'wall') return idle('wrong-type');

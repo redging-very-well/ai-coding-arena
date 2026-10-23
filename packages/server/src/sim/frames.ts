@@ -11,8 +11,11 @@
 // where their (rounded) hp changed, `fac` lists the living factories, and the
 // flags gain BLOCKED (a wall turned the move) and PRODUCED (a factory made a
 // minion).
+//
+// M8.6 (§9.3): `fac` entries gain stored, burst and the order code, and
+// their (x, y) is the order's focus (`focusOf`; default the rally point).
 
-import { FRAME_FLAGS, type FrameDTO, type FrameEvent, type FrameFactory, type FrameUnit } from '@pixel-clash/shared';
+import { FRAME_FLAGS, MINION_ORDERS, type FrameDTO, type FrameEvent, type FrameFactory, type FrameUnit, type Point } from '@pixel-clash/shared';
 import type { Projectile, SimUnit } from './types.js';
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
@@ -42,7 +45,13 @@ export class FrameRecorder {
    * Snapshot the living units (instanceId order) and projectiles at time `t`.
    * Resets each unit's `firedSinceFrame` and `movedSinceFrame` flags.
    */
-  record(t: number, livingUnits: readonly SimUnit[], projectiles: readonly Projectile[], safeZoneRadius: number): FrameDTO {
+  record(
+    t: number,
+    livingUnits: readonly SimUnit[],
+    projectiles: readonly Projectile[],
+    safeZoneRadius: number,
+    focusOf: (factory: SimUnit) => Point = (u) => u.factory!.rally,
+  ): FrameDTO {
     const first = this.frames.length === 0;
     const units: FrameUnit[] = [];
     let fac: FrameFactory[] | undefined;
@@ -56,7 +65,19 @@ export class FrameRecorder {
       const f = u.factory;
       if (f) {
         const progress = f.minionsLeft > 0 ? Math.floor((f.timer * 100) / f.productionInterval) : 100;
-        (fac ??= []).push([u.id, progress, f.minionsLeft, round2(f.rally.x), round2(f.rally.y), f.holding ? 1 : 0, f.canMake]);
+        const focus = focusOf(u);
+        (fac ??= []).push([
+          u.id,
+          progress,
+          f.minionsLeft,
+          round2(focus.x),
+          round2(focus.y),
+          f.holding ? 1 : 0,
+          f.canMake,
+          f.stored,
+          f.burst,
+          Math.max(0, MINION_ORDERS.indexOf(f.order)),
+        ]);
       }
     }
     for (const u of livingUnits) {

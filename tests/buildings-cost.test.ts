@@ -127,7 +127,7 @@ describe('§6 reference buildings (curve k = 2)', () => {
   it('re-pricing: factories follow the soldier coefficients, the minion stats and the discount', () => {
     const base = cost(factory(300, 900));
     expect(cost(factory(300, 900), cfg({ cost: { speed: 24 } }))).toBeGreaterThan(base);
-    expect(cost(factory(300, 900), cfg({ factory: { minion: { maxHealth: 80 } } }))).toBeGreaterThan(base);
+    expect(cost(factory(300, 900), cfg({ factory: { minions: { grunt: { maxHealth: 80 } } } }))).toBeGreaterThan(base);
     expect(cost(factory(300, 900), cfg({ cost: { factory: { minionDiscount: 1 } } }))).toBe(53 + 5 * 55);
     // A retune can push a factory over the cap.
     expect(cost(factory(600, 600), cfg({ cost: { factory: { minionDiscount: 1 } } }))).toBeGreaterThan(C.caps.unitCost);
@@ -275,5 +275,111 @@ describe('the built-in minion sprite', () => {
     expect(s.grid).toBe(12);
     expect(s.palette.b).toBe('#33CC66');
     expect(checkSprite(s).ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M8.6: minion kinds and burst (§5.3, §6 Minion kinds)
+// ---------------------------------------------------------------------------
+
+describe('§6 minion kinds and factory prices (M8.6)', () => {
+  const kindFactory = (hp: number, interval: number, produces?: 'grunt' | 'archer' | 'runner' | 'brute'): CostStats => ({
+    ...factory(hp, interval),
+    ...(produces ? { produces } : {}),
+  });
+
+  it('each kind is priced as a soldier: grunt $55/$28, archer $69/$35, runner $76/$38, brute $69/$35', () => {
+    const P = pricingOf(C);
+    expect(minionPrice(C.cost, P, 'grunt')).toEqual({ minionCost: 55, minionValue: 28 });
+    expect(minionPrice(C.cost, P, 'archer')).toEqual({ minionCost: 69, minionValue: 35 });
+    expect(minionPrice(C.cost, P, 'runner')).toEqual({ minionCost: 76, minionValue: 38 });
+    expect(minionPrice(C.cost, P, 'brute')).toEqual({ minionCost: 69, minionValue: 35 });
+  });
+
+  it.each([
+    ['Basic Factory (produces omitted)', 300, 900, undefined, 193],
+    ['Archer Factory', 300, 900, 'archer', 228],
+    ['Runner Factory', 300, 900, 'runner', 243],
+    ['Brute Factory', 300, 900, 'brute', 228],
+    ['Swarm Factory', 300, 600, 'grunt', 277],
+    ['Archer Nest', 300, 600, 'archer', 333],
+    ['Runner Rush', 300, 600, 'runner', 357],
+    ['Brute Forge', 300, 600, 'brute', 333],
+    ['Slow Brutes', 300, 1200, 'brute', 193],
+    ['Armoured Runner Rush', 600, 600, 'runner', 438],
+    ['Maxed runner factory', 1000, 600, 'runner', 674],
+  ] as const)('%s: $%#', (_name, hp, interval, produces, expected) => {
+    expect(cost(kindFactory(hp, interval, produces))).toBe(expected);
+  });
+
+  it('the production line names the kind; burst never changes the price', () => {
+    const b = computeCost(kindFactory(300, 900, 'archer'), C.cost, pricingOf(C)).breakdown;
+    expect(b.production).toMatchObject({ kind: 'archer', minionCost: 69, minionValue: 35, expected: 5, total: 175 });
+    expect(b.production!.text).toBe('Production: 5 archers × $35 (half of a $69 archer, because they arrive during the battle) = $175');
+    const withBurst = { ...kindFactory(300, 900, 'archer'), burst: 4 } as CostStats;
+    expect(cost(withBurst)).toBe(228);
+  });
+
+  it('a kind retune re-prices only the factories of that kind', () => {
+    const tuned = cfg({ factory: { minions: { runner: { speed: 2 } } } });
+    expect(cost(kindFactory(300, 900, 'runner'), tuned)).toBeLessThan(243);
+    expect(cost(kindFactory(300, 900), tuned)).toBe(193);
+    expect(cost(kindFactory(300, 900, 'archer'), tuned)).toBe(228);
+  });
+
+  it('a too-expensive non-grunt factory also suggests making grunts', () => {
+    // Production ($304) is the bigger cost here (body 800 HP: $229).
+    const s = kindFactory(800, 600, 'runner');
+    const r = computeCost(s, C.cost, pricingOf(C));
+    const e = tooExpensiveError(s, r, C.caps.unitCost, C.cost, C.stats.bounds, pricingOf(C));
+    expect(e.fix).toContain("Making grunts instead of runners (this.produces = 'grunt') saves $80 ($453)");
+  });
+
+  it('config: an old factory.minion patch migrates to the grunt; kinds stay legal soldiers; burst.max <= maxAlivePerFactory', () => {
+    const migrated = safeParseConfig({ factory: { minion: { maxHealth: 60 } } });
+    expect(migrated.success).toBe(true);
+    expect(migrated.success && migrated.data.factory.minions.grunt.maxHealth).toBe(60);
+    expect(migrated.success && migrated.data.factory.minions.archer.maxHealth).toBe(24);
+    expect(safeParseConfig({ factory: { minions: { brute: { speed: 6 } } } }).success).toBe(false);
+    expect(safeParseConfig({ factory: { minions: { archer: { range: 400 } } } }).success).toBe(false);
+    expect(safeParseConfig({ factory: { minions: { brute: { wallDamageMultiplier: 9 } } } }).success).toBe(false);
+    expect(safeParseConfig({ stats: { bounds: { burst: { min: 1, max: 5 } } } }).success).toBe(false);
+    expect(safeParseConfig({ stats: { bounds: { burst: { min: 1, max: 5 } } }, factory: { maxAlivePerFactory: 5 } }).success).toBe(true);
+    expect(safeParseConfig({ stats: { bounds: { burst: { min: 0, max: 3 } } } }).success).toBe(false);
+  });
+
+  it('checkStats: produces and burst defaults, errors and ignored fields', () => {
+    const B = C.stats.bounds;
+    const base = { name: 'F', type: 'factory', maxHealth: 300, productionInterval: 900, color: '#C0A060' };
+    const ok = checkStats(base, B);
+    expect(ok.ok && ok.stats).toMatchObject({ produces: 'grunt', burst: 1 });
+    const archer = checkStats({ ...base, produces: 'archer', burst: 3 }, B);
+    expect(archer.ok && archer.stats).toMatchObject({ produces: 'archer', burst: 3 });
+    const bad = (raw: Record<string, unknown>) => {
+      const r = checkStats({ ...base, ...raw }, B);
+      if (r.ok) throw new Error('expected errors');
+      return r.errors[0]!;
+    };
+    expect(bad({ produces: 'archers' })).toMatchObject({ code: 'STAT_OUT_OF_RANGE', field: 'produces', allowed: { oneOf: ['grunt', 'archer', 'runner', 'brute'] } });
+    expect(bad({ produces: 'archers' }).fix).toContain("this.produces = 'archer'");
+    expect(bad({ produces: 'Knight' }).fix).toContain("this.produces = 'brute'");
+    expect(bad({ produces: 3 })).toMatchObject({ code: 'STAT_WRONG_TYPE', field: 'produces' });
+    expect(bad({ burst: 0 })).toMatchObject({ code: 'STAT_OUT_OF_RANGE', field: 'burst', allowed: { min: 1, max: 4 } });
+    expect(bad({ burst: 5 })).toMatchObject({ code: 'STAT_OUT_OF_RANGE', field: 'burst' });
+    expect(bad({ burst: 2.5 })).toMatchObject({ code: 'BURST_NOT_INTEGER', field: 'burst' });
+    expect(bad({ burst: '3' })).toMatchObject({ code: 'STAT_WRONG_TYPE', field: 'burst' });
+    const soldier = checkStats({ name: 'S', type: 'soldier', maxHealth: 100, damage: 5, range: 30, speed: 1, attackCooldown: 60, color: '#112233', produces: 'archer', burst: 2 }, B);
+    expect(soldier.ok).toBe(true);
+    expect(soldier.warnings.map((w) => [w.code, w.field])).toEqual([['W_STAT_IGNORED', 'produces'], ['W_STAT_IGNORED', 'burst']]);
+    expect(soldier.ok && 'produces' in soldier.stats).toBe(false);
+  });
+
+  it('every kind has its own 12×12 sprite, valid and tinted with the factory colour', () => {
+    const looks = (['grunt', 'archer', 'runner', 'brute'] as const).map((k) => minionSprite('#33AA55', k));
+    for (const l of looks) {
+      expect(checkSprite(l).ok).toBe(true);
+      expect(l.palette.b).toBe('#33AA55');
+    }
+    expect(new Set(looks.map((l) => JSON.stringify(l.frames.idle))).size).toBe(4);
   });
 });

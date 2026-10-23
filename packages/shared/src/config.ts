@@ -78,10 +78,15 @@ export const StatBoundsSchema = z.object({
   factoryHealth: RangeSchema,
   /** Factory: integer ticks between two minions (§5.2). */
   productionInterval: RangeSchema,
+  /** Factory (M8.6): minions saved up inside before they leave together (§5.3). Whole numbers; max ≤ factory.maxAlivePerFactory. */
+  burst: RangeSchema,
 });
 export type StatBounds = z.infer<typeof StatBoundsSchema>;
 
-/** The built-in minion (§5.2): the same for everyone. Kept inside the soldier bounds (refined below). */
+/**
+ * One built-in minion kind (§5.2, §5.3): the same for everyone. Priced as a
+ * soldier, so it is kept inside the soldier bounds (refined below).
+ */
 export const MinionStatsSchema = z.object({
   maxHealth: z.number().positive(),
   damage: nonNeg(),
@@ -93,8 +98,19 @@ export const MinionStatsSchema = z.object({
   aggroRange: nonNeg(),
   /** Ticks blocked by an enemy wall before a minion attacks it. */
   impatientTicks: posInt(),
+  /** Hits on walls deal damage × this (M8.6: brutes 3, the rest 1). Not priced (§5.3). */
+  wallDamageMultiplier: finite().refine((n) => n >= 1 && n <= 5, 'must be 1-5'),
 });
 export type MinionStats = z.infer<typeof MinionStatsSchema>;
+
+/** The four preset minion kinds (§5.3), keyed like `MinionKind`. */
+export const MinionKindsSchema = z.object({
+  grunt: MinionStatsSchema,
+  archer: MinionStatsSchema,
+  runner: MinionStatsSchema,
+  brute: MinionStatsSchema,
+});
+export type MinionKindsConfig = z.infer<typeof MinionKindsSchema>;
 
 export const FactorySchema = z.object({
   /** Most minions one factory makes in a battle (E's cap, §6). */
@@ -107,7 +123,16 @@ export const FactorySchema = z.object({
   rallyGuardRadius: nonNeg(),
   /** A minion closer than this to its rally point idles there. */
   rallyArriveRadius: nonNeg(),
-  minion: MinionStatsSchema,
+  /** Order `defend` (M8.6): minions fight enemies within this distance of the factory's centre. */
+  defendRadius: nonNeg(),
+  /** Order `defend`: a minion this close to the factory's centre waits there. */
+  defendArriveRadius: nonNeg(),
+  /** Order `guard`: minions fight enemies within this distance of the guarded ally. */
+  guardRadius: nonNeg(),
+  /** Order `guard`: a minion within ally radius + own radius + this waits there. */
+  guardArriveGap: nonNeg(),
+  /** The minion kinds a factory can build (`produces`, M8.6); `grunt` is the M8.5 minion. */
+  minions: MinionKindsSchema,
 });
 export type FactoryConfig = z.infer<typeof FactorySchema>;
 
@@ -238,9 +263,8 @@ export const ConfigSchema = z.object({
     submitMinIntervalMs: posInt(),
   }),
 }).superRefine((c, ctx) => {
-  // The built-in minion is priced as a soldier (§6), so it must be a legal soldier.
+  // Every minion kind is priced as a soldier (§6), so it must be a legal soldier.
   const b = c.stats.bounds;
-  const m = c.factory.minion;
   const within: Array<[keyof MinionStats, { min: number; max: number }]> = [
     ['maxHealth', b.maxHealth],
     ['damage', b.damage],
@@ -249,10 +273,20 @@ export const ConfigSchema = z.object({
     ['attackCooldown', b.attackCooldown],
     ['size', b.size],
   ];
-  for (const [k, r] of within) {
-    if (m[k] < r.min || m[k] > r.max) {
-      ctx.addIssue({ code: 'custom', path: ['factory', 'minion', k], message: `must be within the soldier bounds ${r.min}-${r.max}` });
+  for (const [kind, m] of Object.entries(c.factory.minions) as Array<[string, MinionStats]>) {
+    for (const [k, r] of within) {
+      if (m[k] < r.min || m[k] > r.max) {
+        ctx.addIssue({ code: 'custom', path: ['factory', 'minions', kind, k], message: `must be within the soldier bounds ${r.min}-${r.max}` });
+      }
     }
+  }
+  // Burst (§5.3): whole minions, at least 1, and stored minions count toward the per-factory cap.
+  const burst = b.burst;
+  if (!Number.isInteger(burst.min) || !Number.isInteger(burst.max) || burst.min < 1) {
+    ctx.addIssue({ code: 'custom', path: ['stats', 'bounds', 'burst'], message: 'must be whole numbers >= 1' });
+  }
+  if (burst.max > c.factory.maxAlivePerFactory) {
+    ctx.addIssue({ code: 'custom', path: ['stats', 'bounds', 'burst', 'max'], message: `must be <= factory.maxAlivePerFactory (${c.factory.maxAlivePerFactory})` });
   }
 });
 
@@ -285,6 +319,7 @@ export const DEFAULT_CONFIG: GameConfig = {
       wallHealth: { min: 50, max: 1500 },
       factoryHealth: { min: 100, max: 1000 },
       productionInterval: { min: 600, max: 1800 },
+      burst: { min: 1, max: 4 },
     },
   },
   caps: {
@@ -339,7 +374,17 @@ export const DEFAULT_CONFIG: GameConfig = {
     maxAlivePerBattle: 40,
     rallyGuardRadius: 200,
     rallyArriveRadius: 24,
-    minion: { maxHealth: 40, damage: 5, range: 20, speed: 1.5, attackCooldown: 60, size: 8, aggroRange: 120, impatientTicks: 120 },
+    defendRadius: 160,
+    defendArriveRadius: 48,
+    guardRadius: 120,
+    guardArriveGap: 16,
+    // §5.3 minion kinds (M8.6). grunt = the M8.5 minion; each must be a legal soldier.
+    minions: {
+      grunt: { maxHealth: 40, damage: 5, range: 20, speed: 1.5, attackCooldown: 60, size: 8, aggroRange: 120, impatientTicks: 120, wallDamageMultiplier: 1 },
+      archer: { maxHealth: 24, damage: 5, range: 110, speed: 1.2, attackCooldown: 60, size: 7, aggroRange: 150, impatientTicks: 120, wallDamageMultiplier: 1 },
+      runner: { maxHealth: 28, damage: 4, range: 20, speed: 2.6, attackCooldown: 60, size: 6, aggroRange: 120, impatientTicks: 120, wallDamageMultiplier: 1 },
+      brute: { maxHealth: 100, damage: 8, range: 20, speed: 0.9, attackCooldown: 60, size: 11, aggroRange: 120, impatientTicks: 30, wallDamageMultiplier: 3 },
+    },
   },
   sandbox: {
     mode: 'ivm',
@@ -395,7 +440,7 @@ export function deepMerge<T>(base: T, patch: unknown): T {
 
 /**
  * Rewrite keys of older config files/patches to the current shape. Today:
- * `caps.maxTypes` is dropped (M8.5 replaced it with maxUnitTypes and
+ * `factory.minion` becomes `factory.minions.grunt` (M8.6), `caps.maxTypes` is dropped (M8.5 replaced it with maxUnitTypes and
  * maxBuildingTypes, which keep their defaults), and the fixed place-points table (the top-level `points` array, later
  * `scoring.placePoints`) is gone: place points are the §9 formula, so both
  * keys are dropped. Returns a new object; anything that isn't a plain object
@@ -408,6 +453,13 @@ export function migrateConfigPatch<T>(patch: T): T {
   if (isPlainObject(out.caps) && 'maxTypes' in out.caps) {
     const { maxTypes: _maxTypes, ...caps } = out.caps;
     out = { ...out, caps };
+  }
+  // M8.6: the one built-in minion (factory.minion) became the grunt of factory.minions.
+  if (isPlainObject(out.factory) && 'minion' in out.factory) {
+    const { minion, ...factory } = out.factory;
+    const minions = isPlainObject(factory.minions) ? factory.minions : {};
+    const grunt = isPlainObject(minions.grunt) ? minions.grunt : {};
+    out = { ...out, factory: { ...factory, minions: { ...minions, grunt: { ...(isPlainObject(minion) ? minion : {}), ...grunt } } } };
   }
   const hasLegacyScoring = isPlainObject(out.scoring) && 'placePoints' in out.scoring;
   if (!('points' in out) && !hasLegacyScoring) return out as T;

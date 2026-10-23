@@ -7,11 +7,16 @@
 
 import type { StatBounds } from './config.js';
 import {
+  DEFAULT_BURST,
+  DEFAULT_MINION_KIND,
   DEFAULT_SHAPE,
   DEFAULT_SIZE,
+  MINION_KINDS,
   SHAPES,
   UNIT_TYPES,
+  isMinionKind,
   isNonCombatBuilding,
+  type MinionKind,
   type Shape,
   type StatsSnapshot,
   type UnitType,
@@ -73,7 +78,7 @@ function checkNumber(
   field: string,
   value: unknown,
   range: { min: number; max: number },
-  opts: { integer?: boolean; integerCode?: 'COOLDOWN_NOT_INTEGER' | 'INTERVAL_NOT_INTEGER'; fix?: string; example?: number } = {},
+  opts: { integer?: boolean; integerCode?: 'COOLDOWN_NOT_INTEGER' | 'INTERVAL_NOT_INTEGER' | 'BURST_NOT_INTEGER'; fix?: string; example?: number } = {},
 ): number | undefined {
   const eg = opts.example ?? example(field, range.min, range.max);
   const setFix =
@@ -143,8 +148,57 @@ function ignored(field: string, type: UnitType, value: unknown): ValidationWarni
     field,
     value: safeValue(value),
     message: `A ${type} doesn't use ${field}, so it is ignored.`,
-    fix: `Remove this.${field} from the constructor (a ${type} ${field === 'productionInterval' ? "doesn't build minions" : field === 'size' ? 'has a fixed size' : "can't attack"}).`,
+    fix: `Remove this.${field} from the constructor (a ${type} ${
+      field === 'productionInterval' || field === 'produces' || field === 'burst'
+        ? "doesn't build minions: only factories do"
+        : field === 'size'
+          ? 'has a fixed size'
+          : "can't attack"
+    }).`,
   };
+}
+
+/** Words players and Claude might use for a minion kind (§7 near-miss fix). */
+const KIND_ALIASES: Readonly<Record<string, MinionKind>> = {
+  minion: 'grunt', soldier: 'grunt', warrior: 'grunt', footman: 'grunt', robot: 'grunt', basic: 'grunt',
+  bow: 'archer', bowman: 'archer', ranger: 'archer', shooter: 'archer', sniper: 'archer', ranged: 'archer', gunner: 'archer',
+  scout: 'runner', ninja: 'runner', speedy: 'runner', fast: 'runner', rusher: 'runner', sprinter: 'runner',
+  tank: 'brute', knight: 'brute', giant: 'brute', ogre: 'brute', smasher: 'brute', breaker: 'brute', heavy: 'brute', golem: 'brute',
+};
+
+/** The kind a near-miss value probably meant ('Archers' → archer, 'knight' → brute), if any. */
+export function closestMinionKind(v: string): MinionKind | undefined {
+  const w = v.trim().toLowerCase();
+  const candidates = [w, w.replace(/e?s$/, ''), w.replace(/s$/, '')];
+  for (const c of candidates) {
+    if (isMinionKind(c)) return c;
+    const alias = KIND_ALIASES[c];
+    if (alias) return alias;
+  }
+  return undefined;
+}
+
+const KIND_LIST = MINION_KINDS.map((k) => `'${k}'`).join(', ');
+
+/** `produces` (§5.3, §7): a string naming one of the minion kinds. */
+function checkProduces(errors: ValidationError[], value: unknown): MinionKind | undefined {
+  if (typeof value !== 'string') {
+    errors.push(
+      wrongType('produces', value, 'string', `Set this.produces to one of ${KIND_LIST} (text in quotes), or leave it out for grunts.`),
+    );
+    return undefined;
+  }
+  if (isMinionKind(value)) return value;
+  const guess = closestMinionKind(value);
+  errors.push({
+    code: 'STAT_OUT_OF_RANGE',
+    field: 'produces',
+    value,
+    allowed: { oneOf: [...MINION_KINDS] },
+    message: `produces is "${value}" but must be one of ${KIND_LIST}.`,
+    fix: `Set this.produces = '${guess ?? 'grunt'}' (one of ${KIND_LIST}), or leave it out for grunts.`,
+  });
+  return undefined;
 }
 
 /**
@@ -235,6 +289,8 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
   let attackCooldown: number | undefined;
   let speed: number | undefined;
   let productionInterval: number | undefined;
+  let produces: MinionKind | undefined;
+  let burst: number | undefined;
 
   if (building) {
     const t = type!;
@@ -285,8 +341,18 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
             fix: `In the constructor set this.productionInterval to a whole number of ticks from ${bounds.productionInterval.min} to ${bounds.productionInterval.max}, e.g. this.productionInterval = 900 (one minion every 15 s).`,
           })
         : undefined;
-    } else if (has('productionInterval')) {
-      warnings.push(ignored('productionInterval', t, raw.productionInterval));
+      produces = has('produces') ? checkProduces(errors, raw.produces) : DEFAULT_MINION_KIND;
+      burst = has('burst')
+        ? checkNumber(errors, 'burst', raw.burst, bounds.burst, {
+            integer: true,
+            integerCode: 'BURST_NOT_INTEGER',
+            fix: `In the constructor set this.burst to a whole number from ${bounds.burst.min} to ${bounds.burst.max}, e.g. this.burst = 3 (1 = send each minion out as soon as it is made), or leave it out.`,
+          })
+        : DEFAULT_BURST;
+    } else {
+      for (const f of ['productionInterval', 'produces', 'burst'] as const) {
+        if (has(f)) warnings.push(ignored(f, t, raw[f]));
+      }
     }
     damage = 0;
     range = 0;
@@ -318,7 +384,11 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
         speed = checkNumber(errors, 'speed', v, bounds.soldierSpeed);
       }
     }
-    if (type !== undefined && has('productionInterval')) warnings.push(ignored('productionInterval', type, raw.productionInterval));
+    if (type !== undefined) {
+      for (const f of ['productionInterval', 'produces', 'burst'] as const) {
+        if (has(f)) warnings.push(ignored(f, type, raw[f]));
+      }
+    }
   }
 
   // color: "#RRGGBB".
@@ -374,7 +444,7 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
     speed === undefined ||
     attackCooldown === undefined ||
     color === undefined ||
-    (type === 'factory' && productionInterval === undefined)
+    (type === 'factory' && (productionInterval === undefined || produces === undefined || burst === undefined))
   ) {
     return { ok: false, errors, warnings };
   }
@@ -387,7 +457,7 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
     range,
     speed,
     attackCooldown,
-    ...(type === 'factory' ? { productionInterval: productionInterval! } : {}),
+    ...(type === 'factory' ? { productionInterval: productionInterval!, produces: produces!, burst: burst! } : {}),
     color,
     size: building ? DEFAULT_SIZE[type] : (size ?? DEFAULT_SIZE[type]),
     shape: shape ?? DEFAULT_SHAPE[type],
