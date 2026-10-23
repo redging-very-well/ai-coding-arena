@@ -5,6 +5,7 @@ import {
   BADGES,
   BADGE_IDS,
   type BadgeId,
+  type BattleEndDTO,
   type BattleRevealDTO,
   type GameStateDTO,
   type Phase,
@@ -14,6 +15,26 @@ import {
   type TeamPattern,
   type TeamTableRowDTO,
 } from '@pixel-clash/shared';
+
+// ---------------------------------------------------------------------------
+// Battle end
+// ---------------------------------------------------------------------------
+
+/**
+ * RESULTS banner over the arena. A host Skip ends the battle at the playback
+ * tick and ranks from there (§9 Skip), so a skip after real fighting reads like
+ * any other end; "No battle this time" only when nothing was fought (skipped
+ * before the first frame, or before anybody dealt damage).
+ */
+export function endReasonText(end: Pick<BattleEndDTO, 'reason' | 'endTick' | 'ranking'>): string {
+  if (end.reason === 'elimination') return 'Last army standing!';
+  if (end.reason === 'timeout') return "Time's up!";
+  const fought = end.endTick > 0 && end.ranking.some((r) => r.damage > 0 || r.kills > 0);
+  if (!fought) return 'No battle this time';
+  // Armies (teams in team mode) still alive where the battle was stopped.
+  const alive = new Set(end.ranking.filter((r) => r.livingCost > 0).map((r) => (r.teamId !== undefined ? `t${r.teamId}` : r.playerId)));
+  return alive.size <= 1 ? 'Last army standing!' : 'Battle over!';
+}
 
 // ---------------------------------------------------------------------------
 // Timers

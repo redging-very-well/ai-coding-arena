@@ -23,6 +23,7 @@ import {
   badgeLabel,
   battleSecondsLeft,
   countUp,
+  endReasonText,
   isUrgent,
   liveSecondsLeft,
   freeTiles,
@@ -355,7 +356,7 @@ function ArenaOverlays({
       )}
       {snap.replay && !snap.replay.loading && (snap.replay.playing || phase === 'RESULTS') && <ReplayBar ctrl={ctrl} />}
       {phase === 'RESULTS' && snap.end && !snap.replay?.playing && (
-        <div class="end-reason pixel">{endReasonText(snap.end.reason)}</div>
+        <div class="end-reason pixel">{endReasonText(snap.end)}</div>
       )}
       {phase === 'RESULTS' && !snap.replay?.playing && (snap.state?.lastBattle ?? snap.end)?.topUnits?.length ? (
         <TopDamage end={(snap.state?.lastBattle ?? snap.end)!} now={now} />
@@ -501,9 +502,6 @@ function JoinPoster({ snap, onClose }: { snap: ScreenSnapshot; onClose: () => vo
   );
 }
 
-function endReasonText(reason: 'elimination' | 'timeout' | 'skipped'): string {
-  return reason === 'elimination' ? 'Last army standing!' : reason === 'timeout' ? "Time's up!" : 'No battle this time';
-}
 
 // ---------------------------------------------------------------------------
 // Sidebar by phase
