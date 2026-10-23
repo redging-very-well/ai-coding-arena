@@ -8,7 +8,7 @@
 //       'grunt'  40 HP, 5 damage, melee, speed 1.5   $28 each (the default)
 //       'archer' 24 HP, 5 damage, shoots from 110 px  $35 each
 //       'runner' 28 HP, 4 damage, melee, speed 2.6   $38 each
-//       'brute' 110 HP, 8 damage (x3 on walls), slow $36 each
+//       'brute' 100 HP, 8 damage (x3 on walls), slow $35 each
 //   this.burst = 1            1-4: save up minions INSIDE and send them out together
 //                             (free, but stored minions are lost if the factory dies)
 //

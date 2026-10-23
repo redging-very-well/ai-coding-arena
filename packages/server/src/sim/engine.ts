@@ -826,11 +826,12 @@ export class BattleEngine {
     const spots = spawnSpots(fac, this.focusOf(fac), zoneFacingDir(zone), this.arena, size, this.walls, buildings.list, count);
     f.noSpot = spots.length === 0;
     if (spots.length === 0) return false;
+    // The burst event comes first, so clients can treat its spawns as one release.
+    if (count >= 2) this.recorder.event({ type: 'release', factoryId: fac.id, count });
     for (const spot of spots) {
       f.released += 1;
       this.addMinion(fac, f.released, spot, t);
     }
-    if (count >= 2) this.recorder.event({ type: 'release', factoryId: fac.id, count });
     f.stored = 0;
     f.releaseRequested = false;
     f.spawnedSinceFrame = true;

@@ -13,6 +13,11 @@
 // nearest enemy that isn't a wall), and BUILDING_ARCHETYPES add walls and
 // factories. Walls run no code (the engine never asks the runner for them);
 // minions run the engine's built-in AI.
+//
+// M8.6: KIND_ARCHETYPES field the minion kinds (archers, runners, brutes) and
+// the squad orders and bursts (§5.3); their factories use the order brain
+// named by `factoryBrain` (the CLAUDE.md examples: guard a tower, swarm the
+// weakest enemy, swarm the nearest enemy wall, defend).
 
 import {
   DEFAULT_CONFIG,
@@ -46,8 +51,10 @@ type Action =
   | { action: 'move'; destination: { x: number; y: number } }
   | { action: 'attack'; targetId: string }
   | { action: 'rally'; destination: { x: number; y: number } }
+  | { action: 'command'; order: 'attack' | 'defend' | 'swarm' | 'guard'; targetId?: string }
+  | { action: 'release' }
   | { action: 'hold' };
-type BrainFn = (self: SelfView, enemies: OtherView[], world: WorldView, rng: Rng) => Action;
+type BrainFn = (self: SelfView, enemies: OtherView[], world: WorldView, rng: Rng, allies: OtherView[]) => Action;
 
 const gap = (a: { x: number; y: number; radius: number }, b: { x: number; y: number; radius: number }) =>
   Math.hypot(b.x - a.x, b.y - a.y) - a.radius - b.radius;
@@ -119,6 +126,51 @@ const rallyNearest: BrainFn = (self, enemies, world) => {
 /** A factory that never builds: it holds every tick. */
 const holdForever: BrainFn = () => ({ action: 'hold' });
 
+/** CLAUDE.md example: archers that guard the nearest own tower (else stay home). Needs the allies. */
+const guardTower: BrainFn = (self, _enemies, _world, _rng, allies) => {
+  let tower: OtherView | null = null;
+  let best = Infinity;
+  for (const a of allies) {
+    if (a.type !== 'tower') continue;
+    const d = Math.hypot(a.x - self.x, a.y - self.y);
+    if (d < best) {
+      best = d;
+      tower = a;
+    }
+  }
+  return tower ? { action: 'command', order: 'guard', targetId: tower.id } : { action: 'command', order: 'defend' };
+};
+
+/** CLAUDE.md example: everyone at the weakest enemy that isn't a wall (lowest hp, then id). */
+const swarmWeakest: BrainFn = (_self, enemies) => {
+  let weakest: OtherView | null = null;
+  for (const e of enemies) {
+    if (e.type === 'wall') continue;
+    if (!weakest || e.hp < weakest.hp) weakest = e;
+  }
+  return weakest ? { action: 'command', order: 'swarm', targetId: weakest.id } : { action: 'command', order: 'attack' };
+};
+
+/** CLAUDE.md example: brutes swarm the enemy wall nearest the factory, then hunt like the template. */
+const swarmWall: BrainFn = (self, enemies, world, rng) => {
+  let wall: OtherView | null = null;
+  let best = Infinity;
+  for (const e of enemies) {
+    if (e.type !== 'wall') continue;
+    const d = Math.hypot(e.x - self.x, e.y - self.y);
+    if (d < best) {
+      best = d;
+      wall = e;
+    }
+  }
+  return wall ? { action: 'command', order: 'swarm', targetId: wall.id } : rallyNearest(self, enemies, world, rng, []);
+};
+
+/** Keep the minions home. */
+const defendHome: BrainFn = () => ({ action: 'command', order: 'defend' });
+
+export type FactoryBrain = 'rally' | 'guard' | 'swarm' | 'breach' | 'defend';
+
 /** A sandbox stand-in: every instance runs the brain for its type; the PRNG is seeded per player (§8). */
 export class BrainRunner implements PlayerRunner {
   readonly loadErrors = new Map<string, { message: string; line?: number }>();
@@ -129,6 +181,8 @@ export class BrainRunner implements PlayerRunner {
     readonly player: RunnerPlayer,
     /** The factories hold every tick (they never build: the dormant-factory turtle). */
     private readonly holdFactories = false,
+    /** M8.6: the factories' order brain (default: rally on the nearest enemy, the template). */
+    private readonly factoryBrain: FactoryBrain = 'rally',
   ) {
     this.rng = mulberry32(player.seed);
   }
@@ -140,8 +194,9 @@ export class BrainRunner implements PlayerRunner {
   async tick(input: TickInput): Promise<TickResult> {
     const outputs: UnitOutput[] = [];
     for (const self of input.selves) {
-      const brain = self.type === 'tower' ? shootNearest : self.type === 'factory' ? (this.holdFactories ? holdForever : rallyNearest) : chaseNearest;
-      outputs.push({ instanceId: self.id, action: brain(self, input.enemies, input.world, this.rng) });
+      const factory = this.holdFactories ? holdForever : FACTORY_BRAINS[this.factoryBrain];
+      const brain = self.type === 'tower' ? shootNearest : self.type === 'factory' ? factory : chaseNearest;
+      outputs.push({ instanceId: self.id, action: brain(self, input.enemies, input.world, this.rng, input.allies) });
     }
     return { status: 'ok', outputs, elapsedMs: 0, slow: false, forged: 0 };
   }
@@ -150,6 +205,14 @@ export class BrainRunner implements PlayerRunner {
     this.disposed = true;
   }
 }
+
+const FACTORY_BRAINS: Record<FactoryBrain, BrainFn> = {
+  rally: rallyNearest,
+  guard: guardTower,
+  swarm: swarmWeakest,
+  breach: swarmWall,
+  defend: defendHome,
+};
 
 // ---------------------------------------------------------------------------
 // Unit designs and $1,000 archetypes
@@ -160,7 +223,7 @@ function unitStats(s: Omit<UnitStats, 'color' | 'size' | 'shape'> & { size?: num
 }
 
 /** A wall or factory as the validator snapshots it (§5.2: no attack, no move, fixed size). */
-function buildingStats(s: Pick<UnitStats, 'name' | 'type' | 'maxHealth' | 'productionInterval'>): StatsSnapshot {
+function buildingStats(s: Pick<UnitStats, 'name' | 'type' | 'maxHealth' | 'productionInterval' | 'produces' | 'burst'>): StatsSnapshot {
   return Object.freeze({ color: '#8A8F98', shape: 'square', ...s, damage: 0, range: 0, speed: 0, attackCooldown: 0, size: s.type === 'wall' ? 20 : 18 }) as StatsSnapshot;
 }
 
@@ -183,6 +246,16 @@ export const UNITS = {
   swarmFactory: buildingStats({ name: 'Swarm Factory', type: 'factory', maxHealth: 300, productionInterval: 600 }),
   /** A max-HP, slowest factory: mostly body (2 minions). */
   fortressFactory: buildingStats({ name: 'Fortress Factory', type: 'factory', maxHealth: 1000, productionInterval: 1800 }),
+  /** §6 Archer Nest (M8.6): 8 archers, one every 10 s. */
+  archerNest: buildingStats({ name: 'Archer Nest', type: 'factory', maxHealth: 300, productionInterval: 600, produces: 'archer' }),
+  /** §6 Runner Rush with burst 4 (M8.6): 8 runners, released 4 at a time. */
+  runnerRush: buildingStats({ name: 'Runner Rush', type: 'factory', maxHealth: 300, productionInterval: 600, produces: 'runner', burst: 4 }),
+  /** The same Runner Rush releasing each runner at once (burst 1), for the burst comparison. */
+  runnerTrickle: buildingStats({ name: 'Runner Trickle', type: 'factory', maxHealth: 300, productionInterval: 600, produces: 'runner', burst: 1 }),
+  /** A burst-4 Runner Factory at the template's pace (5 runners). */
+  runnerFactory: buildingStats({ name: 'Runner Factory', type: 'factory', maxHealth: 300, productionInterval: 900, produces: 'runner', burst: 4 }),
+  /** §6 Brute Forge (M8.6): 8 brutes, one every 10 s. */
+  bruteForge: buildingStats({ name: 'Brute Forge', type: 'factory', maxHealth: 300, productionInterval: 600, produces: 'brute' }),
 } as const;
 export type UnitKey = keyof typeof UNITS;
 
@@ -200,6 +273,8 @@ export interface Archetype {
   layout?: 'seal' | 'u';
   /** Its factories hold every tick (never build). */
   holdFactories?: boolean;
+  /** M8.6: its factories' squad-order brain (default 'rally', the template). */
+  factoryBrain?: FactoryBrain;
 }
 
 /** Plan §14's wall fortress: walls on row 0 and on cols 0 and 5 of rows 1-2; fighters on rows 3-4 first. */
@@ -256,8 +331,27 @@ export const BUILDING_ARCHETYPES: Archetype[] = [
 /** The plan §14 wall fortress: 10 Basic Walls in a U (front row + both outer columns of rows 1-2), 3 Basic Towers on rows 3-4. */
 export const OPEN_FORTRESS: Archetype = { key: 'openfort', label: 'open wall fortress (10 Basic Walls in a U round 3 Basic Towers)', army: [['wall', 10], ['tower', 3]], layout: 'u' };
 
-/** Every round-robin archetype: the six §14 ones, then the M8.5 building ones. */
-export const ALL_ARCHETYPES: Archetype[] = [...ARCHETYPES, ...BUILDING_ARCHETYPES];
+/**
+ * The M8.6 minion-kind archetypes (§5.3, §14): each kind with the order its
+ * CLAUDE.md example gives, and a burst.
+ */
+export const KIND_ARCHETYPES: Archetype[] = [
+  { key: 'archers', label: 'archer nest (4 Basic Walls, 1 Basic Tower, 2 Archer Nests guarding it)', army: [['wall', 4], ['tower', 1], ['archerNest', 2]], factoryBrain: 'guard' },
+  { key: 'runners', label: 'runner swarm (3 Basic Soldiers, 2 burst-4 Runner Rushes swarming the weakest enemy)', army: [['soldier', 3], ['runnerRush', 2]], factoryBrain: 'swarm' },
+  { key: 'brutes', label: 'brute breakers (3 Basic Soldiers, 2 Brute Forges swarming the nearest enemy wall)', army: [['soldier', 3], ['bruteForge', 2]], factoryBrain: 'breach' },
+  { key: 'homeguard', label: 'grunt home guard (2 Basic Towers, 2 Swarm Factories on defend)', army: [['tower', 2], ['swarmFactory', 2]], factoryBrain: 'defend' },
+];
+
+/** The burst-1 twin of the runner swarm (not in the round robin): the burst comparison. */
+export const RUNNER_TRICKLE: Archetype = {
+  key: 'trickle',
+  label: 'runner trickle (3 Basic Soldiers, 2 burst-1 Runner Rushes swarming the weakest enemy)',
+  army: [['soldier', 3], ['runnerTrickle', 2]],
+  factoryBrain: 'swarm',
+};
+
+/** Every round-robin archetype: the six §14 ones, the M8.5 building ones, then the M8.6 kind ones. */
+export const ALL_ARCHETYPES: Archetype[] = [...ARCHETYPES, ...BUILDING_ARCHETYPES, ...KIND_ARCHETYPES];
 
 /**
  * The dormant-factory turtle (not in the round robin): walls in front of two
@@ -359,7 +453,7 @@ export async function balanceBattle(style: MapStyle, players: number, entrants: 
       ...(e.teamId !== undefined ? { teamId: e.teamId } : {}),
       units,
       placements,
-      runner: new BrainRunner({ playerId: `p${seat}`, seat, seed: seed + seat }, e.archetype.holdFactories === true),
+      runner: new BrainRunner({ playerId: `p${seat}`, seat, seed: seed + seat }, e.archetype.holdFactories === true, e.archetype.factoryBrain),
     };
   });
   let firstContactTick: number | null = null;

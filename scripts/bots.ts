@@ -18,7 +18,10 @@
 // Strategies: mixed (default: each bot a different personality), brawl,
 // turtle, rush, swarm (3 cheap types × 12 copies, the §14 load shape),
 // fortress (walls shielding turrets and archers) and factory (a workshop
-// making minions behind brawlers and darts) (M8.5).
+// making minions behind brawlers and darts) (M8.5); M8.6 (§5.3) minion kinds,
+// squad orders and bursts: archers (an archer nest guarding turrets behind a
+// wall), runners (a burst-4 runner pack swarming the weakest enemy) and
+// brutes (a brute smithy swarming the nearest enemy wall).
 // Options: --prefix Bot  --pin 4242  --poll 400 (ms)  --quiet
 
 import { resolve } from 'node:path';
@@ -30,7 +33,7 @@ import { frontCells } from '../packages/server/src/sim/autoPlace.js';
 // Designs
 // ---------------------------------------------------------------------------
 
-type Behaviour = 'nearest' | 'weakest' | 'kite' | 'tower' | 'rally' | 'none';
+type Behaviour = 'nearest' | 'weakest' | 'kite' | 'tower' | 'rally' | 'guard' | 'swarm' | 'breach' | 'none';
 type BotType = 'soldier' | 'tower' | 'wall' | 'factory';
 
 interface BotDesign {
@@ -47,6 +50,9 @@ interface BotDesign {
   behaviour: Behaviour;
   /** Factories only (§5.2): ticks between two minions. */
   productionInterval?: number;
+  /** Factories only (M8.6, §5.3): the minion kind and the burst. */
+  produces?: 'grunt' | 'archer' | 'runner' | 'brute';
+  burst?: number;
 }
 
 const D = (role: string, type: BotDesign['type'], s: Omit<BotDesign, 'role' | 'type' | 'speed'> & { speed?: number }): BotDesign => ({
@@ -57,7 +63,11 @@ const D = (role: string, type: BotDesign['type'], s: Omit<BotDesign, 'role' | 't
 });
 
 /** A wall or a factory (§5.2): no attack, no move, fixed size. */
-const B = (role: string, type: 'wall' | 'factory', s: Pick<BotDesign, 'maxHealth' | 'color'> & { productionInterval?: number }): BotDesign => ({
+const B = (
+  role: string,
+  type: 'wall' | 'factory',
+  s: Pick<BotDesign, 'maxHealth' | 'color'> & Partial<Pick<BotDesign, 'productionInterval' | 'produces' | 'burst' | 'behaviour'>>,
+): BotDesign => ({
   role,
   type,
   damage: 0,
@@ -83,6 +93,10 @@ export const DESIGNS = {
   // M8.5 buildings: a 300 HP wall ($24) and a factory making 5 minions ($184).
   stone: B('Stone Wall', 'wall', { maxHealth: 300, color: '#8A8F98' }),
   workshop: B('Workshop', 'factory', { maxHealth: 250, productionInterval: 900, color: '#C0A060' }),
+  // M8.6 kinds (§5.3, §6): archers $219, a burst-4 runner pack $234, brutes $219 (250 HP bodies, 5 minions).
+  archerNest: B('Archer Nest', 'factory', { maxHealth: 250, productionInterval: 900, produces: 'archer', color: '#5BC0EB', behaviour: 'guard' }),
+  runnerPack: B('Runner Pack', 'factory', { maxHealth: 250, productionInterval: 900, produces: 'runner', burst: 4, color: '#FFD23C', behaviour: 'swarm' }),
+  smasher: B('Brute Smithy', 'factory', { maxHealth: 250, productionInterval: 900, produces: 'brute', color: '#B5651D', behaviour: 'breach' }),
 } satisfies Record<string, BotDesign>;
 type DesignKey = keyof typeof DESIGNS;
 
@@ -94,8 +108,11 @@ export const STRATEGIES: Record<string, DesignKey[]> = {
   swarm: ['gnat', 'dart', 'pebble'],
   fortress: ['stone', 'turret', 'archer'],
   factory: ['workshop', 'brawler', 'dart'],
+  archers: ['archerNest', 'turret', 'stone'],
+  runners: ['runnerPack', 'brawler', 'dart'],
+  brutes: ['smasher', 'brawler', 'stone'],
 };
-const MIXED_ORDER = ['brawl', 'rush', 'turtle', 'swarm', 'fortress', 'factory'];
+const MIXED_ORDER = ['brawl', 'rush', 'turtle', 'swarm', 'fortress', 'factory', 'archers', 'runners', 'brutes'];
 
 /**
  * update() bodies. Every one loops over all enemies (the §14 load shape); soldiers step into the
@@ -142,6 +159,37 @@ const BEHAVIOURS: Record<Behaviour, string> = {
       if (d < best) { best = d; spot = { x: e.x, y: e.y }; }
     }
     return { action: 'rally', destination: spot };`,
+  // M8.6 (§5.3): the CLAUDE.md factory examples, plus an early release when the factory is hurt.
+  guard: `
+    if (self.factory.stored > 0 && self.hp < self.maxHp / 2) return { action: 'release' };
+    let tower = null;
+    let best = Infinity;
+    for (const a of allies) {
+      if (a.type !== 'tower') continue;
+      const d = Math.hypot(a.x - self.x, a.y - self.y);
+      if (d < best) { best = d; tower = a; }
+    }
+    if (tower) return { action: 'command', order: 'guard', targetId: tower.id };
+    return { action: 'command', order: 'defend' };`,
+  swarm: `
+    if (self.factory.stored > 0 && self.hp < self.maxHp / 2) return { action: 'release' };
+    let weakest = null;
+    for (const e of enemies) {
+      if (e.type === 'wall') continue;
+      if (!weakest || e.hp < weakest.hp) weakest = e;
+    }
+    if (weakest) return { action: 'command', order: 'swarm', targetId: weakest.id };
+    return { action: 'command', order: 'attack' };`,
+  breach: `
+    let wall = null;
+    let best = Infinity;
+    for (const e of enemies) {
+      if (e.type !== 'wall') continue;
+      const d = Math.hypot(e.x - self.x, e.y - self.y);
+      if (d < best) { best = d; wall = e; }
+    }
+    if (wall) return { action: 'command', order: 'swarm', targetId: wall.id };
+    return { action: 'command', order: 'attack' };`,
   none: '',
 };
 
@@ -169,7 +217,9 @@ export function botSource(name: string, d: BotDesign): string {
     : '';
   const stats =
     d.type === 'wall' || d.type === 'factory'
-      ? `    this.maxHealth = ${d.maxHealth};${d.type === 'factory' ? `\n    this.productionInterval = ${d.productionInterval ?? 900};` : ''}
+      ? `    this.maxHealth = ${d.maxHealth};${d.type === 'factory' ? `\n    this.productionInterval = ${d.productionInterval ?? 900};` : ''}${
+          d.produces ? `\n    this.produces = ${JSON.stringify(d.produces)};` : ''
+        }${d.burst ? `\n    this.burst = ${d.burst};` : ''}
     this.color = ${JSON.stringify(d.color)};`
       : `    this.maxHealth = ${d.maxHealth};
     this.damage = ${d.damage};
@@ -555,7 +605,7 @@ function parseArgs(argv: string[]): Record<string, string | true> {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
-    console.log('npm run bots -- --players 3 [--url http://localhost:8080] [--strategy mixed|brawl|turtle|rush|swarm|fortress|factory] [--prefix Bot] [--pin 4242] [--quiet]');
+    console.log('npm run bots -- --players 3 [--url http://localhost:8080] [--strategy mixed|brawl|turtle|rush|swarm|fortress|factory|archers|runners|brutes] [--prefix Bot] [--pin 4242] [--quiet]');
     return;
   }
   const players = Number(args.players ?? 3);

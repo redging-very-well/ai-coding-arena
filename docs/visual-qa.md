@@ -419,3 +419,66 @@ The fix texts in `docs/dryrun-report.md` (M8.5) were also tuned.
 - **Unsaved badge on a fresh copy:** "Copy to a new unit" opens the editor already marked
   "unsaved", so Close asks "Keep editing / Close (keep my draft) / Throw my changes away" even if
   nothing was typed. Harmless, and it was like this before M8.5.
+
+## Minion kinds, squad orders and burst (M8.6)
+
+QA of the minion kinds, orders and bursts in a real browser, after the sim, server and client work
+landed.
+
+### How it was run
+
+- **Server:** the production build (`npm run build`, then `node scripts/start.mjs`) on :18160,
+  with a fresh data dir for each run.
+- **Players:** one browser player ("Ann", Playwright Chromium installed outside the repo) and
+  `npm run bots` with the new personalities:
+  - **k4:** 4 players on Corners. Ann against `brutes`, `runners` and `archers`.
+  - **d2:** a Duel against `brutes`.
+  - **r2:** a Duel against `runners`.
+- **Ann's units:** she submits an **Archer Nest** (archers guarding the nearest tower, $333) and a
+  **Runner Rush** (runners, burst 4, swarming the weakest enemy, $357) over REST.
+- **Screenshots:** /screen at 1920×1080 (k4, r2) or at a 2× pixel ratio (d2). In r2, /screen was
+  shot every ~250 ms through 36-50 s to catch a release. /play at 1400×1000.
+- **Script and shots:**
+  `/tmp/claude-1000/-workspaces-kidscodingday/9c9e875f-8be6-4b5a-93eb-d016b9d3d229/scratchpad/qa86/`
+  (`game.cjs`, plus `k4-*`, `d2-*` and `r2-*`). No page errors or console errors in any run.
+
+### Checked and working
+
+- **/play factory cards:**
+  - Runner Rush: "🏭 factory · 💨 Runners", a chip with the tinted runner sprite, and "1 minion
+    every 10 s · makes 8 minions · Burst 4 · Orders: attack, swarm".
+  - Archer Nest: "🎯 Archers … one at a time · Orders: guard".
+  - The orders come from the dry run. The price pop-up shows "Runners 8 × $38 = $304", and the
+    editor's cost panel shows the same rows.
+  - The code editor opens on the factory and reports "No mistakes! (1 tip)".
+- **Placement:** the palette tiles carry the kind icons. A $357 Runner Rush that no longer fits
+  gets "Not enough money! It costs $357 but you only have $193 left."
+- **Battle:**
+  - Every kind uses its own sprite, tinted with its factory's colour and drawn at its own size:
+    small yellow runners, blue archers, bigger brown brutes, and the old grunts.
+  - Archers shoot over their owner's walls with projectiles.
+  - A brute hitting a Stone Wall shows "−24" (8 × 3).
+  - Factories with minions inside show a small "2/4" badge in their seat colour.
+- **Release (r2, at 45 s):** the runner bot's two Runner Packs filled up together (the shared
+  per-player cap of 6), and six runners popped out at once with a flash, a ring of puffs and
+  "release! ×3" labels (`r2-dense-057-488.png`).
+- **Lost minions (d2):** the brute bot destroyed Ann's Runner Rush with 3 runners inside. The
+  replay has `lost {count: 3}`, the report shows `storedLost: 3`, and the hint reads "Your Runner
+  Rush was destroyed with 3 minions inside. Ask Claude to release them earlier (or use a smaller
+  burst), or guard the factory."
+- **Bots:** all three new personalities submitted valid units ($219 / $234 / $219) and fielded them.
+
+### Bugs found and fixed
+
+| # | Where | Bug | Fix | Evidence |
+|---|---|---|---|---|
+| 29 | /screen release effect | Two neighbouring factories that release on the same tick drew their "release! ×3" labels on top of each other ("release!lease! ×3"). | Labels within 110 px that start within 600 ms of each other are stacked upwards (`arena.ts`). | `r2-dense-057-488.png` |
+
+### Notes (not fixed)
+
+- **The stored badge is small** at 1x on the 1920 projector (about 12 px). It is readable up close
+  but hard to see from the back of a room. It gets the same minimum size as the HP bars.
+- **The "release!" label fades within about a second**, like the "+1" labels. It is easy to miss,
+  but the runners popping out are obvious.
+- **The "lost" label (grey "−3")** was only captured after the battle ended in d2, because the
+  short battle finished soon after. The event and the report were checked.

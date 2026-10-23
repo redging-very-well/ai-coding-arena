@@ -33,6 +33,21 @@
 //     rush but loses to towers, snipers and factory swarms (stated outcomes);
 //   * 2-team Lanes and a Ring 8 free-for-all with building armies.
 //
+// M8.6 (minion kinds, squad orders and burst, plan §5.3): four kind archetypes
+// join the round robin (archer nest guarding a tower behind walls, burst-4
+// runner swarm on the weakest enemy, brute wall-breakers, grunt home guard on
+// defend):
+//
+//   * the 6×6 and 13×13 parts keep every M8.5 assertion and cap unchanged
+//     (a pair's battles don't depend on who else is in the matrix);
+//   * the full 17×17 matrix: every kind archetype fits the general caps with
+//     no exception, beats someone and loses to someone; bricks and tanks (the
+//     big bodies minions can't scratch) are capped at today's numbers; no
+//     walls-only win;
+//   * stated outcomes: brutes break the sealed fortress (≥ 3 in 4), archers
+//     out-range walled turtles, defend beats attack for a tower bunker, and a
+//     burst of 4 runners loses fewer minions per kill than burst 1.
+//
 // The matrix and the numbers are recorded in docs/balance.md; regenerate with
 // `npx tsx --conditions=source scripts/balance-matrix.ts`.
 
@@ -43,6 +58,8 @@ import {
   ARCHETYPES,
   BUILDING_ARCHETYPES,
   DORMANT,
+  KIND_ARCHETYPES,
+  RUNNER_TRICKLE,
   DUEL_SITES,
   OPEN_FORTRESS,
   RUSH,
@@ -93,12 +110,25 @@ const FULL_DOMINANCE_EXCEPTIONS: Record<string, { roundRobinWinCap: number }> = 
   // 143-0-49 (74%): loses to the sealed fortress (0-16) and the walled sniper nest (2-14).
   tanks: { roundRobinWinCap: 143 / 192 },
 };
+/**
+ * The caps over the full M8.6 matrix (17 archetypes, 256 battles each), at today's
+ * numbers. Only the two big-body soldier archetypes need one: minions (40 HP or less,
+ * brutes 100) barely scratch 430- and 250-HP bodies. No building or kind archetype has one.
+ */
+const KIND_DOMINANCE_EXCEPTIONS: Record<string, { roundRobinWinCap: number }> = {
+  // 220-0-36 (86%): beats every kind archetype 16-0; loses to the tanks, the sealed fortress and walls + rush.
+  bricks: { roundRobinWinCap: 220 / 256 },
+  // 207-0-49 (81%): beats every kind archetype 16-0; loses to the sealed fortress and the walled sniper nest.
+  tanks: { roundRobinWinCap: 207 / 256 },
+};
+const M85_KEYS = new Set([...ARCHETYPES, ...BUILDING_ARCHETYPES].map((a) => a.key));
+const KIND_KEYS = KIND_ARCHETYPES.map((a) => a.key);
 const byKey = (k: string): Archetype =>
   k === RUSH.key ? RUSH : k === OPEN_FORTRESS.key ? OPEN_FORTRESS : ALL_ARCHETYPES.find((a) => a.key === k)!;
 const WALL_KEYS = BUILDING_ARCHETYPES.filter((a) => a.army.some(([k]) => UNITS[k].type === 'wall')).map((a) => a.key);
 const FACTORY_KEYS = BUILDING_ARCHETYPES.filter((a) => a.army.some(([k]) => UNITS[k].type === 'factory')).map((a) => a.key);
 
-/** One full round robin (all 13 archetypes) shared by the tests below: the 6×6 part is the §14 matrix. */
+/** One full round robin (all 17 archetypes) shared by the tests below: the 6×6 part is the §14 matrix, the 13×13 part M8.5's. */
 let fullMatrix: Promise<{ m: Map<string, Map<string, MatchupCell>>; wallOnlyWins: string[] }> | undefined;
 const full = () =>
   (fullMatrix ??= (async () => {
@@ -111,7 +141,7 @@ const full = () =>
   })());
 
 describe('the archetypes are legal $1,000 armies', () => {
-  it.each([...ALL_ARCHETYPES, RUSH, OPEN_FORTRESS, DORMANT].map((a) => [a.key, a] as const))('%s', (_key, a) => {
+  it.each([...ALL_ARCHETYPES, RUSH, OPEN_FORTRESS, DORMANT, RUNNER_TRICKLE].map((a) => [a.key, a] as const))('%s', (_key, a) => {
     const caps = DEFAULT_CONFIG.caps;
     expect(armyCost(a)).toBeLessThanOrEqual(caps.budget);
     expect(armyCost(a)).toBeGreaterThan(caps.budget * 0.85); // nobody is handicapped by leftover money
@@ -179,8 +209,10 @@ describe('round robin: no archetype dominates (§6, §14)', () => {
   it(
     'with walls and factories (M8.5, 13 archetypes): nobody dominates, walls and factories win some and lose some',
     async () => {
-      const { m, wallOnlyWins } = await full();
-      if (process.env.BALANCE_REPORT) console.log(matrixMarkdown(m, ALL_ARCHETYPES));
+      const { m: all, wallOnlyWins } = await full();
+      // The 13 M8.5 archetypes among themselves (the same battles as before M8.6).
+      const m = new Map([...all].filter(([a]) => M85_KEYS.has(a)).map(([a, row]) => [a, new Map([...row].filter(([b]) => M85_KEYS.has(b)))]));
+      if (process.env.BALANCE_REPORT) console.log(matrixMarkdown(m, ALL_ARCHETYPES.filter((a) => M85_KEYS.has(a.key))));
       const battlesPerPair = DUEL_SITES.reduce((n, s) => n + s.pairs.length * 2, 0) * SEEDS.length;
       for (const [a, row] of m) {
         const beaten = [...row].filter(([, c]) => beats(c)).map(([b]) => b);
@@ -208,6 +240,67 @@ describe('round robin: no archetype dominates (§6, §14)', () => {
       expect(Math.max(sb.wins, sb.losses), 'swarm vs bunker is close').toBeLessThanOrEqual(10); // two factory armies
       expect(beats(m.get('tanks')!.get('swarm')!)).toBe(true); // ...and big melee bodies too
       expect(beats(m.get('wallrush')!.get('templates')!)).toBe(true);
+    },
+    3 * T,
+  );
+
+  it(
+    'with minion kinds, orders and bursts (M8.6, 17 archetypes): every kind archetype fits the caps; brutes break the sealed fortress',
+    async () => {
+      const { m, wallOnlyWins } = await full();
+      if (process.env.BALANCE_REPORT) console.log(matrixMarkdown(m, ALL_ARCHETYPES));
+      const battlesPerPair = DUEL_SITES.reduce((n, s) => n + s.pairs.length * 2, 0) * SEEDS.length;
+      expect(m.size).toBe(17);
+      for (const [a, row] of m) {
+        const beaten = [...row].filter(([, c]) => beats(c)).map(([b]) => b);
+        const losingTo = [...row].filter(([, c]) => c.losses > c.wins).map(([b]) => b);
+        expect(beaten.length, `${a} beats ${beaten.join(', ')}`).toBeLessThan(row.size);
+        expect(beaten.length, `${a} beats nobody`).toBeGreaterThan(0);
+        expect(losingTo.length, `${a} has no losing matchup`).toBeGreaterThan(0);
+        const wins = [...row].reduce((n, [, c]) => n + c.wins, 0);
+        const rate = wins / (battlesPerPair * row.size);
+        expect(rate, `${a} wins ${wins} of ${battlesPerPair * row.size}`).toBeLessThanOrEqual(KIND_DOMINANCE_EXCEPTIONS[a]?.roundRobinWinCap ?? ROUND_ROBIN_WIN_CAP);
+      }
+      // No exception for any building or kind archetype.
+      for (const k of [...BUILDING_ARCHETYPES.map((a) => a.key), ...KIND_KEYS]) expect(KIND_DOMINANCE_EXCEPTIONS[k]).toBeUndefined();
+      expect(wallOnlyWins).toEqual([]);
+      // Stated outcomes (docs/balance.md): brutes break the sealed fortress at least 3 in 4...
+      const bf = m.get('brutes')!.get('fortress')!;
+      expect(bf.wins / battlesPerPair, 'brutes vs fortress').toBeGreaterThanOrEqual(0.75);
+      // ...archers shoot over walls: they beat the walled turtles...
+      for (const walled of ['turtle', 'fortress', 'snipewall']) expect(beats(m.get('archers')!.get(walled)!), `archers vs ${walled}`).toBe(true);
+      // ...and defend beats attack for the same towers + Swarm Factories.
+      expect(beats(m.get('homeguard')!.get('bunker')!)).toBe(true);
+    },
+    3 * T,
+  );
+});
+
+describe('burst: saving runners up pays (M8.6 stated outcome)', () => {
+  it(
+    'a burst of 4 runners loses fewer minions per kill than the same runners sent one at a time',
+    async () => {
+      const foes = ALL_ARCHETYPES.filter((a) => a.key !== 'runners');
+      const lossPerKill = async (a: Archetype) => {
+        let lost = 0;
+        let kills = 0;
+        for (const b of foes)
+          for (const site of DUEL_SITES)
+            for (const zones of site.pairs.slice(0, 1))
+              for (const seed of SEEDS) {
+                const { battle } = await duel(site.style, site.players, a, b, zones, seed);
+                for (const u of battle.result.units) {
+                  if (u.playerId !== 'p0') continue;
+                  if (u.type === 'minion') kills += u.kills;
+                  if (u.factory) lost += u.factory.minionsLost;
+                }
+              }
+        return lost / Math.max(1, kills);
+      };
+      const burst = await lossPerKill(byKey('runners'));
+      const trickle = await lossPerKill(RUNNER_TRICKLE);
+      if (process.env.BALANCE_REPORT) console.log({ burst, trickle });
+      expect(burst).toBeLessThan(trickle);
     },
     3 * T,
   );
@@ -468,6 +561,32 @@ describe('Ring 8 free-for-all with building armies (M8.5)', () => {
     'walls never win alone, nobody wins every battle, and no army takes more than half the 1st places',
     async () => {
       const lineup = ['fortress', 'swarm', 'snipewall', 'wallrush', 'bunker', 'mixed', 'quad', 'rush'].map(byKey);
+      const wins = new Map<string, number>();
+      let battles = 0;
+      for (const seed of SEEDS)
+        for (let r = 0; r < 8; r++) {
+          const entrants = lineup.map((archetype, i) => ({ archetype, zone: (i + r) % 8 }));
+          const b = await balanceBattle('ring', 8, entrants, seed + r);
+          battles++;
+          b.places.forEach((p, i) => {
+            if (p !== 1) return;
+            expect(hasFighter(b.standing[i]!) || b.result.endReason === 'elimination', `${lineup[i]!.key} won with walls only`).toBe(true);
+            wins.set(lineup[i]!.key, (wins.get(lineup[i]!.key) ?? 0) + 1);
+          });
+        }
+      if (process.env.BALANCE_REPORT) console.log({ wins });
+      for (const [k, w] of wins) expect(w, `${k} wins ${w} of ${battles}`).toBeLessThanOrEqual(battles * FFA_WIN_SHARE_CAP);
+      expect(wins.size).toBeGreaterThan(1);
+    },
+    T,
+  );
+});
+
+describe('Ring 8 free-for-all with minion-kind armies (M8.6)', () => {
+  it(
+    'walls never win alone, several armies win, and no army takes more than half the 1st places',
+    async () => {
+      const lineup = ['archers', 'runners', 'brutes', 'homeguard', 'swarm', 'fortress', 'quad', 'rush'].map(byKey);
       const wins = new Map<string, number>();
       let battles = 0;
       for (const seed of SEEDS)

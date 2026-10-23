@@ -1,4 +1,4 @@
-# Pixel Clash balance (M6, M8.5 walls and factories)
+# Pixel Clash balance (M6, M8.5 walls and factories, M8.6 minion kinds)
 
 Plan §14 `balance.test.ts`, §6 ("no single archetype dominates"), §9 sudden death.
 Test: `tests/balance.test.ts` (harness `tests/helpers/balance.ts`). Regenerate every
@@ -403,3 +403,151 @@ interval 900, $184, behind Brawlers and Darts). Both are in the `mixed` rotation
 soldiers skip walls as targets and smash an enemy wall that blocks them for 2 s, bot
 factories rally on the nearest enemy, and placement keeps ≤ 6 walls (≤ 25% of the
 budget), ≤ 2 factories and the 4 + 4 type caps.
+
+## Minion kinds, squad orders and burst (M8.6)
+
+Factories now pick a minion kind (`produces`), give their minions an order (`command`)
+and can save them up (`burst`), plan §5.3. The harness factories follow the CLAUDE.md
+examples: archers guard the nearest own tower, runners swarm the weakest enemy that isn't
+a wall (burst 4), brutes swarm the enemy wall nearest the factory (then hunt like the
+template), and the home guard defends. The kind stats are the §5.3 defaults (grunt 40 HP /
+5 / melee / 1.5, archer 24 / 5 / 110 / 1.2, runner 28 / 4 / melee / 2.6, brute 100 / 8
+(×3 on walls) / melee / 0.9).
+
+### Kind archetypes ($1,000 budget each)
+
+- **archers**: 4 Basic Walls, 1 Basic Tower, 2 Archer Nests (archer, interval 600, $333) guarding the tower, $992
+- **runners**: 3 Basic Soldiers, 2 Runner Rushes (runner, interval 600, burst 4, $357) swarming the weakest enemy, $990
+- **brutes**: 3 Basic Soldiers, 2 Brute Forges (brute, interval 600, $333) swarming the nearest enemy wall, $942
+- **homeguard**: 2 Basic Towers, 2 Swarm Factories (grunt, $277) on defend, $950 (the bunker's army with `defend` instead of `rally`)
+- not in the round robin: **trickle**, the runners with burst 1 ($990), for the burst comparison
+
+### Round robin, 17 archetypes
+
+Row W-D-L against the column (16 battles per pair: Corners 4 and Ring 8, two zone pairs,
+both orders, seeds 11 and 4242). The 6×6 and 13×13 parts are unchanged from M6 and M8.5
+(a pair's battles don't depend on who else is in the matrix; burst-1 grunt factories are
+frame-identical to M8.5).
+
+| vs | bricks | templates | tanks | turtle | scouts | snipers | fortress | snipewall | swarm | wallrush | mixed | quad | bunker | archers | runners | brutes | homeguard | beats |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| bricks | · | **16-0-0** | 7-0-9 | **16-0-0** | **16-0-0** | **16-0-0** | 2-0-14 | 8-0-8 | **16-0-0** | **11-0-5** | **16-0-0** | **16-0-0** | **16-0-0** | **16-0-0** | **16-0-0** | **16-0-0** | **16-0-0** | 13/16 |
+| templates | 0-0-16 | · | 0-0-16 | 2-0-14 | **16-0-0** | 2-0-14 | 6-0-10 | **14-0-2** | 2-0-14 | 0-0-16 | **14-0-2** | 2-0-14 | 0-0-16 | **10-2-4** | **16-0-0** | 2-0-14 | 0-0-16 | 5/16 |
+| tanks | **9-0-7** | **16-0-0** | · | 8-0-8 | **16-0-0** | **14-0-2** | 0-0-16 | 2-0-14 | **16-0-0** | **16-0-0** | **14-0-2** | **16-0-0** | **16-0-0** | **16-0-0** | **16-0-0** | **16-0-0** | **16-0-0** | 13/16 |
+| turtle | 0-0-16 | **14-0-2** | 8-0-8 | · | **16-0-0** | 2-12-2 | **14-0-2** | **14-0-2** | 2-0-14 | **16-0-0** | **14-0-2** | 2-0-14 | 0-0-16 | 0-0-16 | **14-0-2** | 2-0-14 | 0-0-16 | 7/16 |
+| scouts | 0-0-16 | 0-0-16 | 0-0-16 | 0-0-16 | · | **16-0-0** | 0-0-16 | 4-0-12 | **16-0-0** | 0-0-16 | 0-0-16 | **9-0-7** | **10-0-6** | **16-0-0** | **16-0-0** | **16-0-0** | **10-1-5** | 8/16 |
+| snipers | 0-0-16 | **14-0-2** | 2-0-14 | 2-12-2 | 0-0-16 | · | **14-0-2** | **14-0-2** | **10-0-6** | 4-0-12 | **14-0-2** | 6-0-10 | 2-4-10 | 6-0-10 | **14-0-2** | **10-0-6** | 2-1-13 | 7/16 |
+| fortress | **14-0-2** | **10-0-6** | **16-0-0** | 2-0-14 | **16-0-0** | 2-0-14 | · | **10-4-2** | 2-0-14 | **14-0-2** | **14-0-2** | 2-0-14 | 2-0-14 | 0-0-16 | 6-0-10 | 2-0-14 | 0-0-16 | 7/16 |
+| snipewall | 8-0-8 | 2-0-14 | **14-0-2** | 2-0-14 | **12-0-4** | 2-0-14 | 2-4-10 | · | 2-0-14 | **14-0-2** | **14-0-2** | 2-0-14 | 2-0-14 | 0-0-16 | 6-0-10 | 6-0-10 | 2-0-14 | 4/16 |
+| swarm | 0-0-16 | **14-0-2** | 0-0-16 | **14-0-2** | 0-0-16 | 6-0-10 | **14-0-2** | **14-0-2** | · | 0-0-16 | **14-0-2** | 0-0-16 | **9-0-7** | **16-0-0** | **16-0-0** | **14-0-2** | 0-0-16 | 9/16 |
+| wallrush | 5-0-11 | **16-0-0** | 0-0-16 | 0-0-16 | **16-0-0** | **12-0-4** | 2-0-14 | 2-0-14 | **16-0-0** | · | **13-0-3** | **16-0-0** | **14-0-2** | **16-0-0** | **16-0-0** | **16-0-0** | **16-0-0** | 11/16 |
+| mixed | 0-0-16 | 2-0-14 | 2-0-14 | 2-0-14 | **16-0-0** | 2-0-14 | 2-0-14 | 2-0-14 | 2-0-14 | 3-0-13 | · | 2-0-14 | 1-0-15 | 8-0-8 | **16-0-0** | **16-0-0** | 0-0-16 | 3/16 |
+| quad | 0-0-16 | **14-0-2** | 0-0-16 | **14-0-2** | 7-0-9 | **10-0-6** | **14-0-2** | **14-0-2** | **16-0-0** | 0-0-16 | **14-0-2** | · | 2-0-14 | **10-0-6** | **16-0-0** | **16-0-0** | 2-0-14 | 10/16 |
+| bunker | 0-0-16 | **16-0-0** | 0-0-16 | **16-0-0** | 6-0-10 | **10-4-2** | **14-0-2** | **14-0-2** | 7-0-9 | 2-0-14 | **15-0-1** | **14-0-2** | · | **16-0-0** | **16-0-0** | 3-0-13 | 0-1-15 | 9/16 |
+| archers | 0-0-16 | 4-2-10 | 0-0-16 | **16-0-0** | 0-0-16 | **10-0-6** | **16-0-0** | **16-0-0** | 0-0-16 | 0-0-16 | 8-0-8 | 6-0-10 | 0-0-16 | · | 8-0-8 | 0-0-16 | 0-0-16 | 4/16 |
+| runners | 0-0-16 | 0-0-16 | 0-0-16 | 2-0-14 | 0-0-16 | 2-0-14 | **10-0-6** | **10-0-6** | 0-0-16 | 0-0-16 | 0-0-16 | 0-0-16 | 0-0-16 | 8-0-8 | · | 0-0-16 | 2-0-14 | 2/16 |
+| brutes | 0-0-16 | **14-0-2** | 0-0-16 | **14-0-2** | 0-0-16 | 6-0-10 | **14-0-2** | **10-0-6** | 2-0-14 | 0-0-16 | 0-0-16 | 0-0-16 | **13-0-3** | **16-0-0** | **16-0-0** | · | 8-0-8 | 7/16 |
+| homeguard | 0-0-16 | **16-0-0** | 0-0-16 | **16-0-0** | 5-1-10 | **13-1-2** | **16-0-0** | **14-0-2** | **16-0-0** | 0-0-16 | **16-0-0** | **14-0-2** | **15-1-0** | **16-0-0** | **14-0-2** | 8-0-8 | · | 11/16 |
+
+| archetype | wins vs the six | vs the M8.5 13 | vs all 16 |
+|---|---|---|---|
+| bricks | 71/80 (89%) | 156/192 (81%) | 220/256 (86%) |
+| templates | 20/80 (25%) | 58/192 (30%) | 86/256 (34%) |
+| tanks | 63/80 (79%) | 143/192 (74%) | 207/256 (81%) |
+| turtle | 40/80 (50%) | 102/192 (53%) | 118/256 (46%) |
+| scouts | 16/80 (20%) | 55/192 (29%) | 113/256 (44%) |
+| snipers | 18/80 (23%) | 82/192 (43%) | 114/256 (45%) |
+| fortress | - | 104/192 (54%) | 112/256 (44%) |
+| snipewall | - | 76/192 (40%) | 90/256 (35%) |
+| swarm | - | 85/192 (44%) | 131/256 (51%) |
+| wallrush | - | 112/192 (58%) | 176/256 (69%) |
+| mixed | - | 36/192 (19%) | 76/256 (30%) |
+| quad | - | 105/192 (55%) | 149/256 (58%) |
+| bunker | - | 114/192 (59%) | 149/256 (58%) |
+| **archers** | - | - | 84/256 (33%) |
+| **runners** | - | - | 34/256 (13%) |
+| **brutes** | - | - | 113/256 (44%) |
+| **homeguard** | - | - | 179/256 (70%, 69.9%) |
+
+Asserted (`tests/balance.test.ts`): every M6 and M8.5 assertion and cap on their own parts,
+unchanged; on the full 17×17 matrix nobody beats everyone, everyone beats someone and loses
+to someone, and nobody wins more than 70% except the two big-body soldier armies, capped
+at today's numbers (bricks 220/256, tanks 207/256: they beat every kind archetype 16-0,
+since 24-110 HP minions barely scratch 250-430 HP bodies); no exception for any building
+or kind archetype; no walls-only win. Stated outcomes, all asserted:
+
+- **Brutes break the sealed fortress:** 14-0-2 (the brute swarm smashes a seal wall in
+  about 4 s, the soldiers walk in). The M8.5 melee armies lose to it (bricks 2-14, tanks 0-16).
+- **Archers shoot over walls:** 16-0 against the turtle, the sealed fortress and the walled
+  sniper nest. They lose to every melee army that reaches them (24 HP each), including the
+  rush (0-16, checked separately).
+- **Defend beats attack for a tower bunker:** the home guard beats the bunker 15-1-0 (its
+  grunts screen the towers instead of running at the nearest enemy) and is the best
+  non-soldier archetype at 69.9%, just under the 70% cap: a **watch item** (a smaller
+  `factory.defendRadius` barely moves it: 140 and 120 px both give 69.1%).
+- **Bursts pay:** see the next table: the burst-4 runners win 38 of 256 vs 30 for the
+  same runners sent one at a time, and lose 11.2 minions per KO vs 16.5.
+
+### Minion output
+
+Against every round-robin archetype (all sites, both orders, both seeds; `scripts/balance-matrix.ts`):
+
+| army | wins | minions made | lost | minion KOs | minion damage | damage per minion | lost per KO |
+|---|---|---|---|---|---|---|---|
+| archers | 73/240 | 1144 | 910 | 208 | 17460 | 15.3 | 4.4 |
+| runners (burst 4) | 38/256 | 2109 | 2002 | 179 | 7063 | 3.3 | 11.2 |
+| trickle (burst 1) | 30/256 | 2182 | 2144 | 130 | 7422 | 3.4 | 16.5 |
+| brutes | 98/240 | 2444 | 2145 | 634 | 58993 | 24.1 | 3.4 |
+| homeguard | 166/240 | 1446 | 620 | 288 | 14173 | 9.8 | 2.2 |
+| swarm (M8.5, grunts on rally) | 115/240 | 2427 | 2066 | 326 | 20819 | 8.6 | 6.3 |
+| bunker (M8.5, grunts on rally) | 128/240 | 2692 | 2316 | 259 | 21341 | 7.9 | 8.9 |
+
+(Rows that are in the round robin don't play themselves: 240 battles.) Brutes deal the
+most per minion because a third of their hits land on walls (×3); defenders lose the
+fewest minions.
+
+### Ring 8 free-for-all with minion-kind armies
+
+archers, runners, brutes, homeguard, swarm, fortress, quad, rush; 8 rotations × 2 seeds.
+
+- 1st places by army: homeguard 8, brutes 5, rush 3.
+- 1st places by zone index 0-7: 3, 3, 4, 2, 1, 0, 3, 0.
+
+Asserted: no army takes more than half the 1st places (the home guard sits exactly at
+half: a watch item, like the turtle in the M6 free-for-all: armies that stay home outlast
+the others), several armies win, and no winner has only walls left.
+
+### Tuning (M8.6): defaults kept
+
+Every assertion passes with the first-guess kind stats, so no default was changed beyond
+the §5.3 design (the brute's HP was set to 100 instead of 110 before the matrix ran, so
+it stays inside a soldier-bound retune to `maxHealth.max` 100 that the API tests use).
+Sweeps on the weak spot, the runner swarm (13%):
+
+- **Runner stats** (all with the swarm-the-weakest brain and burst 4): 36 HP / 6 / speed
+  2.2 ($33 each) 16.4%; 32 HP / 6 / 2.4 ($37) 16.8%; 40 HP / 6 / 2.0 / size 7 ($35)
+  17.2%. Stats hardly matter: the army's results are set by its plan.
+- **Orders:** the same runners on `rally` (attack) win 62 of 256 (24%, 4.5 damage per
+  runner); grunts on swarm-the-weakest drop from 124 to 81 wins of 256 (9.2 vs 10.9
+  damage per grunt). Swarming the weakest enemy runs every minion past the defenders, so
+  it is a sniper-hunting trick (the runners beat the sealed fortress and the walled sniper
+  nest 10-6), not a general plan. CLAUDE.md and `get_rules` say so: "swarm is for one
+  target; attack is the all-rounder".
+- **Archers** 30 HP / 6 / range 100 ($34 each): 34.0% vs 32.8%; kept.
+- **Composition:** runner factories at the template's pace (interval 900, 4 soldiers) did
+  worse (11.8%): the soldiers are the runners' screen.
+
+Engine time for the 2,041 battles with walls or factories in the matrix script (lean
+runner, the sim alone): median 27 ms, max 516 ms per 5400-tick battle, at most 0.100 ms
+per tick on average. Real-isolate timing of the kinds worst case (8 players, 10 soldiers +
+2 kind factories with bursts and all four orders + 12 walls each) is the second test in
+`tests/buildings-perf.test.ts` (`npm run test:perf`, sim p99 < 8 ms/tick). On the devcontainer (quiet machine) it ran at p50 1.84 ms, **p99 5.6 ms** per tick (8 bursts, all four kinds, 15 minions at once), next to 5.2 ms for the M8.5 worst case. Under heavy load from other processes both reached 8-11 ms, so run the timing pass on an idle machine.
+
+### Bots (`npm run bots`, M8.6)
+
+Three new personalities join the `mixed` rotation: `archers` (an Archer Nest guarding
+Turrets behind Stone Walls), `runners` (a burst-4 Runner Pack swarming the weakest enemy,
+with Brawlers and Darts) and `brutes` (a Brute Smithy swarming the nearest enemy wall, with
+Brawlers and Stone Walls). Their factories (250 HP, interval 900: $219 / $234 / $219)
+release stored minions early when the factory drops below half health.
+

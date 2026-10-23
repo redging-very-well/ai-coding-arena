@@ -295,7 +295,7 @@ Tips:
 | `'grunt'` (default) | Grunt | 40 | 5 | 20 (melee) | 1.5 | 8 | $28 | a cheap, steady stream |
 | `'archer'` | Archer | 24 | 5 | **110** (shoots) | 1.2 | 7 | $35 | shooting from behind walls, towers or soldiers |
 | `'runner'` | Runner | 28 | 4 | 20 (melee) | **2.6** | 6 | $38 | reaching far targets first |
-| `'brute'` | Brute | **110** | 8 (**×3 on walls**) | 20 (melee) | 0.9 | 11 | $36 | smashing walls, soaking hits |
+| `'brute'` | Brute | **100** | 8 (**×3 on walls**) | 20 (melee) | 0.9 | 11 | $35 | smashing walls, soaking hits |
 
 Archers' shots fly over walls. Brutes hit walls three times as hard and start smashing a wall that blocks them after 0.5 s (other kinds wait 2 s). Any other value for `produces` is an error (use exactly one of the four words, in quotes).
 
@@ -366,6 +366,7 @@ update(self, enemies, allies, world) {
 
 Factory tips:
 - Pick the kind for the job: archers behind walls or towers, runners to swarm far targets, brutes against walls, grunts when money is tight.
+- `swarm` is for ONE target (a sniper at the back, the wall in your way): the minions run past enemies that hit them. For an open fight `attack` is the all-rounder, and `defend` next to your towers is very strong.
 - A burst factory is a juicy target (its stored minions die with it): keep it at the back of your zone or behind walls, or release early when it is hurt (`self.hp < self.maxHp / 2`).
 - Two burst-4 factories share the per-player limit (6 alive, fewer with 7-8 players), so the second one may send out fewer at once. That's fine.
 
@@ -410,7 +411,7 @@ factory: cost = body + production
 
 - **Basic Wall** (maxHealth 400): 4 + 24 × 1.1422 = 31.41 → **$32**. A 1000-HP castle wall costs $118; a maxed 1500-HP wall $274.
 - **Basic Factory** (maxHealth 300, productionInterval 900): body 10 + 42.48 = 52.48 → $53, plus 5 minions × $28 = $140 → **$193**. With productionInterval 600 it builds 8 minions: $53 + $224 = **$277**.
-- **The minion kind sets the price per minion** (`produces`, 4c): grunt $28 (half of $55), archer $35 (half of $69), runner $38 (half of $76), brute $36 (half of $72), each half the price of that minion priced as a soldier. Same factory (maxHealth 300, productionInterval 900, 5 minions): grunts **$193**, archers $53 + $175 = **$228**, runners $53 + $190 = **$243**, brutes $53 + $180 = **$233**. With productionInterval 600 (8 minions): archers **$333**, runners **$357**, brutes **$341**. `burst` never changes the price.
+- **The minion kind sets the price per minion** (`produces`, 4c): grunt $28 (half of $55), archer $35 (half of $69), runner $38 (half of $76), brute $35 (half of $69), each half the price of that minion priced as a soldier. Same factory (maxHealth 300, productionInterval 900, 5 minions): grunts **$193**, archers $53 + $175 = **$228**, runners $53 + $190 = **$243**, brutes $53 + $175 = **$228**. With productionInterval 600 (8 minions): archers **$333**, runners **$357**, brutes **$333**. `burst` never changes the price.
 
 Tips:
 - **Maxing a stat costs 3×: spread your stats.** A stat at its max costs 3 times its normal price, and one at half its max costs 1.5 times. Two medium units are cheaper than one giant one, and usually win. If a stat is at 80% of its max or more, `validate_unit` gives the tip `W_STAT_NEAR_MAX`.

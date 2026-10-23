@@ -351,6 +351,8 @@ export class ArenaRenderer {
   private readonly minionStats = new Map<MinionKind, MinionBodyStats>();
   /** Factories whose stored minions left together at this `now` (M8.6): their spawns skip the "+1". */
   private readonly releasedAt = new Map<string, number>();
+  /** Recent "release!" label spots (stacked when two factories release together). */
+  private releaseLabels: Array<{ x: number; y: number; at: number }> = [];
   private readonly wallBakes = new Map<string, { bitmap: Bitmap; groundX: number; groundY: number; scale: number }>();
   /** The font last set on the context this frame (setting ctx.font re-parses it: costly ×96 badges). */
   private font = '';
@@ -434,6 +436,7 @@ export class ArenaRenderer {
     this.zones = revealZones(reveal);
     this.minionStats.clear();
     this.releasedAt.clear();
+    this.releaseLabels = [];
     if (reveal.minion?.stats) this.minionStats.set('grunt', bodyStats(reveal.minion.stats));
     for (const [kind, m] of Object.entries(reveal.minions ?? {}) as Array<[MinionKind, { stats: MinionBodyStats } | undefined]>) {
       if (m?.stats) this.minionStats.set(kind, bodyStats(m.stats));
@@ -774,7 +777,13 @@ export class ArenaRenderer {
         const a = (i / 6) * Math.PI * 2;
         this.fx.puff(fp.sx + Math.cos(a) * h * 0.7, fp.sy + Math.sin(a) * h * 0.35, view.zoom, ['#FFFFFF', f.info.stats.color, seat.color]);
       }
-      this.fx.label(fp.sx, fp.sy - h * 1.1, `release! ×${ev.count}`, seat.light, now);
+      // Neighbouring factories often release on the same tick: stack their labels instead of overlapping them.
+      let ly = fp.sy - h * 1.1;
+      const step = Math.max(14, 10 * view.zoom);
+      this.releaseLabels = this.releaseLabels.filter((l) => now - l.at < 600);
+      while (this.releaseLabels.some((l) => Math.abs(l.x - fp.sx) < 110 && Math.abs(l.y - ly) < step)) ly -= step;
+      this.releaseLabels.push({ x: fp.sx, y: ly, at: now });
+      this.fx.label(fp.sx, ly, `release! ×${ev.count}`, seat.light, now);
     } else if (ev.type === 'lost') {
       // M8.6: a factory died with minions inside; they are gone.
       const f = this.instances.get(ev.factoryId);

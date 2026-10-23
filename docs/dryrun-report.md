@@ -143,3 +143,35 @@ and PROMPTS.md weren't changed, because no run showed a gap.
 - **The success `playerHint` says "Your unit is ready! Find it in My Units"** for walls and
   factories too. That is true (the /play panel is called My Units, with a Buildings group), but
   "building" would read better.
+
+## Minion kinds, squad orders and burst (M8.6)
+
+Date: 2026-10-23. Claude Code, the same setup as M8.5:
+- **Server:** the production build on :18160 with a fresh data dir. Players Cara, Dev and Eli were
+  created over REST (PIN 1234). The match was in PLAN with the timer paused.
+- **Kit:** a fresh copy of the generic kit (`GET /api/setup/kit.zip`, `Host: 127.0.0.1:18160`) per
+  player, unzipped outside the repo. Its CLAUDE.md has the new "Factories: minion kinds, orders and
+  burst" part.
+- **Command:** `claude -p "<prompt>" --output-format stream-json --verbose --settings
+  .claude/settings.json`. The three runs went in parallel.
+
+3 runs, about $1.29 ($0.43 each).
+
+| # | Player says | Turns | Validates | Outcome | Notes |
+|---|---|---|---|---|---|
+| k1 | "I'm Cara, PIN 1234. Make a factory that builds archers to guard my towers" | 10 | 1 | Submitted "Archer Camp": `produces: 'archer'`, interval 900, $228. No warnings | Read `basic_factory.js` first. `update()` guards the most-hurt own tower (`order: 'guard'`) and falls back to `defend` with no tower. Green tent sprite. Told the player to place it near the towers and offered a tower for the archers to guard |
+| k2 | "I'm Dev, PIN 1234. Make a runner factory that saves up 4 and then rushes the weakest enemy" | 10 | 1 | Submitted "Rush Garage": `produces: 'runner'`, `burst: 4`, interval 600 (8 runners), $357. No warnings | Swarms the lowest-HP enemy that isn't a wall, else `attack`. On its own, it added an early `release` when the garage is badly hurt (the CLAUDE.md tip), and told the player to place it at the back "so the runners stay safe while they wait inside" |
+| k3 | "I'm Eli, PIN 1234. Make brutes that smash through walls" | 10 | 1 | Submitted "Brute Forge": `produces: 'brute'`, interval 900, $228. No warnings | Swarms the nearest enemy wall, then hunts ("Brutes hit walls 3 times as hard"). Stone workshop sprite with a glowing fire. Offered a soldier or tower to go with it |
+
+- **Validates:** each run submitted a valid unit after **1 validate**, with no warnings (only the
+  usual harmless first `Read .pixel-clash/player.json` miss before login).
+- **What Claude used:** the kinds table, the order shapes and the three examples in CLAUDE.md 4c.
+  Every `swarm`/`guard` had a fallback for when there is no target, so no `BAD_ACTION` came up.
+  Prices matched the section 5 table ($228 / $357 / $228).
+- **The burst risk got across:** k2 explained that stored runners wait inside and advised a safe
+  spot, as the tip says.
+- **Fix texts** for the new codes (`BAD_ACTION` for a swarm without `targetId` or an unknown order,
+  `W_ORDER_TARGET`, `W_BURST_NEVER_FULL`, `BURST_NOT_INTEGER`, `produces` near misses such as
+  `'archers'` → `'archer'`) were not triggered by these runs. They are checked by
+  `tests/validator-buildings.test.ts` and `tests/buildings-cost.test.ts`, and so are the three
+  CLAUDE.md examples, which must validate cleanly. CLAUDE.md wasn't changed after the runs.

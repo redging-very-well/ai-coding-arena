@@ -3,7 +3,9 @@
 // the Ring 8 free-for-all rotations; M8.5: the walls-and-factories archetypes
 // in the same round robin, all-building armies per map style, fortress vs
 // rush, 2-team Lanes and a Ring 8 free-for-all with buildings, and the
-// engine time per battle. Same harness as tests/balance.test.ts.
+// engine time per battle; M8.6: the minion-kind archetypes in the round robin,
+// burst vs one-at-a-time runners, the kinds' minion output and a Ring 8
+// free-for-all with kind armies. Same harness as tests/balance.test.ts.
 //
 //   npx tsx --conditions=source scripts/balance-matrix.ts
 
@@ -11,7 +13,10 @@ import { DEFAULT_CONFIG, mapFor, type MapStyle } from '@pixel-clash/shared';
 import {
   ALL_ARCHETYPES,
   ARCHETYPES,
+  BUILDING_ARCHETYPES,
   DUEL_SITES,
+  KIND_ARCHETYPES,
+  RUNNER_TRICKLE,
   OPEN_FORTRESS,
   RUSH,
   SEEDS,
@@ -39,9 +44,9 @@ const s = (ticks: number | null) => (ticks === null ? '-' : `${(ticks / 60).toFi
 async function main(): Promise<void> {
   console.log(`Sudden death: from ${sd.startTick / 60} s, radius ${sd.startRadius} → ${sd.endRadius} (800 arena), ${sd.damagePctPerSecond}% max HP/s\n`);
   console.log('## Archetypes\n');
-  for (const a of [...ALL_ARCHETYPES, RUSH, OPEN_FORTRESS]) console.log(`- ${a.key}: ${a.label}, $${armyCost(a)}`);
+  for (const a of [...ALL_ARCHETYPES, RUSH, OPEN_FORTRESS, RUNNER_TRICKLE]) console.log(`- ${a.key}: ${a.label}, $${armyCost(a)}`);
 
-  console.log('\n## Round robin (row W-D-L vs column; the first six are the §14 matrix)\n');
+  console.log('\n## Round robin (row W-D-L vs column; the first six are the §14 matrix, the first 13 M8.5\'s)\n');
   const m = await roundRobin(ALL_ARCHETYPES, undefined, (a, b, battle) => timed(battle, [a, b]));
   console.log(matrixMarkdown(m, ALL_ARCHETYPES));
   const perPair = DUEL_SITES.reduce((n, site) => n + site.pairs.length * 2, 0) * SEEDS.length;
@@ -51,8 +56,44 @@ async function main(): Promise<void> {
     return `${wins}/${perPair * cells.length} (${Math.round((100 * wins) / (perPair * cells.length))}%)`;
   };
   const old = new Set(ARCHETYPES.map((a) => a.key));
-  console.log('\n| archetype | wins vs the six | wins vs all 12 |\n|---|---|---|');
-  for (const [a, row] of m) console.log(`| ${a} | ${old.has(a) ? rate(row, old) : '-'} | ${rate(row)} |`);
+  const m85 = new Set([...ARCHETYPES, ...BUILDING_ARCHETYPES].map((a) => a.key));
+  console.log('\n| archetype | wins vs the six | wins vs the M8.5 13 | wins vs all 16 |\n|---|---|---|---|');
+  for (const [a, row] of m) console.log(`| ${a} | ${old.has(a) ? rate(row, old) : '-'} | ${m85.has(a) ? rate(row, m85) : '-'} | ${rate(row)} |`);
+
+  console.log('\n## Minion kinds, orders and burst (M8.6)\n');
+  const output = async (a: Archetype, foes: Archetype[]) => {
+    let made = 0;
+    let lost = 0;
+    let kills = 0;
+    let dmg = 0;
+    let wins = 0;
+    let n = 0;
+    for (const b of foes)
+      for (const site of DUEL_SITES)
+        for (const [z1, z2] of site.pairs)
+          for (const zones of [[z1, z2], [z2, z1]] as Array<[number, number]>)
+            for (const seed of SEEDS) {
+              const { outcome, battle } = await duel(site.style, site.players, a, b, zones, seed);
+              n++;
+              if (outcome === 1) wins++;
+              for (const u of battle.result.units) {
+                if (u.playerId !== 'p0') continue;
+                if (u.type === 'minion') {
+                  kills += u.kills;
+                  dmg += u.damageDealt;
+                }
+                if (u.factory) {
+                  made += u.factory.minionsMade;
+                  lost += u.factory.minionsLost;
+                }
+              }
+            }
+    return `| ${a.key} | ${wins}/${n} | ${made} | ${lost} | ${kills} | ${Math.round(dmg)} | ${(dmg / Math.max(1, made)).toFixed(1)} | ${(lost / Math.max(1, kills)).toFixed(1)} |`;
+  };
+  console.log('Minion output against every round-robin archetype (all sites, both orders, both seeds):\n');
+  console.log('| army | wins | minions made | lost | minion KOs | minion damage | damage per minion | lost per KO |\n|---|---|---|---|---|---|---|---|');
+  const foes = ALL_ARCHETYPES.filter((a) => a.key !== 'runners');
+  for (const a of [...KIND_ARCHETYPES, RUNNER_TRICKLE, byKey('swarm'), byKey('bunker')]) console.log(await output(a, foes.filter((b) => b !== a)));
 
   console.log('\n## All-tower battles\n');
   console.log('| map | armies | zones | first hit | circle reaches | towers lost | end | places |');
@@ -142,6 +183,7 @@ async function main(): Promise<void> {
   for (const [title, keys] of [
     ['Ring 8 free-for-all, 8 rotations × 2 seeds', ['bricks', 'templates', 'tanks', 'turtle', 'scouts', 'snipers', 'rush', 'templates']],
     ['Ring 8 free-for-all with building armies (M8.5), 8 rotations × 2 seeds', ['fortress', 'swarm', 'snipewall', 'wallrush', 'bunker', 'mixed', 'quad', 'rush']],
+    ['Ring 8 free-for-all with minion-kind armies (M8.6), 8 rotations × 2 seeds', ['archers', 'runners', 'brutes', 'homeguard', 'swarm', 'fortress', 'quad', 'rush']],
   ] as const) {
     console.log(`\n## ${title}\n`);
     const lineup = keys.map(byKey);

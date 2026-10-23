@@ -355,7 +355,7 @@ export const STRATEGY_TIPS = [
   "Minions show up in enemies as type 'minion': weak (40 HP) but many. Shots fly over walls, so towers behind walls still shoot.",
   'A factory pays up front for its minions: productionInterval 600 makes 8 per battle, 900 makes 5, 1800 makes 2, and the price follows. Rally them at the nearest enemy to attack, or in front of your towers to defend.',
   "Pick this.produces for the job: 'archer' (shoots from 110 px, fragile) behind walls or towers, 'runner' (fast) to swarm far targets, 'brute' (tough, 3x damage to walls) to smash walls, 'grunt' (default, cheapest) for a steady stream.",
-  "Squad orders: { action: 'command', order: 'swarm', targetId: enemy.id } sends every minion at one enemy; 'guard' with an ally's id keeps them next to it; 'defend' keeps them home; 'attack' (default) hunts. swarm and guard need a targetId: with no target return { action: 'command', order: 'attack' }.",
+  "Squad orders: { action: 'command', order: 'swarm', targetId: enemy.id } sends every minion at one enemy; 'guard' with an ally's id keeps them next to it; 'defend' keeps them home; 'attack' (default) hunts. swarm and guard need a targetId: with no target return { action: 'command', order: 'attack' }. swarm is for ONE target (a sniper, a wall in the way); for an open fight attack is the all-rounder, and defend next to your towers is very strong.",
   'this.burst = 4 saves minions inside the factory and sends them out together (a surprise rush), but stored minions die with the factory: keep it safe, or release early with { action: \'release\' }.',
 ];
 
