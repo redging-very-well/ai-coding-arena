@@ -259,6 +259,43 @@ describe('host countdown (POST /admin/phase/advance)', () => {
     await waitForState(admin, (x) => x.phase !== 'PLACEMENT', 5000);
   }, T);
 
+  it('runs from RESULTS: next battle (PLAN of the next round), cancellable, and Final standings after the last round', async () => {
+    const s = await boot();
+    const a = await newPlayer(s.url, 'Ann');
+    const b = await newPlayer(s.url, 'Ben');
+    const admin = await adminClient(s.url);
+    await admin.post('/admin/match', { rounds: 2 });
+    const toResults = async () => {
+      for (const p of [a, b]) await pick(p.client, ['basic-soldier']);
+      await admin.post('/admin/phase/next'); // → PLACEMENT
+      await admin.post('/admin/start', { force: true }); // auto-places, → BATTLE
+      await waitForState(admin, (x) => x.phase === 'BATTLE', 5000);
+      await admin.post('/admin/phase/skip');
+      return waitForState(admin, (x) => x.phase === 'RESULTS', 10_000);
+    };
+    await toResults();
+    // Players can't start it.
+    expect((await a.client.post('/admin/phase/advance', {})).body.error.code).toBe('ADMIN_REQUIRED');
+    // Cancel holds the results.
+    let st = (await admin.post('/admin/phase/advance', { delaySec: 0.6 })).body as GameStateDTO;
+    expect(st.pendingAdvance).toEqual({ to: 'PLAN', by: 'host', secondsLeft: 1 });
+    expect((await state(b.client)).pendingAdvance?.to).toBe('PLAN');
+    await admin.post('/admin/phase/advance/cancel');
+    await new Promise((r) => setTimeout(r, 900));
+    expect((await state(admin)).phase).toBe('RESULTS');
+    // Next battle.
+    await admin.post('/admin/phase/advance', { delaySec: 0.5 });
+    st = await waitForState(admin, (x) => x.phase === 'PLAN', 5000);
+    expect(st.round).toBe(2);
+    expect(st.pendingAdvance).toBeUndefined();
+    // Last round: the countdown goes to the final standings.
+    await toResults();
+    st = (await admin.post('/admin/phase/advance', { delaySec: 0.5 })).body;
+    expect(st.pendingAdvance?.to).toBe('MATCH_RESULTS');
+    await waitForState(admin, (x) => x.phase === 'MATCH_RESULTS', 5000);
+    expect((await admin.post('/admin/phase/advance', {})).body.error.code).toBe('PHASE_CLOSED');
+  }, T);
+
   it('is dropped when the phase changes another way', async () => {
     const s = await boot();
     const a = await newPlayer(s.url, 'Ann');

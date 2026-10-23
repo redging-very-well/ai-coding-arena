@@ -481,7 +481,8 @@ export interface PlaybackDTO {
 
 /** The countdown to the next step (§3 pending advance). */
 export interface PendingAdvanceDTO {
-  to: 'PLACEMENT' | 'BATTLE';
+  /** PLAN → PLACEMENT, PLACEMENT → BATTLE, RESULTS → the next round's PLAN or (last round) MATCH_RESULTS. */
+  to: 'PLACEMENT' | 'BATTLE' | 'PLAN' | 'MATCH_RESULTS';
   /** 'host' = the facilitator pressed go; 'auto' = everyone Ready with the auto-advance option. */
   by: 'host' | 'auto';
   /** Whole seconds left (≥ 1). */

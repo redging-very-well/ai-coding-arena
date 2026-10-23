@@ -474,7 +474,9 @@ canvas.arena {
   position: absolute;
   left: 0;
   right: 0;
-  top: 24px;
+  /* Its own row under the "Final moment" / replay chip (top-right), which it
+     would run into on the half-width RESULTS arena. */
+  top: 76px;
   text-align: center;
   font-size: 36px;
   color: var(--accent);
@@ -1432,6 +1434,10 @@ canvas.arena {
 .ready-banner small {
   font-size: 24px;
   font-weight: 700;
+}
+/* RESULTS: sit below the "Final moment" / replay label at the top of the arena. */
+.stage.phase-results .ready-banner {
+  top: 84px;
 }
 .ready-banner.counting {
   background: color-mix(in srgb, var(--accent) 90%, #000);

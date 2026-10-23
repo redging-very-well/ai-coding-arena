@@ -107,12 +107,12 @@ describe('/admin quick toggle', () => {
 });
 
 describe('go / cancel controls (/screen with an admin session, /admin)', () => {
-  const st = (o: Partial<Pick<GameStateDTO, 'phase' | 'allReady' | 'pendingAdvance'>>) => ({ phase: 'PLAN' as const, allReady: false, ...o });
+  const st = (o: Partial<Pick<GameStateDTO, 'phase' | 'allReady' | 'pendingAdvance' | 'round' | 'rounds'>>) => ({ phase: 'PLAN' as const, allReady: false, ...o });
 
   it('shows go only to the admin when everyone is ready, cancel while a countdown runs', () => {
     expect(advanceControls(st({ allReady: true }), false)).toEqual(NO_CONTROLS);
     expect(advanceControls(st({ allReady: false }), true)).toEqual(NO_CONTROLS);
-    expect(advanceControls(st({ allReady: true }), true)).toEqual({ go: { label: 'Start placement ▶' }, cancel: false });
+    expect(advanceControls(st({ allReady: true }), true)).toEqual({ go: { label: 'Start placement ▶', space: true }, cancel: false });
     expect(advanceControls(st({ phase: 'PLACEMENT', allReady: true }), true).go?.label).toBe('START battle ▶');
     expect(advanceControls(st({ phase: 'BATTLE', allReady: true }), true)).toEqual(NO_CONTROLS);
     const counting = st({ allReady: false, pendingAdvance: { to: 'PLACEMENT', by: 'host', secondsLeft: 3 } });
@@ -121,8 +121,27 @@ describe('go / cancel controls (/screen with an admin session, /admin)', () => {
     expect(advanceControls(null, true)).toEqual(NO_CONTROLS);
   });
 
+  it('on RESULTS the admin always gets Next battle (or Final standings after the last round), Enter only', () => {
+    expect(advanceControls(st({ phase: 'RESULTS', round: 1, rounds: 3 }), true)).toEqual({ go: { label: 'Next battle ▶', space: false }, cancel: false });
+    expect(advanceControls(st({ phase: 'RESULTS', round: 3, rounds: 3 }), true).go?.label).toBe('Final standings ▶');
+    expect(advanceControls(st({ phase: 'RESULTS', round: 1, rounds: 3 }), false)).toEqual(NO_CONTROLS);
+    const counting = st({ phase: 'RESULTS', round: 1, rounds: 3, pendingAdvance: { to: 'PLAN', by: 'host', secondsLeft: 2 } });
+    expect(advanceControls(counting, true)).toEqual({ go: null, cancel: true });
+    // Space stays "pause the replay" on the results.
+    const next = advanceControls(st({ phase: 'RESULTS', round: 1, rounds: 3 }), true);
+    expect(advanceKey(' ', next)).toBeNull();
+    expect(advanceKey('Enter', next)).toBe('go');
+  });
+
+  it('gives the results banner only to the facilitator, and the countdown to everyone', () => {
+    expect(readyBanner({ phase: 'RESULTS', allReady: false })).toBeNull();
+    expect(readyBanner({ phase: 'RESULTS', allReady: false }, 'Next battle ▶')?.title).toBe('Round over!');
+    const b = readyBanner({ phase: 'RESULTS', allReady: false, pendingAdvance: { to: 'PLAN', by: 'host', secondsLeft: 3 } });
+    expect(b).toMatchObject({ title: 'Next battle in', countdown: 3 });
+  });
+
   it('maps Space / Enter to go and Esc to cancel, only when that control shows', () => {
-    const go = { go: { label: 'x' }, cancel: false };
+    const go = { go: { label: 'x', space: true }, cancel: false };
     const cancel = { go: null, cancel: true };
     expect(advanceKey(' ', go)).toBe('go');
     expect(advanceKey('Enter', go)).toBe('go');
@@ -136,5 +155,7 @@ describe('go / cancel controls (/screen with an admin session, /admin)', () => {
   it('words the countdown', () => {
     expect(countdownText({ to: 'PLACEMENT', by: 'host', secondsLeft: 3 })).toBe('Placement starts in 3…');
     expect(countdownText({ to: 'BATTLE', by: 'host', secondsLeft: 1 })).toBe('Battle starts in 1…');
+    expect(countdownText({ to: 'PLAN', by: 'host', secondsLeft: 2 })).toBe('Next battle in 2…');
+    expect(countdownText({ to: 'MATCH_RESULTS', by: 'host', secondsLeft: 3 })).toBe('Final standings in 3…');
   });
 });

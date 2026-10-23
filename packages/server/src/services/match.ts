@@ -228,7 +228,8 @@ export class MatchService {
 
   /**
    * Admin: start the countdown to the next step (PLAN → PLACEMENT any time,
-   * PLACEMENT → BATTLE when everyone is Ready). Replaces an auto countdown.
+   * PLACEMENT → BATTLE when everyone is Ready, RESULTS → the next battle's
+   * PLAN or, after the last round, MATCH_RESULTS). Replaces an auto countdown.
    */
   startAdvance(delayIn: unknown): Result<true> {
     const delay = delayIn === undefined || delayIn === null ? 3 : delayIn;
@@ -236,11 +237,13 @@ export class MatchService {
       return fail('BAD_REQUEST', 'delaySec must be a number from 0 to 10.');
     }
     const phase = this.m.phase;
-    if (phase !== 'PLAN' && phase !== 'PLACEMENT') {
-      return fail('PHASE_CLOSED', 'The countdown works only in PLAN and PLACEMENT.', { details: { phase, opensIn: 'PLAN' } });
+    if (phase !== 'PLAN' && phase !== 'PLACEMENT' && phase !== 'RESULTS') {
+      return fail('PHASE_CLOSED', 'The countdown works only in PLAN, PLACEMENT and RESULTS.', { details: { phase, opensIn: 'PLAN' } });
     }
     if (phase === 'PLACEMENT' && !this.game.round.allReady()) return this.notAllReady();
-    this.setPending(phase === 'PLAN' ? 'PLACEMENT' : 'BATTLE', delay * 1000, 'host');
+    const to: AdvanceTarget =
+      phase === 'PLAN' ? 'PLACEMENT' : phase === 'PLACEMENT' ? 'BATTLE' : this.m.round < this.m.rounds ? 'PLAN' : 'MATCH_RESULTS';
+    this.setPending(to, delay * 1000, 'host');
     log.info(`round ${this.m.round}: host countdown to ${this.pending!.to} (${delay} s)`);
     this.game.notifier.stateChanged();
     return ok(true);
@@ -267,6 +270,11 @@ export class MatchService {
       this.enterPlacement();
       return;
     }
+    if (p.to === 'PLAN' || p.to === 'MATCH_RESULTS') {
+      log.info(`round ${this.m.round}: countdown over, ${p.to === 'PLAN' ? 'next battle' : 'final standings'}`);
+      this.afterResults();
+      return;
+    }
     const r = this.start(false);
     if (!r.ok) {
       this.game.notifier.toast({ admin: true }, 'warn', `${r.error.message} Use Force start, or start the countdown again.`);
@@ -277,7 +285,7 @@ export class MatchService {
   private tick(): void {
     const phase = this.m.phase;
     if (phase === 'BATTLE') return; // the battle service pushes its own clock
-    if (phase === 'PLAN' || phase === 'PLACEMENT') {
+    if (phase === 'PLAN' || phase === 'PLACEMENT' || phase === 'RESULTS') {
       if (this.syncAutoAdvance()) this.game.notifier.stateChanged();
       if (this.pending) {
         if (Date.now() >= this.pending.at) {

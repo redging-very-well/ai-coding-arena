@@ -15,6 +15,7 @@ import {
   type TeamPattern,
   type TeamTableRowDTO,
 } from '@pixel-clash/shared';
+import { countdownTitle } from '../common/advance.js';
 
 // ---------------------------------------------------------------------------
 // Battle end
@@ -196,16 +197,22 @@ export interface ReadyBanner {
  * countdown to the next step while one runs (even if someone un-readied
  * during a host countdown), else "everyone's ready". Null otherwise.
  */
-export function readyBanner(state: Pick<GameStateDTO, 'phase' | 'allReady' | 'pendingAdvance'> | null | undefined): ReadyBanner | null {
+export function readyBanner(
+  state: Pick<GameStateDTO, 'phase' | 'allReady' | 'pendingAdvance'> | null | undefined,
+  /** The facilitator's go control (§12.2): on RESULTS it gets a small banner to sit on. */
+  goLabel?: string | null,
+): ReadyBanner | null {
   if (!state) return null;
   const p = state.pendingAdvance;
-  if (p && (state.phase === 'PLAN' || state.phase === 'PLACEMENT')) {
+  if (p && (state.phase === 'PLAN' || state.phase === 'PLACEMENT' || state.phase === 'RESULTS')) {
     return {
-      title: p.to === 'PLACEMENT' ? 'Placement starts in' : 'Battle starts in',
+      title: countdownTitle(p),
       sub: p.by === 'auto' ? "Everyone's ready! 🎉" : 'Get ready!',
       countdown: p.secondsLeft,
     };
   }
+  // Results: only the facilitator's browser shows a banner (with the go button); everyone else sees the results.
+  if (state.phase === 'RESULTS') return goLabel ? { title: 'Round over!', sub: 'Ready when you are' } : null;
   if (!state.allReady) return null;
   if (state.phase === 'PLAN') return { title: "Everyone's ready! 🎉", sub: 'Waiting for the host to start placement' };
   if (state.phase === 'PLACEMENT') return { title: "Everyone's placed and ready!", sub: 'START when you like!' };

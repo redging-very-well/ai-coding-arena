@@ -6,35 +6,58 @@
 
 import type { GameStateDTO, PendingAdvanceDTO } from '@pixel-clash/shared';
 
-type StateBits = Pick<GameStateDTO, 'phase' | 'allReady' | 'pendingAdvance'>;
+type StateBits = Pick<GameStateDTO, 'phase' | 'allReady' | 'pendingAdvance'> & Partial<Pick<GameStateDTO, 'round' | 'rounds'>>;
 
 export interface AdvanceControls {
-  /** "Start placement ▶" / "START battle ▶": starts the 3 s countdown. */
-  go: { label: string } | null;
+  /**
+   * "Start placement ▶" / "START battle ▶" / "Next battle ▶" / "Final
+   * standings ▶": starts the 3 s countdown. `space`: Space also triggers it
+   * (not in RESULTS, where Space pauses the replay; Enter still works).
+   */
+  go: { label: string; space: boolean } | null;
   /** A countdown runs and can be cancelled. */
   cancel: boolean;
 }
 
 export const NO_CONTROLS: AdvanceControls = { go: null, cancel: false };
 
-/** What the facilitator can do now: go when everyone is ready, cancel while a countdown runs. */
+/**
+ * What the facilitator can do now: go when everyone is ready (PLAN,
+ * PLACEMENT) or any time on the results (next battle / final standings),
+ * cancel while a countdown runs.
+ */
 export function advanceControls(state: StateBits | null | undefined, isAdmin: boolean): AdvanceControls {
   if (!state || !isAdmin) return NO_CONTROLS;
   if (state.pendingAdvance) return { go: null, cancel: true };
+  if (state.phase === 'RESULTS') {
+    const last = state.round !== undefined && state.rounds !== undefined && state.round >= state.rounds;
+    return { go: { label: last ? 'Final standings ▶' : 'Next battle ▶', space: false }, cancel: false };
+  }
   if (!state.allReady) return NO_CONTROLS;
-  if (state.phase === 'PLAN') return { go: { label: 'Start placement ▶' }, cancel: false };
-  if (state.phase === 'PLACEMENT') return { go: { label: 'START battle ▶' }, cancel: false };
+  if (state.phase === 'PLAN') return { go: { label: 'Start placement ▶', space: true }, cancel: false };
+  if (state.phase === 'PLACEMENT') return { go: { label: 'START battle ▶', space: true }, cancel: false };
   return NO_CONTROLS;
 }
 
-/** Keyboard on /screen: Space / Enter = go, Esc = cancel (only when that control shows). */
+/** Keyboard on /screen: Enter (and Space outside RESULTS) = go, Esc = cancel (only when that control shows). */
 export function advanceKey(key: string, controls: AdvanceControls): 'go' | 'cancel' | null {
-  if ((key === ' ' || key === 'Enter') && controls.go) return 'go';
+  if (controls.go && (key === 'Enter' || (key === ' ' && controls.go.space))) return 'go';
   if (key === 'Escape' && controls.cancel) return 'cancel';
   return null;
 }
 
-/** "Placement starts in 3…" / "Battle starts in 2…". */
+const COUNTDOWN_LABEL: Record<PendingAdvanceDTO['to'], string> = {
+  PLACEMENT: 'Placement starts',
+  BATTLE: 'Battle starts',
+  PLAN: 'Next battle',
+  MATCH_RESULTS: 'Final standings',
+};
+
+/** "Placement starts in 3…" / "Next battle in 2…" (also the /screen banner title, without the number). */
+export function countdownTitle(p: Pick<PendingAdvanceDTO, 'to'>): string {
+  return `${COUNTDOWN_LABEL[p.to]} in`;
+}
+
 export function countdownText(p: PendingAdvanceDTO): string {
-  return `${p.to === 'PLACEMENT' ? 'Placement' : 'Battle'} starts in ${p.secondsLeft}…`;
+  return `${countdownTitle(p)} ${p.secondsLeft}…`;
 }

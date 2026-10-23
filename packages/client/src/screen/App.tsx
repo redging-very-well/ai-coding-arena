@@ -284,7 +284,9 @@ function ArenaOverlays({
   const battle = phase === 'BATTLE';
   // Not over the results: a battle that ends right as sudden death starts must not keep the banner up.
   const sd = (battle || !!snap.replay?.playing) && snap.suddenDeathAt !== null && now - snap.suddenDeathAt < SUDDEN_DEATH_BANNER_MS;
-  const ready = readyBanner(snap.state);
+  const banner = readyBanner(snap.state, controls.go?.label);
+  // On RESULTS the facilitator's banner carries the end text ("Battle over!") instead of stacking two titles.
+  const ready = banner && phase === 'RESULTS' && banner.countdown === undefined && snap.end ? { ...banner, title: endReasonText(snap.end) } : banner;
   return (
     <>
       {ready && (
@@ -306,7 +308,7 @@ function ArenaOverlays({
           {(controls.go || controls.cancel) && (
             <div class="adv-buttons">
               {controls.go && (
-                <button class="adv-btn go pixel" onClick={actions.go} title="Space / Enter: start the 3-second countdown">
+                <button class="adv-btn go pixel" onClick={actions.go} title={`${controls.go.space ? 'Space / Enter' : 'Enter'}: start the 3-second countdown`}>
                   {controls.go.label}
                 </button>
               )}
@@ -315,7 +317,7 @@ function ArenaOverlays({
                   ✕ Cancel
                 </button>
               )}
-              <span class="adv-keys">{controls.go ? 'Space / Enter' : 'Esc'}</span>
+              <span class="adv-keys">{controls.go ? (controls.go.space ? 'Space / Enter' : 'Enter') : 'Esc'}</span>
             </div>
           )}
         </div>
@@ -355,7 +357,7 @@ function ArenaOverlays({
         </div>
       )}
       {snap.replay && !snap.replay.loading && (snap.replay.playing || phase === 'RESULTS') && <ReplayBar ctrl={ctrl} />}
-      {phase === 'RESULTS' && snap.end && !snap.replay?.playing && (
+      {phase === 'RESULTS' && snap.end && !snap.replay?.playing && !ready && (
         <div class="end-reason pixel">{endReasonText(snap.end)}</div>
       )}
       {phase === 'RESULTS' && !snap.replay?.playing && (snap.state?.lastBattle ?? snap.end)?.topUnits?.length ? (
