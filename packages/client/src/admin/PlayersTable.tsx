@@ -1,4 +1,4 @@
-// Players table (plan §12.3): seat (number badge), team, zone this round, name, connected, designs, submitted
+// Players table (plan §12.3): seat (number badge), Claude seat, team, zone this round, name, connected, designs, submitted
 // this PLAN, selected, ready, strikes. Per player: Kick ("after this battle"
 // during BATTLE), Reset PIN, Rotate key, and the rescue paste box with
 // Validate (any phase) and Submit on behalf (PLAN only).
@@ -43,6 +43,7 @@ export function PlayersTable() {
             <thead>
               <tr>
                 <th>Seat</th>
+                <th title="Claude seat 1-8: the laptop's terminal (assign in Claude seats)">Claude</th>
                 {teamMode && <th>Team</th>}
                 <th>Zone</th>
                 <th>Name</th>
@@ -70,6 +71,7 @@ export function PlayersTable() {
                           {seat.symbol}
                         </span>
                       </td>
+                      <td>{p.claudeSeat ?? <span class="dim">–</span>}</td>
                       {teamMode && (
                         <td>
                           {team && look ? (
@@ -103,7 +105,7 @@ export function PlayersTable() {
                     </tr>
                     {isOpen && (
                       <tr class="actions-row">
-                        <td colSpan={teamMode ? 12 : 11}>
+                        <td colSpan={teamMode ? 13 : 12}>
                           <PlayerActions player={p} phase={s.phase} onGone={() => setOpen(null)} />
                         </td>
                       </tr>

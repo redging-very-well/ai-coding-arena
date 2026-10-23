@@ -1248,19 +1248,9 @@ canvas.arena {
   font-size: 26px;
   color: var(--accent);
 }
-.poster-seats ul {
-  list-style: none;
+.poster-seats p {
   margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(4, auto);
-  gap: 12px 40px;
-  font-size: 26px;
-}
-.poster-seats li {
-  border-left: 8px solid var(--seat);
-  padding-left: 12px;
-  white-space: nowrap;
+  font-size: 24px;
 }
 .poster-hint {
   position: absolute;

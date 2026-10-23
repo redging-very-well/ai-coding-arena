@@ -14,8 +14,7 @@ type OverviewPlayer = AdminOverviewDTO['players'][number];
 type OverviewUnit = OverviewPlayer['units'][number];
 
 export function Details() {
-  const { overview } = useAdmin();
-  const [show, setShow] = useState(false);
+  const { overview, showDetails: show, setShowDetails: setShow } = useAdmin();
   const players = overview?.players ?? [];
   const armory = overview?.armory ?? [];
   return (
@@ -24,7 +23,7 @@ export function Details() {
         <h2>Details</h2>
         <label class="toggle">
           <input type="checkbox" checked={show} onChange={(e) => setShow(e.currentTarget.checked)} />
-          Show details (rosters, sprites, sources, placements)
+          Show details (rosters, sprites, sources, placements, seat password)
         </label>
       </div>
       {!show ? (

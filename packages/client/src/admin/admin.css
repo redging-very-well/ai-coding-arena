@@ -85,6 +85,10 @@ h3 {
   padding: 3px 8px;
   font-size: 13px;
 }
+a.btn {
+  display: inline-block;
+  text-decoration: none;
+}
 .btn.big {
   font-size: 18px;
   padding: 10px 20px;
@@ -683,4 +687,55 @@ input.pin {
   gap: 8px;
   align-items: center;
   margin-top: 8px;
+}
+
+/* Claude seats panel (§11.2, §12.3) */
+.grid > .claude-seats {
+  grid-column: 1 / -1;
+}
+.claude-seats .banner-bad {
+  margin: 0 0 12px;
+  border-radius: 6px;
+}
+.claude-seat-num {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: #d97757;
+  color: #1d0d06;
+}
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  vertical-align: middle;
+}
+.status-dot.st-up {
+  background: var(--good);
+}
+.status-dot.st-down,
+.status-dot.st-wrong-password {
+  background: var(--bad);
+}
+.status-dot.st-no-box,
+.status-dot.st-no-password {
+  background: var(--warn);
+}
+.seat-table select {
+  max-width: 14rem;
+}
+.direct-url,
+.seat-secret .secret {
+  cursor: pointer;
+  word-break: break-all;
+}
+.open-term {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
 }

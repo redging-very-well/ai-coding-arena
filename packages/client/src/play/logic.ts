@@ -352,11 +352,11 @@ export function unitPrompts(roster: readonly UnitCardDTO[], round: number, repor
 }
 
 // ---------------------------------------------------------------------------
-// Claude terminal links (§11.1)
+// Claude terminal: adults' direct link (§11.2 b "Fallback")
 // ---------------------------------------------------------------------------
 
 export const TTYD_BASE_PORT = 7780;
-/** Seat containers on the Claude box: seat1..seat8 on ports 7781-7788 (§11.1). */
+/** Seat containers on the Claude box: seat1..seat8 on ports 7781-7788 (§11.1, §11.2). */
 export const CLAUDE_SEATS = 8;
 
 /** Host part of a Claude box address ("192.168.8.20", "http://box:8080/x" → "box"). */
@@ -373,11 +373,15 @@ export function claudeBoxHost(address: string | null | undefined): string | null
   return /^[a-z0-9.-]+$/i.test(s) ? s : null;
 }
 
-/** `http://<box>:778N` for Claude seat 1-8. */
+/**
+ * `http://<box>:778N/terminal/N/` for Claude seat 1-8: ttyd directly on the
+ * Claude box, bypassing the game server's proxy. It asks for the seat password,
+ * so it is only the grown-ups' fallback; players use /terminal/N/ inside /play.
+ */
 export function claudeTerminalUrl(address: string | null | undefined, claudeSeat: number): string | null {
   const host = claudeBoxHost(address);
   if (!host || !Number.isInteger(claudeSeat) || claudeSeat < 1 || claudeSeat > CLAUDE_SEATS) return null;
-  return `http://${host}:${TTYD_BASE_PORT + claudeSeat}`;
+  return `http://${host}:${TTYD_BASE_PORT + claudeSeat}/terminal/${claudeSeat}/`;
 }
 
 // ---------------------------------------------------------------------------

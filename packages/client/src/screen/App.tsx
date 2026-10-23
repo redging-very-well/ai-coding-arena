@@ -315,11 +315,10 @@ function SoundControl({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenContro
   );
 }
 
-/** Full-screen join poster (P key or /admin): big QR, the URL and the seat terminal links. */
+/** Full-screen join poster (P key or /admin): big QR and the URL. */
 function JoinPoster({ snap, onClose }: { snap: ScreenSnapshot; onClose: () => void }) {
   const join = snap.join;
   const pretty = join?.joinUrl.replace(/^https?:\/\//, '') ?? '…';
-  const terminals = snap.setup?.seatTerminals ?? [];
   return (
     <div class="poster" onClick={onClose}>
       <div class="poster-logo pixel">
@@ -343,22 +342,11 @@ function JoinPoster({ snap, onClose }: { snap: ScreenSnapshot; onClose: () => vo
           </p>
         </div>
       </div>
-      {terminals.length > 0 && (
-        <div class="poster-seats">
-          <h2 class="pixel">Your Claude terminal</h2>
-          <ul>
-            {terminals.map((t) => {
-              const seat = seatStyle(t.seat);
-              return (
-                <li key={t.seat} style={{ '--seat': seat.color }}>
-                  <b class="sym seat-num">{seat.symbol}</b>
-                  {t.url.replace(/^https?:\/\//, '')}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
+      {/* The terminal lives inside /play now (§11.2): no terminal addresses on the projector. */}
+      <div class="poster-seats">
+        <h2 class="pixel">Your Claude terminal is on the game page</h2>
+        <p class="muted">On a Claude laptop? Scan the seat card next to it.</p>
+      </div>
       <p class="poster-hint">Press P to close</p>
     </div>
   );

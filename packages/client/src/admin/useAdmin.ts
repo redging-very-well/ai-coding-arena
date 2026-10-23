@@ -3,7 +3,7 @@
 // changes in a way that matters (not on every 1 Hz timer tick).
 
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
-import type { AdminOverviewDTO, GameStateDTO, SetupInfoDTO } from '@pixel-clash/shared';
+import type { AdminClaudeSeatsDTO, AdminOverviewDTO, GameStateDTO, SetupInfoDTO } from '@pixel-clash/shared';
 import { ApiError, api } from '../common/api.js';
 import { GameSocket, type WsStatus } from '../common/ws.js';
 import { getSetupInfo } from '../setup/setupApi.js';
@@ -24,6 +24,8 @@ export interface AdminData {
   state: GameStateDTO | null;
   overview: AdminOverviewDTO | null;
   setup: SetupInfoDTO | null;
+  /** Claude seats (§11.2), without the secret fields (WS `terminals` + refetches). */
+  seats: AdminClaudeSeatsDTO | null;
   wsStatus: WsStatus;
   /** The admin session is gone (server restarted with a wipe, logged out elsewhere). */
   lostSession: boolean;
@@ -33,6 +35,7 @@ export interface AdminData {
   refresh(): Promise<void>;
   setSetup(info: SetupInfoDTO): void;
   setState(s: GameStateDTO): void;
+  setSeats(s: AdminClaudeSeatsDTO): void;
 }
 
 let nextNoticeId = 1;
@@ -41,6 +44,7 @@ export function useAdminData(): AdminData {
   const [state, setState] = useState<GameStateDTO | null>(null);
   const [overview, setOverview] = useState<AdminOverviewDTO | null>(null);
   const [setup, setSetup] = useState<SetupInfoDTO | null>(null);
+  const [seats, setSeats] = useState<AdminClaudeSeatsDTO | null>(null);
   const [wsStatus, setWsStatus] = useState<WsStatus>('connecting');
   const [lostSession, setLostSession] = useState(false);
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -56,10 +60,11 @@ export function useAdminData(): AdminData {
 
   const refresh = useCallback(async () => {
     try {
-      const [ov, su] = await Promise.all([api.admin.overview(), getSetupInfo()]);
+      const [ov, su, cs] = await Promise.all([api.admin.overview(), getSetupInfo(), api.admin.claudeSeats()]);
       setOverview(ov);
       setState(ov.state);
       setSetup(su);
+      setSeats(cs);
       lastKey.current = stateKey(ov.state);
     } catch (err) {
       if (err instanceof ApiError && err.unauthenticated) setLostSession(true);
@@ -87,6 +92,7 @@ export function useAdminData(): AdminData {
         }
       }),
       sock.on('toast', (m) => notify(m.level, m.message)),
+      sock.on('terminals', (m) => setSeats(m.data)),
     ];
     // Safety net: `connected` flags and strikes without a state change.
     const poll = setInterval(() => void refresh(), 10_000);
@@ -98,7 +104,7 @@ export function useAdminData(): AdminData {
     };
   }, [refresh, notify]);
 
-  return { state, overview, setup, wsStatus, lostSession, notices, notify, dismiss, refresh, setSetup, setState };
+  return { state, overview, setup, seats, wsStatus, lostSession, notices, notify, dismiss, refresh, setSetup, setState, setSeats };
 }
 
 /** Text of an error for the facilitator (message + hint). */

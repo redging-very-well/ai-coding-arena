@@ -42,7 +42,10 @@ export function Header() {
         )}
       </div>
       <div class="phase">
-        <div class="phase-title pixel">{text?.title ?? '…'}</div>
+        {/* Re-keyed on a phase change while the game shows, so the banner flashes once (§11.2 d). */}
+        <div key={st.phaseFlash} class={cx('phase-title pixel', st.phaseFlash > 0 && 'flash')}>
+          {text?.title ?? '…'}
+        </div>
         <div class="phase-hint">
           {showRound && (
             <span class="round">

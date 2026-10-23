@@ -29,8 +29,8 @@ export const CHECKLIST: readonly ChecklistSection[] = [
     items: [
       {
         id: 'box-env',
-        title: 'Set the game server address in sessions/.env',
-        detail: 'PIXEL_CLASH_URL is the address above (http://<ip>:8080), plus TTYD_PASS_1..8 for the seat cards (set all 8, even for a smaller game).',
+        title: 'Set the game server address and seat password in sessions/.env',
+        detail: 'PIXEL_CLASH_URL is the address above (http://<ip>:8080). SEAT_SECRET is one made-up password for all seats (12-64 characters, e.g. otter-lamp-quartz-ninety); players never see it.',
       },
       {
         id: 'box-up',
@@ -47,17 +47,29 @@ export const CHECKLIST: readonly ChecklistSection[] = [
       {
         id: 'box-check',
         title: 'In each seat terminal ask "Are you connected to Pixel Clash?"',
-        detail: 'Claude should call get_game_state with no approval prompts.',
+        detail: 'Claude should call get_game_state with no approval prompts (test through the Claude pane in /play).',
       },
-      { id: 'box-admin', title: 'Enter the Claude box address in /admin so the seat links below appear' },
-      { id: 'box-firewall', title: 'Claude box allows inbound 7781-7788; sleep is disabled' },
+      {
+        id: 'box-admin',
+        title: 'In /admin → Claude seats, enter the Claude box address and the same SEAT_SECRET',
+        detail: 'Turn on Show details first (not on the projector). Every running seat should turn green (up).',
+      },
+      {
+        id: 'box-firewall',
+        title: 'Claude box allows inbound 7781-7788 from the game server; sleep is disabled',
+        detail: 'Optional hardening: allow 7781-7788 only from the game server IP (sessions/README.md).',
+      },
     ],
   },
   {
     title: 'Player laptops',
     items: [
-      { id: 'laptop-cards', title: 'Each laptop has its seat card: /play URL/QR, seat terminal URL and its password' },
-      { id: 'laptop-tabs', title: 'Open two tabs per laptop: /play and the seat terminal' },
+      { id: 'laptop-cards', title: 'Each laptop has its seat card: the Claude seat number and its /play?seat=N QR (no password)' },
+      {
+        id: 'laptop-tabs',
+        title: 'One tab per laptop: scan the card, join, and the Claude pane in /play shows the terminal',
+        detail: '"Open in new tab" in the Claude pane also works; the newest tab takes over the seat.',
+      },
       { id: 'laptop-projector', title: 'Projector shows /screen in full screen (F11)' },
     ],
   },

@@ -556,18 +556,27 @@ main.join {
 /* Claude panels                                                            */
 /* ------------------------------------------------------------------------ */
 
-.seat-picker { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.seat-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 0.5rem; margin: 0.75rem 0; max-width: 34rem; }
 .seat-btn {
-  min-width: 84px;
-  min-height: 44px;
+  display: grid;
+  gap: 2px;
+  min-height: 56px;
+  padding: 0.35rem 0.5rem;
   border-radius: 8px;
   border: 2px solid var(--border);
   background: var(--bg-2);
   font-weight: 700;
+  color: var(--text);
 }
+.seat-btn:hover { border-color: #d97757; }
 .seat-btn.chosen { border-color: #d97757; background: #3a2016; }
+.seat-btn.taken { opacity: 0.7; }
+.seat-sub { font-weight: 400; font-size: 0.85rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .big-link { background: #d97757 !important; border-color: #d97757 !important; color: #1d0d06 !important; font-size: 1.1rem; }
-.claude-term p { margin: 0 0 0.6rem; }
+button.btn.primary { background: var(--accent); border-color: var(--accent); color: #1b1600; }
+button.btn.big { font-size: 1.1rem; min-height: 52px; padding-inline: 1.4em; }
+button.btn.small, a.btn.small { min-height: 34px; padding: 0.25em 0.75em; font-size: 0.95rem; }
+.btn-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .kit-toggle {
   display: flex;
   width: 100%;
@@ -582,6 +591,184 @@ main.join {
 .kit-body { display: grid; gap: 0.6rem; margin-top: 0.75rem; justify-items: start; }
 .api-key { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .api-key code { padding: 3px 8px; border-radius: 6px; background: var(--bg); border: 1px solid var(--border); font-size: 0.95rem; word-break: break-all; }
+
+/* ------------------------------------------------------------------------ */
+/* Claude + game layout (§11.2 d): split view / tabs                         */
+/* ------------------------------------------------------------------------ */
+
+/* The page is one screen tall; each side scrolls on its own. */
+.play-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+}
+.play-app header.top { flex: none; }
+.pane-tabs {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  padding: 0.4rem 1rem;
+  background: var(--bg-2);
+  border-bottom: 2px solid var(--border);
+}
+.pane-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--font-pixel);
+  font-size: 13px;
+}
+.pane-tab.on { background: var(--accent); color: #1b1600; border-color: var(--accent); }
+.tab-badges { display: inline-flex; gap: 0.35rem; align-items: center; }
+.tab-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 800;
+  line-height: 1.3;
+  background: var(--good);
+  color: #052e16;
+}
+.tab-badge.warn { background: var(--warn); color: #2a2000; }
+.tab-badge.phase { background: #d97757; color: #1d0d06; }
+.tab-badge.ph-place { background: var(--accent); color: #1b1600; }
+/* "Place!": a gentle 2 s pulse, every 20 s (paused while the player types). */
+.tab-badge.pulse { animation: pc-place-nudge 20s ease-in-out infinite; }
+@keyframes pc-place-nudge {
+  0%, 10%, 100% { transform: none; box-shadow: none; }
+  2.5%, 7.5% { transform: scale(1.15); box-shadow: 0 0 0 4px rgba(255, 212, 71, 0.35); }
+  5% { transform: scale(1); }
+}
+
+.shell {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.layout-tabs .shell > .pane { grid-area: 1 / 1; }
+.pane { min-width: 0; min-height: 0; }
+.game-side { overflow-y: auto; }
+.layout-split .game-side main.play { max-width: none; }
+/* Hidden but still full size (never display:none): xterm keeps its columns, the pty isn't resized. */
+.pane-hidden { visibility: hidden; pointer-events: none; }
+
+.divider {
+  position: relative;
+  cursor: col-resize;
+  background: var(--bg-2);
+  border-inline: 1px solid var(--border);
+  touch-action: none;
+}
+.divider::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 48px;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  background: var(--text-dim);
+  opacity: 0.6;
+}
+.divider:hover, .divider:focus-visible, .dragging .divider { background: var(--panel-2); }
+.drag-shield { position: absolute; inset: 0; z-index: 30; cursor: col-resize; }
+.dragging { user-select: none; }
+
+/* Claude pane */
+.claude-side { display: flex; flex-direction: column; background: #0b0c10; }
+.claude-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.claude-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.35rem 0.75rem;
+  background: var(--bg-2);
+  border-bottom: 2px solid #d97757;
+}
+.claude-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-right: auto;
+  padding: 0.25rem 0;
+  border: 0;
+  background: none;
+  color: #f0a27f;
+  cursor: text;
+}
+.claude-title .pixel { font-size: 13px; }
+.change-seat.confirm { font-size: 0.95rem; }
+.place-strip {
+  flex: none;
+  padding: 0.3rem 0.75rem;
+  background: #3a3110;
+  color: var(--accent);
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+.seat-ask { margin: 0.5rem 0.75rem; }
+.seat-ask p { margin: 0 0 0.5rem; }
+.claude-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
+.claude-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: #000; display: block; }
+.seat-pick { padding: 1.25rem; }
+.seat-pick h2 { font-size: 15px; margin: 0 0 0.5rem; color: #f0a27f; }
+.seat-pick p { margin: 0 0 0.5rem; }
+.claude-msg { margin: auto; padding: 1.5rem; max-width: 34rem; text-align: center; display: grid; gap: 0.75rem; justify-items: center; }
+.claude-msg h2 { font-size: 15px; margin: 0; color: #f0a27f; line-height: 1.5; }
+.claude-msg p { margin: 0; }
+.claude-msg-icon { font-size: 44px; line-height: 1; }
+.claude-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  background: rgb(11, 12, 16); /* opaque: ttyd's own "Press ⏎ to Reconnect" pill sits underneath */
+}
+.term-strip {
+  flex: none;
+  order: -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.4rem 0.75rem;
+  background: #3a3110;
+  border-bottom: 2px solid var(--warn);
+}
+.grown-ups summary { cursor: pointer; color: var(--text-dim); font-size: 0.9rem; }
+.grown-ups code { word-break: break-all; }
+/* Split view: flash the phase banner once when the phase changes. */
+.phase-title.flash { animation: pc-banner-flash 1.2s ease-out 1; }
+@keyframes pc-banner-flash {
+  0%, 40% { transform: scale(1.25); text-shadow: 0 0 12px var(--accent); }
+  100% { transform: none; text-shadow: none; }
+}
+
+/* Toasts clear the tab bar (its Game-tab badges stay visible). */
+.layout-tabs .toasts { top: 9rem; }
+
+@media (max-width: 640px) {
+  .layout-tabs .toasts { top: 11rem; }
+  .pane-tabs { padding-inline: 0.5rem; }
+  .claude-head { padding-inline: 0.5rem; }
+}
 
 /* ------------------------------------------------------------------------ */
 /* Toasts                                                                   */
@@ -613,7 +800,7 @@ main.join {
 @keyframes pc-toast-in { from { transform: translateY(12px); opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .toast, .clock.urgent, .conn { animation: none; }
+  .toast, .clock.urgent, .conn, .tab-badge.pulse, .phase-title.flash { animation: none; }
 }
 
 /* ------------------------------------------------------------------------ */

@@ -1,10 +1,12 @@
 // The facilitator page /admin (plan §12.3): login, then phase controls,
-// players, details (rosters/sprites, behind a toggle), config, server info.
+// players, Claude seats (§11.2), details (rosters/sprites, behind a toggle),
+// config, server info.
 
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import { api } from '../common/api.js';
 import { cx } from '../common/ui.js';
 import { AdminContext, type AdminCtx } from './context.js';
+import { ClaudeSeats } from './ClaudeSeats.js';
 import { ConfigEditor } from './ConfigEditor.js';
 import { Details } from './Details.js';
 import { PhaseControls } from './PhaseControls.js';
@@ -61,6 +63,7 @@ function Login({ onDone }: { onDone: () => void }) {
 function Console({ onLoggedOut }: { onLoggedOut: () => void }) {
   const data = useAdminData();
   const [busy, setBusy] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const { notify, refresh } = data;
 
   const act = useCallback(
@@ -85,7 +88,7 @@ function Console({ onLoggedOut }: { onLoggedOut: () => void }) {
     if (data.lostSession) onLoggedOut();
   }, [data.lostSession, onLoggedOut]);
 
-  const ctx: AdminCtx = useMemo(() => ({ ...data, act, busy }), [data, act, busy]);
+  const ctx: AdminCtx = useMemo(() => ({ ...data, act, busy, showDetails, setShowDetails }), [data, act, busy, showDetails]);
   const sandbox = data.state?.sandboxMode ?? data.setup?.sandboxMode;
 
   const logout = async () => {
@@ -129,6 +132,7 @@ function Console({ onLoggedOut }: { onLoggedOut: () => void }) {
         <main class="grid">
           <PhaseControls />
           <PlayersTable />
+          <ClaudeSeats />
           <Details />
           <ServerInfo />
           <ConfigEditor />

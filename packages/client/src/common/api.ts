@@ -3,10 +3,12 @@
 // session cookie; every non-2xx response becomes an ApiError.
 
 import type {
+  AdminClaudeSeatsDTO,
   AdminConfigResponse,
   AdminOverviewDTO,
   ApiErrorBody,
   BattleReportDTO,
+  ClaudeSeatsDTO,
   ContractDTO,
   GameConfig,
   GameStateDTO,
@@ -149,6 +151,10 @@ export const api = {
   setPlacement: (placements: PlacementDTO[]) => request<PlacementResponse>('PUT', '/round/placement', { placements }),
   setReady: (ready: boolean) => request<{ ready: boolean }>('POST', '/round/ready', { ready }),
   report: (round: number | 'latest') => request<BattleReportDTO>('GET', `/battles/${round}/report`),
+  /** The Claude seat picker (§11.2 c). */
+  claudeSeats: () => request<ClaudeSeatsDTO>('GET', '/claude-seats'),
+  /** Pick the laptop's Claude seat 1-8 (null = none). CLAUDE_SEAT_TAKEN (409) has details {seat, takenBy}. */
+  setClaudeSeat: (seat: number | null) => request<{ claudeSeat: number | null }>('PUT', '/me/claude-seat', { seat }),
 
   // --- admin --------------------------------------------------------------
   admin: {
@@ -188,6 +194,11 @@ export const api = {
     updateConfig: (patch: DeepPartial<GameConfig>) => request<AdminConfigResponse>('PUT', '/admin/config', patch),
     overview: () => request<AdminOverviewDTO>('GET', '/admin/overview'),
     wipe: () => request<{ ok: true }>('POST', '/admin/wipe', { confirm: 'WIPE' }),
+    /** Claude seats (§11.2): with `details`, also the seat password and the direct URLs. */
+    claudeSeats: (details = false) => request<AdminClaudeSeatsDTO>('GET', `/admin/claude-seats${details ? '?details=1' : ''}`),
+    /** Assign a Claude seat to a player (moves them, unassigns the seat's holder); null unassigns. */
+    assignClaudeSeat: (seat: number, playerId: string | null) => request<AdminClaudeSeatsDTO>('PUT', `/admin/claude-seats/${seat}`, { playerId }),
+    checkClaudeSeats: () => request<AdminClaudeSeatsDTO>('POST', '/admin/claude-seats/check'),
   },
 } as const;
 

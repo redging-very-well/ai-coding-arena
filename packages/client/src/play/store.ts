@@ -3,6 +3,9 @@
 // the battle view lives here too (it must see the reveal and every frame even
 // before the battle panel mounts). Components subscribe with `useStore`.
 // Sounds (§12.4) are muted by default here; the header has the unmute button.
+// The embedded Claude terminal (§11.2): the player's Claude seat and its live
+// holder (`terminal` push), the seat picker, the seat card's `?seat=N`, the
+// "open in another tab" state and the Game-tab badges.
 
 import { useEffect, useState } from 'preact/hooks';
 import {
@@ -10,20 +13,58 @@ import {
   FRAME_FLAGS,
   type BattleEndDTO,
   type BattleRevealDTO,
+  type ClaudeSeatsDTO,
   type FrameDTO,
   type GameStateDTO,
   type MeResponse,
   type PlayerDTO,
   type PrivateStateDTO,
   type RulesDTO,
+  type SetupInfoDTO,
   type StatBounds,
+  type TerminalDTO,
+  type TerminalLiveDTO,
 } from '@pixel-clash/shared';
-import { ApiError, api } from '../common/api.js';
+import { ApiError, api, request } from '../common/api.js';
 import { SoundEngine } from '../common/audio.js';
 import { ArenaRenderer } from '../common/render/arena.js';
 import { MUTE_KEY_PLAY, countdownCue, revealCue } from '../common/sfx.js';
 import { GameSocket, type WsStatus } from '../common/ws.js';
 import { REVEAL_STEPS, REVEAL_STEP_MS } from '../screen/model.js';
+import {
+  CLAIM_GRACE_MS,
+  LAPTOP_SEAT_KEY,
+  NO_BADGES,
+  OLD_SEAT_KEY,
+  badgeReducer,
+  initialDisplaced,
+  newPaneId,
+  nextDisplaced,
+  parseSeat,
+  parseSeatQuery,
+  reloadOnRecovery,
+  rosterChanges,
+  seatAction,
+  seatTakenText,
+  type BadgeEvent,
+  type GameBadges,
+} from './claudePane.js';
+
+function readLocal(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeLocal(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // not remembered on this laptop, that's fine
+  }
+}
 
 export interface Toast {
   id: number;
@@ -65,6 +106,30 @@ export interface PlayState {
   battleEnd: BattleEndDTO | null;
   myBattle: MyBattleUnit[];
   toasts: Toast[];
+  /** Own Claude seat, its status and live holder (WS `terminal`); null until known. */
+  terminal: TerminalDTO | null;
+  /** The seat picker's list (GET /claude-seats), loaded while the picker shows. */
+  claudeSeats: ClaudeSeatsDTO | null;
+  /** The terminal is open in another tab (or the admin's): the pane shows "Use it here instead". */
+  displaced: boolean;
+  /** Who took the terminal last (for the overlay text after that tab closed). */
+  lastHolder: TerminalLiveDTO['by'] | null;
+  /** A `terminal` push said who holds the seat (until then the iframe isn't loaded: it would take the seat over). */
+  holderKnown: boolean;
+  /** Bumped by "Use it here instead": remounts the iframe, which takes the seat back. */
+  frameSeq: number;
+  /** The seat card says another seat than the player's: ask before switching. */
+  seatAsk: { seat: number; current: number } | null;
+  /** Last seat-picker problem ("Claude seat 3 is Sam's…"). */
+  seatError: string | null;
+  /** The laptop's Claude seat from its seat card (localStorage), for the picker. */
+  laptopSeat: number | null;
+  /** Claude box address (public /setup), for the grown-ups' direct link. */
+  boxHost: string | null;
+  /** Game-tab badges while Claude shows. */
+  badges: GameBadges;
+  /** Bumped on phase changes while the split view shows the game (flash the banner once). */
+  phaseFlash: number;
 }
 
 type Listener = () => void;
@@ -84,7 +149,31 @@ export class PlayStore {
     battleEnd: null,
     myBattle: [],
     toasts: [],
+    terminal: null,
+    claudeSeats: null,
+    displaced: false,
+    lastHolder: null,
+    holderKnown: false,
+    frameSeq: 0,
+    seatAsk: null,
+    seatError: null,
+    laptopSeat: null,
+    boxHost: null,
+    badges: NO_BADGES,
+    phaseFlash: 0,
   };
+  /** This page's terminal iframe id (`?pane=`): tells our own terminal from another tab's. */
+  readonly pane = newPaneId();
+  /** Until then another live holder is ignored (our iframe is still connecting). */
+  private claimingUntil = 0;
+  private claimTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Seat from the seat card QR, applied after login. */
+  private cardSeat: number | null = null;
+  /** The game side is visible (split view, or the Game tab). */
+  private gameShowing = true;
+  /** Last keystroke in the terminal (ms epoch), to hold back the PLACEMENT nudge. */
+  lastTypedAt = 0;
+  private seatsLoading = false;
   readonly socket: GameSocket;
   /** Arena for the battle mini-view; its canvas is moved into whichever panel shows it. */
   readonly arenaCanvas: HTMLCanvasElement;
@@ -142,6 +231,7 @@ export class PlayStore {
   // -------------------------------------------------------------------------
 
   async boot(): Promise<void> {
+    this.readSeatCard();
     void this.loadRules();
     try {
       const me = await api.me();
@@ -190,9 +280,163 @@ export class PlayStore {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Claude seat (§11.2 c)
+  // -------------------------------------------------------------------------
+
+  /** `?seat=N` from the seat card: remember it on this laptop and take it out of the URL. */
+  private readSeatCard(): void {
+    let laptop = parseSeat(readLocal(LAPTOP_SEAT_KEY)) ?? parseSeat(readLocal(OLD_SEAT_KEY));
+    try {
+      const q = parseSeatQuery(location.search);
+      if (q.seat !== null) {
+        laptop = q.seat;
+        this.cardSeat = q.seat;
+        writeLocal(LAPTOP_SEAT_KEY, String(q.seat));
+      } else if (q.bad) {
+        this.toast("That seat card link has a seat number we don't know. Pick your Claude seat below.", 'warn');
+      }
+      if (q.seat !== null || q.bad) history.replaceState(history.state, '', `${location.pathname}${q.search}${location.hash}`);
+    } catch {
+      // no location/history (tests): nothing to read
+    }
+    this.set({ laptopSeat: laptop });
+  }
+
+  /** After login: apply the seat card's seat (claim, or ask when the player has another one). */
+  private applySeatCard(mySeat: number | null): void {
+    const card = this.cardSeat;
+    this.cardSeat = null;
+    const a = seatAction(mySeat, card);
+    if (a.kind === 'claim') void this.claimSeat(a.seat);
+    else if (a.kind === 'ask') this.set({ seatAsk: { seat: a.seat, current: a.current } });
+  }
+
+  /** PUT /me/claude-seat. Resolves true when the seat is now the player's. */
+  async claimSeat(seat: number | null): Promise<boolean> {
+    try {
+      const r = await api.setClaudeSeat(seat);
+      if (r.claudeSeat !== null) writeLocal(LAPTOP_SEAT_KEY, String(r.claudeSeat));
+      const t = this.state.terminal;
+      const boxReady = t?.boxReady ?? this.state.claudeSeats?.boxReady ?? true;
+      this.set({
+        seatAsk: null,
+        seatError: null,
+        laptopSeat: r.claudeSeat ?? this.state.laptopSeat,
+        // Show the seat at once; the `terminal` push that follows has the details.
+        // A seat just claimed has no other holder of ours: its iframe may load right away.
+        ...(t?.seat === r.claudeSeat ? {} : { terminal: { seat: r.claudeSeat, status: 'unknown' as const, boxReady, live: null }, holderKnown: true }),
+      });
+      void this.loadClaudeSeats();
+      return r.claudeSeat === seat;
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'CLAUDE_SEAT_TAKEN') {
+        const d = err.details as { seat?: number; takenBy?: string } | undefined;
+        this.set({ seatAsk: null, seatError: seatTakenText(d?.seat ?? seat ?? 0, d?.takenBy) });
+        void this.loadClaudeSeats();
+      } else if (err instanceof ApiError) {
+        this.set({ seatError: err.playerMessage });
+      }
+      return false;
+    }
+  }
+
+  keepSeat(): void {
+    this.set({ seatAsk: null });
+  }
+
+  /** The seat picker's list (refetched on every `terminal` push while there is no seat). */
+  async loadClaudeSeats(): Promise<void> {
+    if (this.seatsLoading || this.state.auth !== 'in') return;
+    this.seatsLoading = true;
+    try {
+      const seats = await api.claudeSeats();
+      this.set({ claudeSeats: seats });
+    } catch {
+      // the next push retries
+    } finally {
+      this.seatsLoading = false;
+    }
+  }
+
+  /** The Claude box address for the grown-ups' direct link (public /setup; it holds no secret). */
+  async loadBoxHost(): Promise<void> {
+    try {
+      const i = await request<SetupInfoDTO>('GET', '/setup');
+      this.set({ boxHost: i.settings?.claudeBoxHost ?? null });
+    } catch {
+      // the link just isn't shown
+    }
+  }
+
+  private onTerminal(t: TerminalDTO): void {
+    const prev = this.state.terminal;
+    let displaced = this.state.displaced;
+    if (!this.state.holderKnown) {
+      // Page load or login: the seat may be live in a standalone tab. Leave it
+      // there ("Use it here instead"); our iframe loads only when it isn't.
+      displaced = initialDisplaced(t, this.pane);
+      this.claimingUntil = Date.now() + CLAIM_GRACE_MS;
+    } else {
+      if (!prev || prev.seat !== t.seat || !t.boxReady) {
+        // A new seat (or no terminal at all): a fresh iframe, nothing displaced.
+        displaced = false;
+        this.claimingUntil = Date.now() + CLAIM_GRACE_MS;
+      }
+      displaced = nextDisplaced(displaced, t.live, this.pane, this.claimingUntil, Date.now());
+    }
+    const lastHolder = t.live && t.live.pane !== this.pane ? t.live.by : this.state.lastHolder;
+    if (reloadOnRecovery(prev, t, displaced)) {
+      // The Claude box is back: a fresh iframe connects again (ttyd's own page gave up).
+      this.claimingUntil = Date.now() + CLAIM_GRACE_MS;
+      this.set({ terminal: t, displaced, lastHolder, holderKnown: true, frameSeq: this.state.frameSeq + 1 });
+    } else this.set({ terminal: t, displaced, lastHolder, holderKnown: true });
+    if (t.seat === null) void this.loadClaudeSeats();
+    else if (this.state.claudeSeats) this.set({ claudeSeats: null });
+    // Someone else holds it while ours is still connecting: look again once the grace ends.
+    if (!displaced && t.live && t.live.pane !== this.pane) this.recheckAfterGrace();
+  }
+
+  private recheckAfterGrace(): void {
+    if (this.claimTimer) clearTimeout(this.claimTimer);
+    const wait = Math.max(0, this.claimingUntil - Date.now()) + 50;
+    this.claimTimer = setTimeout(() => {
+      this.claimTimer = null;
+      const t = this.state.terminal;
+      if (t) this.set({ displaced: nextDisplaced(this.state.displaced, t.live, this.pane, this.claimingUntil, Date.now()) });
+    }, wait);
+  }
+
+  /** The pane mounted (or remounted) its iframe: it is connecting now. */
+  frameMounted(): void {
+    this.claimingUntil = Date.now() + CLAIM_GRACE_MS;
+  }
+
+  /** "Use it here instead": reload the iframe, which takes the seat back from the other tab. */
+  useHere(): void {
+    this.claimingUntil = Date.now() + CLAIM_GRACE_MS;
+    this.set({ displaced: false, frameSeq: this.state.frameSeq + 1 });
+  }
+
+  /** The layout tells the store whether the game side is visible (badges collect only while it isn't). */
+  setGameShowing(showing: boolean): void {
+    this.gameShowing = showing;
+    if (showing) this.badge({ type: 'seen' });
+  }
+
+  private badge(ev: BadgeEvent): void {
+    const next = badgeReducer(this.state.badges, ev, this.gameShowing);
+    if (next !== this.state.badges) this.set({ badges: next });
+  }
+
   /** After create/login: remember who we are and reconnect the socket with the new cookie. */
   onLoggedIn(me: MeResponse): void {
-    this.set({ auth: 'in', me, player: me.player });
+    this.set({ auth: 'in', me, player: me.player, seatError: null });
+    // Until the socket's `terminal` push: start loading the terminal right away (no picker flash).
+    if (!this.state.terminal && me.claudeSeat != null) {
+      this.set({ terminal: { seat: me.claudeSeat, status: 'unknown', boxReady: true, live: null } });
+    }
+    this.applySeatCard(me.claudeSeat ?? null);
     this.arena.setOptions({ highlightSeat: me.player.seat });
     // Reconnect first: the new socket carries the session cookie and says
     // hello as 'player' once open (a hello on the old socket would be refused).
@@ -212,7 +456,7 @@ export class PlayStore {
     } catch {
       // the session may already be gone
     }
-    this.set({ auth: 'out', me: null, player: null, priv: null });
+    this.set({ auth: 'out', me: null, player: null, priv: null, ...LOGGED_OUT });
     this.socket.reconnect();
     this.socket.setRole('screen');
   }
@@ -231,25 +475,34 @@ export class PlayStore {
       if (m.role === 'player' && m.player) this.set({ player: m.player });
       else if (this.state.auth === 'in' && m.role !== 'player') {
         // Our session is gone (PIN reset or server wipe): back to the join screen.
-        this.set({ auth: 'out', me: null, player: null, priv: null });
+        this.set({ auth: 'out', me: null, player: null, priv: null, ...LOGGED_OUT });
       }
     });
     s.on('state', (m) => {
       const prev = this.state.game;
       this.set({ game: m.state });
-      if (prev && prev.phase !== m.state.phase) this.onPhaseChange(prev.phase, m.state.phase);
+      if (prev && prev.phase !== m.state.phase) {
+        this.onPhaseChange(prev.phase, m.state.phase);
+        this.badge({ type: 'phase', phase: m.state.phase });
+        if (this.gameShowing) this.set({ phaseFlash: this.state.phaseFlash + 1 });
+      }
       this.countdownSound(m.state);
     });
     s.on('private', (m) => {
       if (m.data.player.seat !== this.state.player?.seat) this.arena.setOptions({ highlightSeat: m.data.player.seat });
+      const prevRoster = this.state.priv?.roster;
       this.set({ priv: m.data, player: m.data.player });
+      this.badge({ type: 'units', ...rosterChanges(prevRoster, m.data.roster) });
     });
     s.on('toast', (m) => {
       // Before login the server tells us the 'player' hello had no session; that's expected.
       if (this.state.auth !== 'in' && m.level !== 'info') return;
       this.toast(m.message, m.level);
     });
-    s.on('kicked', () => this.set({ auth: 'kicked' }));
+    s.on('kicked', () => this.set({ auth: 'kicked', ...LOGGED_OUT }));
+    s.on('terminal', (m) => {
+      if (this.state.auth === 'in') this.onTerminal(m.data);
+    });
     s.on('battle:reveal', (m) => {
       // At START (not a reload mid-battle): "3, 2, 1, CLASH!" beeps with the projector.
       if ((this.state.game?.battle?.tick ?? 0) === 0 && this.state.game?.phase !== 'RESULTS') {
@@ -357,6 +610,18 @@ export class PlayStore {
     this.set({ myBattle: list });
   }
 }
+
+/** Claude-pane state that belongs to a login (cleared on logout, kick, lost session). */
+const LOGGED_OUT: Partial<PlayState> = {
+  terminal: null,
+  claudeSeats: null,
+  displaced: false,
+  lastHolder: null,
+  holderKnown: false,
+  seatAsk: null,
+  seatError: null,
+  badges: NO_BADGES,
+};
 
 let store: PlayStore | null = null;
 

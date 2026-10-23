@@ -1,14 +1,13 @@
 // /setup (plan §11): the big join URL + QR, the generic Claude kit download,
-// the seat terminal links/QRs (once the Claude box address is set in /admin)
-// and the setup checklist.
+// the seat cards (Claude seats 1-8: `/play?seat=N` + QR, §11.2) and the setup
+// checklist.
 
 import { useEffect, useState } from 'preact/hooks';
 import type { SetupInfoDTO } from '@pixel-clash/shared';
 import { api } from '../common/api.js';
-import { seatStyle } from '../common/seats.js';
 import { copyText } from '../common/ui.js';
 import { CHECKLIST } from './checklist.js';
-import { getSetupInfo, seatLabel } from './setupApi.js';
+import { getSetupInfo } from './setupApi.js';
 
 const STORAGE_KEY = 'pc-setup-checklist';
 
@@ -102,25 +101,25 @@ export function SetupPage() {
       </section>
 
       <section class="panel">
-        <h2>Seat terminals (Claude box)</h2>
-        {!info || info.seatTerminals.length === 0 ? (
-          <p class="dim">Set the Claude box address in /admin (Server &amp; setup) to show the seat terminal links (Seat 1-8) here. Only the seats you started on the Claude box will answer.</p>
+        <h2>Seat cards (Claude laptops)</h2>
+        <p class="dim small">
+          Print one card per laptop and lay it next to it. The QR opens /play with that laptop's Claude seat, and the player's Claude
+          terminal then shows inside /play. No terminal address or password goes on a card.
+          {info && !info.settings.claudeBoxHost && ' Set the Claude box address and the seat password in /admin (Claude seats).'}
+        </p>
+        {!info ? (
+          <p class="dim">Loading…</p>
         ) : (
           <div class="seat-grid">
-            {info.seatTerminals.map((t) => {
-              const seat = seatStyle(t.seat);
-              return (
-                <div class="seat-card" key={t.seat} style={{ borderColor: seat.color }}>
-                  <div class="pixel" style={{ color: seat.color }}>
-                    {seatLabel(t.seat)} ({seat.name})
-                  </div>
-                  <div class="qr" dangerouslySetInnerHTML={{ __html: t.qrSvg }} />
-                  <a href={t.url} target="_blank" rel="noopener">
-                    {t.url}
-                  </a>
-                </div>
-              );
-            })}
+            {info.seatCards.map((c) => (
+              <div class="seat-card" key={c.seat}>
+                <div class="pixel seat-card-num">Claude seat {c.seat}</div>
+                <div class="qr" dangerouslySetInnerHTML={{ __html: c.qrSvg }} />
+                <a href={c.playUrl} target="_blank" rel="noopener">
+                  {c.playUrl}
+                </a>
+              </div>
+            ))}
           </div>
         )}
       </section>

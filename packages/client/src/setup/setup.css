@@ -40,7 +40,7 @@ a.btn {
   gap: 12px;
 }
 .seat-card {
-  border: 3px solid;
+  border: 3px solid #d97757;
   border-radius: 6px;
   padding: 12px;
   display: flex;
@@ -48,6 +48,9 @@ a.btn {
   align-items: center;
   gap: 8px;
   background: var(--bg-2);
+}
+.seat-card-num {
+  color: #f0a27f;
 }
 .seat-card a {
   color: var(--accent);

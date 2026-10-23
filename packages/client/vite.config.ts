@@ -23,7 +23,7 @@ function pageRoutes(): Plugin {
 }
 
 // Multi-page Vite build (plan §13): play, screen, admin, setup. The dev server
-// proxies /api, /mcp and /ws to the game server. Preact JSX is compiled by
+// proxies /api, /mcp, /ws and /terminal to the game server. Preact JSX is compiled by
 // Vite's built-in transform via tsconfig `jsxImportSource` (no Babel preset).
 export default defineConfig({
   resolve: { conditions: ['source', ...defaultClientConditions] },
@@ -34,6 +34,8 @@ export default defineConfig({
       '/api': { target },
       '/mcp': { target },
       '/ws': { target, ws: true },
+      // The seat terminal proxy (§11.2). Host and Origin pass unchanged, so its same-origin check holds.
+      '/terminal': { target, ws: true },
     },
   },
   build: {
