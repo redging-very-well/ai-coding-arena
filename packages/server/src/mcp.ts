@@ -39,6 +39,12 @@ export const MCP_INSTRUCTIONS = [
 ].join('\n');
 
 const OUTPUT = z.looseObject({ ok: z.boolean() });
+const BASE_VERSION = z
+  .number()
+  .int()
+  .positive()
+  .optional()
+  .describe('With unitId: the version you revised (from get_unit_source). If the unit changed since, the call fails with UNIT_CHANGED.');
 const API_KEY = z.string().optional().describe('The player apiKey from login (needed unless the MCP config sends it as a header).');
 
 /** Player-facing hint for a service error. */
@@ -57,6 +63,8 @@ function playerHintForService(code: string): string {
       return 'Check your player name and 4-digit PIN and tell Claude again.';
     case 'NOT_FOUND':
       return 'Nothing to show yet!';
+    case 'UNIT_CHANGED':
+      return 'Your unit was changed while Claude was working on it. Claude will load the new version and try again.';
     case 'TEMPLATE_PROTECTED':
       return "The starter units can't be changed, so Claude will make you your own copy with a new name.";
     case 'GAME_FULL':
@@ -195,13 +203,14 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
       inputSchema: {
         source: z.string().describe('The full text of the unit file'),
         unitId: z.string().optional().describe('The unitId when revising an existing unit'),
+        baseVersion: BASE_VERSION,
         apiKey: API_KEY,
       },
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },
     },
-    async ({ source, unitId, apiKey }) =>
-      withPlayer(apiKey, async (p) => validationResult(await game.units.validate(p, source, unitId), 'Valid')),
+    async ({ source, unitId, baseVersion, apiKey }) =>
+      withPlayer(apiKey, async (p) => validationResult(await game.units.validate(p, source, unitId, { baseVersion }), 'Valid')),
   );
 
   server.registerTool(
@@ -212,12 +221,13 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
       inputSchema: {
         source: z.string().describe('The full text of the unit file'),
         unitId: z.string().optional().describe('The unitId of the design to revise (from list_my_units)'),
+        baseVersion: BASE_VERSION,
         apiKey: API_KEY,
       },
       outputSchema: OUTPUT,
     },
-    async ({ source, unitId, apiKey }) =>
-      withPlayer(apiKey, async (p) => validationResult(await game.units.submit(p, source, unitId), 'Submitted')),
+    async ({ source, unitId, baseVersion, apiKey }) =>
+      withPlayer(apiKey, async (p) => validationResult(await game.units.submit(p, source, unitId, { baseVersion }), 'Submitted')),
   );
 
   server.registerTool(

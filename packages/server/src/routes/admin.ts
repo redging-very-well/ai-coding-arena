@@ -118,10 +118,10 @@ export function adminRoutes(game: Game): Router {
       const player = game.players.get(String(req.params.id));
       if (!player) return sendError(res, { code: 'NOT_FOUND', message: 'No such player.' });
       const b = body(req);
-      if (b.dryRun === true) return sendValidation(res, await game.units.validate(player, b.source, b.unitId, false));
+      if (b.dryRun === true) return sendValidation(res, await game.units.validate(player, b.source, b.unitId, { rateLimited: false, baseVersion: b.baseVersion }));
       const gate = game.match.gate('adminSubmit');
       if (gate && !gate.ok) return sendError(res, gate.error);
-      sendValidation(res, await game.units.submit(player, b.source, b.unitId, { onBehalf: true }));
+      sendValidation(res, await game.units.submit(player, b.source, b.unitId, { onBehalf: true, baseVersion: b.baseVersion }));
     }),
   );
 

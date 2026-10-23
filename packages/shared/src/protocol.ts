@@ -25,8 +25,10 @@
 //   GET    /contract                  -> ContractDTO
 //   GET    /join                      -> JoinInfoDTO (join URL + QR SVG for /screen)
 //   GET    /state                     -> GameStateDTO (`me` only with a player session/key)
-//   POST   /units/validate {source,unitId?} -> ValidationResult (dry run; 422 on failure)
-//   POST   /units          {source,unitId?} -> SubmitUnitResponse (PLAN only)
+//   POST   /units/validate {source,unitId?,baseVersion?} -> ValidationResult (dry run; 422 on failure)
+//   POST   /units          {source,unitId?,baseVersion?} -> SubmitUnitResponse (PLAN only)
+//                                        baseVersion: the version the edit started from; if the unit's
+//                                        latest version differs -> 409 UNIT_CHANGED {details.version}
 //   GET    /units                     -> UnitCardDTO[]
 //   GET    /units/:id                 -> UnitSourceDTO
 //   DELETE /units/:id                 -> {ok:true}  (PLAN only; templates refused)
@@ -66,7 +68,7 @@
 //   POST /admin/players/:id/kick {deleteData?} -> {ok:true, effective:'now'|'after-battle'}
 //   POST /admin/players/:id/pin {pin} -> {ok:true}
 //   POST /admin/players/:id/rotate-key -> {apiKey}
-//   POST /admin/players/:id/units {source,unitId?,dryRun?} -> ValidationResult / SubmitUnitResponse
+//   POST /admin/players/:id/units {source,unitId?,baseVersion?,dryRun?} -> ValidationResult / SubmitUnitResponse
 //   POST /admin/units/:playerId/:unitId/sprite {hidden} -> {ok:true}
 //   GET  /admin/config                -> AdminConfigResponse
 //   PUT  /admin/config  DeepPartial<GameConfig> -> AdminConfigResponse
@@ -228,6 +230,8 @@ export interface UnitBattleSummaryDTO {
 export interface ValidateUnitRequest {
   source: string;
   unitId?: string;
+  /** Optimistic concurrency: the version this edit started from (needs unitId). */
+  baseVersion?: number;
 }
 export type ValidateUnitResponse = ValidationResult;
 /**

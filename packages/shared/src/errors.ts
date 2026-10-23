@@ -99,6 +99,8 @@ export const SERVICE_ERROR_CODES = [
   'SAME_TEAM',
   'TEMPLATE_PROTECTED',
   'TEMPLATE_WOULD_BREAK',
+  // Optimistic concurrency: the unit was revised since `baseVersion` (§10.3).
+  'UNIT_CHANGED',
   // Claude seats and the seat terminal proxy (§11.2).
   'BAD_CLAUDE_SEAT',
   'CLAUDE_SEAT_TAKEN',
@@ -222,6 +224,7 @@ export function httpStatusFor(code: ErrorCode): number {
     case 'SAME_TEAM':
     case 'TEMPLATE_PROTECTED':
     case 'TEMPLATE_WOULD_BREAK':
+    case 'UNIT_CHANGED':
     case 'CLAUDE_SEAT_TAKEN':
       return 409;
     case 'RATE_LIMITED':

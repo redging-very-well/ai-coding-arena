@@ -42,7 +42,7 @@ export function playerRoutes(game: Game): Router {
     '/units/validate',
     wrap(async (req, res) => {
       const b = body(req);
-      sendValidation(res, await game.units.validate(req.player!, b.source, b.unitId));
+      sendValidation(res, await game.units.validate(req.player!, b.source, b.unitId, { baseVersion: b.baseVersion }));
     }),
   );
 
@@ -50,7 +50,7 @@ export function playerRoutes(game: Game): Router {
     '/units',
     wrap(async (req, res) => {
       const b = body(req);
-      sendValidation(res, await game.units.submit(req.player!, b.source, b.unitId));
+      sendValidation(res, await game.units.submit(req.player!, b.source, b.unitId, { baseVersion: b.baseVersion }));
     }),
   );
 

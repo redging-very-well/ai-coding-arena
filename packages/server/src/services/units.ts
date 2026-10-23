@@ -251,10 +251,43 @@ export class UnitsService {
     });
   }
 
+  /**
+   * Optimistic concurrency (§10.3): with a `baseVersion` (the version the
+   * caller started from), the design's latest version must still be that one,
+   * else UNIT_CHANGED. Left out, there is no check (older callers keep working).
+   */
+  private checkBaseVersion(playerId: string, unitId: string | undefined, baseVersion: unknown): Result<true> {
+    if (baseVersion === undefined || baseVersion === null) return ok(true);
+    if (typeof baseVersion !== 'number' || !Number.isInteger(baseVersion) || baseVersion < 1) {
+      return fail('BAD_REQUEST', 'baseVersion must be a whole number of at least 1 (the version from get_unit_source).');
+    }
+    if (unitId === undefined) {
+      return fail('BAD_REQUEST', 'baseVersion only works together with unitId.', {
+        hint: 'Pass the unitId of the unit you are revising, or leave baseVersion out for a new unit.',
+      });
+    }
+    const d = this.design(playerId, unitId);
+    if (!d) return notFoundUnit(unitId);
+    const now = UnitsService.latest(d).version;
+    if (now === baseVersion) return ok(true);
+    return fail('UNIT_CHANGED', `This unit changed since you opened it (now v${now}). Reload to see the new code.`, {
+      hint: `Call get_unit_source for "${unitId}" to get version ${now}, re-apply the change to that code, and submit again with baseVersion ${now}.`,
+      details: { unitId, baseVersion, version: now },
+    });
+  }
+
   /** Dry-run validation (any phase). `rateLimited` is false for admin on-behalf calls. */
-  async validate(player: PlayerRecord, source: unknown, unitIdIn: unknown, rateLimited = true): Promise<Result<ValidationResult>> {
+  async validate(
+    player: PlayerRecord,
+    source: unknown,
+    unitIdIn: unknown,
+    opts: { rateLimited?: boolean; baseVersion?: unknown } = {},
+  ): Promise<Result<ValidationResult>> {
+    const rateLimited = opts.rateLimited ?? true;
     const id = this.checkUnitId(player.id, unitIdIn);
     if (!id.ok) return id;
+    const base = this.checkBaseVersion(player.id, id.data, opts.baseVersion);
+    if (!base.ok) return base;
     if (rateLimited) {
       const rl = this.rateLimit(this.validateLimiter, player.id, this.game.config.rateLimits.validatePerSecond, 1000, 'validate');
       if (rl) return rl;
@@ -276,13 +309,15 @@ export class UnitsService {
     player: PlayerRecord,
     source: unknown,
     unitIdIn: unknown,
-    opts: { onBehalf?: boolean } = {},
+    opts: { onBehalf?: boolean; baseVersion?: unknown } = {},
   ): Promise<Result<SubmitResult>> {
     const gate = this.game.match.gate('submit');
     if (gate) return gate;
     const id = this.checkUnitId(player.id, unitIdIn);
     if (!id.ok) return id;
     if (id.data !== undefined && this.design(player.id, id.data)?.isTemplate) return templateProtected(id.data);
+    const base = this.checkBaseVersion(player.id, id.data, opts.baseVersion);
+    if (!base.ok) return base;
     if (!opts.onBehalf) {
       const rl = this.rateLimit(this.submitLimiter, player.id, 1, this.game.config.rateLimits.submitMinIntervalMs, 'submit');
       if (rl) return rl;
@@ -295,6 +330,9 @@ export class UnitsService {
     const gate2 = this.game.match.gate('submit');
     if (gate2) return gate2;
     if (!this.game.store.players.get(player.id) || player.kicked) return fail('KEY_INVALID', 'This player was removed.');
+    // Another submit (Claude, the editor) may have stored a version meanwhile.
+    const base2 = this.checkBaseVersion(player.id, id.data, opts.baseVersion);
+    if (!base2.ok) return base2;
     const target = this.resolveTarget(player.id, result.unit.stats.name, id.data);
     if (!target.ok) return target;
     const { unitId, version, isNew } = target.data;
