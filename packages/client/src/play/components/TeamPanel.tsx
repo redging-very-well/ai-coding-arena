@@ -9,7 +9,7 @@ import { arenaFor, zoneLabel } from '../../common/maps.js';
 import { resolveSprite } from '../../common/render/sprites.js';
 import { seatStyle, teamLook } from '../../common/seats.js';
 import { cx, formatMoney } from '../../common/ui.js';
-import { TYPE_TAGS } from '../logic.js';
+import { typeTitle } from '../logic.js';
 import { useStore } from '../store.js';
 import { SpriteView } from './SpriteView.js';
 import { specKeyOf } from './UnitCard.js';
@@ -59,8 +59,8 @@ function Member({ m, phase, me, submitted, arena }: { m: TeamMemberPrivateDTO; p
             class={`tm-card type-${u.stats.type}`}
             title={
               isNonCombatBuilding(u.stats.type)
-                ? `${u.name} (${TYPE_TAGS[u.stats.type]}): ${u.stats.maxHealth} HP`
-                : `${u.name} (${TYPE_TAGS[u.stats.type]}): ${u.stats.maxHealth} HP, ${u.stats.damage} damage, range ${u.stats.range}`
+                ? `${u.name} (${typeTitle(u.stats)}): ${u.stats.maxHealth} HP`
+                : `${u.name} (${typeTitle(u.stats)}): ${u.stats.maxHealth} HP, ${u.stats.damage} damage, range ${u.stats.range}`
             }
           >
             <SpriteView spec={resolveSprite(u)} specKey={`tm-${m.playerId}-${specKeyOf(u)}`} outline={seat.color} width={Math.max(18, sizeOf(u.stats) * 2)} />

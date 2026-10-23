@@ -12,6 +12,7 @@ import { advanceControls, advanceKey, type AdvanceControls } from '../common/adv
 import { api } from '../common/api.js';
 import { projectorTopCards, topRankLabel, topUnitBy, topUnitKey, topUnitLine, topUnitLook } from '../common/topUnits.js';
 import { resolveSprite } from '../common/render/sprites.js';
+import { factoryWorth } from '../common/render/buildings.js';
 import { SpriteView } from '../play/components/SpriteView.js';
 import { Confetti } from './Confetti.js';
 import { ScreenController, prefersReducedMotion, type ScreenSnapshot } from './controller.js';
@@ -649,7 +650,7 @@ function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController
   if (reveal && started) {
     const sample = ctrl.arena.buffer.sample(ctrl.arena.tick);
     values = armyValues(reveal, sample ? new Set(sample.units.map((u) => u.id)) : null, {
-      factoryLeft: new Map((sample?.fac ?? []).map((f) => [f[0], f[6] ?? f[2]])),
+      factoryLeft: new Map((sample?.fac ?? []).map((f) => [f[0], factoryWorth(f)])),
     });
   } else if (reveal) {
     values = armyValues(reveal, null);

@@ -22,6 +22,7 @@ import {
   type ValidationIssue,
   type ValidationResult,
 } from '@pixel-clash/shared';
+import { kindPlural } from '../../common/render/buildings.js';
 
 export interface Span {
   from: number;
@@ -307,7 +308,7 @@ export interface CostPanel {
 export function costPanel(b: CostBreakdown, cap: number): CostPanel {
   const rows: CostRow[] = [{ label: 'Base', value: null, price: money(b.terms.base), surcharge: 0, nearMax: false }];
   let surcharge = 0;
-  // Walls and factories (§6) pay for health only; a factory adds its production up front.
+  // Walls and factories (§6) pay for health only; a factory adds its production up front (M8.6: named by its minion kind).
   const building = b.formula === 'wall' || b.formula === 'factory';
   for (const stat of PRICED_STATS) {
     if (building && stat !== 'maxHealth') continue;
@@ -325,7 +326,7 @@ export function costPanel(b: CostBreakdown, cap: number): CostPanel {
   }
   const prod = b.production;
   if (prod) {
-    rows.push({ label: 'Minions', value: prod.expected, price: `${prod.expected} × ${money(prod.minionValue)} = ${money(prod.total)}`, surcharge: 0, nearMax: false });
+    rows.push({ label: kindPlural(prod.kind ?? 'grunt'), value: prod.expected, price: `${prod.expected} × ${money(prod.minionValue)} = ${money(prod.total)}`, surcharge: 0, nearMax: false });
   }
   const factor = b.factor > 1 + 1e-9 ? `×${b.factor.toFixed(2).replace(/\.?0+$/, '')} for fast attacks` : null;
   return { cost: b.cost, cap, overCap: b.cost > cap, rows, factor, surcharge };

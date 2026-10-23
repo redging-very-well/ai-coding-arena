@@ -21,7 +21,8 @@ import { seatStyle } from '../../common/seats.js';
 import { cx, debounce, formatMoney } from '../../common/ui.js';
 import {
   GROUP_TITLES,
-  TYPE_TAGS,
+  factoryKindChip,
+  typeTitle,
   budgetText,
   cellFill,
   copiesOf,
@@ -376,7 +377,7 @@ export function Placement() {
                       role="radio"
                       aria-checked={chosen === u.unitId}
                       class={cx('pal-item', chosen === u.unitId && 'chosen', !affordable && 'cant')}
-                      title={TYPE_TAGS[u.stats.type]}
+                      title={typeTitle(u.stats)}
                       onClick={() => {
                         setChosen(chosen === u.unitId ? null : u.unitId);
                         setNote(null);
@@ -390,7 +391,10 @@ export function Placement() {
                           width={u.stats.type === 'wall' ? 40 : Math.max(20, sizeOf(u.stats) * 2.4)}
                         />
                       </span>
-                      <span class="pal-name">{u.name}</span>
+                      <span class="pal-name">
+                        {u.name}
+                        {u.stats.type === 'factory' && <span class="pal-kind"> {factoryKindChip(u.stats).icon}</span>}
+                      </span>
                       <span class="pal-cost">{formatMoney(u.cost)}</span>
                       <span class="pal-copies">×{copies.get(u.unitId) ?? 0}</span>
                     </button>

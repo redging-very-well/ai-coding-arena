@@ -11,13 +11,17 @@ import {
   CELL_SIZE,
   DEFAULT_CONFIG,
   GRID_SIZE,
+  burstOf,
   cellAt,
   groupOf,
+  producesOf,
   isValidCell,
   sizeOf,
   trappedCells,
   zoneAxes,
   zoneRect,
+  type MinionKind,
+  type MinionOrder,
   type UnitGroup,
   type UnitType,
   type ZoneRef,
@@ -32,6 +36,7 @@ import {
   type StatsSnapshot,
   type UnitCardDTO,
 } from '@pixel-clash/shared';
+import { KIND_ICON, kindPlural } from '../common/render/buildings.js';
 
 // ---------------------------------------------------------------------------
 // Caps and unit types (M8.5)
@@ -82,6 +87,13 @@ export const TYPE_TAGS: Readonly<Record<UnitType, string>> = {
   wall: '🧱 wall',
   factory: '🏭 factory',
 };
+
+/** The tag text of a design: its type, and for a factory (M8.6) its minion kind ("🏭 factory · 🎯 Archers"). */
+export function typeTitle(stats: { type: UnitType; produces?: MinionKind }): string {
+  if (stats.type !== 'factory') return TYPE_TAGS[stats.type];
+  const chip = factoryKindChip(stats);
+  return `${TYPE_TAGS.factory} · ${chip.icon} ${chip.label}`;
+}
 
 /** "Units" / "Buildings" (section headers, counters). */
 export const GROUP_TITLES: Readonly<Record<UnitGroup, string>> = { unit: 'Units', building: 'Buildings' };
@@ -505,6 +517,23 @@ export function factoryLines(stats: Pick<StatsSnapshot, 'type'> & { productionIn
   return out;
 }
 
+/** M8.6 (§12.5): the factory card's minion-kind chip, e.g. { icon: '🎯', label: 'Archers' }. */
+export function factoryKindChip(stats: { produces?: MinionKind }): { kind: MinionKind; icon: string; label: string } {
+  const kind = producesOf(stats);
+  return { kind, icon: KIND_ICON[kind], label: kindPlural(kind) };
+}
+
+/** M8.6: "Burst 3" (saved up inside, then sent out together) or "one at a time". */
+export function burstText(stats: { burst?: number }): string {
+  const n = burstOf(stats);
+  return n > 1 ? `Burst ${n}` : 'one at a time';
+}
+
+/** M8.6: the orders the dry run saw ("Orders: swarm, attack"); none recorded = the default attack. */
+export function ordersText(orders: readonly MinionOrder[] | undefined): string {
+  return `Orders: ${(orders && orders.length > 0 ? orders : ['attack']).join(', ')}`;
+}
+
 /**
  * Stat bars for a unit card. Attack speed is attacks per second (60 /
  * cooldown). Walls show health only; factories health and build speed (§12.5).
@@ -567,7 +596,7 @@ export function breakdownRows(b: CostBreakdown): BreakdownRow[] {
     const p = b.production;
     if (b.formula === 'factory' && p) {
       rows.push({ label: 'Body', value: `$${b.body ?? Math.ceil(b.sum)}` });
-      rows.push({ label: 'Minions', value: `${p.expected} × $${p.minionValue}` });
+      rows.push({ label: kindPlural(p.kind ?? 'grunt'), value: `${p.expected} × $${p.minionValue}` });
     }
     rows.push({ label: 'Cost', value: `$${b.cost}` });
     return rows;

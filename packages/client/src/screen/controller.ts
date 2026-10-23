@@ -332,6 +332,9 @@ export class ScreenController {
       case 'spawn':
         if (ev.factoryId) this.sound.play('spawn');
         break;
+      case 'release':
+        this.sound.play('release');
+        break;
       default:
         break;
     }

@@ -213,7 +213,7 @@ describe('minions and factories on the arena', () => {
   });
 
   it('turns a fac entry into a production ring (grey while holding or done)', () => {
-    expect(productionRing(['f', 50, 3, 400, 410, 0])).toEqual({ frac: 0.5, idle: false, minionsLeft: 3, holding: false, rally: { x: 400, y: 410 } });
+    expect(productionRing(['f', 50, 3, 400, 410, 0])).toEqual({ frac: 0.5, idle: false, minionsLeft: 3, holding: false, rally: { x: 400, y: 410 }, stored: 0, burst: 1, order: 'attack' });
     expect(productionRing(['f', 50, 3, 400, 410, 1]).idle).toBe(true);
     expect(productionRing(['f', 100, 0, 400, 410, 0])).toMatchObject({ frac: 1, idle: true });
   });
@@ -421,11 +421,12 @@ describe('building cards and prices', () => {
     ]);
     const fac = computeCost({ type: 'factory', maxHealth: 300, damage: 0, range: 0, speed: 0, attackCooldown: 60, productionInterval: 900 }, DEFAULT_CONFIG.cost, pricing);
     const rows = breakdownRows(fac.breakdown);
-    expect(rows.map((r) => r.label)).toEqual(['Base', 'Health', 'Body', 'Minions', 'Cost']);
-    expect(rows.find((r) => r.label === 'Minions')!.value).toBe('5 × $28');
+    // M8.6: the production row names the minion kind (grunts by default).
+    expect(rows.map((r) => r.label)).toEqual(['Base', 'Health', 'Body', 'Grunts', 'Cost']);
+    expect(rows.find((r) => r.label === 'Grunts')!.value).toBe('5 × $28');
     expect(rows.at(-1)!.value).toBe('$193');
     const panel = costPanel(fac.breakdown, 500);
-    expect(panel.rows.map((r) => r.label)).toEqual(['Base', 'Health', 'Minions']);
+    expect(panel.rows.map((r) => r.label)).toEqual(['Base', 'Health', 'Grunts']);
     expect(panel.rows[2]!.price).toBe('5 × $28 = $140');
     expect(panel.factor).toBeNull();
     expect(panel.cost).toBe(193);
@@ -523,8 +524,10 @@ describe('admin quick settings for walls and factories', () => {
       'stats.bounds.wallHealth.max',
       'stats.bounds.productionInterval.min',
       'factory.maxAlivePerFactory',
-      'factory.minion.maxHealth',
-      'factory.minion.damage',
+      'factory.minions.grunt.maxHealth',
+      'factory.minions.grunt.damage',
+      'factory.minions.archer.speed',
+      'factory.minions.brute.wallDamageMultiplier',
     ]) {
       expect(QUICK_FIELDS.some((f) => f.path === path), path).toBe(true);
       expect(typeof getPath(DEFAULT_CONFIG, path), path).toBe('number');

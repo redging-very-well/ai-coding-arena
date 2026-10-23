@@ -156,10 +156,16 @@ export const QUICK_GROUPS: QuickGroup[] = [
       { path: 'factory.maxAlivePerFactory', label: 'Minions alive per factory', help: 'A factory waits while this many of its minions are alive.', min: 1, step: 1, integer: true },
       { path: 'factory.maxAlivePerPlayer', label: 'Minions alive per player', help: 'All of a player’s factories together (also limited to 40 ÷ players).', min: 1, step: 1, integer: true },
       { path: 'factory.maxAlivePerBattle', label: 'Minions alive per battle', help: 'The most minions in the whole arena at once (keeps big battles smooth).', min: 1, step: 1, integer: true },
-      { path: 'factory.minion.maxHealth', label: 'Minion health', help: 'The built-in minion’s HP (must stay within the soldier bounds).', min: 1, step: 5 },
-      { path: 'factory.minion.damage', label: 'Minion damage', help: 'Damage per minion hit (melee).', min: 0, step: 1 },
-      { path: 'factory.minion.speed', label: 'Minion speed', help: 'Pixels per tick (60 ticks = 1 s).', unit: 'px/tick', min: 0.1, step: 0.1 },
-      { path: 'factory.minion.size', label: 'Minion size', help: 'Body radius in px.', unit: 'px', min: 1, step: 1 },
+      // M8.6 (§5.3): the four minion kinds (each must stay within the soldier bounds; prices follow).
+      ...(['grunt', 'archer', 'runner', 'brute'] as const).flatMap((k) => {
+        const name = k[0]!.toUpperCase() + k.slice(1);
+        return [
+          { path: `factory.minions.${k}.maxHealth`, label: `${name} health`, help: `HP of a factory's ${k}s (must stay within the soldier bounds).`, min: 1, step: 5 },
+          { path: `factory.minions.${k}.damage`, label: `${name} damage`, help: `Damage per ${k} hit${k === 'archer' ? ' (a shot)' : ' (melee)'}.`, min: 0, step: 1 },
+          { path: `factory.minions.${k}.speed`, label: `${name} speed`, help: 'Pixels per tick (60 ticks = 1 s).', unit: 'px/tick', min: 0.1, step: 0.1 },
+        ];
+      }),
+      { path: 'factory.minions.brute.wallDamageMultiplier', label: 'Brute wall damage', help: 'Brute hits on walls deal damage × this (1-5).', unit: '×', min: 1, max: 5, step: 0.5 },
     ],
   },
   {
@@ -452,7 +458,7 @@ function templateProblems(cfg: GameConfig): TemplateProblems {
 // --- live cost preview -------------------------------------------------------------
 
 export interface PreviewUnit {
-  key: 'basicSoldier' | 'basicTower' | 'bigTank' | 'allMax' | 'basicWall' | 'basicFactory' | 'swarmFactory';
+  key: 'basicSoldier' | 'basicTower' | 'bigTank' | 'allMax' | 'basicWall' | 'basicFactory' | 'swarmFactory' | 'archerFactory' | 'runnerFactory' | 'bruteFactory';
   label: string;
   stats: CostStats;
   /** A starter template: if it goes over the cap the server refuses the save. */
@@ -487,6 +493,10 @@ export function previewUnits(cfg: GameConfig): PreviewUnit[] {
     { key: 'basicWall', label: 'Basic Wall (400 HP)', stats: BASIC_WALL, template: true },
     { key: 'basicFactory', label: 'Basic Factory (5 minions)', stats: BASIC_FACTORY, template: true },
     { key: 'swarmFactory', label: 'Swarm Factory (8 minions)', stats: SWARM_FACTORY, template: false },
+    // M8.6 (§6 Minion kinds): the Basic Factory building each other kind.
+    { key: 'archerFactory', label: 'Archer Factory (5 archers)', stats: { ...BASIC_FACTORY, produces: 'archer' }, template: false },
+    { key: 'runnerFactory', label: 'Runner Factory (5 runners)', stats: { ...BASIC_FACTORY, produces: 'runner' }, template: false },
+    { key: 'bruteFactory', label: 'Brute Factory (5 brutes)', stats: { ...BASIC_FACTORY, produces: 'brute' }, template: false },
   ];
 }
 

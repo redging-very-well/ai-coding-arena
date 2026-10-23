@@ -10,9 +10,23 @@
 //     and zoom, so 96 walls cost one drawImage each.
 //   * Factories get a production ring on the ground (`productionRing`).
 //   * Minions are engine-made bodies with ids `${factoryId}-mN` (§9.3): they
-//     take their owner, seat and tint from their factory.
+//     take their owner, seat and tint from their factory, and (M8.6, §5.3)
+//     their kind's built-in sprite from the factory's `produces`.
+//   * M8.6: `factoryStatus` also decodes a factory's stored minions, burst
+//     and squad order from its `fac` entry; `storedBadgeText` is the count
+//     badge drawn over a factory saving up a burst.
 
-import { MINION_SPRITE, WALL_HALF, minionSprite, type FrameFactory, type SpriteSpec } from '@pixel-clash/shared';
+import {
+  MINION_KIND_NAMES,
+  MINION_ORDERS,
+  MINION_SPRITE,
+  WALL_HALF,
+  minionSprite,
+  type FrameFactory,
+  type MinionKind,
+  type MinionOrder,
+  type SpriteSpec,
+} from '@pixel-clash/shared';
 import { hexToRgb, mixRgb, type Rgb } from '../seats.js';
 import { createImage, type PixelImage } from './pixels.js';
 import { isoUnproject } from './iso.js';
@@ -27,10 +41,35 @@ export function minionFactoryId(instanceId: string): string | null {
   return m ? m[1]! : null;
 }
 
-/** The minion look tinted with its factory's colour, and its bake key. */
-export function minionLook(factoryColor: string): { spec: SpriteSpec; key: string } {
+/**
+ * A minion kind's look tinted with its factory's colour, and its bake key
+ * (grunts keep the M8.5 key `minion:#RRGGBB`; other kinds `minion-<kind>:#RRGGBB`).
+ */
+export function minionLook(factoryColor: string, kind: MinionKind = 'grunt'): { spec: SpriteSpec; key: string } {
   const color = /^#[0-9a-fA-F]{6}$/.test(factoryColor) ? factoryColor.toUpperCase() : (MINION_SPRITE.palette.b ?? '#C0A060');
-  return { spec: minionSprite(color), key: `minion:${color}` };
+  return { spec: minionSprite(color, kind), key: kind === 'grunt' ? `minion:${color}` : `minion-${kind}:${color}` };
+}
+
+/** One icon per minion kind (§12.5 M8.6 kind chip). */
+export const KIND_ICON: Readonly<Record<MinionKind, string>> = { grunt: '👊', archer: '🎯', runner: '💨', brute: '🔨' };
+
+/** "Grunts", "Archers", … for chips and breakdown rows. */
+export function kindPlural(kind: MinionKind): string {
+  return `${MINION_KIND_NAMES[kind]}s`;
+}
+
+/** Squad orders in player words (§5.3). */
+export const ORDER_LABEL: Readonly<Record<MinionOrder, string>> = {
+  attack: 'attack',
+  defend: 'defend',
+  swarm: 'swarm',
+  guard: 'guard',
+};
+
+/** The stored-count badge over a factory saving up a burst ("3/4"), or null when nothing is stored. */
+export function storedBadgeText(stored: number, burst: number): string | null {
+  if (!(stored > 0)) return null;
+  return `${stored}/${Math.max(stored, burst)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -44,10 +83,17 @@ export interface ProductionRing {
   idle: boolean;
   minionsLeft: number;
   holding: boolean;
+  /** Where its minions head (§9.3 focus): rally point, factory, swarm target or guarded ally. */
   rally: { x: number; y: number };
+  /** M8.6: minions waiting inside (0 in older frames). */
+  stored: number;
+  /** M8.6: its burst (1 in older frames). */
+  burst: number;
+  /** M8.6: the squad order ('attack' in older frames). */
+  order: MinionOrder;
 }
 
-/** The ground ring of a factory from its `fac` entry (§9.3 Frames). */
+/** The ground ring of a factory from its `fac` entry (§9.3 Frames; M8.6 fields default to 0 stored, burst 1, attack). */
 export function productionRing(f: FrameFactory): ProductionRing {
   const [, progress, minionsLeft, rx, ry, holding] = f;
   const done = minionsLeft <= 0;
@@ -57,7 +103,18 @@ export function productionRing(f: FrameFactory): ProductionRing {
     minionsLeft,
     holding: holding === 1,
     rally: { x: rx, y: ry },
+    stored: f[7] ?? 0,
+    burst: f[8] ?? 1,
+    order: MINION_ORDERS[f[9] ?? 0] ?? 'attack',
   };
+}
+
+/** Alias for reading a factory's M8.6 state (same decoding as `productionRing`). */
+export const factoryStatus = productionRing;
+
+/** The minions a factory in a frame is worth (§9.3): canMake (minionsLeft in older frames) + stored. */
+export function factoryWorth(f: FrameFactory): number {
+  return (f[6] ?? f[2]) + (f[7] ?? 0);
 }
 
 // ---------------------------------------------------------------------------

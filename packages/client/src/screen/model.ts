@@ -4,7 +4,9 @@
 import {
   BADGES,
   BADGE_IDS,
+  producesOf,
   type BadgeId,
+  type MinionKind,
   type BattleEndDTO,
   type BattleRevealDTO,
   type GameStateDTO,
@@ -103,7 +105,7 @@ export interface ArmyValue {
 
 /** What the bars need from the current frame besides the living ids (M8.5). */
 export interface ArmyLive {
-  /** canMake per living factory (`frame.fac`, minionsLeft in older frames). */
+  /** Minions each living factory is worth: canMake + stored (`frame.fac`, minionsLeft in older frames; `factoryWorth`). */
   factoryLeft?: ReadonlyMap<string, number>;
 }
 
@@ -120,7 +122,12 @@ function factoryOfMinion(id: string): string | null {
  * minion minionValue.
  */
 export function armyValues(reveal: BattleRevealDTO, aliveIds: ReadonlySet<string> | null, live: ArmyLive = {}): ArmyValue[] {
-  const minionValue = reveal.minion?.value ?? 0;
+  const gruntValue = reveal.minion?.value ?? 0;
+  // M8.6: each factory's minions are worth its kind's value.
+  const valueOf = (d: { stats: { produces?: MinionKind } } | undefined) => {
+    const kind = d ? producesOf(d.stats) : 'grunt';
+    return reveal.minions?.[kind]?.value ?? gruntValue;
+  };
   // Living minions per factory.
   const minionsOf = new Map<string, number>();
   for (const id of aliveIds ?? []) {
@@ -139,7 +146,10 @@ export function armyValues(reveal: BattleRevealDTO, aliveIds: ReadonlySet<string
       const d = designs.get(inst.unitId);
       const c = d?.cost ?? 0;
       const type = d?.stats.type ?? 'soldier';
-      minions += minionsOf.get(inst.instanceId) ?? 0;
+      const out = minionsOf.get(inst.instanceId) ?? 0;
+      const minionValue = valueOf(d);
+      minions += out;
+      living += out * minionValue;
       if (type === 'wall') {
         walls++;
         continue;
@@ -154,7 +164,6 @@ export function armyValues(reveal: BattleRevealDTO, aliveIds: ReadonlySet<string
         living += left === undefined || d?.bodyCost === undefined ? c : d.bodyCost + minionValue * left;
       } else living += c;
     }
-    living += minions * minionValue;
     const team = reveal.teams && reveal.teams.length > 0 && p.teamId !== undefined ? { teamId: p.teamId } : {};
     return { playerId: p.playerId, name: p.name, seat: p.seat, ...team, start, living, aliveCount, fieldedCount, minions, walls };
   });

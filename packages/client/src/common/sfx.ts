@@ -25,7 +25,9 @@ export type SfxName =
   /** M8.5 (§12.5): a hit on a wall (stone tick), a wall crumbling (low thud), a factory making a minion (pop). */
   | 'wallHit'
   | 'crumble'
-  | 'spawn';
+  | 'spawn'
+  /** M8.6 (§12.5): 2+ stored minions leave a factory together (a rising whoosh). */
+  | 'release';
 
 /** Oscillator wave shapes (the WebAudio OscillatorType values we use). */
 export type Wave = 'sine' | 'square' | 'sawtooth' | 'triangle';
@@ -103,6 +105,7 @@ export const SFX: Readonly<Record<SfxName, readonly SfxStep[]>> = {
   wallHit: [noise('highpass', 2600, 0, 0.035, 0.09), note('square', 1900, 0, 0.03, 0.04, 1500)],
   crumble: [noise('lowpass', 400, 0, 0.35, 0.3), note('sine', 90, 0, 0.3, 0.26, 40)],
   spawn: [note('sine', 600, 0, 0.07, 0.14, 1200)],
+  release: [noise('bandpass', 900, 0, 0.18, 0.12), note('triangle', 300, 0, 0.2, 0.14, 900), note('sine', 900, 0.12, 0.1, 0.1, 1400)],
 };
 
 /** Length of a recipe in seconds (its last step's end). */
@@ -169,6 +172,7 @@ export const SFX_MIN_GAP_MS: Partial<Record<SfxName, number>> = {
   wallHit: 50,
   crumble: 90,
   spawn: 60,
+  release: 150,
   place: 30,
 };
 

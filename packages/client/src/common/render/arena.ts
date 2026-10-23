@@ -51,8 +51,11 @@ import {
   type RevealedUnitDTO,
   type SpriteSpec,
   type StatsSnapshot,
+  MINION_KIND_NAMES,
+  producesOf,
+  type MinionKind,
 } from '@pixel-clash/shared';
-import { WALL_HEIGHT, minionFactoryId, minionLook, productionRing, renderWallBlock, wallCrackLevel } from './buildings.js';
+import { WALL_HEIGHT, minionFactoryId, minionLook, productionRing, renderWallBlock, storedBadgeText, wallCrackLevel } from './buildings.js';
 import { fitCanvasToBox, pixelContext, pixelsToCanvas, type Bitmap } from './canvas.js';
 import { FxLayer, bobOffset, isBigHit } from './fx.js';
 import {
@@ -244,8 +247,22 @@ export function revealMap(reveal: BattleRevealDTO): ArenaMap | null {
   return reveal.map ? { style: reveal.map.style, width: reveal.map.width, zones: reveal.map.zones } : null;
 }
 
-/** The built-in minion's stats when a reveal doesn't carry them (§5.2 defaults). */
-const MINION_FALLBACK = { maxHealth: 40, damage: 5, range: 20, speed: 1.5, attackCooldown: 60, size: 8 };
+type MinionBodyStats = Omit<StatsSnapshot, 'type' | 'name' | 'color' | 'shape'>;
+
+/**
+ * The minion kinds' stats when a reveal doesn't carry them (§5.2, §5.3
+ * defaults; kept here so the screen bundle needs no config schema).
+ */
+const MINION_FALLBACK: Readonly<Record<MinionKind, MinionBodyStats>> = {
+  grunt: { maxHealth: 40, damage: 5, range: 20, speed: 1.5, attackCooldown: 60, size: 8 },
+  archer: { maxHealth: 24, damage: 5, range: 110, speed: 1.2, attackCooldown: 60, size: 7 },
+  runner: { maxHealth: 28, damage: 4, range: 20, speed: 2.6, attackCooldown: 60, size: 6 },
+  brute: { maxHealth: 100, damage: 8, range: 20, speed: 0.9, attackCooldown: 60, size: 11 },
+};
+
+function bodyStats(m: MinionBodyStats): MinionBodyStats {
+  return { maxHealth: m.maxHealth, damage: m.damage, range: m.range, speed: m.speed, attackCooldown: m.attackCooldown, size: m.size };
+}
 
 /** Wall block bakes kept (per design × seat × crack level × zoom). */
 const WALL_BAKES = 96;
@@ -330,8 +347,10 @@ export class ArenaRenderer {
   private readonly liveProjectiles = new Set<number>();
   /** Living factories of the current sample (M8.5). */
   private readonly factories = new Map<string, FrameFactory>();
-  /** The reveal's built-in minion (stats; drawn with its factory's colour). */
-  private minionStats: Omit<StatsSnapshot, 'type' | 'name' | 'color' | 'shape'> | null = null;
+  /** The reveal's minion kinds (stats; drawn with their factory's colour). M8.6: one per kind fielded. */
+  private readonly minionStats = new Map<MinionKind, MinionBodyStats>();
+  /** Factories whose stored minions left together at this `now` (M8.6): their spawns skip the "+1". */
+  private readonly releasedAt = new Map<string, number>();
   private readonly wallBakes = new Map<string, { bitmap: Bitmap; groundX: number; groundY: number; scale: number }>();
   /** The font last set on the context this frame (setting ctx.font re-parses it: costly ×96 badges). */
   private font = '';
@@ -413,10 +432,12 @@ export class ArenaRenderer {
     this.setMap(revealMap(reveal));
     this.teamMode = teamModeOf(reveal);
     this.zones = revealZones(reveal);
-    const m = reveal.minion?.stats;
-    this.minionStats = m
-      ? { maxHealth: m.maxHealth, damage: m.damage, range: m.range, speed: m.speed, attackCooldown: m.attackCooldown, size: m.size }
-      : null;
+    this.minionStats.clear();
+    this.releasedAt.clear();
+    if (reveal.minion?.stats) this.minionStats.set('grunt', bodyStats(reveal.minion.stats));
+    for (const [kind, m] of Object.entries(reveal.minions ?? {}) as Array<[MinionKind, { stats: MinionBodyStats } | undefined]>) {
+      if (m?.stats) this.minionStats.set(kind, bodyStats(m.stats));
+    }
     for (const p of reveal.players) {
       const ghost = opts.ghosts?.has(p.playerId) ?? false;
       const designs = new Map(p.units.map((u) => [u.unitId, u]));
@@ -667,7 +688,14 @@ export class ArenaRenderer {
 
   private applyEvent(event: FrameEvent, now: number): void {
     if (event.type === 'fire' && !event.melee) this.lastFireByTarget.set(event.targetId, event.instanceId);
-    const ids = event.type === 'hit' ? [event.targetId, event.instanceId] : event.type === 'crumble' ? event.ids : [event.instanceId];
+    const ids =
+      event.type === 'hit'
+        ? [event.targetId, event.instanceId]
+        : event.type === 'crumble'
+          ? event.ids
+          : event.type === 'release' || event.type === 'lost'
+            ? [event.factoryId]
+            : [event.instanceId];
     for (const id of ids) this.instances.get(id)?.anim.onEvent(event, now);
     if (this.options.fx) this.eventFx(event, now);
     this.options.onEvent?.(event, this);
@@ -723,14 +751,36 @@ export class ArenaRenderer {
         }
       }
     } else if (ev.type === 'spawn' && ev.factoryId) {
-      // A factory made a minion: a "pop" where it appears and a rising "+1" over the factory.
+      // A factory made a minion: a "pop" where it appears and a rising "+1" over the factory
+      // (not for the minions of a burst: the "release!" label already says it, M8.6).
       const f = this.instances.get(ev.factoryId);
       if (!f || f.info.ghost) return;
       const seat = seatStyle(f.info.seat);
       const at = ev.x !== undefined && ev.y !== undefined ? toScreen(view, ev.x, ev.y) : toScreen(view, f.x, f.y);
       this.fx.puff(at.sx, at.sy - 4 * view.zoom, view.zoom, ['#FFFFFF', f.info.stats.color, seat.color]);
+      if (this.releasedAt.get(ev.factoryId) === now) return;
       const fp = toScreen(view, f.x, f.y);
       this.fx.label(fp.sx, fp.sy - billboardWidth(f.info.stats.size, view) * 1.05, '+1', seat.light, now);
+    } else if (ev.type === 'release') {
+      // M8.6 (§12.5): 2+ stored minions burst out: a flash, a ring of puffs and "release!".
+      const f = this.instances.get(ev.factoryId);
+      if (!f || f.info.ghost) return;
+      this.releasedAt.set(ev.factoryId, now);
+      const seat = seatStyle(f.info.seat);
+      const fp = toScreen(view, f.x, f.y);
+      const h = billboardWidth(f.info.stats.size, view);
+      this.fx.muzzle(fp.sx, fp.sy - h * 0.5, Math.max(6, h * 0.6), '#FFFFFF', now);
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        this.fx.puff(fp.sx + Math.cos(a) * h * 0.7, fp.sy + Math.sin(a) * h * 0.35, view.zoom, ['#FFFFFF', f.info.stats.color, seat.color]);
+      }
+      this.fx.label(fp.sx, fp.sy - h * 1.1, `release! ×${ev.count}`, seat.light, now);
+    } else if (ev.type === 'lost') {
+      // M8.6: a factory died with minions inside; they are gone.
+      const f = this.instances.get(ev.factoryId);
+      if (!f || f.info.ghost) return;
+      const fp = toScreen(view, f.x, f.y);
+      this.fx.label(fp.sx, fp.sy - billboardWidth(f.info.stats.size, view) * 1.1, `\u2212${ev.count}`, '#9AA0AA', now);
     }
   }
 
@@ -804,11 +854,12 @@ export class ArenaRenderer {
 
   /** A minion: the built-in sprite tinted with its factory's colour, owned like the factory (§12.5). */
   private adoptMinion(u: SampledUnit, factory: InstanceState, factoryId: string): InstanceState {
-    const m = this.minionStats ?? MINION_FALLBACK;
     const f = factory.info;
-    const look = minionLook(f.stats.color);
+    const kind = producesOf(f.stats);
+    const m = this.minionStats.get(kind) ?? MINION_FALLBACK[kind];
+    const look = minionLook(f.stats.color, kind);
     const stats: StatsSnapshot = {
-      name: 'Minion',
+      name: MINION_KIND_NAMES[kind],
       type: 'soldier',
       maxHealth: m.maxHealth,
       damage: m.damage,
@@ -829,7 +880,7 @@ export class ArenaRenderer {
         ghost: f.ghost ?? false,
         body: 'minion',
         factoryId,
-        name: `${f.name} minion`,
+        name: `${f.name} ${MINION_KIND_NAMES[kind].toLowerCase()}`,
         stats,
         spec: look.spec,
         specKey: look.key,
@@ -1087,6 +1138,11 @@ export class ArenaRenderer {
       const color = teamLook(s.info.teamId)?.color ?? seat.color;
       const a = toScreen(view, s.x, s.y);
       const b = toScreen(view, ring.rally.x, ring.rally.y);
+      // M8.6 (§12.5): the marker shows the order. defend: a shield over the factory, no line.
+      if (ring.order === 'defend') {
+        this.drawShield(a.sx, a.sy - billboardWidth(s.info.stats.size, view) * 1.25, color, false);
+        continue;
+      }
       ctx.globalAlpha = 0.45;
       ctx.beginPath();
       ctx.moveTo(a.sx, a.sy);
@@ -1097,6 +1153,14 @@ export class ArenaRenderer {
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.globalAlpha = 1;
+      if (ring.order === 'swarm') {
+        this.drawReticle(b.sx, b.sy - Math.max(6, 8 * view.zoom), color);
+        continue;
+      }
+      if (ring.order === 'guard') {
+        this.drawShield(b.sx, b.sy - Math.max(14, 22 * view.zoom), color, true);
+        continue;
+      }
       // The flag: a pole and a pennant.
       const pole = Math.max(10, 14 * view.zoom);
       const w = Math.max(1, Math.round(view.zoom));
@@ -1111,6 +1175,55 @@ export class ArenaRenderer {
       ctx.fill();
       ctx.strokeStyle = '#05040A';
       ctx.lineWidth = Math.max(1, view.zoom * 0.6);
+      ctx.stroke();
+    }
+  }
+
+  /** A small shield marker (defend: plain; guard: with a heart). */
+  private drawShield(x: number, y: number, color: string, heart: boolean): void {
+    const { ctx, view } = this;
+    const w = Math.max(7, 6 * view.zoom);
+    ctx.beginPath();
+    ctx.moveTo(x - w, y - w);
+    ctx.lineTo(x + w, y - w);
+    ctx.lineTo(x + w, y);
+    ctx.quadraticCurveTo(x + w, y + w * 0.9, x, y + w * 1.4);
+    ctx.quadraticCurveTo(x - w, y + w * 0.9, x - w, y);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, view.zoom * 0.7);
+    ctx.strokeStyle = '#05040A';
+    ctx.stroke();
+    if (heart) {
+      const h = w * 0.45;
+      ctx.beginPath();
+      ctx.moveTo(x, y + h * 0.9);
+      ctx.bezierCurveTo(x - h * 1.6, y - h * 0.2, x - h * 0.6, y - h * 1.4, x, y - h * 0.4);
+      ctx.bezierCurveTo(x + h * 0.6, y - h * 1.4, x + h * 1.6, y - h * 0.2, x, y + h * 0.9);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fill();
+    }
+  }
+
+  /** A target reticle (swarm): a ring with four ticks on the target. */
+  private drawReticle(x: number, y: number, color: string): void {
+    const { ctx, view } = this;
+    const r = Math.max(6, 7 * view.zoom);
+    const lw = Math.max(1.5, view.zoom * 1.2);
+    for (const [stroke, width] of [['#05040A', lw + 2], [color, lw]] as const) {
+      ctx.beginPath();
+      ctx.ellipse(x, y, r, r * 0.7, 0, 0, Math.PI * 2);
+      ctx.moveTo(x - r * 1.5, y);
+      ctx.lineTo(x - r * 0.5, y);
+      ctx.moveTo(x + r * 0.5, y);
+      ctx.lineTo(x + r * 1.5, y);
+      ctx.moveTo(x, y - r * 1.2);
+      ctx.lineTo(x, y - r * 0.35);
+      ctx.moveTo(x, y + r * 0.35);
+      ctx.lineTo(x, y + r * 1.2);
+      ctx.lineWidth = width;
+      ctx.strokeStyle = stroke;
       ctx.stroke();
     }
   }
@@ -1288,6 +1401,31 @@ export class ArenaRenderer {
       y -= a * 1.8;
     }
     if (pose.napping) this.drawNapBubble(feet.sx + width * 0.35, y, now);
+    if (body === 'factory') this.drawStoredBadge(s, feet.sx + width * 0.5, top + width * 0.15);
+  }
+
+  /** M8.6 (§12.5): a round seat-coloured badge with "stored/burst" over a factory saving up a burst. */
+  private drawStoredBadge(s: InstanceState, x: number, y: number): void {
+    const f = this.factories.get(s.info.instanceId);
+    if (!f) return;
+    const ring = productionRing(f);
+    const text = storedBadgeText(ring.stored, ring.burst);
+    if (!text) return;
+    const { ctx, view } = this;
+    const st = seatStyle(s.info.seat);
+    const r = Math.max(8, 6 * view.zoom);
+    ctx.beginPath();
+    ctx.ellipse(x, y, r * 1.35, r, 0, 0, Math.PI * 2);
+    ctx.fillStyle = st.color;
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, view.zoom * 0.8);
+    ctx.strokeStyle = '#05040A';
+    ctx.stroke();
+    ctx.fillStyle = st.ink;
+    this.setFont(`${Math.max(6, Math.round(r * 0.8))}px "Press Start 2P", ui-monospace, monospace`);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x + 0.5, y + 1);
   }
 
   /** "Zz" speech bubble for a disabled (napping) unit. */

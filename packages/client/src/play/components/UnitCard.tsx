@@ -6,7 +6,8 @@
 // M8.5 (§12.5): a type tag (⚔️ soldier, 🏹 tower, 🧱 wall, 🏭 factory); wall
 // cards show HP only, factory cards HP, "1 minion every 15 s", "makes 5
 // minions" and the minion's mini sprite in the factory's colour, and the
-// price breakdown its production line.
+// price breakdown its production line. M8.6 (§12.5): a minion-kind chip
+// (icon, name, that kind's mini sprite), its burst and the orders its code gives.
 
 import { useState } from 'preact/hooks';
 import { isNonCombatBuilding, playerHintFor, playerHintForIssue, sizeOf, type StatBounds, type UnitCardDTO } from '@pixel-clash/shared';
@@ -14,7 +15,7 @@ import { minionLook } from '../../common/render/buildings.js';
 import { resolveSprite } from '../../common/render/sprites.js';
 import { seatStyle } from '../../common/seats.js';
 import { cx, formatMoney } from '../../common/ui.js';
-import { TYPE_TAGS, breakdownRows, factoryLines, statBars } from '../logic.js';
+import { breakdownRows, typeTitle, burstText, factoryKindChip, factoryLines, ordersText, statBars } from '../logic.js';
 import { CopyButton } from './CopyButton.js';
 import { SpriteView } from './SpriteView.js';
 
@@ -52,7 +53,8 @@ export function UnitCard(props: UnitCardProps) {
   const invalid = u.status !== 'valid';
   const building = isNonCombatBuilding(u.stats.type);
   const factory = u.stats.type === 'factory';
-  const minion = factory ? minionLook(u.stats.color) : null;
+  const chip = factory ? factoryKindChip(u.stats) : null;
+  const minion = chip ? minionLook(u.stats.color, chip.kind) : null;
   const seen = () => props.onSeen?.();
 
   const stop = (fn: () => void) => (e: Event) => {
@@ -98,7 +100,7 @@ export function UnitCard(props: UnitCardProps) {
             {u.name}
           </h3>
           <div class="card-tags">
-            <span class={cx('tag', `type-${u.stats.type}`)}>{TYPE_TAGS[u.stats.type] ?? u.stats.type}</span>
+            <span class={cx('tag', `type-${u.stats.type}`)}>{typeTitle(u.stats)}</span>
             {!building && <span class="tag">size {size}</span>}
             <span class="tag dim">v{u.version}</span>
             {u.isTemplate && <span class="tag dim">starter</span>}
@@ -129,10 +131,13 @@ export function UnitCard(props: UnitCardProps) {
         ))}
       </ul>
 
-      {factory && minion && (
+      {factory && minion && chip && (
         <div class="factory-info">
-          <SpriteView spec={minion.spec} specKey={minion.key} outline={seatStyle(seat).color} width={24} state={hover ? 'walk' : 'idle'} title="Its minion" />
-          <span>{factoryLines(u.stats, u.breakdown.production?.expected).join(' · ')}</span>
+          <span class={`kind-chip kind-${chip.kind}`} title={`It builds ${chip.label.toLowerCase()}`}>
+            <SpriteView spec={minion.spec} specKey={minion.key} outline={seatStyle(seat).color} width={24} state={hover ? 'walk' : 'idle'} title={`Its ${chip.label.toLowerCase()}`} />
+            {chip.icon} {chip.label}
+          </span>
+          <span>{[...factoryLines(u.stats, u.breakdown.production?.expected), burstText(u.stats), ordersText(u.orders)].join(' · ')}</span>
         </div>
       )}
 
