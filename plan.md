@@ -22,7 +22,7 @@ Status: implementation-ready spec. Written 2026-10-20. The event is a few days a
 
 ### Non-goals
 - Internet hosting, accounts, analytics, or any external calls from the server.
-- Pathfinding or obstacles. Movement is straight-line.
+- Pathfinding. Movement is straight-line. The only obstacles are player-built **walls** (§5.2), and units get around them with a simple deterministic slide (§9), not a path search.
 - Uploading files or hand-pasting code as the main path. A paste box exists only in the facilitator rescue path.
 - More than 8 players in a match, or more than one match at a time. Teams that change during a match.
 - Anti-cheat beyond the sandbox, the engine's authority over actions, and the stat snapshot.
@@ -118,7 +118,7 @@ Default timers (all in config, and the host can change them live):
 | State | Player via Claude (MCP/REST) | Player via /play page | Projector /screen | Facilitator /admin |
 |---|---|---|---|---|
 | LOBBY | `login`, `get_rules`, `get_unit_contract`, `validate_unit`, `get_game_state`, `list_my_units`, `get_unit_source`. **No submit.** | create player or log in, download kit, view own roster | title, LAN URL + QR, joined player names (grouped by team once a team mode is set) | set up the match (rounds, Open Armory, map style, team mode, §9.2) with a map preview, swap players between teams, start match, kick/reset PIN, config, validate on behalf |
-| PLAN | everything above + **`submit_unit`** (new or revised) | view own roster and costs, **select ≤3 types**, then an **"I'm ready!"** toggle (needs ≥1 type; cleared when the army changes). Team mode: also sees teammates' selected types live | phase, timer, per-player status icons only (✓ submitted, ✓ selected, ✓ ready), an "Everyone's ready!" banner (with the auto-advance countdown), team table (names only) in team mode | next/skip (never blocked by Ready; Next is highlighted when everyone is ready), timer ±, pause timer, **submit on behalf**, kick/reset PIN |
+| PLAN | everything above + **`submit_unit`** (new or revised) | view own roster and costs, **select ≤4 unit types + ≤4 building types** (§5.2), then an **"I'm ready!"** toggle (needs ≥1 fighter type, i.e. not only walls; cleared when the army changes). Team mode: also sees teammates' selected types live | phase, timer, per-player status icons only (✓ submitted, ✓ selected, ✓ ready), an "Everyone's ready!" banner (with the auto-advance countdown), team table (names only) in team mode | next/skip (never blocked by Ready; Next is highlighted when everyone is ready), timer ±, pause timer, **submit on behalf**, kick/reset PIN |
 | PLACEMENT | read-only tools + `validate_unit` | see own zone for this round, place copies on it, live budget, Ready toggle, "Copy last layout". Team mode: also sees teammates' zones and placements live (read-only) | timer, Ready ticks only, "Everyone's placed and ready" banner | START (highlighted when everyone is ready), Force start, timer ±, kick, validate on behalf |
 | BATTLE | read-only tools + `validate_unit` | watch the live battle, see own unit health and errors | **reveal**, then the live battle canvas, 90 s countdown | pause/resume, 1x/2x, skip to results, kick (takes effect after the battle, §4) |
 | RESULTS | read-only tools + `validate_unit` + `get_battle_report` | place, points, own unit report with "Ask Claude to fix" prompts | round ranking, scoreboard, Replay button | Next, Replay, validate on behalf |
@@ -126,11 +126,11 @@ Default timers (all in config, and the host can change them live):
 
 "Read-only tools" means `get_rules`, `get_unit_contract`, `get_game_state`, `list_my_units`, `get_unit_source`, `get_battle_report`, plus `login`.
 
-**Ready, per phase.** In PLAN, Ready means "my army is picked": it needs a non-empty selection (`NOTHING_SELECTED` otherwise) and the server clears it whenever that player's army changes (a different selection, a new or revised unit of theirs submitted, or a selected unit retired or invalidated). In PLACEMENT, Ready means "my army is placed". It is one flag that is reset on every phase change, so PLAN Ready never carries into PLACEMENT. Only active players count (benched and next-round players can't be Ready); the public `allReady` is true when there is at least one active player and all of them are Ready. Ready never blocks the host in PLAN, and the battle is never started automatically.
+**Ready, per phase.** In PLAN, Ready means "my army is picked": it needs a non-empty selection (`NOTHING_SELECTED` otherwise) with at least one fighter type: a soldier, tower or factory (`NO_FIGHTERS` when only walls are picked, §5.2) and the server clears it whenever that player's army changes (a different selection, a new or revised unit of theirs submitted, or a selected unit retired or invalidated). In PLACEMENT, Ready means "my army is placed". It is one flag that is reset on every phase change, so PLAN Ready never carries into PLACEMENT. Only active players count (benched and next-round players can't be Ready); the public `allReady` is true when there is at least one active player and all of them are Ready. Ready never blocks the host in PLAN, and the battle is never started automatically.
 
 **Pending advance (cancellable countdown).** Once everyone is Ready the host can press "Start placement ▶" (PLAN) or "START battle ▶" (PLACEMENT, needs everyone Ready) on /admin, or on /screen when that browser also holds the admin cookie (Space/Enter). The server then runs one 3 s countdown that every page shows (`state.pendingAdvance = {to, by, secondsLeft}`); Cancel (/admin, or /screen button / Esc) stops it at any time. At zero it does exactly what Next (PLAN) or START without force (PLACEMENT) does, so a PLACEMENT countdown during which someone un-readied ends with `NOT_ALL_READY` (admin toast) instead of a battle. A host countdown keeps running when someone un-readies; any other phase change drops it. The `timers.autoAdvanceWhenAllReady` option uses the same countdown (`by: 'auto'`, PLAN only), which stops by itself when someone un-readies; a cancelled auto countdown re-arms only after someone un-readies and everyone is ready again. Countdowns are in memory (a restart drops them).
 
-Selections lock when PLAN ends. A selection references `unitId`s and resolves to each unit's **latest valid version** at lock time. Units with `status: invalid` (§6 re-pricing) are dropped from the selection. If a player's selection is then empty, the server uses their previous round's selection if all those units are still valid. Otherwise it uses their 3 most recently submitted valid units, falling back to the templates. Invalid units are always skipped.
+Selections lock when PLAN ends. A selection references `unitId`s and resolves to each unit's **latest valid version** at lock time. Units with `status: invalid` (§6 re-pricing) are dropped from the selection. If a player's selection is then empty, the server uses their previous round's selection if all those units are still valid. Otherwise it uses their 3 most recently submitted valid units (if none of them is a fighter, the Basic Soldier template is added), falling back to the Basic Soldier and Basic Tower templates (walls and factories are never picked automatically). Invalid units are always skipped.
 
 ### Privacy: what is hidden from whom
 
@@ -140,7 +140,7 @@ Nothing about other players is visible before the host presses START, except to 
 |---|---|---|---|---|---|
 | Unit source code | yes | **never** | **never** | never | yes (rescue view) |
 | Roster (names, stats, costs) | yes | live, but **only the selected types** (cards with name, stats, cost, sprite) | after START: only the types fielded in this battle | after START: fielded types only | yes, behind a "show details" toggle (off by default, since the panel may be on screen) |
-| Selection (≤3 types) | yes | live | after START | after START | toggle |
+| Selection (≤4 unit + ≤4 building types) | yes | live | after START | after START | toggle |
 | Zone this round | yes | live | after START | after START (the empty zone outlines of the map are public) | yes |
 | Placement | yes (editable) | live (read-only) | after START | after START | toggle |
 | Team membership | yes | yes | yes | yes | yes |
@@ -175,21 +175,23 @@ Players' units are one JS module (TS syntax is tolerated) with a default-exporte
 
 ```ts
 // packages/shared/src/contract.ts
-export type UnitType = 'soldier' | 'tower';
+export type UnitType = 'soldier' | 'tower' | 'wall' | 'factory';   // §5.2
+export type BodyType = UnitType | 'minion'; // minions are made by factories: you see them, you never submit one
 export type MapStyle = 'duel' | 'triangle' | 'corners' | 'ring' | 'lanes' | 'islands'; // §9.2
 export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 
-/** Fields the constructor MUST set as plain data properties on `this`. */
+/** Fields the constructor MUST set as plain data properties on `this` (which ones depends on `type`, §5.2 table). */
 export interface UnitStats {
   name: string;          // 1-24 chars, shown on screen
-  type: UnitType;        // towers never move
-  maxHealth: number;     // see bounds table
-  damage: number;
-  range: number;         // pixels, EDGE to edge (gap between the two bodies)
-  speed: number;         // pixels per tick (60 ticks = 1 s); towers: 0
-  attackCooldown: number;// integer ticks between attacks
-  color: string;         // "#RRGGBB": projectiles, particles, fallback sprite
-  size?: number;         // body radius in px = hitbox AND drawn size. 6-20. Default soldier 10, tower 14. Costs $0.5 per px above 6 (more near the max).
+  type: UnitType;        // soldiers move; towers, walls and factories are buildings and never move
+  maxHealth: number;     // soldier/tower 10-500, wall 50-1500, factory 100-1000
+  damage?: number;       // soldier/tower: required, 0-60. wall/factory: leave it out (they can't attack)
+  range?: number;        // soldier/tower: required, 20-300 px, EDGE to edge (gap between the two bodies). wall/factory: leave it out
+  speed?: number;        // soldier: required, 0.5-5 px per tick (60 ticks = 1 s). tower/wall/factory: 0 or leave it out
+  attackCooldown?: number;// soldier/tower: required, integer ticks between attacks. wall/factory: leave it out
+  productionInterval?: number; // factory only, required: integer ticks between two minions, 600-1800 (10-30 s)
+  color: string;         // "#RRGGBB": projectiles, particles, fallback sprite; a wall's block colour; a factory's minion colour
+  size?: number;         // soldier/tower: body radius in px = hitbox AND drawn size, 6-20 (default 10 / 14), $0.5 per px above 6. Walls always fill their 40 px cell, factories are always 18: size is ignored for them.
   shape?: Shape;         // optional; only used by the fallback sprite when sprite() is missing
 }
 
@@ -207,6 +209,13 @@ export interface SpriteSpec {
   };
 }
 
+export interface FactoryView {
+  productionInterval: number;
+  nextMinionIn: number;  // ticks until the next minion (it waits while you hold, or while the factory is full)
+  minionsLeft: number;   // minions this factory can still make this battle
+  minionsAlive: number; maxAlive: number;
+  rally: { x: number; y: number }; // where its minions go; starts at world.center
+}
 export interface SelfView {
   id: string;            // instanceId of this copy, e.g. "2-0-3"
   unitId: string;        // the design this copy was made from
@@ -214,11 +223,16 @@ export interface SelfView {
   x: number; y: number; radius: number; hp: number; maxHp: number;
   damage: number; range: number; speed: number;
   attackCooldown: number; cooldownRemaining: number; // 0 = can attack this tick
+  blockedBy: string | null; // id of the wall that stopped or turned my last move, else null
+  blockedTicks: number;     // ticks in a row a wall has been in my way (0 = free)
+  factory: FactoryView | null; // factories only
 }
 export interface OtherView {
-  id: string; ownerId: string; teamId: number; type: UnitType; name: string;
+  id: string; ownerId: string; teamId: number; type: BodyType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number; range: number;
 }
+// A wall has radius 20: for range it counts as a circle of radius 20 (so inRange works unchanged),
+// but its body blocks the whole 40×40 square. Walls and factories have range 0.
 export interface WorldView {
   width: number; height: number;        // arena size this battle: 800 (2-4 players), 1040 (5-6), 1200 (7-8), §9.2
   tick: number; ticksLeft: number;
@@ -234,11 +248,13 @@ export interface WorldView {
 
 export type Action =
   | { action: 'idle' }
-  | { action: 'move'; destination: { x: number; y: number } }
-  | { action: 'attack'; targetId: string };
+  | { action: 'move'; destination: { x: number; y: number } }   // soldiers
+  | { action: 'attack'; targetId: string }                     // soldiers and towers
+  | { action: 'rally'; destination: { x: number; y: number } }  // factories: send my minions here
+  | { action: 'hold' };                                         // factories: don't build this tick
 
 export interface Unit extends UnitStats {
-  update(self: SelfView, enemies: OtherView[], allies: OtherView[], world: WorldView): Action | undefined;
+  update?(self: SelfView, enemies: OtherView[], allies: OtherView[], world: WorldView): Action | undefined; // soldier, tower, factory: required. wall: none
   sprite?(): SpriteSpec; // called ONCE at validation, never in battle (§5.1)
 }
 ```
@@ -256,12 +272,16 @@ Rules (enforced by the engine, and written into CLAUDE.md):
    - `idle`, `undefined`, an unknown action, a malformed object, a Promise, or a thrown error all mean idle. A throw also counts a strike (§8).
 5. No `import`, `require`, network, timers, or `async update`. None of them exist in the sandbox.
 
+**Walls and factories (M8.5).** The block above is the M8.5 contract (`tests/config.test.ts` keeps it identical to `shared/contract.ts`, `tests/starterkit.test.ts` to the kit's CLAUDE.md): it adds the two building types `wall` and `factory`, engine-made minions (`BodyType`), `SelfView.blockedBy/blockedTicks/factory` and the factory actions `rally` / `hold`. §5.2 has the per-type rules. Rule 4 for the new actions: `rally` (factories only; a finite destination, clamped to the arena, kept until changed) and `hold` (factories only; pauses production for the tick); `move`/`attack` from a factory and `rally`/`hold` from a soldier or tower are an idle without a strike.
+
 ### Stat bounds (config: `stats.bounds`)
+
+Soldier and tower bounds below. Walls and factories have their own rows in §5.2 (walls up to 1500 HP, factories 100-1000 HP plus `productionInterval`).
 
 | Field | Rule | Notes |
 |---|---|---|
 | name | string, 1-24 chars after trim, no control chars | rendered only via `textContent`/`fillText` |
-| type | `'soldier'` or `'tower'` | |
+| type | `'soldier'` or `'tower'` (M8.5: also `'wall'`, `'factory'`, §5.2) | |
 | maxHealth | finite number, 10-500 | tightened from 1000 so concentrating everything in 1-2 units doesn't pay (§6) |
 | damage | finite number, 0-60 | tightened from 200 for the same reason. 0 is allowed (gives a warning) |
 | range | finite number, 20-300 | edge to edge |
@@ -282,6 +302,126 @@ Units draw themselves with pixel art. The renderer never runs player code: `spri
 - **Validation rules:** `grid` is one of the allowed values; palette has 1-16 single-char keys (not `.`) with `#RRGGBB` values; every frame has exactly `grid` rows of exactly `grid` chars, using only palette keys or `.`; frame counts are within limits; at least 10% of the idle frame's pixels are opaque; and the spec is deterministic (it is called twice and must match). Errors: `SPRITE_THREW`, `SPRITE_BAD_GRID`, `SPRITE_BAD_PALETTE`, `SPRITE_BAD_FRAME` (with `state`, `frame`, `row`, `col`), `SPRITE_TOO_MANY_FRAMES`, `SPRITE_EMPTY`, `SPRITE_NOT_STABLE`. Each comes with a `fix`.
 - **Moderation:** the facilitator can press **Hide sprite** on any unit in /admin. That unit then uses the fallback sprite everywhere (a player could draw something inappropriate).
 - **Privacy:** a sprite is part of the roster, so it is hidden until START and sent in `battle:reveal` only for fielded types.
+
+### 5.2 Unit types: soldier, tower, wall, factory (M8.5)
+
+Two building types join soldiers and towers. **Walls** are solid blocks with lots of HP that block movement and never fight. **Factories** make small built-in **minions** during the battle; the factory's code only picks where the minions go (the rally point) and when to pause production. Minions are engine-made and run built-in logic, never player code.
+
+| Type | Group | Moves | Attacks | Code that runs in battle | Body | Job |
+|---|---|---|---|---|---|---|
+| soldier | **unit** | yes | yes | `update()` every tick | circle, `size` 6-20 | fight, chase, guard |
+| tower | **building** | no | yes | `update()` every tick | circle, `size` 6-20 | shoot from home |
+| wall | **building** | no | no | **none** (no `update()`) | 40×40 square filling its cell | block paths, soak hits |
+| factory | **building** | no | no | `update()` every tick: `rally` / `hold` / idle | circle, radius 18 | make minions |
+| minion (engine-made) | none | yes | yes (melee) | built-in AI (`sim/minion.ts`) | circle, radius 8 | swarm |
+
+- **Groups and selection.** Per round a player fields **≤ 4 unit types (soldiers) and ≤ 4 building types (towers, walls, factories)** (`caps.maxUnitTypes: 4`, `caps.maxBuildingTypes: 4`, replacing `caps.maxTypes: 3`). Over the limit: `TOO_MANY_TYPES` with `details: {group: 'units' | 'buildings', max: 4, count}`. Open Armory types count in the group of their type. A picked design that is later revised into the other group (e.g. a soldier resubmitted as a tower) can leave the stored selection over a cap: the submit toasts the owner ("You picked 5 buildings; 4 max. Tap one to un-pick it."), the /play roster flags the group, PLAN Ready is refused with that `TOO_MANY_TYPES` until one is un-picked (un-picking is always allowed), and if the lock comes first the later picks of the full group are left out with a toast naming them.
+- **Fighters.** Soldiers, towers, factories that can still make a minion before time runs out (`canMake` > 0, §9.3), and minions are **fighters**. Walls never are. PLAN Ready and PLACEMENT Ready need at least one fighter type selected / one fighter placed (`NO_FIGHTERS`: "Walls can't win on their own. Pick a soldier, tower or factory too."). A side with no fighters left is eliminated (§9).
+- **Copies.** ≤ 12 fighter copies (soldiers + towers + factories: everything that runs code, the existing isolate performance guard `caps.maxCopies`), **of which ≤ 2 factories** (`caps.maxFactoryCopies: 2`), plus **≤ 12 walls** (`caps.maxWallCopies: 12`, walls run no code). So a zone holds at most 24 of its 36 cells. Errors: `TOO_MANY_COPIES` with `details: {group: 'fighters' | 'factories' | 'walls', max}`.
+
+**Contract (replaces the §5 block when M8.5 lands).** Unchanged parts (`MapStyle`, `Shape`, `SpriteFrame`, `SpriteSpec`, `WorldView`, the `teamId` and `inRange` comments) are written out in full in the real block; they are elided here.
+
+```ts
+// M8.5 replacement for the §5 block (packages/shared/src/contract.ts)
+export type UnitType = 'soldier' | 'tower' | 'wall' | 'factory';   // §5.2
+export type BodyType = UnitType | 'minion'; // minions are made by factories: you see them, you never submit one
+
+/** Fields the constructor MUST set as plain data properties on `this` (which ones depends on `type`, §5.2 table). */
+export interface UnitStats {
+  name: string;          // 1-24 chars, shown on screen
+  type: UnitType;        // soldiers move; towers, walls and factories are buildings and never move
+  maxHealth: number;     // soldier/tower 10-500, wall 50-1500, factory 100-1000
+  damage?: number;       // soldier/tower: required, 0-60. wall/factory: leave it out (they can't attack)
+  range?: number;        // soldier/tower: required, 20-300 px, EDGE to edge (gap between the two bodies). wall/factory: leave it out
+  speed?: number;        // soldier: required, 0.5-5 px per tick (60 ticks = 1 s). tower/wall/factory: 0 or leave it out
+  attackCooldown?: number;// soldier/tower: required, integer ticks between attacks. wall/factory: leave it out
+  productionInterval?: number; // factory only, required: integer ticks between two minions, 600-1800 (10-30 s)
+  color: string;         // "#RRGGBB": projectiles, particles, fallback sprite; a wall's block colour; a factory's minion colour
+  size?: number;         // soldier/tower: body radius in px = hitbox AND drawn size, 6-20 (default 10 / 14), $0.5 per px above 6. Walls always fill their 40 px cell, factories are always 18: size is ignored for them.
+  shape?: Shape;         // optional; only used by the fallback sprite when sprite() is missing
+}
+
+export interface FactoryView {
+  productionInterval: number;
+  nextMinionIn: number;  // ticks until the next minion (it waits while you hold, or while the factory is full)
+  minionsLeft: number;   // minions this factory can still make this battle
+  minionsAlive: number; maxAlive: number;
+  rally: { x: number; y: number }; // where its minions go; starts at world.center
+}
+export interface SelfView {
+  id: string;            // instanceId of this copy, e.g. "2-0-3"
+  unitId: string;        // the design this copy was made from
+  ownerId: string; teamId: number; type: UnitType; name: string;
+  x: number; y: number; radius: number; hp: number; maxHp: number;
+  damage: number; range: number; speed: number;
+  attackCooldown: number; cooldownRemaining: number; // 0 = can attack this tick
+  blockedBy: string | null; // id of the wall that stopped or turned my last move, else null
+  blockedTicks: number;     // ticks in a row a wall has been in my way (0 = free)
+  factory: FactoryView | null; // factories only
+}
+export interface OtherView {
+  id: string; ownerId: string; teamId: number; type: BodyType; name: string;
+  x: number; y: number; radius: number; hp: number; maxHp: number; range: number;
+}
+// A wall has radius 20: for range it counts as a circle of radius 20 (so inRange works unchanged),
+// but its body blocks the whole 40×40 square. Walls and factories have range 0.
+
+export type Action =
+  | { action: 'idle' }
+  | { action: 'move'; destination: { x: number; y: number } }   // soldiers
+  | { action: 'attack'; targetId: string }                     // soldiers and towers
+  | { action: 'rally'; destination: { x: number; y: number } }  // factories: send my minions here
+  | { action: 'hold' };                                         // factories: don't build this tick
+
+export interface Unit extends UnitStats {
+  update?(self: SelfView, enemies: OtherView[], allies: OtherView[], world: WorldView): Action | undefined; // soldier, tower, factory: required. wall: none
+  sprite?(): SpriteSpec; // called ONCE at validation, never in battle (§5.1)
+}
+```
+
+**Stats per type** (config `stats.bounds`; the soldier/tower rows of §5 are unchanged):
+
+| Field | soldier | tower | wall | factory |
+|---|---|---|---|---|
+| maxHealth | 10-500 | 10-500 | **50-1500** (`wallHealth`) | **100-1000** (`factoryHealth`) |
+| damage | 0-60 | 0-60 | absent or 0, else `BUILDING_CANNOT_ATTACK` | absent or 0, else `BUILDING_CANNOT_ATTACK` |
+| range | 20-300 | 20-300 | absent; a value is ignored with `W_STAT_IGNORED` | as wall |
+| speed | 0.5-5 | exactly 0 (`TOWER_CANNOT_MOVE`) | absent or 0, else `BUILDING_CANNOT_MOVE` | as wall |
+| attackCooldown | integer 10-600 | integer 10-600 | absent; ignored (`W_STAT_IGNORED`) | as wall |
+| productionInterval | ignored (`W_STAT_IGNORED`) | ignored | ignored | **required**, integer 600-1800 (`STAT_MISSING`, `STAT_OUT_OF_RANGE`, `INTERVAL_NOT_INTEGER`) |
+| size | 6-20, default 10 | 6-20, default 14 | always 20 (half the 40 px block); a value is ignored (`W_STAT_IGNORED`) | always 18; ignored |
+| `update()` | required | required | none; one that exists is ignored with `W_UPDATE_IGNORED` | required |
+| `sprite()` | optional | optional | optional: textures the block's sides | optional |
+| snapshot fills in | | | damage 0, range 0, speed 0, attackCooldown 0, size 20 | damage 0, range 0, speed 0, attackCooldown 0, size 18 |
+
+**Walls.**
+- **Body:** an axis-aligned **40×40 square exactly covering its placement cell** (cells are 40 px and zones are cell-aligned, §9.2). Walls in neighbouring cells, side by side **or diagonal**, leave no gap: their squares share an edge or a corner and every body has a radius ≥ 6, so a line of walls one cell apart is solid. Circles were rejected: two radius-20 circles in neighbouring cells leave triangular gaps at the corners and a diagonal line leaves a 16 px slot a size-6 soldier walks through.
+- **Solid for everyone:** enemy, own and teammates' soldiers and minions can't pass. A player builds a gate by leaving a cell empty; /play warns `W_TRAPPED` when a fighter is boxed in (§9 Placement). Towers and factories never touch walls (separate cells).
+- **No code.** Walls are not loaded into the battle isolate, never get strikes and never act.
+- **Attackable by every enemy fighter, towers and minions included:** a wall is in `enemies` with `type: 'wall'`. Range uses the 20 px radius: a body touching any side is at gap 0, and one touching a corner is 20·√2 − 20 ≈ 8.3 px from the circle, below the minimum range 20, so every legal range can hit a wall it touches. Templates and minions skip walls as targets unless a wall is in their way (`blockedTicks` ≥ 120).
+- **Projectiles fly over walls** (homing shots arc above them, §9). Walls stop bodies, not shots. This keeps the homing projectile code unchanged and makes "towers behind walls" a readable combo whose answers are range, going round, or smashing through. Line of sight would need a ray test per shot and make homing shots vanish in confusing ways.
+- **Sudden death** damages walls like any body (7% of max HP per second outside the circle), so a wall outside the circle crumbles in about 14 s whatever its HP.
+- **Worth $0 at timeout** and never a fighter (§9 Elimination, Ranking), so walls can't turtle a win. Breaking an enemy wall still credits its full price as value destroyed.
+
+**Factories.**
+- Body: circle, radius 18, never moves (like a tower). Can't attack. `update()` runs every tick in the owner's isolate like any unit. `{action:'rally', destination}` sets the rally point (clamped into the arena), kept until changed; every living minion of that factory follows the newest one. `{action:'hold'}` pauses production for this tick. `idle`/`undefined` keeps producing. `move` and `attack` from a factory are an idle (no strike; the dry run warns `W_ACTION_NOT_FOR_TYPE`). The default rally point is `world.center`.
+- **Production.** A timer starts at 0 at battle start and goes up by 1 each tick unless the factory holds. When it reaches `productionInterval` the factory makes one minion if (a) `minionsLeft > 0`, (b) fewer than `factory.maxAlivePerFactory` (**4**) of its minions are alive, (c) its owner has fewer than **min(`factory.maxAlivePerPlayer` 6, floor(`factory.maxAlivePerBattle` 40 / players in the battle))** minions alive (6 with 2-6 players, 5 with 7-8), and (d) a spawn spot is free. Otherwise it waits with a full timer (`nextMinionIn = 0`) and tries again every tick. After a spawn the timer restarts at 0.
+- **Output.** `minionsLeft` starts at **E = min(`factory.maxMinionsPerFactory` 8, floor((battleTicks − 1) / productionInterval))**: interval 600 → 8, 720 → 7, 900 → 5, 1200 → 4, 1800 → 2. An unhindered factory makes minions at ticks I, 2I, 3I, … (every 10 s at 600). E is what the factory pays for (§6).
+- **Spawn spot:** 8 candidates 28 px (18 + 8 + 2) from the factory centre, at angles θ, θ+45°, θ−45°, θ+90°, θ−90°, θ+135°, θ−135°, θ+180° in that order, where θ points at the rally point (or along the zone's facing when the rally point is the factory itself: out of the front edge on a N/S/E/W zone, diagonally towards the corner nearest the centre on a corner zone, the /play grid's arrow; `zoneFacingDir`). The first candidate inside the arena that overlaps no wall square, tower or factory wins. Overlapping soldiers and minions is allowed; separation sorts it out.
+- **Destroying the factory stops production.** Its living minions keep going with the last rally point. A factory with `canMake = 0` (§9.3: no minions left, or no time left to build one, e.g. because it holds or every spawn spot is covered) stays on the field as a building but is no longer a fighter.
+
+**Minions** (built in, config `factory.minion`, the same for everyone):
+- Stats: maxHealth **40**, damage **5**, range **20** (melee: instant hit), speed **1.5**, attackCooldown **60**, size **8**; `type: 'minion'`, `name: 'Minion'`, the factory's `ownerId` and `teamId`. Instance id `${factoryInstanceId}-m${n}` (n = 1-8, the factory's n-th minion, e.g. `2-5-3-m1`): unique, deterministic, sorted right after its factory.
+- Look: a built-in 12×12 sprite (`shared/sprite.ts` `MINION_SPRITE`: idle, 2 walk frames, 1 attack frame) whose body pixels are recoloured with the factory's `color`, plus the usual seat outline and ground ring.
+- **AI** (`sim/minion.ts`, decided from the same start-of-tick snapshot as player units, applied with everyone else in seat, then instanceId order):
+  1. Rally R = its factory's rally point (the last one if the factory is gone). If R is outside the safe circle, R = the circle's centre.
+  2. Target = the nearest living enemy that is **not a wall** and is within **120 px** edge to edge of the minion (`factory.minion.aggroRange`) or within **200 px** of R (`factory.rallyGuardRadius`); ties by instanceId.
+  3. Target in range → attack it.
+  4. If `blockedTicks ≥ 120` (`factory.minion.impatientTicks`, 2 s) and the blocking wall is an enemy's → attack it (move to it if out of range). This applies with or without a target out of range, so minions break into a walled-in enemy.
+  5. Target out of range → move toward it. No target: if more than 24 px from R → move to R; else idle (guard the rally point).
+- Every minion move goes round towers and factories: a minion touching one (of any side) whose centre lies within 15% of their radii of its straight line ahead steps 90° sideways instead (away from the building, or +90° from its heading when exactly in line), so separation can slide it round rather than pushing it straight back (`sidestep` in `sim/minion.ts`).
+- Minions are fighters, use the same wall steering and separation as soldiers, are hit by sudden death, never get strikes and cost no isolate time.
+- **Value:** `minionCost` = the soldier price formula (§6) applied to the minion stats with the current soldier coefficients = **$55** (raw 54.05). `minionValue = ceil(minionCost × cost.factory.minionDiscount)` = ceil(55 × 0.5) = **$28**. It is used for factory prices, timeout value and value destroyed.
 
 ---
 
@@ -335,11 +475,70 @@ Size defaults (soldier 10, tower 14) apply when `size` is omitted, and they are 
 | Everything maxed | soldier | 500 | 60 | 300 | 5 | 20 | 10 | 352 | +684 | 1036 | 6 | 6216 | **$6216, rejected** (> $500) | $2112 |
 | Cheapest legal | tower | 10 | 0 | 20 | 0 | 6 | 600 | 16.5 | +0.04 | 16.54 | 1 | 16.54 | **$17** | $17 |
 
-Example armies within $1,000: 4 Basic Soldiers + 3 Basic Towers = $962 (7 units). 1 Sniper Tower + 3 Basic Soldiers + 2 Basic Towers = $977 (6 units). 1 Big Tank + 5 Basic Soldiers = $922 (6 units). 1 Speedy Scout + 5 Basic Soldiers = $911 (6 units). Two Big Tanks ($924) leave no room for a third template-sized unit, and one maxed unit ($1036) can't even be built, while two "Half stats" units cost $534. These hit the 4-8 unit target. They are unaffected by the player count, the map and team mode (§9.2): every player always has their own $1,000, ≤3 types and ≤12 copies, and teammates never pool or share budget.
+Example armies within $1,000: 4 Basic Soldiers + 3 Basic Towers = $962 (7 units). 1 Sniper Tower + 3 Basic Soldiers + 2 Basic Towers = $977 (6 units). 1 Big Tank + 5 Basic Soldiers = $922 (6 units). 1 Speedy Scout + 5 Basic Soldiers = $911 (6 units). Two Big Tanks ($924) leave no room for a third template-sized unit, and one maxed unit ($1036) can't even be built, while two "Half stats" units cost $534. These hit the 4-8 unit target. They are unaffected by the player count, the map and team mode (§9.2): every player always has their own $1,000, the type limits (≤3 types today; ≤4 unit + ≤4 building types from M8.5) and the copy caps, and teammates never pool or share budget.
 
 **Size trade-off.** A bigger body reaches targets sooner (range is edge to edge, so +10 size is +10 effective reach for both sides of a fight), wins shoving matches in separation, and looks impressive, but it is easier to block in and is reachable from further away. The $0.5/px term (3× at size 20) keeps "max size everything" from being free.
 
 **Why the curve (and why the bounds were tightened).** With linear pricing every unit pays a fixed overhead (Base, plus the minimum stats), so concentrating stats into a few big units was efficient: with the original bounds (HP 1000, damage 200) two ~$490 "bricks" beat most armies, and even after tightening the bounds (HP ≤ 500, damage ≤ 60) a once-per-second unit with every stat maxed cost only $414. The k = 2 curve makes each stat's price convex: the first half of a stat is cheap, the last part costs up to 3×. A maxed-out unit at CD 60 now costs $1036 and is rejected, a 500-HP tank costs $462 instead of $190, and a 280-range sniper $305 instead of $150, while the templates stay at $92 and $198 (they sit at 13-60% of each max, where the curve adds little). Base was lowered to $10 so the per-unit overhead is small next to the curve: once any of HP, damage, range or speed reaches half its max, one unit with doubled stats always costs at least as much as two normal units (`tests/cost-curve.test.ts` checks this, together with monotonicity and convexity of every stat). A balance test (§14) checks that no single archetype dominates. If it fails, retune the coefficients, `curveK` or the bounds in config; the $500 cap stays.
+
+### Walls and factories (M8.5)
+
+Same shape as the unit formula, with per-type coefficients (config `cost.wall`, `cost.factory`) and the same curve k. Neither type attacks, so there is no cooldown factor (factor 1).
+
+```
+wall:     raw     = BaseW + cW × HP × (1 + k × (HP / 1500)²)
+          cost    = ceil(raw − 1e-9)
+factory:  bodyRaw = BaseF + cF × HP × (1 + k × (HP / 1000)²)
+          cost    = ceil(bodyRaw − 1e-9) + minionValue × E           // body cost + production cost
+          E           = min(factory.maxMinionsPerFactory (8), floor((battleTicks − 1) / productionInterval))
+          minionValue = ceil(minionCost × minionDiscount − 1e-9)     // minionCost = the unit formula on the §5.2 minion stats
+```
+
+| Coefficient | Default |
+|---|---|
+| BaseW (`cost.wall.base`) | **4** |
+| cW per wall HP (`cost.wall.hp`) | **0.06** |
+| BaseF (`cost.factory.base`) | **10** |
+| cF per factory HP (`cost.factory.hp`) | **0.12** |
+| `cost.factory.minionDiscount` | **0.5** |
+| minionCost / minionValue (derived) | **$55** / **$28** |
+
+- **Curve semantics kept.** Every HP term has the k = 2 curve with its maximum at the type's default HP max (wall 1500, factory 1000; fixed in code like the §5 maxima), so a maxed wall costs 3× its linear price and the near-max warning, `W_STAT_NEAR_MAX`, and the "biggest lever" fix work unchanged. Two 750-HP walls ($72 each, $144) cost about half of one 1500-HP wall ($274).
+- **Why wall HP is cheap** (0.06 vs 0.25 per HP for units): a wall can't move or fight, is worth $0 at timeout and loses 7% of its max HP per second in sudden death whatever its HP. The Basic Wall (400 HP, $32) holds a Basic Soldier for 40 s, four of them for 10 s.
+- **Factory pricing = pay up front for the expected output.** E is the number of minions the factory can make in a 90 s battle, and each costs half of its price (`minionDiscount` 0.5) because it arrives during the battle (the first after 10-30 s; with interval 600 the average minion arrives at 45 s) and the alive caps throttle them. Production is linear in E (no curve): the per-factory alive cap (4) already makes one fast factory worse than two slow ones, and factories are capped at 2 copies. The cap of $500 applies to the whole factory price.
+- **Re-pricing.** A factory's price follows the soldier coefficients and `curveK` (through minionCost), the minion stats, `minionDiscount`, `maxMinionsPerFactory` and `timers.battleTicks`. Changing any of them re-prices every factory (§6 re-pricing and invalidation rules apply; the config editor refuses a retune that would make any of the four templates invalid).
+- **Breakdown.** Walls: base + HP, as for units. Factories: base, HP and a production line: "Production: 5 minions × $28 (half of a $55 minion, because they arrive during the battle) = $140". `UNIT_TOO_EXPENSIVE` on a factory names the bigger of HP and production as the lever ("Raising productionInterval from 600 to 900 makes 5 minions instead of 8 and saves $84").
+
+### Reference buildings (curve k = 2)
+
+Walls ("Linear" = BaseW + cW·HP; "Without curve" = k = 0):
+
+| Wall | HP | Linear | Curve | Sum = raw | **Cost** | Without curve |
+|---|---|---|---|---|---|---|
+| Cheapest legal wall | 50 | 7 | +0.01 | 7.01 | **$8** | $7 |
+| Fence | 150 | 13 | +0.18 | 13.18 | **$14** | $13 |
+| Stone wall | 300 | 22 | +1.44 | 23.44 | **$24** | $22 |
+| Basic Wall (template) | 400 | 28 | +3.41 | 31.41 | **$32** | $28 |
+| Thick wall | 600 | 40 | +11.52 | 51.52 | **$52** | $40 |
+| Rampart | 800 | 52 | +27.31 | 79.31 | **$80** | $52 |
+| Castle wall | 1000 | 64 | +53.33 | 117.33 | **$118** | $64 |
+| Maxed wall | 1500 | 94 | +180 | 274 | **$274** | $94 |
+
+Factories (minionValue $28; "Body" = BaseF + cF·HP with its curve):
+
+| Factory | HP | Interval (ticks) | E | Body linear | Body curve | Body raw | Body cost | Production E × $28 | **Cost** |
+|---|---|---|---|---|---|---|---|---|---|
+| Cheapest legal factory | 100 | 1800 | 2 | 22 | +0.24 | 22.24 | $23 | $56 | **$79** |
+| Slow Factory | 300 | 1200 | 4 | 46 | +6.48 | 52.48 | $53 | $112 | **$165** |
+| Basic Factory (template) | 300 | 900 | 5 | 46 | +6.48 | 52.48 | $53 | $140 | **$193** |
+| Swarm Factory | 300 | 600 | 8 | 46 | +6.48 | 52.48 | $53 | $224 | **$277** |
+| Armoured Factory | 600 | 600 | 8 | 82 | +51.84 | 133.84 | $134 | $224 | **$358** |
+| Fortress Factory | 1000 | 1800 | 2 | 130 | +240 | 370 | $370 | $56 | **$426** |
+| Maxed factory | 1000 | 600 | 8 | 130 | +240 | 370 | $370 | $224 | **$594, rejected** (> $500) |
+
+The built-in minion priced as a soldier: HP 40, damage 5, range 20, speed 1.5, size 8, cooldown 60 → linear 50.5, curve +3.55, sum 54.05 → **minionCost $55**, **minionValue $28**.
+
+Example armies with buildings (all within $1,000 and the §5.2 caps): **Wall fortress** 10 Basic Walls + 3 Basic Towers = $914 (13 bodies, 3 fighters). **Factory swarm** 2 Swarm Factories + 4 Basic Soldiers = $922 (up to 8 + 4 minions alive). **Mixed** 4 Basic Soldiers + 2 Basic Towers + 6 Basic Walls = $956. **All four templates** 1 Basic Factory + 5 Basic Soldiers + 1 Basic Tower + 4 Basic Walls = $979.
 
 ### Caps and rules
 
@@ -347,11 +546,13 @@ Example armies within $1,000: 4 Basic Soldiers + 3 Basic Towers = $962 (7 units)
 |---|---|---|
 | Single unit cost | ≤ $500 (checked on the rounded cost) | `UNIT_TOO_EXPENSIVE` |
 | Budget per round | $1,000. Resets every round. Unspent credits don't carry over. | `OVER_BUDGET` |
-| Designs | free to register. Max 8 active designs per player. Revisions replace a design and don't count. The 2 templates don't count. | `TOO_MANY_DESIGNS` |
-| Types fielded per round | ≤ 3 | `TOO_MANY_TYPES` |
-| Copies placed per player | ≤ 12 (performance guard; 4-8 is typical) | `TOO_MANY_COPIES` |
+| Designs | free to register. Max 8 active designs per player. Revisions replace a design and don't count. The templates (2; 4 from M8.5: soldier, tower, wall, factory) don't count. | `TOO_MANY_DESIGNS` |
+| Types fielded per round | ≤ 3 (`caps.maxTypes`). **M8.5:** ≤ 4 unit types (soldiers, `caps.maxUnitTypes`) **and** ≤ 4 building types (towers, walls, factories, `caps.maxBuildingTypes`), §5.2; `caps.maxTypes` is removed | `TOO_MANY_TYPES` (M8.5: `details: {group, max, count}`) |
+| Copies placed per player | ≤ 12 (performance guard; 4-8 is typical). **M8.5:** ≤ 12 fighters (soldiers + towers + factories, everything that runs code) of which ≤ 2 factories (`caps.maxFactoryCopies`), plus ≤ 12 walls (`caps.maxWallCopies`, no code, so outside the isolate guard). 12 walls cover a full front row and both flanks (6 + 2 × 3), or an L of 11 that seals a corner zone (its other two sides are the arena edge); the answers to a sealed fortress are smashing a wall (templates and minions do it after 2 s blocked), range, and sudden death, which reaches every corner zone | `TOO_MANY_COPIES` (M8.5: `details: {group: 'fighters' \| 'factories' \| 'walls', max}`) |
+| Minions (M8.5, engine-side, no error) | ≤ 8 made per factory, ≤ 4 alive per factory, alive per player ≤ min(6, floor(40 / players)): 6 with 2-6 players, 5 with 7-8, so ≤ 40 minions in any battle (`factory.*`) | the factory waits |
+| Fighters | PLAN Ready needs a fighter type selected, PLACEMENT Ready a fighter placed (M8.5) | `NO_FIGHTERS` |
 
-Every player starts with the two templates pre-registered, so nobody is ever unarmed. The cost breakdown (each term with its linear part and curve surcharge, the sum, the factor, the total) is returned by validate/submit and shown on unit cards.
+Every player starts with the two templates (M8.5: four, adding Basic Wall and Basic Factory) pre-registered, so nobody is ever unarmed. The cost breakdown (each term with its linear part and curve surcharge, the sum, the factor, the total) is returned by validate/submit and shown on unit cards.
 
 ---
 
@@ -374,6 +575,15 @@ Every player starts with the two templates pre-registered, so nobody is ever una
 | 10 | **Warnings** (non-fatal): never attacks when an enemy is in range, soldier never moves, damage 0, returns undefined, update is slower than 2 ms, cooldown above 60. | `W_NEVER_ATTACKS`, `W_NEVER_MOVES`, `W_ZERO_DAMAGE`, `W_RETURNS_NOTHING`, `W_SLOW`, `W_SLOW_NO_DISCOUNT` |
 
 Steps 1-8 ship in M1. Steps 9-10 and the full malicious fixture set ship in M6 (§16).
+
+**Per type (M8.5, §5.2).** The steps are the same for every type; what they check depends on `type`, which step 5 reads first (an unknown type is `STAT_OUT_OF_RANGE` on `type` with the four allowed values).
+- **Step 5 (construct):** soldiers and towers need every §5 stat as today. Walls need `name`, `type`, `maxHealth`, `color`. Factories need those plus `productionInterval`. Missing → `STAT_MISSING` with a type-specific `fix` ("A factory needs this.productionInterval: ticks between two minions, 600-1800. Try 900 (one every 15 s).").
+- **Step 6 (guards):** the §5.2 per-type table. New codes: `BUILDING_CANNOT_ATTACK` (`damage` > 0 on a wall or factory: "Walls and factories can't attack. Remove this.damage. Want something that shoots? Make a tower."), `BUILDING_CANNOT_MOVE` (`speed` > 0 on a wall or factory), `INTERVAL_NOT_INTEGER`. Ignored fields give `W_STAT_IGNORED` (field named) and are not stored.
+- **Step 8 (cost):** per-type formula (§6 Walls and factories); the factory breakdown has `body`, `production: {minionCost, minionValue, expected, total}`.
+- **Step 8b (sprite):** unchanged for every type (a wall's sprite textures its block, §12.5).
+- **Step 9 (dry run):** walls are **skipped** (they have no code; an `update` on a wall gives `W_UPDATE_IGNORED` and is never called, in validation or battle). Factories run the same 3 worlds with `self.factory` filled in (`minionsLeft` 5, `rally` = centre); valid returns are `rally` (finite destination) / `hold` / `idle` / undefined; `move` or `attack` from a factory, or `rally`/`hold` from a soldier or tower, gives `W_ACTION_NOT_FOR_TYPE` (non-fatal: the engine idles). The worlds include one enemy wall and one enemy minion, so code that assumes every enemy has `damage` or a `size` stat still runs. Missing `update()` on a soldier, tower or factory stays `UPDATE_MISSING`.
+- **Step 10 (warnings):** `W_NEVER_ATTACKS`, `W_NEVER_MOVES` and `W_ZERO_DAMAGE` apply to soldiers and towers only. A factory that never rallies gets no warning (the default rally point, the arena centre, is a fine plan).
+- **Stored unit:** `stats` includes `productionInterval` for factories; the snapshot fills the §5.2 defaults (walls: damage/range/speed/attackCooldown 0, size 20; factories: the same with size 18).
 
 A stored unit is `{ unitId, ownerId, version, status: "valid"|"invalid", source, compiledJs, stats: StatsSnapshot (Object.freeze, includes the resolved size), sprite: SpriteSpec | null, spriteHidden: boolean, cost, breakdown, sha256, createdAt }`.
 
@@ -425,7 +635,7 @@ A stored unit is `{ unitId, ownerId, version, status: "valid"|"invalid", source,
 
 ### Layout
 - **Validation**: a fresh isolate per validate/submit call, disposed afterwards.
-- **Battle**: **one isolate per player per battle**, created at START. Each of that player's ≤3 unit types is evaluated with the same CJS wrapper as validation. The harness (`sandbox/harness.ts` exports its source as a string constant, so the build needs no stray `.js` asset) exposes:
+- **Battle**: **one isolate per player per battle**, created at START. Each of that player's ≤3 unit types (M8.5: up to 4 + 4) is evaluated with the same CJS wrapper as validation. **Walls are never loaded** (no code runs for them, §5.2); factories are spawned and ticked like any unit, and minions run in the engine, not in an isolate. The harness (`sandbox/harness.ts` exports its source as a string constant, so the build needs no stray `.js` asset) exposes:
   - `__spawn(instanceId, unitId)` constructs an instance of design `unitId` and keeps it in a Map inside the isolate.
   - `__tick(inputJson) → outputJson` loops over that player's living instances. Before each `update()` call it writes the instance id to the isolate global `__current`. It calls `update` in a per-unit `try/catch`, then returns `[{instanceId, action} | {instanceId, error: {message, line}}]`.
 - **Identifiers:** `unitId` always means a **design** (§7, selection, placement, MCP). `instanceId` means one placed **copy** in a battle (= `SelfView.id`), defined as `${seat}-${row}-${col}` and assigned at lock time from the zone-local cell (§9).
@@ -472,29 +682,29 @@ The `Runner` interface is shared by all modes: `create(player, units) → { spaw
 | Result release | the sim's result is **held server-side**. The BATTLE → RESULTS transition, ranking, points, scoreboard, `battle:end`, `GET /battles/:round/report` and MCP `get_battle_report`/`get_game_state` results are released only when **playback** reaches the final frame. Until then `/state` reports phase BATTLE with the playback countdown. |
 | Arena | square, **S×S logical px by player count**: S = 800 for 2-4 players, 1040 for 5-6, 1200 for 7-8 (always whole 40 px cells: 20, 26, 30 cells per side), scaled to the canvas. Ranges, speeds and sizes are unchanged; the projector zooms out to fit (§12). S is fixed for a battle and sent as `world.width/height` (§9.2). |
 | Zones | one zone per player, 240×240 each (6×6 grid of 40 px cells), axis-aligned, laid out by the **map style** (Duel, Triangle, Corners, Ring, Lanes, Islands; positions in §9.2). The default style follows the player count (2 Duel, 3 Triangle, 4 Corners, 5-8 Ring) and the host can override it at Start match. The middle is neutral. **Zones are assigned at the start of each PLACEMENT**, not at join: free-for-all, active players in join order get `zoneSet[(i + round) % n]`; team mode rotates whole teams as blocks of adjacent zones (§9.2). The player's own zone (and in team mode the teammates' zones) is sent in their `private` state; other zones' owners stay hidden until START. |
-| Placement | units snap to cell centres, one unit per cell, own zone only. `col`/`row` are **zone-local and oriented so row 0 is the front edge (facing the centre or, on Lanes, the other row) and (0,0) is the front cell nearest the centre** (exact rule per zone facing in §9.2). That keeps "Copy last layout" meaningful when the zone rotates or the map changes. The /play grid draws the zone in its true orientation. |
-| Auto-place | at lock (START or Force start), any player with zero placements gets an automatic layout: "Copy last layout" if it is still valid and within budget, otherwise their selected types are placed greedily (cheapest first, round-robin across types) in the front cells up to the budget. Toast: "X's army was placed for them." Nobody gets an empty zone. |
+| Placement | units snap to cell centres, one unit per cell, own zone only (walls, towers and factories too; M8.5 `W_TRAPPED`, §9.3). `col`/`row` are **zone-local and oriented so row 0 is the front edge (facing the centre or, on Lanes, the other row) and (0,0) is the front cell nearest the centre** (exact rule per zone facing in §9.2). That keeps "Copy last layout" meaningful when the zone rotates or the map changes. The /play grid draws the zone in its true orientation. |
+| Auto-place | at lock (START or Force start), any player with zero placements gets an automatic layout: "Copy last layout" if it is still valid and within budget, otherwise their selected types are placed greedily (cheapest first, round-robin across types) in the front cells up to the budget. Toast: "X's army was placed for them." Nobody gets an empty zone. **M8.5:** walls are never auto-placed, factories are placed after the other types, and a player whose placement has walls but no fighter gets fighters auto-placed in the free cells (the walls stay). |
 | Instance ids | `${seat}-${row}-${col}` (zone-local cell), assigned at lock time. |
-| Radii | each unit's `size` stat (6-20; default soldier 10, tower 14). Sent in the views as `radius`. Used for range, separation, clamping to the arena, and projectile hits. |
-| Tick order | 1) decrement every `cooldownRemaining` (not below 0), then build views from the start-of-tick state; 2) call all players' `__tick` **in parallel** (`Promise.all`), then **apply the results in seat order, then instanceId order**, never in resolve order; 3) validate the actions; 4) apply moves for all soldiers; 5) separation; 6) fire attacks (firing sets `cooldownRemaining = attackCooldown`); 7) advance projectiles and apply hits; 8) apply sudden-death damage; 9) remove the dead (hp ≤ 0); 10) check elimination. All players' decisions use the same snapshot, so resolution is simultaneous. |
-| Movement | straight line toward the destination, ≤ speed px/tick, clamped to the arena. |
-| Separation | 2 relaxation passes. Overlapping pairs are pushed apart along the centre line. Towers never move: the soldier takes the full push. |
-| Attacks | range is **edge to edge**: in range when `distance − rA − rB ≤ range + 0.5`. A range stat ≤ 50 counts as melee: instant hit with a swipe animation. Otherwise the attack spawns a **homing projectile** (10 px/tick) that always hits if the target is alive and vanishes if it dies. Range is checked when firing. `cooldownRemaining` starts at 0 at spawn. |
-| Sudden death | from tick 3000 (50 s) a **safe circle** centred on the arena centre (S/2, S/2) shrinks linearly from radius 570 (covers everything) to 60 at tick 5400. Both radii are given for the 800 arena and **scaled by S/800** (rounded): 570→60 at 800, 741→78 at 1040, 855→90 at 1200 (§9.2). Units outside it lose 7% of maxHP per second. The ring is drawn on the projector and sent in `world.safeZone`, so units can react. This forces contact: towers are capped at range 300 and on Corners adjacent zones' nearest cells are 360 px apart (diagonal 509; other maps in §9.2), so without it two all-tower armies could never touch each other and a max-HP tower turtle would win by sitting still. Ranking at 90 s is still by living cost (user rule). Radius, start tick and damage rate are config. **Tuned in M6** against `tests/balance.test.ts` (matrix in `docs/balance.md`): the original 60 s / 4%/s let all-tower armies on Duel, Corners 4 and Ring 8 reach 90 s without losing a single tower (a pure tie); 50 s / 7%/s kills at least one tower in every all-tower battle on every map style. |
+| Radii | each unit's `size` stat (6-20; default soldier 10, tower 14). Sent in the views as `radius`. Used for range, separation, clamping to the arena, and projectile hits. M8.5: walls 20 (range only; the body is the 40×40 square), factories 18, minions 8 (§5.2). |
+| Tick order | 1) decrement every `cooldownRemaining` (not below 0), then build views from the start-of-tick state; 2) call all players' `__tick` **in parallel** (`Promise.all`), then **apply the results in seat order, then instanceId order**, never in resolve order; 3) validate the actions; 4) apply moves for all soldiers; 5) separation; 6) fire attacks (firing sets `cooldownRemaining = attackCooldown`); 7) advance projectiles and apply hits; 8) apply sudden-death damage; 9) remove the dead (hp ≤ 0); 10) check elimination. All players' decisions use the same snapshot, so resolution is simultaneous. **M8.5** (§9.3): step 2 also computes the minion AI from the same snapshot; step 3 accepts `rally`/`hold` from factories; step 4 moves soldiers and minions with wall steering; step 5 ends with the wall push; a new step 9b runs factory production (new minions appear at the end of the tick and act from the next); step 10 counts fighters and crumbles an eliminated side's walls and spent factories. |
+| Movement | straight line toward the destination, ≤ speed px/tick, clamped to the arena. M8.5: walls in the way are slid along (§9.3 Wall steering). |
+| Separation | 2 relaxation passes. Overlapping pairs are pushed apart along the centre line. Towers never move: the soldier takes the full push. M8.5: factories are fixed like towers, and each pass ends by pushing soldiers and minions out of wall squares (§9.3). |
+| Attacks | range is **edge to edge**: in range when `distance − rA − rB ≤ range + 0.5`. A range stat ≤ 50 counts as melee: instant hit with a swipe animation. Otherwise the attack spawns a **homing projectile** (10 px/tick) that always hits if the target is alive and vanishes if it dies. Range is checked when firing. `cooldownRemaining` starts at 0 at spawn. M8.5: walls, factories and minions are valid targets; projectiles fly over walls. |
+| Sudden death | from tick 3000 (50 s) a **safe circle** centred on the arena centre (S/2, S/2) shrinks linearly from radius 570 (covers everything) to 60 at tick 5400. Both radii are given for the 800 arena and **scaled by S/800** (rounded): 570→60 at 800, 741→78 at 1040, 855→90 at 1200 (§9.2). Units outside it lose 7% of maxHP per second (M8.5: every body, walls, factories and minions included). The ring is drawn on the projector and sent in `world.safeZone`, so units can react. This forces contact: towers are capped at range 300 and on Corners adjacent zones' nearest cells are 360 px apart (diagonal 509; other maps in §9.2), so without it two all-tower armies could never touch each other and a max-HP tower turtle would win by sitting still. Ranking at 90 s is still by living cost (user rule). Radius, start tick and damage rate are config. **Tuned in M6** against `tests/balance.test.ts` (matrix in `docs/balance.md`): the original 60 s / 4%/s let all-tower armies on Duel, Corners 4 and Ring 8 reach 90 s without losing a single tower (a pure tie); 50 s / 7%/s kills at least one tower in every all-tower battle on every map style. |
 | Friendly fire | none. Attacking an ally (your own unit, or in team mode any teammate's unit) or a dead unit means idle. Projectiles only ever hit their (enemy) target. Separation pushes every pair of bodies, friend or foe. |
-| Elimination | a **side** (free-for-all: a player; team mode: a team) with zero living units is eliminated. A team is eliminated on the tick its last member's last unit dies; a member whose units are all dead just watches. With auto-place, nobody starts empty. |
-| End | when ≤ 1 side (player or team) has living units, or at tick 5400 (sim clock). The **visible** end is when playback reaches that frame. |
+| Elimination | a **side** (free-for-all: a player; team mode: a team) with zero living units is eliminated (M8.5: zero living **fighters**, §9.3). A team is eliminated on the tick its last member's last unit dies; a member whose units are all dead just watches. With auto-place, nobody starts empty. |
+| End | when ≤ 1 side (player or team) has living units (M8.5: fighters), or at tick 5400 (sim clock). The **visible** end is when playback reaches that frame. |
 | Skip | `POST /admin/phase/skip` in BATTLE ends the battle at the **current playback tick**. Ranking uses the unit state from the recorded frame at that tick (as a timeout), never the sim's lead tick. The sim is stopped and the result is released at once. |
-| Ranking | sides are ranked: survivors rank above the eliminated. On timeout, surviving sides are ranked by the **total cost of their living units** (full unit cost, not scaled by HP; for a team, the sum over all its members' living units = "team living cost"). Eliminated sides are ranked by elimination tick (later is better). Players kicked during this battle are removed before ranking (§4); in team mode their units don't count towards the team's living cost, and a team whose remaining members were all kicked is removed. |
+| Ranking | sides are ranked: survivors rank above the eliminated. On timeout, surviving sides are ranked by the **total cost of their living units** (full unit cost, not scaled by HP; M8.5: the living value per type of §9.3, walls $0; for a team, the sum over all its members' living units = "team living cost"). Eliminated sides are ranked by elimination tick (later is better). Players kicked during this battle are removed before ranking (§4); in team mode their units don't count towards the team's living cost, and a team whose remaining members were all kicked is removed. |
 | Ties | equal value or the same elimination tick share a place. Tied sides get the points of the better place, and the next place is skipped (for a team, every member gets them). |
 | Points | **round points = place points + damage bonus + value bonus** (config `scoring.*`). With P = players ranked this round and T = sides (T = P free-for-all): **Place:** a player whose side is in place k gets `round((P − 1) × (T − k) / (T − 1))`. Free-for-all that is P − k: 1st gets P − 1 down to 0 for last (2p 1/0, 3p 2/1/0, 4p 3/2/1/0, 8p 7..0). In team mode every member gets the team's place points (§9.2). **Damage bonus:** `round(Dmax × myDamage / topDamage)` with `Dmax = scoring.damageBonusMax (2) × P / 4`. **Value bonus:** `round(Vmax × myValueDestroyed / topValueDestroyed)` with `Vmax = scoring.valueBonusMax (1) × P / 4`. Bonuses are always individual, and top values are taken over all players in the battle. Rounding is half-up (so the top earner gets `round(Dmax)` and `round(Vmax)`, e.g. 2p 1 + 1, 4p 2 + 1, 8p 4 + 2). A bonus is 0 when the top value is 0 or P = 1. The bonus maxima scale with P so they keep about the same weight as 1st place, so an aggressive army that dies 2nd can outscore a turtle that survives. |
-| Damage metric | **effective** damage dealt to enemy units: `min(hit, targetHpBeforeHit)` (no overkill). It is credited to the attacker's owner when the hit lands (projectiles on impact). Sudden-death damage is credited to nobody. |
-| Value destroyed | when a unit's hit takes an enemy to hp ≤ 0, the attacker's owner is credited the victim's **full unit cost** and a kill. Hits in the same tick resolve in seat order, then instanceId order (deterministic), so exactly one owner gets each kill. Deaths from sudden death credit nobody. |
+| Damage metric | **effective** damage dealt to enemy units: `min(hit, targetHpBeforeHit)` (no overkill). It is credited to the attacker's owner when the hit lands (projectiles on impact). Sudden-death damage is credited to nobody. M8.5: hits on walls, factories and minions count; a minion's hits go to its factory's owner and, in `topUnits`, to the factory's type ("Basic Factory + minions"). |
+| Value destroyed | when a unit's hit takes an enemy to hp ≤ 0, the attacker's owner is credited the victim's **full unit cost** and a kill (M8.5: walls their full price, factories their living value at death, minions $28, §9.3). Hits in the same tick resolve in seat order, then instanceId order (deterministic), so exactly one owner gets each kill. Deaths from sudden death credit nobody. |
 | Badges | titles only, **no points**, shown on RESULTS (projector, /play) and in reports: 🏆 **Last Standing** (1st place; in team mode **every member of the 1st-place team**, even one whose units died), 💥 **Biggest Hitter** (most damage), 🗡️ **Giant Slayer** (most value destroyed), 🛡️ **Iron Wall** (most living army value at the end). Ties share a badge. A badge needs a value > 0. The other three badges are always individual. |
 | Skip / kick | on Skip, metrics are taken from the recorded counters at the playback tick (same as the ranking). Players kicked during the battle get no points or badges, but damage dealt **to** them still counts for others. |
 | Match standings | individual: total points, then total damage across the match as a tie-break, then a shared place. Team mode adds a **team table** (§9.2): team points = the average of its current members' match totals, then the sum of the team's place points, then a shared place. |
 | Determinism | instance ids are deterministic (above) and units iterate sorted by instance id; there's a seeded PRNG and no `Math.random` in the engine. Placement order (debounced autosave) doesn't matter. Given identical sandbox results, the sim is bit-identical. Wall-clock timeouts can differ between runs, so **replay plays back recorded frames** rather than re-simulating. |
-| Frames | every 2nd tick, `{t, units:[[instanceId,x,y,hp,flags]], projectiles, safeZoneRadius, events:[spawn,hit,death,disable,fire]}`. `flags` include moved, fired and facing-left bits, which drive the sprite animation and mirroring (§5.1). Sim coordinates stay top-down; isometric is purely a rendering projection (§12). | The last battle is kept in memory and in `data/replays/round-N.json`. |
+| Frames | every 2nd tick, `{t, units:[[instanceId,x,y,hp,flags]], projectiles, safeZoneRadius, events:[spawn,hit,death,disable,fire]}`. `flags` include moved, fired and facing-left bits, which drive the sprite animation and mirroring (§5.1). Sim coordinates stay top-down; isometric is purely a rendering projection (§12). M8.5 additions in §9.3 Frames. | The last battle is kept in memory and in `data/replays/round-N.json`. |
 
 ---
 
@@ -512,7 +722,7 @@ Units that fought become available to **every** player in later rounds. Copying 
 | Versions | **frozen copy**. The creator's later revisions stay private. When the creator fields a newer version of the same design, the new version replaces the older entry for future rounds (one entry per design, the latest **fielded** version). |
 | Availability | from the **next** PLAN onwards, to all players **except the creator**, who uses their own design. |
 | Display name | `"<unit name> (<creator name>)"`, e.g. **"Ogre (Ninja Sam)"**, everywhere a borrowed type appears: the armory list, the selection, the placement palette, reveal, battle labels, results and reports. The engine's `name` field in `OtherView` stays the raw unit name. |
-| Selection | `PUT /round/selection` accepts own `unitId`s and `armory:<armoryId>` ids, **≤3 types in total**. Borrowing has no extra limit, and a player may mirror the creator's own unit in the same battle. |
+| Selection | `PUT /round/selection` accepts own `unitId`s and `armory:<armoryId>` ids, **≤3 types in total** (M8.5: ≤4 unit + ≤4 building types; walls and factories enter the armory like any type, and a borrowed factory makes minions for the borrower). Borrowing has no extra limit, and a player may mirror the creator's own unit in the same battle. |
 | Cost | the same cost as for the creator, re-priced under the current config. An entry that a retune makes invalid gets `status: invalid` and can't be selected (§6 rules apply). |
 | Execution | a borrowed unit runs in the **borrower's** battle under the same sandbox rules, in a **sandbox of its own** (one per borrowed design), so the borrower's code never shares globals or prototypes with the frozen copy. It sees the ids it saw in its creator's battles: `self.unitId` is the creator's unitId (never `armory:…`), and the borrower's and creator's ids are swapped in every `ownerId`. (It could still notice a different seat or zone, e.g. from instance ids or `myCorner`.) Its strikes, errors and disables are recorded in the borrower's report, marked "borrowed from Ninja Sam". Damage, kills, value destroyed and points go to the **borrower**. |
 | Source | **never shared.** `get_unit_source` on an armory id returns `NOT_FOUND`, and the borrower's Claude can't revise it. CLAUDE.md says: "Borrowed units can't be changed. Build your own counter or improved version instead." |
@@ -599,9 +809,30 @@ Any valid style can be combined with any valid team mode. The preview suggests L
 
 **Sudden death scaling.** The config radii are for the 800 arena and are scaled by S/800 (rounded) at battle start: start radius 570 / 741 / 855 and end radius 60 / 78 / 90 for S = 800 / 1040 / 1200. That still covers every corner (S·√2/2 = 566 / 735 / 849). Start tick (3000, i.e. 50 s), end tick (5400) and damage (7% of max HP per second) are the same on every arena. `world.safeZone` is centred on `world.center`. Retuned in M6 with the balance test on every map style at its largest arena (§14, `docs/balance.md`).
 
-**Performance.** 8 players × 12 copies = **96 units**. Each tick, **8 isolates** (one per player, plus one per borrowed armory design) run `__tick` in parallel, and results are still applied in seat order. To keep the host cheap, `enemiesJson`/`alliesJson` are serialised **once per side per tick** and shared by that side's players, not once per player. Hard and soft timeouts per player tick are unchanged (12 / 6 ms). **Target: sim p99 < 8 ms/tick with 8 players × 12 copies** whose update loops over all enemies, with no playback stall at 1x or 2x, frames for 96 units every 2nd tick to ≥ 12 WS clients, server RSS < 500 MB, and each sandbox child < 100 MB. `scripts/start.mjs` raises the `UV_THREADPOOL_SIZE` default from 8 to **16**, so 8 Claudes validating in parallel don't queue behind battle I/O.
+**Performance.** 8 players × 12 copies = **96 units** (M8.5: still ≤ 96 code-running units, up to 232 bodies with walls and minions, §9.3). Each tick, **8 isolates** (one per player, plus one per borrowed armory design) run `__tick` in parallel, and results are still applied in seat order. To keep the host cheap, `enemiesJson`/`alliesJson` are serialised **once per side per tick** and shared by that side's players, not once per player. Hard and soft timeouts per player tick are unchanged (12 / 6 ms). **Target: sim p99 < 8 ms/tick with 8 players × 12 copies** whose update loops over all enemies, with no playback stall at 1x or 2x, frames for 96 units every 2nd tick to ≥ 12 WS clients, server RSS < 500 MB, and each sandbox child < 100 MB. `scripts/start.mjs` raises the `UV_THREADPOOL_SIZE` default from 8 to **16**, so 8 Claudes validating in parallel don't queue behind battle I/O.
 
 **Config / DTO additions.** `match.maxPlayers: 8`. `scoring.placePoints` (the fixed 3/2/1/0 table) is **removed** and replaced by the formula above. `scoring.damageBonusMax: 2` and `scoring.valueBonusMax: 1` are now the values **at 4 players** and are scaled × P/4. `suddenDeath.startRadius/endRadius` are the 800-arena values. Arena sizes, zone tables and team colours are code (`shared/maps.ts`, `shared/teams.ts`), not config, so geometry and tests can't drift apart. DTOs (`shared/protocol.ts`): `MapDTO = {style, players, width, height, zones:[{index, x, y, width, height, facing}]}` (public, no owners before START) and `TeamDTO = {teamId, name, color, pattern, members:[playerId]}` (public).
+
+### 9.3 Walls, steering, factories and minions in the sim (M8.5)
+
+Code: `sim/walls.ts` (wall grid and wall push), `sim/steering.ts`, `sim/factory.ts` (production and spawn spots), `sim/minion.ts` (built-in AI). Types and stats: §5.2.
+
+| Item | Spec |
+|---|---|
+| Wall geometry | A wall's body is the axis-aligned square `[cx − 20, cx + 20] × [cy − 20, cy + 20]` of its cell. The engine keeps a **wall grid** `wallAt[cellIndex]` over the S/40 × S/40 arena cells (20, 26 or 30 per side), so any position looks up at most the 3×3 (steering: 4×4) cells around it. Walls never move, so the grid only changes when a wall dies. For range and in the views a wall is a circle of radius 20 at its cell centre (§5.2). |
+| Wall steering | For soldiers and minions (`sim/steering.ts`), replacing the plain straight step. A body of radius r at p moves toward dest with step L = min(speed, |dest − p|). **(1) Cast** the segment p → p + L·dir against every nearby wall square **inflated by r** (half-side 20 + r; slab method) and take the earliest entry (ties: lower wall instanceId). A wall whose inflated square already contains p (possible near its corners, where the inflated square is bigger than the true rounded shape) counts as a hit at t = 0 on its nearest face, and only if the move goes deeper. **No hit:** move, set `blockedBy = null`, `blockedTicks = 0`. **(2) Hit:** move to the contact point (minus 0.01 px), then spend the rest of L **sliding** along the hit face (its tangent: ±x for a horizontal face, ±y for a vertical one). The slide is cast too and stops at the next wall it would enter (an inner corner), then the body is clamped to the arena. **(3) Side:** the slide memory's side if a memory is active; else the side whose tangent points toward dest (positive dot product with dest − p); exactly head-on (|dot| < 1e-9): the side that goes toward `world.center`; still tied: +x / +y. **(4) No progress** (the slide moves < 0.01 px because of an inner corner or the arena edge): flip the side **once** per memory and slide again; still nothing → stay this tick. **(5) Memory** `{side, axis, origin, quiet, flipped}` starts at the first hit and is kept while the body keeps hitting faces of the same axis; every tick without a hit adds 1 to `quiet`, and the memory is dropped when `quiet` > 45 (`sim.slideMemoryTicks`) or dest moves more than 80 px from `origin`. This stops the flip-flop when dest is straight behind the middle of a wall line: the body keeps sliding one way to the end of the line, and a line that runs into the arena edge makes it turn back once and go round the other end. **(6) Reporting:** each tick a wall stopped or turned the move, `blockedBy` = that wall's id and `blockedTicks += 1`; a tick in which the body doesn't try to move (idle, attack) leaves both unchanged, so a unit that stops to smash the blocking wall keeps seeing it. No grid pathfinding and no randomness: identical inputs give identical paths. A fully enclosed body stays put while `blockedTicks` grows; the templates and minions then attack an enemy wall in the way (after 120 ticks). **Gates:** a one-cell gap leaves 40 − 2·size px, so bodies up to size 18 slip through it when sliding past it toward a destination beyond; size 19-20 bodies need a two-cell gap (CLAUDE.md tip). |
+| Wall push | Every separation pass ends with a wall push: each soldier and minion whose centre c is closer than r to a wall square (closest point q = c clamped into the square) is pushed out along c − q by r − |c − q| (the full push, walls never move); a centre inside the square leaves through the nearest face (ties: −x, +x, −y, +y). Then it is clamped to the arena. Because the last pass ends with the wall push, no body overlaps a wall after step 5. Towers, factories and walls never overlap each other (separate cells). Circle pairs use a 40 px spatial hash once more than 64 bodies are alive (pairs are only checked in the 3×3 neighbouring hash cells, since radii are ≤ 20). |
+| Placement check | `shared/geometry.ts` `trappedCells(zone, placements)`: a 4-neighbour flood fill over the zone's 6×6 cells, walls blocking, starting from every wall-free cell on the zone's border whose outside neighbour is inside the arena (the arena edge is not an exit). Every soldier or factory cell it doesn't reach gets the non-fatal warning `W_TRAPPED` `{col, row}` in the `PUT /round/placement` result ("Your Ninja is walled in! Leave a gap so it can get out."). Towers don't move and are never warned. |
+| Factory production (tick order step 9b) | After the dead are removed: each living factory in instanceId order: unless it returned `hold` this tick, `timer = min(timer + 1, productionInterval)`; when the timer is full and §5.2's conditions hold (minions left, ≤ 4 alive for this factory, below the owner's alive cap counting minions spawned earlier in this step, a free spawn spot) it spawns one minion (cooldownRemaining 0, `blockedTicks` 0, first decision next tick), `minionsLeft −= 1`, `timer = 0`. Then every living factory's **`canMake`** = min(`minionsLeft`, floor((timer + ticksLeft − 1) / productionInterval)), ticksLeft = battleTicks − t: the minions it can still build before time runs out (a factory whose last try found every spawn spot covered counts timer 0). It starts at E, stays steady while the factory builds unhindered, shrinks while it holds or is walled in, and is 0 at the time limit. A **disabled** factory (strikes, timeouts, §8) keeps producing toward its last rally point: production is engine-side, only its `update()` naps. |
+| Minion AI | §5.2. Runs in the engine during step 2, from the same views as players get, at no isolate cost; its actions are validated and applied exactly like player actions. |
+| Fighters and elimination | **Fighters:** soldiers, towers, minions, and factories with `canMake > 0`. A side with **no living fighters** is eliminated, even with walls or spent factories standing; those then **crumble** at once (removed with a `crumble` event, credited to nobody), so they don't block the remaining sides. The battle ends when ≤ 1 side has fighters. So walls alone can never keep a player in the game, and a factory keeps its side alive only while it can still make minions in time (or while its minions live): a factory that holds forever or is walled in drops out once less than one interval is left. |
+| Living value and value destroyed | Per body: **soldier, tower:** timeout value = unit cost, value destroyed = unit cost. **Wall:** timeout value **$0**, value destroyed = its full price (breaking through is rewarded, standing behind bricks isn't). **Factory:** living value = body cost + minionValue × `canMake` (the unbuilt part of what it paid for that it can still build; it never grows by producing, the value moves into the minions), value destroyed = that same amount at the moment it dies. At the time limit `canMake` = 0, so a factory counts its **body only**: unbuilt minions never win a timeout. **Minion:** both minionValue ($28). Ranking ties, team living value, army value bars (§12.2) and the 🛡️ Iron Wall badge all use this living value, so walls never decide a timeout. |
+| Sudden death | Damages every body outside the circle, walls, factories and minions included (7% of max HP per second). |
+| Frames | `units` include minions (first appearing on their `spawn` event `{id, factoryId, x, y}`) and walls. To keep frames small, a wall is listed only in the first frame (t = 0) and in frames where its HP changed or it died; clients keep the last state (replay seeking rebuilds wall HP by scanning from t = 0). `flags` gain a `blocked` bit (a wall turned the move). New per-frame `fac: [[factoryId, progress 0-100, minionsLeft, rallyX, rallyY, holding 0\|1, canMake]]` for living factories (the army bars and Skip ranking use canMake). New event `crumble {ids}`. `battle:reveal` adds `productionInterval` and `bodyCost` (the body price under the battle's config) to factory types and `minion: {stats, value}` (the built-in sprite ships with the client). |
+| Performance | Worst case per battle: 8 players × (12 fighters + 12 walls + 5 minions) = **232 bodies**, of which still ≤ 96 run player code (one isolate per player as before). Walls cost a grid lookup, minions a loop over the enemies (≤ 40 × 232 distance checks per tick), separation uses the spatial hash, and views are still serialised once per side per tick. **Target unchanged: sim p99 < 8 ms/tick** for that worst case on Ring 8, checked by `npm run test:perf` and `npm run loadtest` (§14). Knobs if the event laptop can't make it: `caps.maxWallCopies`, `factory.maxAlivePerBattle`, `caps.maxCopies` (§15). |
+| Determinism | Walls and minions iterate in instanceId order like everything else; steering and spawn spots use no PRNG. Shuffled placement order + same seed + fake runner still gives identical frames. |
+
+**Config additions (M8.5, `config/default.json`, zod schema):** `cost.wall {base: 4, hp: 0.06}`, `cost.factory {base: 10, hp: 0.12, minionDiscount: 0.5}`, `stats.bounds.wallHealth {min: 50, max: 1500}`, `stats.bounds.factoryHealth {min: 100, max: 1000}`, `stats.bounds.productionInterval {min: 600, max: 1800}`, `caps.maxUnitTypes: 4`, `caps.maxBuildingTypes: 4` (`caps.maxTypes` removed), `caps.maxWallCopies: 12`, `caps.maxFactoryCopies: 2` (`caps.maxCopies: 12` now counts fighters), `factory {maxMinionsPerFactory: 8, maxAlivePerFactory: 4, maxAlivePerPlayer: 6, maxAlivePerBattle: 40, rallyGuardRadius: 200, rallyArriveRadius: 24, minion: {maxHealth: 40, damage: 5, range: 20, speed: 1.5, attackCooldown: 60, size: 8, aggroRange: 120, impatientTicks: 120}}`, `sim.slideMemoryTicks: 45`. Wall size (40 px block) and factory radius (18) are code constants. The schema keeps the minion stats inside the soldier bounds and refuses a config where the Basic Wall or Basic Factory template would become invalid.
 
 ---
 
@@ -641,14 +872,14 @@ Errors use HTTP 400/401/403/404/409/422/429 with the body `{error:{code,message,
 | GET `/claude-seats` | player | | `ClaudeSeatsDTO` (§11.2): `{mySeat, boxReady, seats:[{seat, takenBy: name \| null, mine, status}]}` |
 | PUT `/me/claude-seat` | player | `{seat: 1-8 \| null}` | `{claudeSeat}`. Any phase, 1 per second. `BAD_CLAUDE_SEAT` (400), `CLAUDE_SEAT_TAKEN` (409, `details: {seat, takenBy}`). Changing seat closes the player's live terminal on the old seat |
 | GET `/rules` | none | | rules JSON (phases, timers, budget, caps, coefficients, bounds, points incl. the place formula and bonus scaling, map styles with valid player counts and arena sizes, team modes, §9.2) |
-| GET `/contract` | none | | `{typescript, templates:{basic_soldier, basic_tower}, notes}` |
+| GET `/contract` | none | | `{typescript, templates:{basic_soldier, basic_tower}, notes}` (M8.5: also `basic_wall`, `basic_factory`) |
 | POST `/units/validate` | player | `{source, unitId?, baseVersion?}` | §7 result (dry-run). A stale `baseVersion` → `UNIT_CHANGED` (409, §7) |
 | POST `/units` | player | `{source, unitId?, baseVersion?}` | §7 result plus stored `{unitId, version}`. `PHASE_CLOSED`, `TOO_MANY_DESIGNS`, `NOT_FOUND`, `UNIT_CHANGED` (409, `details: {unitId, baseVersion, version}`; `baseVersion` without `unitId` is `BAD_REQUEST`) |
 | GET `/units` | player | | `[{unitId,name,version,stats,cost,breakdown,status,lastBattle}]` |
 | GET `/units/:id` | player (owner) | | the above + `source` |
 | DELETE `/units/:id` | player | | `{ok}` (PLAN only; templates can't be deleted) |
 | GET `/state` | player / none | | phase, round, N, timers, scoreboard (rows carry `teamId`), `match: {mapStyle, teamMode, map: MapDTO, teams: TeamDTO[] \| null, teamTable \| null}` (§9.2; `map` has no zone owners before START), `allReady` (PLAN/PLACEMENT: every active player is Ready, at least one), `pendingAdvance: {to: 'PLACEMENT'|'BATTLE', by: 'host'|'auto', secondsLeft}` (only while a countdown runs), and the visibility-filtered `me` block: `{budget, selection, placement, myZone: {index, x, y, width, height, facing}, ready, submissionsOpen, teamId, benched, team}` (`team` = teammates' live selection/zone/placement, team mode only) |
-| PUT `/round/selection` | player | `{unitIds: string[]}` (≤3) | `{selection}`. `TOO_MANY_TYPES`, `NOT_FOUND`, `UNIT_INVALID` |
+| PUT `/round/selection` | player | `{unitIds: string[]}` (≤3; M8.5: ≤4 unit + ≤4 building types, §10.5) | `{selection}`. `TOO_MANY_TYPES`, `NOT_FOUND`, `UNIT_INVALID` |
 | PUT `/round/placement` | player | `{placements:[{unitId,col,row}]}` (zone-local col/row 0-5, §9) | `{placements, spent, remaining}`. `OVER_BUDGET`, `CELL_TAKEN`, `CELL_OUT_OF_ZONE`, `NOT_SELECTED`, `TOO_MANY_COPIES` |
 | POST `/round/ready` | player | `{ready:boolean}` | `{ready}`. PLAN and PLACEMENT (separate per phase, reset on phase change). In PLAN `ready:true` needs a selection: `NOTHING_SELECTED` (409, hint "Tap up to 3 units in My Units first, then press Ready."). Inactive (benched / next-round) players get `PHASE_CLOSED` |
 | GET `/battles/:round/report` | player | | own units (available once playback ends): `{survived, damageDealt, kills, strikes, disabled, errors:[{unitId, instanceId, unitName, tick, message, line}], topUnits}` (`topUnits` is the public list, §9) |
@@ -735,6 +966,24 @@ Every tool except `get_rules`, `get_unit_contract` and `login` also accepts an o
 
 Selection and placement are **not** MCP tools. Players do those on the web page.
 
+### 10.5 Walls, factories and minions in the API (M8.5)
+
+| Where | Change |
+|---|---|
+| Shared types (`shared/protocol.ts`) | `UnitType` gains `'wall' \| 'factory'`; views and frames use `BodyType` (adds `'minion'`). Unit cards and `list_my_units` rows gain `group: 'unit' \| 'building'` and, for factories, `productionInterval` and the production part of the breakdown. `StatsSnapshot` gains optional `productionInterval`. |
+| `GET /rules`, MCP `get_rules` | per-type bounds (§5.2 table), `cost.wall`, `cost.factory`, minionCost / minionValue, the `factory` block (caps, minion stats), the new caps (`maxUnitTypes`, `maxBuildingTypes`, `maxCopies` = fighters, `maxFactoryCopies`, `maxWallCopies`), the fighter and living-value rules (§9.3). |
+| `GET /contract`, MCP `get_unit_contract` | the §5.2 contract block; `templates: {basic_soldier, basic_tower, basic_wall, basic_factory}`; strategy tips: "walls block everyone, your own units too: leave a gap", "walls can't attack and are worth $0 at the end", "skip walls when picking targets unless one blocks you (`self.blockedBy`, `self.blockedTicks`)", "a factory pays up front for its minions; rally them where they help". |
+| `PUT /round/selection` | ≤ 4 unit + ≤ 4 building types; `TOO_MANY_TYPES` `details: {group, max, count}`. |
+| `POST /round/ready` | PLAN: `NO_FIGHTERS` (409) when only walls are selected; PLACEMENT: `NO_FIGHTERS` when no fighter is placed. |
+| `PUT /round/placement` | `TOO_MANY_COPIES` `details: {group: 'fighters' \| 'factories' \| 'walls', max}`; the result gains `warnings: [{code: 'W_TRAPPED', unitId, col, row}]` and `counts: {fighters, factories, walls}`. |
+| `GET /state` `me` block and `private` | `selection` stays a flat list of unit ids; every roster and team-strip card carries `type` and `group`, so the client groups them; `me.copyCaps: {fighters, factories, walls}`. |
+| `battle:reveal`, frames, replay | §9.3 Frames: `minion: {stats, value}`, factory `productionInterval`, walls listed only when changed, `fac` array, `spawn`/`crumble` events, the `blocked` flag. |
+| Battle report (`GET /battles/:round/report`, MCP `get_battle_report`) | per factory type: `minionsMade`, `minionsLost`, minion damage and KOs (credited to the factory type); per soldier type: `blockedTicksMax` and a hint when a type spent > 30% of the battle blocked ("Your Ninjas got stuck behind walls a lot. Ask Claude to make them break through or go round."). Walls: `hpLost`, `survived`. `topUnits` names factories "Basic Factory + minions". |
+| Validation errors | new codes `BUILDING_CANNOT_ATTACK`, `BUILDING_CANNOT_MOVE`, `INTERVAL_NOT_INTEGER`, `NO_FIGHTERS`; warnings `W_STAT_IGNORED`, `W_UPDATE_IGNORED`, `W_ACTION_NOT_FOR_TYPE`, `W_TRAPPED`. Each has a `fix` and a `playerHint` (§7 format). |
+| MCP descriptions and server `instructions` | mention the four types in one line ("soldier, tower, wall, factory; see get_unit_contract"); no new tools. Selection and placement stay on the web page. |
+| `GET/PUT /admin/config` | the §9.3 config keys; the "refuse if a template becomes invalid" check covers all four templates. |
+
+
 ---
 
 ## 11. Player starter kit
@@ -774,7 +1023,9 @@ pixel-clash-kit/
 ├── .pixel-clash/             # player.json (apiKey) is written here by Claude after login
 ├── units/
 │   ├── basic_soldier.js      # template (also pre-registered on the server)
-│   └── basic_tower.js
+│   ├── basic_tower.js
+│   ├── basic_wall.js         # M8.5 (§11 New templates)
+│   └── basic_factory.js      # M8.5
 └── PROMPTS.md                # example prompts for the player (also printed on cards)
 ```
 
@@ -806,7 +1057,7 @@ Players should never see an approval prompt on the normal (MCP) path; only the c
 4. **The contract.** The full §5 TS types, the bounds table, and engine rules 1-5. Range is **edge to edge**; bodies have a `radius` equal to `size`. The arena size changes with the player count, so use `world.width`, `world.height` and `world.center`, never 800 or 400. Tell friend from foe with `teamId`.
 4b. **Drawing the unit.** The `sprite()` format (§5.1) with a worked 16×16 example, the tips "draw it facing right", "keep a dark outline so it pops on the floor", "use 2 walk frames and 1 attack frame", and "the player can ask for any look: describe it back to them before drawing". Claude should always include a sprite.
 5. **Cost formula** with coefficients and two worked examples. Tips: "Cooldown below 60 multiplies the whole cost." "Cooldown above 60 gives **no** discount, so use 60 instead of slower." "Two or three medium units usually beat one giant one."
-6. **Budget rules:** $1,000 per round, ≤3 types, ≤$500 per unit, and 4-8 units is a good army. After 50 s a safe circle shrinks toward the centre; units outside it lose health.
+6. **Budget rules:** $1,000 per round, ≤3 types, ≤$500 per unit, and 4-8 units is a good army (M8.5 wording below). After 50 s a safe circle shrinks toward the centre; units outside it lose health.
 6b. **Teams** (when `get_game_state` shows `myTeam`): your `allies` include your teammates' units, and you can't hurt them. Every teammate gets the team's place points. `teammates` lists what they selected, so suggest units that fill a gap (e.g. towers behind a teammate's tanks). Teammates' code and budgets are their own.
 7. **After a battle:** call `get_battle_report` and fix units that threw errors, timed out, or got disabled (the report names the unit and line).
 8. **Don'ts:** no imports, network, timers, async, or `Math.random` in the constructor. Don't change stats in `update()`. Don't call anything except the pixel-clash tools for the game.
@@ -821,6 +1072,132 @@ Players should never see an approval prompt on the normal (MCP) path; only the c
 - "Make a healer… wait, can units heal? Find out and make the best support unit you can." (Answer: no healing. Claude explains and suggests a tank instead.)
 - "Why did my units stand still last battle? Fix them."
 - "Make my soldiers wait near my towers until enemies come close."
+
+**New templates (M8.5): `units/basic_wall.js` and `units/basic_factory.js`.** Pre-registered for every player like the other two (§6), shipped in the kit and served by `get_unit_contract` / `GET /contract`. Both have sprites, so Claude learns the building art style from them. The Basic Soldier and Basic Tower keep their stats and costs ($92, $198); their `update()` learns about walls: they skip walls when picking a target, and the soldier attacks an enemy wall that has blocked it for 120 ticks (`self.blockedTicks`).
+
+```js
+// Basic Wall: the starter wall template (Pixel Clash).
+//
+// A wall is a solid 40x40 block that fills its cell. It can't move or attack and runs no code,
+// it just stops everybody (your own units too, so leave a gap!) until it is smashed.
+// Walls don't count as survivors at the end: you still need fighters.
+//
+// Cost = 4 + maxHealth*0.06 * (1 + 2*(maxHealth/1500)^2)
+//      = 4 + 24 * 1.1422 = 31.41  ->  $32
+//
+// No imports, no timers, no network, no async.
+
+export default class BasicWall {
+  constructor() {
+    this.name = 'Basic Wall';
+    this.type = 'wall';         // a building: never moves, never attacks
+    this.maxHealth = 400;       // 50-1500
+    this.color = '#8A8F98';     // "#RRGGBB": the block's colour
+  }
+
+  // No update(): walls don't think. The sprite textures the sides of the block.
+  sprite() {
+    return {
+      grid: 16,
+      palette: { o: '#3A3D44', l: '#B4BAC4', g: '#8A8F98', d: '#666B74' },
+      frames: {
+        idle: [[
+          'oooooooooooooooo',
+          'lllllldolllllldo',
+          'lgggggdolgggggdo',
+          'lddddddolddddddo',
+          'oooooooooooooooo',
+          'lldolllllldollll',
+          'ggdolgggggdolggg',
+          'dddolddddddolddd',
+          'oooooooooooooooo',
+          'lllllldolllllldo',
+          'lgggggdolgggggdo',
+          'lddddddolddddddo',
+          'oooooooooooooooo',
+          'lldolllllldollll',
+          'ggdolgggggdolggg',
+          'dddolddddddolddd',
+        ]],
+      },
+    };
+  }
+}
+```
+
+```js
+// Basic Factory: the starter factory template (Pixel Clash).
+//
+// A factory never moves or attacks. Every productionInterval ticks it builds a Minion
+// (40 HP, 5 damage, fast little melee fighter), at most 4 alive per factory.
+// update() only decides WHERE the minions go: return { action: 'rally', destination }.
+// ({ action: 'hold' } pauses building for a tick.)
+//
+// Cost = body + production
+//   body       = 10 + maxHealth*0.12 * (1 + 2*(maxHealth/1000)^2) = 10 + 42.48 = 52.48  ->  $53
+//   production = 5 minions (one every 15 s in a 90 s battle) x $28 (half price: they arrive late) = $140
+//   total      = $193
+//
+// No imports, no timers, no network, no async.
+
+export default class BasicFactory {
+  constructor() {
+    this.name = 'Basic Factory';
+    this.type = 'factory';           // a building: never moves, never attacks
+    this.maxHealth = 300;            // 100-1000
+    this.productionInterval = 900;   // 600-1800 ticks between minions (900 = 15 s); faster costs more
+    this.color = '#C0A060';          // "#RRGGBB": also the colour of its minions
+  }
+
+  // Called once per tick. Send the minions at the nearest enemy that isn't a wall.
+  update(self, enemies, allies, world) {
+    let target = null;
+    let best = Infinity;
+    for (const enemy of enemies) {
+      if (enemy.type === 'wall') continue;   // walls can't hurt anyone: go for real fighters
+      const d = Math.hypot(enemy.x - self.x, enemy.y - self.y);
+      if (d < best) { best = d; target = enemy; }
+    }
+    const spot = target ? { x: target.x, y: target.y } : world.center;
+    return { action: 'rally', destination: spot };
+  }
+
+  sprite() {
+    const body = [
+      '..........oooo..',
+      '..........occo..',
+      '..oooooooooccoo.',
+      '.orrrrrrrrrrrrro',
+      '.owwwwwwwwwwwwwo',
+      '.owyywwwwwwyywwo',
+      '.owyywwwwwwyywwo',
+      '.owwwwoddowwwwwo',
+      '.owwwwoddowwwwwo',
+      '.owwwwoddowwwwwo',
+      '.ooooooooooooooo',
+      '................',
+    ];
+    const smokeLow = ['................', '...........ss...', '..........ssss..', '...........ss...'];
+    const smokeHigh = ['............ss..', '...........ssss.', '............ss..', '................'];
+    const doorOpen = body.map((row) => row.replace('dd', 'yy'));  // the door lights up when a minion pops out
+    return {
+      grid: 16,
+      palette: { o: '#2B2118', w: '#C0A060', r: '#8E3B2E', d: '#4A3426', y: '#FFE27A', s: '#D8D8D8', c: '#6B6B6B' },
+      frames: {
+        idle: [smokeLow.concat(body), smokeHigh.concat(body)],
+        attack: [smokeLow.concat(doorOpen)],   // played when a minion is made
+      },
+    };
+  }
+}
+```
+
+**CLAUDE.md additions (M8.5).**
+- **4c. Unit types.** The §5.2 table in kid-friendly words: "soldier (moves and fights), tower (stays and shoots), wall (a big block that stops everyone, can't attack, has no update), factory (stays and builds minions; its update picks where they go)". Which fields each type needs (the §5.2 stats table, with "leave it out" for walls and factories). Tips: "walls block your own units too: leave a gap of one empty cell (two for size 19-20)"; "walls are worth $0 at the end and a player with only walls left is out: walls protect fighters, they don't win"; "when choosing targets, skip `type === 'wall'` unless `self.blockedBy` is an enemy wall and `self.blockedTicks` is high, then smash it"; "minions show up in `enemies` as `type: 'minion'`: weak (40 HP) but many"; "projectiles fly over walls, so towers behind walls still shoot"; "a factory's `productionInterval` sets how many minions it buys (600 = 8 minions, 900 = 5, 1800 = 2) and the price follows"; "rally minions at the nearest enemy to attack, or in front of your towers to defend".
+- **5. Cost formula:** the wall and factory formulas with the two template examples.
+- **6. Budget rules:** "$1,000 per round, up to 4 unit types (soldiers) and 4 building types (towers, walls, factories), ≤ $500 per unit, ≤ 12 fighters (≤ 2 factories) and ≤ 12 walls per round. 4-8 fighters plus a few walls is a good army."
+
+`PROMPTS.md` gains: "Build me a stone wall to protect my towers." · "Make a factory that sends lots of tiny robots at the strongest enemy." · "My soldiers keep getting stuck behind walls. Make them smash through." · "Make a super-tough castle wall that's still cheap."
 
 **/setup page** (open, for facilitators):
 - Big LAN URL + QR code (`http://<ip>:<port>/play`). If several interfaces are found, the admin picks the preferred one for the QR in /admin.
@@ -897,7 +1274,7 @@ Players use **one browser tab**: `/play` shows their Claude seat's ttyd terminal
 
 ## 12. UI
 
-**Isometric 2D pixel art.** The battle is drawn as a 2:1 isometric view of the top-down sim: `screenX = (x − y) · k`, `screenY = (x + y) · k / 2`, so the S×S arena (800, 1040 or 1200, §9.2) becomes a diamond. The zoom `k` is chosen per battle so the whole diamond fits the canvas (the projector zooms out for bigger arenas; sprites, rings and HP bars scale with it, and HP bars and seat badges keep a minimum on-screen size). Units are billboard sprites from `sprite()` (§5.1), depth-sorted by `x + y` every frame. Projectiles fly in a small arc (visual height only). The sudden-death circle is drawn as an ellipse on the ground plane. The floor is pixel-art iso tiles (one tile per 40 px cell), with the current map's zone bases tinted (seat colour, or team colour in team mode; Lanes draws its no-man's-land and Islands its clusters with different cosmetic tiles) and cosmetic props (rocks, crystals, banners) outside the arena edge. There are no gameplay obstacles. All art is generated in code or bundled, with no external assets. `src/common/render/iso.ts` holds the projection, depth sort and tile drawing, and it is shared by /screen, the /play battle view and the replay.
+**Isometric 2D pixel art.** The battle is drawn as a 2:1 isometric view of the top-down sim: `screenX = (x − y) · k`, `screenY = (x + y) · k / 2`, so the S×S arena (800, 1040 or 1200, §9.2) becomes a diamond. The zoom `k` is chosen per battle so the whole diamond fits the canvas (the projector zooms out for bigger arenas; sprites, rings and HP bars scale with it, and HP bars and seat badges keep a minimum on-screen size). Units are billboard sprites from `sprite()` (§5.1), depth-sorted by `x + y` every frame. Projectiles fly in a small arc (visual height only). The sudden-death circle is drawn as an ellipse on the ground plane. The floor is pixel-art iso tiles (one tile per 40 px cell), with the current map's zone bases tinted (seat colour, or team colour in team mode; Lanes draws its no-man's-land and Islands its clusters with different cosmetic tiles) and cosmetic props (rocks, crystals, banners) outside the arena edge. The only gameplay obstacles are player-built walls (M8.5, §12.5); props stay cosmetic. All art is generated in code or bundled, with no external assets. `src/common/render/iso.ts` holds the projection, depth sort and tile drawing, and it is shared by /screen, the /play battle view and the replay.
 
 Retro arcade look: dark background, a pixel font (bundled "Press Start 2P", OFL) for headings only, and a readable sans for body text. Player text is ≥ 16 px. Projector text is large. **Seat colours** are an 8-colour set based on Okabe-Ito, adjusted for a dark floor: 1 orange `#E69F00`, 2 sky `#56B4E9`, 3 green `#009E73`, 4 yellow `#F0E442`, 5 blue `#4B8DFF`, 6 vermillion `#D55E00`, 7 pink `#CC79A7`, 8 white `#EEEEEE`. They are used for **outlines and zone tints** only. Eight colours can't all be told apart with every colour-vision type, so every unit, zone and player tile also shows its **seat number badge** (1-8, pixel font, on the HP bar's left end and on the zone tint). In team mode the **ground ring uses the team colour and pattern** (§9.2: gold solid, cyan dashed, magenta double, lime dotted) and the 1 px sprite outline keeps the seat colour, so you can read team and seat at a glance. In free-for-all the ring is the seat colour. Language is friendly throughout (§12.4).
 
@@ -907,8 +1284,8 @@ Retro arcade look: dark background, a pixel font (bundled "Press Start 2P", OFL)
 - **Header (always visible):** name, seat colour + number badge, team chip (team mode), phase banner + countdown, points.
 - **My Units (roster):** cards with the unit's animated sprite (idle loop, walk on hover), name, size, stat bars, cost as a plain label (tapping anywhere on the card, including the price, picks it) with a separate small "ⓘ How much?" button that opens the breakdown, version, "new!" badge, and a warning icon with warnings. Log out is in the header.
 - **✏️ Code editor:** "✏️ Edit code" on the player's own unit cards ("📄 Copy to a new unit" on the two starters: asks for a new name first, writes it into `this.name`, and saving creates a new design; borrowed Armory units have no button) opens an editor panel in the Game pane in place of the game view (the game stays mounted underneath, the Claude terminal is untouched). CodeMirror 6, loaded as a separate chunk on first use: JavaScript highlighting (TypeScript when the source needs it), line numbers, bracket matching and auto-close, auto-indent, Tab indents (Esc then Tab leaves), undo/redo, search, long lines wrap. The whole file shows, but only the constructor (stats) and `update()` are meant for editing: the `sprite()` member is found in the `@lezer/javascript` syntax tree (the default-exported class, or `export default Name`, or the only class), folded ("🎨 pixel art (folded)") and **read-only** (a transaction filter drops any edit touching it; typing right before/after it is fine) with a note "🔒 … Ask Claude to change how it looks". No `sprite()` → nothing protected; if it can't be located (two of them, a broken file) the whole file stays editable with a warning. **Live validation:** 600 ms after typing stops, `POST /units/validate {source, unitId, baseVersion}`; never more than one request in flight and ≥ 1.1 s between starts (the 1/s validate limit, shared with Claude), changes made meanwhile coalesce into one follow-up for the newest text, `RATE_LIMITED` is retried after `retryAfterMs`, and results for outdated text are dropped. Errors become red squiggles at their line/column, or on the stat's value in the constructor for stat errors, or on `sprite` for `SPRITE_*`; warnings (e.g. `W_STAT_NEAR_MAX`) yellow; the hover shows the player hint plus the technical message and fix. Issues without a place (cost cap, `W_NO_SPRITE`, never attacks, …) are listed beside the code, over a **live cost panel** (base, each stat with its near-max surcharge "$90 + $180 near max" at ≥ 80 % of the max, fast-attack factor, total vs the $500 cap, red when over). **Save new version** = a normal submit with `baseVersion` (PLAN only; outside PLAN it is disabled with "You can save during Plan time", validation still works). Then the card updates via the `private` push, a toast "Saved v6 — $142", the selection follows the design and PLAN Ready is cleared by the usual army-change rule. A newer version (from the `private` push, or a 409 `UNIT_CHANGED`) shows "This unit changed since you opened it (now v5). Reload to see the new code." with **Reload latest** (confirms when there are unsaved changes). Unsaved text is kept as a per-unit draft in `localStorage` (restored on reopen; a draft for an older version opens the new code and offers "Open my old changes instead"). Closing with unsaved changes asks (keep editing / close keeping the draft / throw away); when PLAN ends (PLACEMENT, BATTLE) the editor closes, asking first if there are unsaved changes.
-- **PLAN:** tap cards to select (max 3, a 4th tap shakes the card). Above the roster a big **"I'm ready!"** toggle: disabled with "Pick up to 3 units first" until one type is picked; when the army changes (another pick, or Claude sends a new or revised unit) the server clears it and a note says "You changed your army: press Ready again". With the auto-advance option it shows "Placement starts in 3…". With Open Armory on, a second tab **"Armory"** lists borrowable units as cards named "Ogre (Ninja Sam)", with sprite, stats, cost and the round added. They are selectable in the same ≤3 pool. Status shows "Claude can send new units at Plan time." outside PLAN. **Team mode:** a "My team" strip shows each teammate's selected types as small cards (live, §9.2) with ✓ submitted/selected ticks.
-- **PLACEMENT:** "This round you're in zone 3 (top right)" (the position is described from the map: top, top right, right, …) plus an enlarged **top-down** 6×6 grid of that zone (placement is not isometric), drawn in its true orientation with an arrow toward the centre. Each placed unit shows its sprite at its true size (a size-20 unit fills its cell). A small iso mini-map beside the grid shows the map, where the zone sits in it, and in team mode the teammates' zones with their placed units drawn live as ghosts (read-only). A palette of the 3 selected types shows cost and copies. **Tap palette → tap cell** (primary, touch-friendly). Drag-drop on desktop is deferrable (§16). Tap a placed unit to remove it. There's a live budget bar ("$937 / $1,000 — 63 left") and invalid moves shake and explain why. Buttons: "Copy last layout", "Clear", and a big **READY** toggle. Changes autosave via `PUT /round/placement` (debounced 300 ms).
+- **PLAN:** tap cards to select (max 3, a 4th tap shakes the card; M8.5: up to 4 units + 4 buildings, §12.5). Above the roster a big **"I'm ready!"** toggle: disabled with "Pick up to 3 units first" until one type is picked; when the army changes (another pick, or Claude sends a new or revised unit) the server clears it and a note says "You changed your army: press Ready again". With the auto-advance option it shows "Placement starts in 3…". With Open Armory on, a second tab **"Armory"** lists borrowable units as cards named "Ogre (Ninja Sam)", with sprite, stats, cost and the round added. They are selectable in the same ≤3 pool. Status shows "Claude can send new units at Plan time." outside PLAN. **Team mode:** a "My team" strip shows each teammate's selected types as small cards (live, §9.2) with ✓ submitted/selected ticks.
+- **PLACEMENT:** "This round you're in zone 3 (top right)" (the position is described from the map: top, top right, right, …) plus an enlarged **top-down** 6×6 grid of that zone (placement is not isometric), drawn in its true orientation with an arrow toward the centre. Each placed unit shows its sprite at its true size (a size-20 unit fills its cell). A small iso mini-map beside the grid shows the map, where the zone sits in it, and in team mode the teammates' zones with their placed units drawn live as ghosts (read-only). A palette of the 3 selected types (M8.5: grouped units / buildings, §12.5) shows cost and copies. **Tap palette → tap cell** (primary, touch-friendly). Drag-drop on desktop is deferrable (§16). Tap a placed unit to remove it. There's a live budget bar ("$937 / $1,000 — 63 left") and invalid moves shake and explain why. Buttons: "Copy last layout", "Clear", and a big **READY** toggle. Changes autosave via `PUT /round/placement` (debounced 300 ms).
 - **📜 Past battles** (any phase once a battle of this match was released): a button at the top of the Game pane opens a panel in that pane (the Claude terminal stays mounted) with a round picker (Round 1 … latest released) and, per round, the ranking with place / 💥 / 🗡️ points and badges, the top damage units, the player's own report (survivors, damage, KOs, strikes/naps) with the "Ask Claude" copy prompts, and **Watch replay** in the shared iso renderer (pause, 1x/2x, scrub, restart; disabled while a battle is live). Data from `GET /battles/:round/results`, `/report` and `/replay`.
 - **BATTLE:** live arena mini-view (same renderer) with own units highlighted, and a list of own units with HP and status (napping 💤 or disabled).
 - **RESULTS:** place (team place in team mode), points gained (place + own bonuses), the round's **💥 Top damage** units (sprite, name, "by <player>" with seat badge, damage and KOs; the player's own one highlighted: "Your Ninja hit hardest! 💥"), scoreboard, team table (team mode), own unit stats (kills, damage). For units with errors: "Ask Claude: *My unit X had an error at line N: '…'. Please fix it.*", with a Copy button. (A clipboard *write* from a normal page is fine.)
@@ -934,6 +1311,16 @@ Retro arcade look: dark background, a pixel font (bundled "Press Start 2P", OFL)
 - **Animations:** reveal, unit bob/idle, muzzle flash, screen shake on big hits, results count-up, confetti.
 - **Replay** of the last battle from stored frames, at 1x/2x.
 - **Friendly language:** "Your unit costs too much! ($612, the max is $500)", "Zappy is taking a nap 💤 (too many errors)", "Plan time! Ask Claude for new units", "Place your army!", "CLASH!".
+
+### 12.5 Buildings and minions in the UI (M8.5)
+
+- **/play roster (My Units):** two sections, **Units** (soldiers) and **Buildings** (towers, walls, factories), each card with a small type icon (⚔ soldier, 🏹 tower, 🧱 wall, 🏭 factory). In PLAN each section header shows "2 / 4 picked"; a 5th tap in a section shakes the card with "4 buildings max". The Ready button says "Pick a soldier, tower or factory too" while only walls are picked (`NO_FIGHTERS`). Wall cards show HP only (no damage/range/speed bars); factory cards show HP, "1 minion every 15 s", "makes 5 minions" and the minion's mini sprite tinted with the factory colour. The cost breakdown ("ⓘ How much?") shows the production line for factories. The Armory tab and the team strip use the same grouping.
+- **Code editor (§12.1):** the live cost panel shows the wall / factory formula; stat squiggles follow the per-type rules (e.g. `damage` on a wall is underlined with `BUILDING_CANNOT_ATTACK`).
+- **/play placement:** the palette has two rows, **Units** and **Buildings**, and counters "Fighters 7/12 · Factories 1/2 · Walls 6/12". On the top-down grid walls are drawn as solid filled squares that join with their neighbours (no cell gap), factories show their sprite, and fighters flagged `W_TRAPPED` get a red outline and a note "Walled in! Leave a gap." Tap palette → tap cell as today; with a wall selected, **tap-drag paints walls** along the cells passed over (touch and mouse, stops at the copy cap or the budget; deferrable, tap-per-cell stays). The mini-map draws placed walls.
+- **Iso arena (/screen, /play battle view, replay; `render/iso.ts`, `render/arena.ts`):** a wall is an **iso block**: the 40×40 cell footprint extruded 28 logical px high, top face in the wall `color` (lighter), the two visible sides darker and textured with the wall sprite's idle frame (nearest-neighbour, one tile per side), drawn in depth order by its front corner like any body, and pre-rendered once per design into an offscreen bitmap so 96 walls stay cheap. Ownership: a 2 px top-edge outline in the seat colour (team mode: the team colour with its pattern) and the seat badge on the HP bar. Neighbouring blocks touch, so a wall line reads as one rampart. Damage shows as crack overlays at < 66% and < 33% HP (HP bar only while damaged); death and `crumble` play a crumble (falling pixel chunks and a dust puff, a low thud sound). **Factories** are billboard sprites like towers (radius 18) with a production ring on the ground (an arc filling up with `fac.progress`, grey while holding or full), smoke from the sprite's idle frames, and on each `spawn` event the sprite's attack frame (door flash), a "pop" puff and a rising "+1" in the seat colour. The **rally point** is a small flag in the seat colour with a faint dotted line from the factory, on /screen and the /play battle view. **Minions** use the built-in 12×12 sprite tinted with the factory colour, drawn at radius 8 with the seat outline and a small ground ring, an HP bar only while damaged, and a small poof on death. A unit with the `blocked` flag plays its walk animation in place with a tiny dust puff (it is pushing on a wall).
+- **/screen extras:** army value bars use the §9.3 living value (walls $0), so a wall-heavy army's bar looks short by design; a caption under the bars in the first battle with walls says "Walls protect, but only fighters count!". The reveal animation drops buildings first (walls slam down), then units.
+- **Results and reports:** top-damage cards name factories "Basic Factory + minions"; the /play report shows `minionsMade` / `minionsLost` per factory and the "got stuck behind walls" hint with an Ask-Claude prompt.
+- **Sound (§12.4):** wall hit (stone tick), wall crumble (thud), factory spawn (pop). Same mute rules.
 
 ---
 
@@ -974,6 +1361,7 @@ pixel-clash/
 │   │   ├── sandbox/{runner,ivmRunner,inprocRunner,harness}.ts   # harness.ts exports the isolate source as a string
 │   │   ├── sandbox/{processRunner,processChild}.ts              # only if M0's isolated-vm check fails
 │   │   ├── sim/{engine,actions,movement,projectiles,suddenDeath,ranking,frames,prng}.ts
+│   │   ├── sim/{walls,steering,factory,minion}.ts   # M8.5 (§9.3)
 │   │   └── util/{lan,ratelimit,log}.ts       # lan.ts: startup printout, /screen QR, Origin allowlist
 │   ├── client/
 │   │   ├── vite.config.ts
@@ -981,7 +1369,7 @@ pixel-clash/
 │   │   └── src/{play,screen,admin,setup}/…  src/common/{api,ws,render/iso,render/sprites,render/arena,render/fx,sound,ui}/…
 │   └── starter-kit/              # kit template files with {{placeholders}}
 │       ├── CLAUDE.md.tmpl  PROMPTS.md  .mcp.json.tmpl  .claude/settings.json.tmpl
-│       └── units/{basic_soldier,basic_tower}.js
+│       └── units/{basic_soldier,basic_tower,basic_wall,basic_factory}.js   # wall + factory: M8.5
 │       # *.tmpl so this repo's Claude Code never loads the player-facing CLAUDE.md
 │       # or settings while building; renamed when the zip is built
 ├── tests/
@@ -1004,7 +1392,7 @@ Scripts (root `package.json`):
 | `start` | `UV_THREADPOOL_SIZE=8 node --no-node-snapshot packages/server/dist/index.js` (set cross-platform via a tiny launcher). Binds `0.0.0.0:${PORT:-8080}` and prints every non-internal IPv4 URL, a terminal QR for `/play`, the `/setup` and `/admin` URLs, the admin password, and the sandbox mode |
 | `test` | vitest run |
 | `loadtest` | §14 load test against a running server |
-| `bots` | `npm run bots -- --players 3` joins template bots (1-8, for rehearsals or empty seats) |
+| `bots` | `npm run bots -- --players 3` joins template bots (1-8, for rehearsals or empty seats); `--strategy mixed` (default) rotates brawl, rush, turtle, swarm and, from M8.5, `fortress` (walls between archers and turrets) and `factory` (workshops behind brawlers and darts) |
 | `wipe` | deletes `data/` |
 
 Persistence: `data/state.json` (players, PIN hashes, keys, match state; debounced writes, atomic rename), `data/units/<player>/<unit>@v<n>.js`, and `data/replays/`. On restart the server reloads, and a running battle is reset to PLACEMENT. MCP holds no session state (stateless transport, identity per request), so connected Claude Code clients keep working after a restart.
@@ -1028,6 +1416,15 @@ Persistence: `data/state.json` (players, PIN hashes, keys, match state; debounce
 | `loadtest.ts` (`npm run loadtest`, against a running server; results in `docs/load.md`) | **8 bot players × 3 types × 12 copies each (96 units)** on Ring 8 (1200 arena), with update logic that loops over all enemies; repeated as 4v4 Lanes. Measure sim ms/tick (p50/p99), the WS frame rate on 12 connected clients (8 players + screen + admin + 2 spare), server RSS and each sandbox child's RSS. **Pass:** sim p99 < 8 ms/tick, playback never stalls at 1x or 2x, server RSS < 500 MB, each sandbox child < 100 MB. The old 4 × 8 case stays as a quick smoke run. Also 1 player with a deliberately slow (15 ms/tick) unit: that unit is disabled within a few seconds, playback doesn't stall, and the others are unaffected. |
 | `terminal-proxy.test.ts` | Against a **fake ttyd** (node `http` + `ws` server that checks Basic auth, the `-O` Origin/Host rule and the `AuthToken`, and records headers); the upstream address is injected (test-only `resolveUpstream(seat)`), so no Docker. No cookie → 401 page without `WWW-Authenticate`; another player's seat → 403; own seat → 200 and upstream saw the injected `Authorization`, `Host`/`Origin` rewritten, **no `Cookie`**, no client `Authorization`, `X-Forwarded-For`; response `Set-Cookie` and `X-Frame-Options` stripped, `SAMEORIGIN` added; `/token` answered locally and **no proxy response ever contains the secret or its base64**; WS: first message's `AuthToken` rewritten, binary/text kept, foreign `Origin` → 403; a second connection takes over (old one gets the takeover text and close 1000, its upstream closes); flap guard → `TERMINAL_BUSY`; admin cookie reaches any seat; kick/unassign closes the live relay; upstream down → `CLAUDE_BOX_DOWN` within 3.5 s; upstream 401 → `SEAT_PASSWORD_WRONG` and probe status `wrong-password`; not configured → `CLAUDE_BOX_NOT_SET`; POST → 405; seat 0 or 9 → 404 |
 | `claude-seats.test.ts` | assign, unique per seat (`CLAUDE_SEAT_TAKEN` with `takenBy`), change releases the old seat, `null`, admin reassign moves and unassigns, kick/wipe free, logout/Reset PIN/New match keep, persisted across restart; `PUT /admin/setup` `seatSecret` format (`BAD_SEAT_SECRET`); **the seat password never appears** in `/me`, `/state`, `/setup`, `/claude-seats`, any player/screen WS message, or `/admin/claude-seats` without `details=1`; `terminal` push reaches only the seat's player. Client unit tests (pure functions): `layoutFor(width, height)` breakpoints, the `?seat=N` decision table (§11.2 c), and the badge reducer (no badge when the Game tab is showing; Place! pulse held while typing) |
+| `buildings-cost.test.ts` (M8.5) | every row of the §6 wall and factory reference tables exactly (8, 14, 24, 32, 52, 80, 118, 274; 79, 165, 193, 277, 358, 426, 594 → reject), minionCost $55 / minionValue $28, E per interval (600 → 8, 720 → 7, 900 → 5, 1200 → 4, 1800 → 2) and its dependence on `battleTicks`; curve convexity and the 3× maxed multiplier for wall and factory HP; re-pricing factories when soldier coefficients, minion stats or `minionDiscount` change (incl. a factory turning `invalid`); a retune that would invalidate the Basic Wall or Basic Factory is refused |
+| `validator.test.ts` additions (M8.5) | per-type required fields (`STAT_MISSING` productionInterval; a wall with only name/type/maxHealth/color is valid), `BUILDING_CANNOT_ATTACK`, `BUILDING_CANNOT_MOVE`, `INTERVAL_NOT_INTEGER`, wall HP 49/1501 and factory HP 99/1001 and interval 599/1801 → `STAT_OUT_OF_RANGE`, `W_STAT_IGNORED` for range/attackCooldown/size on buildings, `W_UPDATE_IGNORED` (a wall's `while(true)` update is never called), factory dry run with `rally`/`hold`, `W_ACTION_NOT_FOR_TYPE` both ways, dry-run worlds with an enemy wall and minion; all four templates valid with sprites |
+| `walls.test.ts` (M8.5, headless sim) | a soldier walking straight into a wall never overlaps its square (max penetration ≤ 0.01 px over 600 ticks) and reports `blockedBy`/`blockedTicks`; it slides round a 3-wall line to a destination behind it within 300 ticks; **destination exactly behind the middle of a 5-wall line: the slide never reverses** (x monotonic while sliding); a line touching the arena edge: one flip, then round the other end; a diagonal wall line and an L corner block; a one-cell gate lets size 10 through and stops size 20; own and teammates' walls block their own side; a fully enclosed soldier stays inside and the template smashes an enemy wall after 120 ticks; towers and minions can attack walls, projectiles reach targets behind walls; walls take sudden-death damage; walls run no code (no isolate spawn); `W_TRAPPED` from `trappedCells` for an enclosed soldier, none for a tower or with a gap; determinism with shuffled placements |
+| `factory.test.ts` (M8.5, headless sim) | spawns at exactly ticks I, 2I, … and stops at E; ≤ 4 alive per factory; per-player cap 6 (2-6 players) and 5 (7-8) incl. two factories sharing it; `hold` freezes the timer; a full factory waits with a full timer and spawns on the tick a minion dies; spawn-spot order and the wall-blocked fallback; rally clamps into the arena and re-targets living minions; the factory's death stops production and minions keep the last rally; a disabled factory keeps producing; minion ids `${factory}-mN`; minion AI (aggro 120, guard 200 round the rally, out-of-circle rally → centre, impatience 120 → attacks an enemy wall, never a friendly one); minion kills credit the factory owner (damage, KOs, value, `topUnits` under the factory type) |
+| `sim.test.ts` additions (M8.5) | **a side with only walls left is eliminated** on that tick and its walls crumble (credited to nobody); a side with only a spent factory is eliminated, with a factory that has minions left it is not; timeout living value: walls $0, factory body + $28 × left, minion $28; value destroyed: wall full price, factory living value at death; two all-wall-and-tower sides on Duel still interact before 90 s |
+| `balance.test.ts` additions (M8.5) | seven $1,000 building archetypes join the round robin (13 in all; the old 6×6 part keeps its assertions and `DOMINANCE_EXCEPTIONS`): **sealed wall fortress** (11 Basic Walls closing the zone off, 3 Basic Towers inside: $946), walled sniper nest (6 walls, 2 Sniper Towers, 1 Basic Tower: $1000), **factory swarm** (4 Basic Soldiers in front of 2 Swarm Factories: $922), walls + rush (4 walls, 9 soldiers: $956), mixed (§6: $956), all four templates ($979) and an all-building bunker (2 Basic Towers + 2 Swarm Factories: $950). On the full matrix: nobody beats everyone, everyone beats someone and loses to someone, ≤ 70% round-robin wins with **no exception for any building archetype** (bricks 81% and tanks 74% capped at today's numbers in `FULL_DOMINANCE_EXCEPTIONS`), and **no battle is won by a side with only walls left**. Stated outcomes: the rush beats the open §14 fortress (10 Basic Walls in a U: front row + both outer columns of rows 1-2, 3 towers on rows 3-4, $914) in ≥ 3 of 4 duels; the **sealed** fortress holds the rush (walls stop melee) and loses to the turtle, the sniper nest, the swarm and the bunker (range, minions and sudden death break it). All-building armies on every map style: fighters die, the circle reaches every side that sits it out, walls never place above fighters. 2-team Lanes 8 and a Ring 8 free-for-all with building armies: decided, nobody takes more than half the 1st places, no walls-only winner. Matrix and sweeps in `docs/balance.md`; the first-guess defaults passed unchanged. If they fail later, retune `cost.wall.hp`, `cost.factory.minionDiscount`, the minion stats or the caps, not the soldier/tower numbers |
+| `api.test.ts` / `privacy.test.ts` additions (M8.5) | selection 4 + 4 limits with `TOO_MANY_TYPES` `details.group`; placement caps with `TOO_MANY_COPIES` `details.group` (13th fighter, 3rd factory, 13th wall); `NO_FIGHTERS` for PLAN and PLACEMENT Ready; `W_TRAPPED` in the placement result; auto-place never places walls and adds fighters to a walls-only layout; selection fallback adds a fighter; no wall/factory/minion data leaks before START (reveal carries `minion` only after START) |
+| Client tests (M8.5) | roster grouping and the per-group pick limit reducer; palette counters; `render.test.ts` draws a wall block (top + 2 sides, joins with a neighbour), the production ring and rally flag, and a tinted minion sprite; frame decoding keeps wall state across frames that omit walls |
+| `test:perf` / `loadtest.ts` additions (M8.5) | **buildings worst case**: 8 players on Ring 8, each with 10 soldiers + 2 Swarm Factories (12 fighters) + 12 walls (forming lines in front), minions at the cap (5 per player, 40 total), update loops over all enemies: **sim p99 < 8 ms/tick**, playback never stalls at 1x/2x, frame size and server RSS within the §14 limits. The perf pass of `npm test` runs a shortened version (1,200 ticks) |
 | Real-Claude dry run | starting in M3 (submit path) and fully in M4: one laptop with Claude Code + the kit. Run the 6 example prompts and record how many tool calls it takes to reach a valid submit. Tune `fix` texts and CLAUDE.md until each prompt submits in ≤ 3 validate attempts. Include "make it cheaper" on an existing unit and check Claude passes `unitId`. |
 
 ### Dress-rehearsal checklist (on the event hardware, ≥ 1 day before)
@@ -1067,7 +1464,7 @@ Persistence: `data/state.json` (players, PIN hashes, keys, match state; debounce
   | isolated-vm broken on the day | `sandbox: process` (red banner), only if it was built (§16 M0). Mention the residual risk to staff (§8). |
   | Server crash | `npm start` again; state reloads from `data/` |
   | Projector issues | the battle is also visible on each `/play` page |
-| 8-player battle lags (playback shows "thinking…") | check CPU per tick in /admin; lower `caps.maxCopies` (e.g. 12 → 8) in the config editor during RESULTS or PLAN for the next round, and play at 1x |
+| 8-player battle lags (playback shows "thinking…") | check CPU per tick in /admin; lower `caps.maxCopies` (e.g. 12 → 8) in the config editor during RESULTS or PLAN for the next round, and play at 1x. With walls and factories (M8.5) also lower `caps.maxWallCopies` (12 → 8) and `factory.maxAlivePerBattle` (40 → 24) |
 
 - **After the event:** run `npm run wipe` (or admin Wipe) on the game server. This deletes players, PIN hashes, keys, unit sources, and replays. On the Claude box, run `docker compose down -v` to remove kit folders, keys, chat history and logins. Player laptops hold nothing. Only the Claude box talks to the internet (Anthropic); game data never leaves the LAN.
 
@@ -1090,9 +1487,10 @@ Order: de-risk first (isolated-vm and the MCP path), then a vertical slice that 
 | M6 | Hardening | Validator steps 9-10 (dry-run worlds, warnings incl. `W_SLOW_NO_DISCOUNT`) and the full malicious fixture set. Slow strikes. Load test passes (8 players × 12 copies). **Balance test passes on every map style; sudden-death and bounds tuned.** Rate limits work. Error texts tuned from the real-Claude dry run. Bots script done. Friendly copy pass on all errors. |
 | M7 | Polish | Retro theme, synthesized sounds, reveal/hit/death/sudden-death/results animations, replay at 1x/2x, podium and confetti, projector QR poster view. No regressions in tests. |
 | M7.5 | **Embedded Claude terminal (§11.2)** | `sessions/`: `SEAT_SECRET` replaces `TTYD_PASS_N` (compose, `.env.example`, README incl. migration and the inbound firewall option), entrypoint `-b /terminal/$SEAT` and the new title. **Spike first** (real ttyd 1.7.7 behind a 30-line relay): the page works under `-b`, `-O` passes with rewritten `Origin`/`Host`, the `AuthToken` rewrite authenticates, `location.search` reaches the ws URL (pane id), close code 1000 doesn't auto-reconnect, and the iframe isn't blocked by any ttyd header. Then: `terminal/` proxy + relay + registry (newest wins, flap guard) + probe + friendly pages, `claudeSeats` service + REST + `terminal`/`terminals` WS pushes, `seatSecret` setting, `/setup` seat-card QRs (`/play?seat=N`, all 8 seats); /play split view / tabs, Claude pane states, badges, focus, Open in new tab; /admin Claude seats panel and rescue tab. `terminal-proxy.test.ts` and `claude-seats.test.ts` green, `npm test`, typecheck and build green. On the LAN: two laptops play a round using only `/play`, with one terminal opened in a new tab and taken back. |
+| M8.5 | **Walls, factories and minions (§5.2, §6, §7, §9.3, §10.5, §11, §12.5)**. Added after the plan was built; it runs **before** the M8 dress rehearsal, which then includes one round with walls and factories | Contract: §5.2's block replaces §5's in `plan.md` and `shared/contract.ts` together (`config.test.ts` keeps them identical), `UnitType` + `BodyType`, `SelfView.blockedBy/blockedTicks/factory`, `rally`/`hold` actions. Config keys of §9.3 with zod limits; `caps.maxTypes` replaced. `shared/cost.ts` per-type pricing with the factory production part; `bounds.ts` per-type guards and the new codes; validator per type (walls skip the dry run, factory dry run). Templates `basic_wall.js` and `basic_factory.js` with sprites, pre-registered (migration: existing players get them on server start), soldier/tower templates wall-aware with unchanged stats. Sim: wall grid, steering, wall push, spatial hash, factory production, minion AI, fighters-based elimination with crumble, living value and value destroyed per type, frames (`fac`, wall deltas, `spawn`/`crumble`, `blocked` flag), reveal `minion`. Services: selection 4 + 4, copy caps per group, `NO_FIGHTERS`, `W_TRAPPED`, auto-place rules, selection fallback, armory with buildings, reports (`minionsMade`, stuck hint), `topUnits` for factories. REST/MCP texts, `get_rules`/`get_unit_contract`, kit CLAUDE.md 4c/5/6 and PROMPTS. UI §12.5 (grouped roster and palette, wall blocks, factory ring, rally flag, minions, crumble). Tests: every M8.5 row of §14 green, the existing suites unchanged (soldier/tower prices, maps, teams, privacy); **balance with the two new archetypes passes**; **buildings worst case p99 < 8 ms/tick**; `npm test`, `npm run typecheck` and `npm run build` green. On the LAN: a 4-player round with walls and factories from real Claude prompts ("build me a wall", "make a factory"), each reaching a valid submit in ≤ 3 validate attempts. |
 | M8 | Dress rehearsal | The full §14 checklist is ticked on the event hardware. Printed materials are ready. |
 
-**Explicitly deferrable** ("if time" at the end of M7, cut first): replay scrubbing, drag-drop placement (tap-to-place stays), the live re-price preview UI (`PUT /admin/config` stays), Rotate key, and the `processRunner` fallback unless M0 failed.
+**Explicitly deferrable** ("if time" at the end of M7, cut first): replay scrubbing, drag-drop placement (tap-to-place stays), wall tap-drag painting (M8.5; tap per cell stays), the live re-price preview UI (`PUT /admin/config` stays), Rotate key, and the `processRunner` fallback unless M0 failed.
 
 If time runs short, keep the order and cut only from inside M7 and the deferrable list. M0-M6 are required for the event.
 
@@ -1108,7 +1506,7 @@ If time runs short, keep the order and cut only from inside M7 and the deferrabl
 | Unit submission | Players only prompt Claude Code. Claude submits through **MCP** (and REST). No file upload. |
 | Audience | Players aged about 9-13. They prompt; they don't hand-write code. |
 | Cost formula | `(Base + Σ c_i·x_i·(1 + k·(x_i/max_i)²)) × max(1, 60/Cooldown)`: each stat term is convex with **k = 2** (`cost.curveK`), so a maxed stat costs 3× its linear price and one big unit costs more than two halves. Coefficients are tunable and retuned for the curve to Base 10 / HP 0.25 / Dmg 1.5 / Range 0.2 / Speed 12 / Size 0.5 (stat bounds tightened alongside, §5/§6). |
-| Budget | $1,000 per round. Designs are free. Each copy costs its unit cost. ≤3 types per round. ≤$500 per unit. 4-8 units is the target. |
+| Budget | $1,000 per round. Designs are free. Each copy costs its unit cost. ≤3 types per round (**superseded 2026-10-23**: ≤4 unit + ≤4 building types, M8.5). ≤$500 per unit. 4-8 units is the target. |
 | Rounds | PLAN (only submission window) → PLACEMENT → BATTLE → RESULTS, × N (default 3). Points by place, **plus** damage and value-destroyed bonuses (§9), and badges. Place points are (P − 1) … 0 and the bonus maxima 2 and 1 are scaled × P/4, so 4 players still get 3/2/1/0 + 0-2 + 0-1 (§9.2). |
 | Battle | 90 s visible countdown. On timeout, rank by the total cost of living units. |
 | Privacy | Everything hidden until the host presses START. |
@@ -1120,7 +1518,7 @@ If time runs short, keep the order and cut only from inside M7 and the deferrabl
 | Old plan | Stray `ß` removed. The browser-Web-Worker sandbox, file:// notes, and the paste-primary upload were dropped and replaced by the server sandbox and MCP. |
 
 ### Defaults chosen here (change in config if wanted)
-Max 8 designs (templates don't count) and 12 placed copies per player. 4-digit PINs. Templates pre-registered for every player. Selection carries over when a player doesn't choose. PLACEMENT never auto-starts; an empty player is auto-placed at lock. Reveal at START to everyone (projector and players): fielded unit names/stats and placements. Source code is never shown. Melee is range ≤ 50 with instant hit. Range is edge to edge. Stat bounds tightened to HP ≤ 500 and damage ≤ 60. Sudden-death safe circle from 50 s (tuned in M6), radii scaled with the arena. Zones rotate each round (in team mode whole teams rotate as blocks). Battle results are released when playback ends; Skip ranks at the current playback tick. A kick during BATTLE takes effect after the battle. Submit on behalf is PLAN-only (validate on behalf any time). MCP is stateless with the generic kit pre-installed as the primary path. No healing or abilities beyond move and attack.
+Max 8 designs (templates don't count) and 12 placed copies per player. 4-digit PINs. Templates pre-registered for every player. Selection carries over when a player doesn't choose. PLACEMENT never auto-starts; an empty player is auto-placed at lock. Reveal at START to everyone (projector and players): fielded unit names/stats and placements. Source code is never shown. Melee is range ≤ 50 with instant hit. Range is edge to edge. Stat bounds tightened to HP ≤ 500 and damage ≤ 60. Sudden-death safe circle from 50 s (tuned in M6), radii scaled with the arena. Zones rotate each round (in team mode whole teams rotate as blocks). Battle results are released when playback ends; Skip ranks at the current playback tick. A kick during BATTLE takes effect after the battle. Submit on behalf is PLAN-only (validate on behalf any time). MCP is stateless with the generic kit pre-installed as the primary path. No healing or abilities beyond move and attack (M8.5 adds a factory's rally and hold, §5.2).
 
 ### Resolved in the follow-up interview (2026-10-20)
 
@@ -1198,8 +1596,26 @@ Max 8 designs (templates don't count) and 12 placed copies per player. 4-digit P
 | Drafts and guards | Per-unit draft in `localStorage`; confirm before closing with unsaved changes and when PLAN ends. |
 | Skipped battles | /screen RESULTS says "No battle this time" only when nothing was fought; a battle skipped after fighting shows a normal end (ranking from the playback tick, as before). |
 
+### Resolved in the buildings request (2026-10-23)
+
+| Topic | Decision |
+|---|---|
+| New types | **Wall** and **factory** join soldier and tower (§5.2), built in M8.5. Soldiers are "units"; towers, walls and factories are "buildings". |
+| Walls | Solid, immovable 40×40 blocks filling their cell (squares, not circles, so neighbouring and diagonal walls leave no gap), HP 50-1500, no attack, no code. They block **everyone**, own and teammates' units included (gates = empty cells, `W_TRAPPED` warning on /play). Every enemy fighter can attack them, towers and minions included; range treats them as radius 20. **Projectiles fly over walls** (no line of sight). Sudden death damages them. |
+| Steering | No pathfinding. A deterministic wall slide (§9.3): cast against walls inflated by the body radius, slide along the hit face toward the destination, keep the chosen side in a 45-tick memory, flip once at a dead end, report `blockedBy` / `blockedTicks` so code (and the templates and minions after 2 s) can smash through. |
+| Factories | Radius-18 buildings with `productionInterval` 600-1800 ticks and HP 100-1000, no attack. Their `update()` returns `rally` (where the minions go, default the arena centre) or `hold` (pause). They make **built-in minions** (40 HP, 5 damage melee, speed 1.5, size 8, engine AI, sprite tinted with the factory colour); destroying the factory stops production. |
+| Factory pricing | Pay up front: body (10 + 0.12·HP on the k = 2 curve) + minionValue × E, where E = expected minions in a 90 s battle (≤ 8) and minionValue = half the minion's soldier-formula price ($55 → $28) because they arrive late. Production is linear (the alive caps already punish one fast factory). Basic Factory $193, Swarm Factory $277, a maxed one $594 (rejected). |
+| Wall pricing | 4 + 0.06·HP on the k = 2 curve with max 1500: Basic Wall (400 HP) $32, maxed $274 (3× linear). |
+| Caps | Per round **≤ 4 unit types + ≤ 4 building types** (replaces ≤ 3 types in total). ≤ 12 fighter copies (soldiers + towers + factories) of which ≤ 2 factories, plus ≤ 12 walls. Minions: ≤ 8 per factory per battle, ≤ 4 alive per factory, ≤ min(6, floor(40 / players)) alive per player, so ≤ 40 per battle. |
+| Bounds | Soldier and tower bounds, coefficients and templates unchanged ($92 / $198). The extended ranges are type-specific: walls up to 1500 HP, factories 100-1000 HP. |
+| Anti-turtle | Walls are never fighters and worth $0 at timeout; a side with only walls (or spent factories) left is eliminated and its leftovers crumble. Factories count only while they can still make minions in time, at body cost + $28 per unbuilt minion they can still build (body only at the time limit, so a factory that holds or is walled in can't turtle). Breaking a wall still credits its price as value destroyed. Sudden death hits every building. |
+| Balance (M8.5) | Defaults confirmed by the balance test, no retune: walls stop melee (a sealed fortress holds the rush), range, minions and sudden death break walls, minions lose to big bodies; no building archetype needs a dominance exception. Plan §14's "rush beats the fortress" holds for the open U fortress, not for a fully sealed one (`docs/balance.md`). |
+| Performance | Up to 232 bodies at 8 players (still ≤ 96 running code): wall grid, spatial hash, wall deltas in frames; the target stays sim p99 < 8 ms/tick, with a buildings worst-case load test. |
+| Templates | `basic_wall.js` and `basic_factory.js` with 16×16 sprites (stone bricks; a workshop with chimney smoke and a door that lights up on spawn), pre-registered; soldier and tower templates become wall-aware with unchanged stats. |
+
 ### Open items
 1. **isolated-vm on the game server's host OS**: confirmed only by the M0 check. (It already works in the devcontainer on Node 24 / arm64 with isolated-vm 6.1.2.) Otherwise the process fallback is built and used, with its documented residual risk.
 2. **Claude box OS and Docker setup**, and whether players may ever see an approval prompt (`acceptEdits` decision in the M0 spike).
 3. **8-player balance and lag on the real hardware**: sudden-death strength on the 1200 arena and the Ring 8 corner-vs-edge zone difference are tuned by the M5.5/M6 balance test; the 8 × 12 load test must pass on the game-server laptop itself.
 4. **ttyd behind the proxy** (M7.5 spike): `location.search` → ws URL for the pane id, no auto-reconnect on close 1000, and `-O` with rewritten headers on ttyd 1.7.7. If the pane id doesn't reach the ws URL, /play tells its own connection apart by the `since` timestamp of the `terminal` push right after its iframe loads.
+5. **Wall and factory balance** (M8.5): the wall HP price (0.06), the minion stats and the 0.5 minion discount were checked by the M8.5 balance test (7 building archetypes, `docs/balance.md`) and kept: every building archetype sits at 19-58% round-robin wins, and price sweeps don't change who wins (sealing matters, not wall HP price). Watch items: a sealed fortress beats chase-nearest melee armies outright (focus fire on one wall is the counterplay), and in long Ring 8 free-for-alls the armies that stay home outlast the rest, so the corner zones rarely win those (rotation evens it). Retune in config, not the soldier/tower numbers. Also check on the projector that wall blocks and 40 minions stay readable on the 1200 arena.
