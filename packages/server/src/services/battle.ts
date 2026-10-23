@@ -7,16 +7,19 @@
 
 import { randomInt } from 'node:crypto';
 import {
+  computeCost,
   isArmoryUnitId,
   legacyCornerOf,
   mapDTO,
   mapFor,
   mapZoneDTO,
+  pricingOf,
   scaleSuddenDeath,
   type BattleEndDTO,
   type BattleReportDTO,
   type BattleRevealDTO,
   type FrameDTO,
+  type GameConfig,
   type MapZone,
   type PlaybackDTO,
   type ReplayDTO,
@@ -35,9 +38,10 @@ import {
   type BattleResult,
   type BattleUnitDesign,
 } from '../sim/engine.js';
-import { frameAt } from '../sim/frames.js';
+import { catchUpFrame, frameAt } from '../sim/frames.js';
 import { rankAtPlaybackTick, rankResult } from '../sim/ranking.js';
 import { playerMetrics, scoreRanking } from '../sim/scoring.js';
+import { minionReveal } from '../sim/minion.js';
 import { topUnits } from '../sim/topUnits.js';
 import { log } from '../util/log.js';
 import { ArmoryService, type BorrowedUse, type FieldedDesign } from './armory.js';
@@ -155,11 +159,11 @@ export class BattleService {
     return this.active?.reveal;
   }
 
-  /** The latest frame at or before the playback clock (for late joiners). */
+  /** The latest frame at or before the playback clock, with every living wall listed (for late joiners). */
   currentFrame(): FrameDTO | undefined {
     const a = this.active;
     if (!a) return undefined;
-    return frameAt(a.frames, Math.floor(a.playbackTick));
+    return catchUpFrame(a.frames, Math.floor(a.playbackTick));
   }
 
   /** Sim/playback metrics of the running battle, else of the last one (diagnostics). */
@@ -316,6 +320,8 @@ export class BattleService {
       totalTicks: game.config.timers.battleTicks,
       ...(layout ? { map: mapDTO(layout) } : {}),
       ...(game.teams.active ? { teams: game.teams.publicTeams() } : {}),
+      // M8.5: the built-in minion, when a factory is fielded (§9.3 Frames).
+      ...(setup.some((s) => s.units.some((u) => u.stats.type === 'factory')) ? { minion: minionReveal(game.config) } : {}),
       players: setup.map((s) => ({
         playerId: s.playerId,
         name: game.store.players.get(s.playerId)?.name ?? '?',
@@ -323,7 +329,7 @@ export class BattleService {
         zone: legacyCornerOf(s.zone),
         mapZone: mapZoneDTO(s.zone),
         ...(s.teamId !== undefined ? { teamId: s.teamId } : {}),
-        units: s.revealUnits,
+        units: s.revealUnits.map((u) => withBodyCost(u, game.config)),
         instances: buildInstances({ seat: s.seat, zone: s.zone, units: s.units, placements: s.placements }),
       })),
     };
@@ -529,7 +535,8 @@ export class BattleService {
     // far ahead): counters and living units at the playback tick, §9.
     const shown = kind === 'skip' ? frameAt(a.frames, endTick) : undefined;
     const reported =
-      shown && a.engine ? resultAtTick(result, a.engine.countersAt(endTick), new Set(shown.units.map((u) => u[0])), endTick) : result;
+      // The frame itself, not its unit ids: walls are listed only when they change (§9.3 Frames).
+      shown && a.engine ? resultAtTick(result, a.engine.countersAt(endTick), shown, endTick) : result;
     // Kicked players are not in `placings`: no points or badges (§9 Skip / kick).
     const ranking = scoreRanking(placings, playerMetrics(reported), scoring);
     // 💡 Inventor (§9.1, no points): creators whose Armory units others fielded.
@@ -571,11 +578,13 @@ export class BattleService {
           strikes: 0,
           disabled: 0,
         });
-        sum.fielded++;
-        if (u.survived) sum.survived++;
         sum.damageDealt += u.damageDealt;
         sum.kills += u.kills;
         sum.valueDestroyed += u.valueDestroyed;
+        // Minions count for their factory's damage, KOs and value, not as fielded copies (§9.3).
+        if (u.type === 'minion') continue;
+        sum.fielded++;
+        if (u.survived) sum.survived++;
         sum.strikes += u.strikes;
         if (u.disabled) sum.disabled++;
       }
@@ -648,4 +657,11 @@ export class BattleService {
     if (this.lastReplay?.round === round) return this.lastReplay;
     return this.game.store.readReplay(round) ?? undefined;
   }
+}
+
+/** A revealed factory carries its body price under the battle's config (the /screen army bars, §9.3). */
+function withBodyCost(u: RevealedUnitDTO, config: GameConfig): RevealedUnitDTO {
+  if (u.stats.type !== 'factory') return u;
+  const body = computeCost(u.stats, config.cost, pricingOf(config)).breakdown.body;
+  return body === undefined ? u : { ...u, bodyCost: body };
 }

@@ -29,6 +29,7 @@ export const MCP_INSTRUCTIONS = [
   'If you have no apiKey (see .pixel-clash/player.json), ask the player for their name and 4-digit PIN and call login.',
   'Save {name, apiKey} from login to .pixel-clash/player.json and pass apiKey on every pixel-clash tool call.',
   'Call get_unit_contract once to learn the unit format, and get_rules for costs and limits.',
+  'Four unit types: soldier, tower, wall, factory (see get_unit_contract). Walls block everyone and never attack; factories build minions and their update() only rallies them. A player needs at least one soldier, tower or factory: walls alone never win.',
   'Always validate_unit before submit_unit, and fix problems using each error\'s "fix" text. validate_unit checks everything (sprite rows included), so never run scripts or shell commands to check a unit file.',
   'submit_unit works only in the PLAN phase (get_game_state shows submissionsOpen). Otherwise keep the unit validated and say "we\'ll send it when Plan starts".',
   'Players can also edit their own units on the web page. So before changing an existing unit ALWAYS call get_unit_source for its latest source and version, change that code, and pass unitId plus baseVersion (that version) to validate_unit and submit_unit, even if you rename it.',
@@ -176,7 +177,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Game rules',
       description:
-        'Phases, timers, budget, caps, the cost formula and coefficients, stat bounds, scoring (place points + damage bonus + value-destroyed bonus, badges, match standings), map styles and arena sizes by player count, team modes and team rules, and sudden death.',
+        'Phases, timers, budget, caps (4 unit + 4 building types, fighter / factory / wall copies), the cost formula and coefficients for soldier, tower, wall and factory, stat bounds per type, the factory minion, scoring (place points + damage bonus + value-destroyed bonus, badges, match standings), map styles and arena sizes by player count, team modes and team rules, and sudden death.',
       inputSchema: {},
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },
@@ -188,7 +189,8 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     'get_unit_contract',
     {
       title: 'Unit contract',
-      description: 'The TypeScript unit contract, both template sources, the engine rules and strategy tips. Read this before writing a unit.',
+      description:
+        'The TypeScript unit contract for the four types (soldier, tower, wall, factory), the four template sources (basic_soldier, basic_tower, basic_wall, basic_factory), the engine rules and strategy tips. Read this before writing a unit.',
       inputSchema: {},
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },
@@ -201,7 +203,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Validate a unit',
       description:
-        'Check a unit file (dry run, nothing stored). Works in every phase. Returns the cost or errors with a "fix" for each. When revising, pass unitId and baseVersion (the version from get_unit_source).',
+        'Check a unit file (soldier, tower, wall or factory; dry run, nothing stored). Works in every phase. Returns the cost or errors with a "fix" for each. When revising, pass unitId and baseVersion (the version from get_unit_source).',
       inputSchema: {
         source: z.string().describe('The full text of the unit file'),
         unitId: z.string().optional().describe('The unitId when revising an existing unit'),
@@ -220,7 +222,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Submit a unit',
       description:
-        'Validate and store a unit (new, or a revision when unitId is given). Only works in the PLAN phase. When revising, first call get_unit_source and pass its version as baseVersion; UNIT_CHANGED means the unit was saved meanwhile: fetch it again and re-apply your change.',
+        'Validate and store a unit (soldier, tower, wall or factory; new, or a revision when unitId is given). Only works in the PLAN phase. When revising, first call get_unit_source and pass its version as baseVersion; UNIT_CHANGED means the unit was saved meanwhile: fetch it again and re-apply your change.',
       inputSchema: {
         source: z.string().describe('The full text of the unit file'),
         unitId: z.string().optional().describe('The unitId of the design to revise (from list_my_units)'),

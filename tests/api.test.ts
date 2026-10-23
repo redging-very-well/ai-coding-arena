@@ -96,12 +96,16 @@ describe('auth and public endpoints', () => {
     expect(ov.body.players[0].units.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('every player has the two templates', async () => {
+  it('every player has the four templates (soldier, tower, wall, factory)', async () => {
     const p = await newPlayer(srv.url, 'Max');
-    const units = (await p.client.get('/units')).body as Array<{ unitId: string; isTemplate: boolean; cost: number }>;
-    expect(units.map((u) => [u.unitId, u.isTemplate, u.cost])).toEqual([
-      ['basic-soldier', true, 92],
-      ['basic-tower', true, 198],
+    const units = (await p.client.get('/units')).body as Array<{ unitId: string; isTemplate: boolean; cost: number; group: string }>;
+    expect(units.map((u) => [u.unitId, u.isTemplate, u.cost, u.group])).toEqual([
+      ['basic-soldier', true, 92, 'unit'],
+      ['basic-tower', true, 198, 'building'],
+      ['basic-wall', true, 32, 'building'],
+      // The test server's battles last 240 ticks, too short for a minion
+      // (E = 0), so the factory costs only its body here ($193 at 5400 ticks).
+      ['basic-factory', true, 53, 'building'],
     ]);
     // Templates can't be deleted (and DELETE is PLAN-only anyway).
     expect((await p.client.del('/units/basic-soldier')).body.error.code).toBe('PHASE_CLOSED');
@@ -192,9 +196,10 @@ describe('phase gates (§10.2)', () => {
     const ob = await admin.post(`/admin/players/${b.id}/units`, { source: namedUnit('Helper Tank') });
     expect(ob.body).toMatchObject({ ok: true, unitId: 'helper-tank' });
     // Selection.
-    expect((await a.client.put('/round/selection', { unitIds: ['gate-tank', 'basic-soldier', 'basic-tower', 'x'] })).body.error.code).toBe(
-      'TOO_MANY_TYPES',
-    );
+    // More ids than 4 unit + 4 building types can ever hold (§5.2).
+    expect(
+      (await a.client.put('/round/selection', { unitIds: ['gate-tank', 'basic-soldier', 'basic-tower', 'x1', 'x2', 'x3', 'x4', 'x5', 'x6'] })).body.error.code,
+    ).toBe('TOO_MANY_TYPES');
     expect((await a.client.put('/round/selection', { unitIds: ['nope'] })).body.error.code).toBe('NOT_FOUND');
     expect((await a.client.put('/round/selection', { unitIds: ['gate-tank', 'basic-soldier'] })).body.selection).toEqual([
       'gate-tank',
@@ -280,7 +285,7 @@ describe('a scripted 2-player, 2-round match', () => {
     const zoneA1 = legacyCornerOf(s.me!.myZone!);
     expect(zoneA1).toMatch(/^(TL|BR)$/);
     const sb = (await b.client.get('/state')).body as GameStateDTO;
-    expect(sb.me!.selection).toEqual(['basic-soldier', 'basic-tower']);
+    expect(sb.me!.selection).toEqual(['basic-soldier', 'basic-tower', 'basic-wall', 'basic-factory']);
     expect(legacyCornerOf(sb.me!.myZone!)).not.toBe(zoneA1);
     await a.client.put('/round/placement', {
       placements: [
@@ -383,7 +388,7 @@ describe('a scripted 2-player, 2-round match', () => {
     expect(s.scoreboard.every((e) => e.points === 0 && e.damage === 0 && e.place === 1)).toBe(true);
     expect(s.scoreboard.every((e) => Object.values(e.badges).every((n) => n === 0))).toBe(true);
     // Units survive a new match.
-    expect(((await a.client.get('/units')).body as unknown[]).length).toBe(3);
+    expect(((await a.client.get('/units')).body as unknown[]).length).toBe(5);
   }, T);
 });
 
@@ -490,7 +495,7 @@ describe('private pushes', () => {
       const { WsRecorder } = await import('./helpers/server.js');
       const ws = await WsRecorder.open(srv.url, 'player', a.client.cookieHeader());
       const priv = (await ws.find((m) => m.type === 'private')) as { data: PrivateStateDTO };
-      expect(priv.data.roster.map((u) => u.unitId)).toEqual(['basic-soldier', 'basic-tower']);
+      expect(priv.data.roster.map((u) => u.unitId)).toEqual(['basic-soldier', 'basic-tower', 'basic-wall', 'basic-factory']);
       ws.close();
     } finally {
       await srv.close();

@@ -107,6 +107,7 @@ export class VisibilityService {
       submissionsOpen: g.match.submissionsOpen(),
       active: g.players.isActive(p),
       hasLastLayout: (rs.lastLayout?.length ?? 0) > 0,
+      copyCaps: { fighters: g.config.caps.maxCopies, factories: g.config.caps.maxFactoryCopies, walls: g.config.caps.maxWallCopies },
     };
     const teamId = g.teams.active ? g.teams.teamIdOf(playerId) : undefined;
     if (teamId !== undefined) me.teamId = teamId;

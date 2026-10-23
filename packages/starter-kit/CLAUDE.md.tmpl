@@ -22,7 +22,7 @@ Player: {{PLAYER_NAME}}
 ## 3. Workflow
 
 1. Call `get_game_state` to see the phase, time left and `submissionsOpen`.
-2. Write or edit `units/<short_name>.js` (one unit per file, e.g. `units/ninja.js`). To change an existing unit, first fetch its latest code with `get_unit_source` (see **Revising a unit**). To build on a starter unit, copy `units/basic_soldier.js` or `units/basic_tower.js` to a **new** file and give it a **new name** (never edit the starter files themselves).
+2. Write or edit `units/<short_name>.js` (one unit per file, e.g. `units/ninja.js`). To change an existing unit, first fetch its latest code with `get_unit_source` (see **Revising a unit**). To build on a starter unit, copy `units/basic_soldier.js`, `units/basic_tower.js`, `units/basic_wall.js` or `units/basic_factory.js` to a **new** file and give it a **new name** (never edit the starter files themselves).
 3. Call `validate_unit` with the file's full text as `source` (and `unitId` plus `baseVersion` when revising, see below). Nothing is stored. For a new unit, don't reuse the unitId the check mentions: submit without one.
 4. If it fails, read each error's `fix` field and change the file exactly as it says, then validate again. Warnings are tips: follow them when they make sense.
 
@@ -37,7 +37,7 @@ Player: {{PLAYER_NAME}}
 3. Call `validate_unit` and `submit_unit` with `unitId` AND `baseVersion` set to that `version`, even if you rename the unit. Without `unitId` the game makes a brand-new design (max 8 designs).
 4. If a call fails with `UNIT_CHANGED`, the unit was saved again in the meantime (for example the player saved in the web editor). Call `get_unit_source` again, re-apply the requested change to the new code, and validate and submit with the new `version` as `baseVersion`. Never resubmit your old copy: that would throw away their change.
 
-**The two starter units can't be changed.** Basic Soldier and Basic Tower (`isTemplate: true` in `list_my_units`) are protected: passing their unitId fails with `TEMPLATE_PROTECTED`. To build on one, copy it to a NEW file with a NEW name and submit it WITHOUT unitId.
+**The four starter units can't be changed.** Basic Soldier, Basic Tower, Basic Wall and Basic Factory (`isTemplate: true` in `list_my_units`) are protected: passing their unitId fails with `TEMPLATE_PROTECTED`. To build on one, copy it to a NEW file with a NEW name and submit it WITHOUT unitId.
 
 **One call at a time:** call `validate_unit` and `submit_unit` for one unit at a time, never in parallel (the game allows about 1 check per second and 1 submit every 3 seconds). If you get `RATE_LIMITED`, just call it again.
 
@@ -45,24 +45,26 @@ Other tools: `get_rules` (numbers for everything), `get_unit_contract` (the late
 
 ## 4. The unit contract
 
-A unit file has **one default-exported class**. The constructor sets the stats as plain properties on `this` (`this.damage = 10`, not getters). `update()` is called every tick and returns one action. `sprite()` returns the unit's pixel art. Plain JavaScript is best (TypeScript syntax is tolerated).
+A unit file has **one default-exported class**. The constructor sets the stats as plain properties on `this` (`this.damage = 10`, not getters). `update()` is called every tick and returns one action (walls have no `update()`, see **4c**). `sprite()` returns the unit's pixel art. Plain JavaScript is best (TypeScript syntax is tolerated).
 
 ```ts
-export type UnitType = 'soldier' | 'tower';
+export type UnitType = 'soldier' | 'tower' | 'wall' | 'factory';   // §5.2
+export type BodyType = UnitType | 'minion'; // minions are made by factories: you see them, you never submit one
 export type MapStyle = 'duel' | 'triangle' | 'corners' | 'ring' | 'lanes' | 'islands'; // §9.2
 export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 
-/** Fields the constructor MUST set as plain data properties on `this`. */
+/** Fields the constructor MUST set as plain data properties on `this` (which ones depends on `type`, §5.2 table). */
 export interface UnitStats {
   name: string;          // 1-24 chars, shown on screen
-  type: UnitType;        // towers never move
-  maxHealth: number;     // see bounds table
-  damage: number;
-  range: number;         // pixels, EDGE to edge (gap between the two bodies)
-  speed: number;         // pixels per tick (60 ticks = 1 s); towers: 0
-  attackCooldown: number;// integer ticks between attacks
-  color: string;         // "#RRGGBB": projectiles, particles, fallback sprite
-  size?: number;         // body radius in px = hitbox AND drawn size. 6-20. Default soldier 10, tower 14. Costs $0.5 per px above 6 (more near the max).
+  type: UnitType;        // soldiers move; towers, walls and factories are buildings and never move
+  maxHealth: number;     // soldier/tower 10-500, wall 50-1500, factory 100-1000
+  damage?: number;       // soldier/tower: required, 0-60. wall/factory: leave it out (they can't attack)
+  range?: number;        // soldier/tower: required, 20-300 px, EDGE to edge (gap between the two bodies). wall/factory: leave it out
+  speed?: number;        // soldier: required, 0.5-5 px per tick (60 ticks = 1 s). tower/wall/factory: 0 or leave it out
+  attackCooldown?: number;// soldier/tower: required, integer ticks between attacks. wall/factory: leave it out
+  productionInterval?: number; // factory only, required: integer ticks between two minions, 600-1800 (10-30 s)
+  color: string;         // "#RRGGBB": projectiles, particles, fallback sprite; a wall's block colour; a factory's minion colour
+  size?: number;         // soldier/tower: body radius in px = hitbox AND drawn size, 6-20 (default 10 / 14), $0.5 per px above 6. Walls always fill their 40 px cell, factories are always 18: size is ignored for them.
   shape?: Shape;         // optional; only used by the fallback sprite when sprite() is missing
 }
 
@@ -80,6 +82,13 @@ export interface SpriteSpec {
   };
 }
 
+export interface FactoryView {
+  productionInterval: number;
+  nextMinionIn: number;  // ticks until the next minion (it waits while you hold, or while the factory is full)
+  minionsLeft: number;   // minions this factory can still make this battle
+  minionsAlive: number; maxAlive: number;
+  rally: { x: number; y: number }; // where its minions go; starts at world.center
+}
 export interface SelfView {
   id: string;            // instanceId of this copy, e.g. "2-0-3"
   unitId: string;        // the design this copy was made from
@@ -87,11 +96,16 @@ export interface SelfView {
   x: number; y: number; radius: number; hp: number; maxHp: number;
   damage: number; range: number; speed: number;
   attackCooldown: number; cooldownRemaining: number; // 0 = can attack this tick
+  blockedBy: string | null; // id of the wall that stopped or turned my last move, else null
+  blockedTicks: number;     // ticks in a row a wall has been in my way (0 = free)
+  factory: FactoryView | null; // factories only
 }
 export interface OtherView {
-  id: string; ownerId: string; teamId: number; type: UnitType; name: string;
+  id: string; ownerId: string; teamId: number; type: BodyType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number; range: number;
 }
+// A wall has radius 20: for range it counts as a circle of radius 20 (so inRange works unchanged),
+// but its body blocks the whole 40×40 square. Walls and factories have range 0.
 export interface WorldView {
   width: number; height: number;        // arena size this battle: 800 (2-4 players), 1040 (5-6), 1200 (7-8), §9.2
   tick: number; ticksLeft: number;
@@ -107,22 +121,26 @@ export interface WorldView {
 
 export type Action =
   | { action: 'idle' }
-  | { action: 'move'; destination: { x: number; y: number } }
-  | { action: 'attack'; targetId: string };
+  | { action: 'move'; destination: { x: number; y: number } }   // soldiers
+  | { action: 'attack'; targetId: string }                     // soldiers and towers
+  | { action: 'rally'; destination: { x: number; y: number } }  // factories: send my minions here
+  | { action: 'hold' };                                         // factories: don't build this tick
 
 export interface Unit extends UnitStats {
-  update(self: SelfView, enemies: OtherView[], allies: OtherView[], world: WorldView): Action | undefined;
+  update?(self: SelfView, enemies: OtherView[], allies: OtherView[], world: WorldView): Action | undefined; // soldier, tower, factory: required. wall: none
   sprite?(): SpriteSpec; // called ONCE at validation, never in battle (§5.1)
 }
 ```
 
 ### Stat bounds
 
+For soldiers and towers (walls and factories: see **4c**):
+
 | Field | Rule |
 |---|---|
 | name | text, 1-24 characters (shown on screen) |
-| type | `'soldier'` (moves) or `'tower'` (never moves) |
-| maxHealth | 10-500 |
+| type | `'soldier'` (moves) or `'tower'` (never moves); also `'wall'` and `'factory'` (4c) |
+| maxHealth | 10-500 (walls 50-1500, factories 100-1000) |
 | damage | 0-60 per hit (0 is allowed but gives a warning) |
 | range | 20-300 px, **edge to edge** (the gap between the two bodies) |
 | speed | soldier: 0.5-5 px per tick. tower: exactly 0 |
@@ -139,7 +157,8 @@ export interface Unit extends UnitStats {
 4. **The returned action is only a request; the engine checks it:**
    - `{ action: 'attack', targetId }`: the target must be a living enemy (a different `teamId`), in range (`Math.hypot(dx, dy) - self.radius - target.radius <= self.range`, edge to edge), and `self.cooldownRemaining` must be 0. Otherwise the unit idles. Attacking never moves the unit. Bodies that touch are always in range.
    - Cooldown: `cooldownRemaining` is 0 at the start, so a unit can fire on its first tick. Firing sets it to `attackCooldown`, and it drops by 1 each tick.
-   - `{ action: 'move', destination: { x, y } }`: soldiers only. The unit walks at most `speed` px per tick straight toward the destination (clamped to the arena). Towers ignore moves.
+   - `{ action: 'move', destination: { x, y } }`: soldiers only. The unit walks at most `speed` px per tick straight toward the destination (clamped to the arena). If a wall is in the way it slides along the wall. Towers ignore moves.
+   - `{ action: 'rally', destination: { x, y } }` and `{ action: 'hold' }`: factories only (4c). Any other type that returns them just waits, and a factory that returns `move` or `attack` just keeps building.
    - `{ action: 'idle' }`, `undefined`, anything malformed, or a thrown error all mean idle. **Errors also count strikes; too many and the unit is switched off** for the rest of the battle.
    - Range ≤ 50 is melee (instant hit); longer range fires a homing shot that always hits if the target is still alive.
 5. **No `import`, `require`, network, timers (`setTimeout`), `async`/`await` or Promises.** They don't exist in the game. `update()` must be fast: a loop over the enemies is fine, but never loop forever.
@@ -232,6 +251,29 @@ export default class Knight {
 }
 ```
 
+## 4c. Unit types: soldier, tower, wall, factory
+
+| Type | Group | What it does | Needs | `update()` |
+|---|---|---|---|---|
+| **soldier** | unit | moves and fights | name, type, maxHealth (10-500), damage, range, speed (0.5-5), attackCooldown, color | required |
+| **tower** | building | stays put and shoots | the same, with `speed = 0` | required |
+| **wall** | building | a big solid block that stops everyone; can't attack | name, type, maxHealth (**50-1500**), color. Leave out damage, range, speed, attackCooldown, size | **none** (one is ignored) |
+| **factory** | building | stays put and builds **minions**; can't attack | name, type, maxHealth (**100-1000**), **productionInterval** (whole ticks between minions, **600-1800**), color. Leave out damage, range, speed, attackCooldown, size | required: says where the minions go |
+
+- **Walls** fill their whole 40 × 40 px cell (for range they count as a circle of radius 20). They block **every** body: enemies, your own units and your teammates' units. A wall's `color` is its block colour, and its `sprite()` textures the block's sides (see `units/basic_wall.js`).
+- **Factories** are a circle of radius 18. Every `productionInterval` ticks a factory builds one **Minion** (40 HP, 5 damage, melee, speed 1.5, size 8), at most 4 alive per factory. Minions have built-in brains (you never write their code): they chase enemies near them or near the rally point, otherwise they walk to the rally point. An enemy wall that blocks them for 2 s gets smashed, so minions can break into a walled-in enemy. The factory's `update()` returns `{ action: 'rally', destination: { x, y } }` to move the rally point (it starts at `world.center` and stays until changed) or `{ action: 'hold' }` to pause building for a tick. `self.factory` shows `nextMinionIn`, `minionsLeft`, `minionsAlive`, `maxAlive` and `rally`. The factory's `color` is also its minions' colour. See `units/basic_factory.js`. Destroying a factory stops it; its minions keep going. A factory that holds too long (or is walled in so no minion can get out) stops counting as a fighter once it no longer has time to build one.
+- **A factory's `productionInterval` sets how many minions it buys:** 600 = 8 minions, 900 = 5, 1200 = 4, 1800 = 2 per battle, and the price follows (section 5).
+- `enemies` and `allies` can now hold `type: 'wall'`, `'factory'` and `'minion'` bodies. Walls and factories have `range` 0.
+- **Getting past walls:** when a soldier bumps into a wall, the game slides it along the wall towards its destination. `self.blockedBy` is the id of the wall in the way (or `null`) and `self.blockedTicks` counts the ticks it has been stuck.
+
+Tips:
+- **Walls block your own units too: leave a gap** of one empty cell (two for size 19-20) so your soldiers and minions can get out. The web page warns when a unit is walled in.
+- **Walls protect fighters, they don't win.** Walls are worth $0 at the end, and a player with only walls left is out. Every army needs at least one soldier, tower or factory.
+- **When choosing targets, skip `enemy.type === 'wall'`**, unless `self.blockedBy` is an enemy wall (it is still in `enemies`) and `self.blockedTicks` is high (120 = 2 s): then smash it.
+- **Minions** show up in `enemies` as `type: 'minion'`: weak (40 HP) but many.
+- **Shots fly over walls**, so towers behind walls still shoot. Walls are great for funnelling enemies past your towers.
+- **Factories pay off over time:** their minions arrive during the battle, so a factory is a slow start and a strong finish. Rally minions at the nearest enemy to attack, or just in front of your towers to defend.
+
 ## 5. Cost
 
 Every unit has a price in $. The game works it out from the stats. Each stat has a normal (linear) price, and the closer a stat gets to its max, the more extra it costs:
@@ -261,6 +303,19 @@ Worked examples:
 - **Basic Tower** (maxHealth 150, damage 15, range 180, speed 0, size 14, attackCooldown 45): 148.09 × 60/45 → **$198**.
 - **Speedy Scout** (maxHealth 60, damage 6, range 30, speed 4, size 6, attackCooldown 20): 150.17 × 3 → **$451**. With attackCooldown 10 it would be × 6 = $902: **too expensive** (max $500).
 
+**Walls and factories** use the same curve, on their health only (they can't attack, so there is no cooldown factor):
+
+```
+wall:    cost = 4 + maxHealth × 0.06 × (1 + 2 × (maxHealth / 1500)²)
+factory: cost = body + production
+         body       = 10 + maxHealth × 0.12 × (1 + 2 × (maxHealth / 1000)²)   (rounded up)
+         production = minions per battle × $28   (half the $55 price of a minion: they arrive late)
+         minions per battle = min(8, floor(5399 / productionInterval))
+```
+
+- **Basic Wall** (maxHealth 400): 4 + 24 × 1.1422 = 31.41 → **$32**. A 1000-HP castle wall costs $118; a maxed 1500-HP wall $274.
+- **Basic Factory** (maxHealth 300, productionInterval 900): body 10 + 42.48 = 52.48 → $53, plus 5 minions × $28 = $140 → **$193**. With productionInterval 600 it builds 8 minions: $53 + $224 = **$277**.
+
 Tips:
 - **Maxing a stat costs 3×: spread your stats.** A stat at its max costs 3 times its normal price, and one at half its max costs 1.5 times. Two medium units are cheaper than one giant one, and usually win. If a stat is at 80% of its max or more, `validate_unit` gives the tip `W_STAT_NEAR_MAX`.
 - **Cooldown below 60 multiplies the whole cost.** Halving the cooldown doubles the price.
@@ -271,11 +326,12 @@ Tips:
 ## 6. Budget and battle rules
 
 - **$1,000 per round** to place units. Each copy placed costs the unit's price. Unspent money doesn't carry over.
-- At most **3 unit types** per round, at most **12 copies** placed, at most **$500** per unit, and at most **8 designs** (revisions and the two starter templates don't count).
-- **4-8 units is a good army.**
+- Up to **4 unit types** (soldiers) **and 4 building types** (towers, walls, factories) per round, at most **$500** per unit, and at most **8 designs** (revisions and the four starter templates don't count).
+- At most **12 fighters** placed (soldiers, towers and factories; at most **2 factories**) plus at most **12 walls**.
+- **4-8 fighters plus a few walls is a good army.**
 - Units can only be **submitted in the Plan phase**. You can validate at any time.
 - A battle lasts 90 seconds. **Sudden death:** after 50 seconds a safe circle (`world.safeZone`, centred on `world.center`) shrinks toward the middle. Units outside it lose 7% of their max health every second, so armies are forced to meet. Smart units move inside `world.safeZone` late in the battle. These are the default numbers: `get_rules` (`suddenDeath`) has the exact ones if the host changes them.
-- When time runs out, the player (or team) whose living units are worth the most money wins the round. Otherwise the last army (or team) standing wins.
+- When time runs out, the player (or team) whose living units are worth the most money wins the round (walls count $0; a factory counts just its body, since minions it never built are worth nothing then; each living minion $28). Otherwise the last army (or team) standing wins. A player with only walls left is out.
 
 ### How points work
 
@@ -289,15 +345,15 @@ Every round, each player scores **place points + damage bonus + value bonus**:
 - The match winner has the most points after all rounds; equal points are decided by total damage. In team mode there is also a team table (the average of the members' points).
 
 **Strategy tip:** the bonuses are worth about as much as 1st place, so **aggressive units score damage points even if they don't survive**. An army that hits hard and comes 2nd can beat a turtle that hides and survives. A good mix is a few hard hitters to rack up damage plus something tough to stay standing. The exact numbers are in `get_rules` (`scoring`).
-- There is no healing, no shields and no special powers: units can only move and attack. If the player asks for something like that, explain it kindly and suggest the closest thing that works (e.g. a tough tank instead of a healer).
+- There is no healing, no shields and no special powers: soldiers move and attack, towers attack, walls block and factories build minions. If the player asks for something like that, explain it kindly and suggest the closest thing that works (e.g. a tough tank instead of a healer).
 
 ## 7. After a battle
 
-Call `get_battle_report`. Its `score` shows how the player's points were made (place, damage bonus, value bonus, badges): tell them in one cheerful sentence, e.g. "You came 2nd and your army dealt the most damage: +4 points and the Biggest Hitter badge!". `topUnits` lists the round's top damage units of all players (`mine: true` marks your player's): if one is theirs, cheer, e.g. "Your Ninja hit hardest!". If a unit threw errors, timed out, or got switched off, the report names the unit and the line. Fix that unit (pass its `unitId`), validate it, and submit it in the next Plan phase. Tell the player what went wrong in simple words, e.g. "Your ninja got confused when there were no enemies left. I fixed it!"
+Call `get_battle_report`. Its `score` shows how the player's points were made (place, damage bonus, value bonus, badges): tell them in one cheerful sentence, e.g. "You came 2nd and your army dealt the most damage: +4 points and the Biggest Hitter badge!". `topUnits` lists the round's top damage units of all players (`mine: true` marks your player's): if one is theirs, cheer, e.g. "Your Ninja hit hardest!". If a unit threw errors, timed out, or got switched off, the report names the unit and the line. `types` lists each unit type's damage (a factory's includes its minions, with `minionsMade` and `minionsLost`), and `hints` gives tips such as a soldier that got stuck behind walls: then make it smash the wall in its way (`self.blockedBy`) or go round. Fix that unit (pass its `unitId`), validate it, and submit it in the next Plan phase. Tell the player what went wrong in simple words, e.g. "Your ninja got confused when there were no enemies left. I fixed it!"
 
 ### Open Armory (only when the host switched it on)
 
-`get_rules` and `get_game_state` say whether Open Armory is on. Then every unit type that fought in a battle becomes borrowable by the other players from the next Plan phase, named like "Ogre (Ninja Sam)". Call `list_armory` to see them (stats, cost, round added). The player picks borrowed units on the Pixel Clash page (they count toward the 3 types), and a borrowed unit's damage and points are the player's. Borrowed units can't be changed and their code is never shared: `get_unit_source` on one says `NOT_FOUND`. Build your own counter or improved version instead (a new unit, submitted without `unitId`). When another player fields one of *your* player's units, your player gets the 💡 Inventor badge.
+`get_rules` and `get_game_state` say whether Open Armory is on. Then every unit type that fought in a battle becomes borrowable by the other players from the next Plan phase, named like "Ogre (Ninja Sam)". Call `list_armory` to see them (stats, cost, round added). The player picks borrowed units on the Pixel Clash page (they count toward the 4 unit / 4 building types), and a borrowed unit's damage and points are the player's. Borrowed units can't be changed and their code is never shared: `get_unit_source` on one says `NOT_FOUND`. Build your own counter or improved version instead (a new unit, submitted without `unitId`). When another player fields one of *your* player's units, your player gets the 💡 Inventor badge.
 
 ## 8. Don'ts
 

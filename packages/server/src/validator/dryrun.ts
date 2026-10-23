@@ -4,7 +4,10 @@
 // limited to `sandbox.validation.dryRunCallTimeoutMs` (20 ms):
 //   A. no enemies (one ally nearby)
 //   B. one enemy in range, measured edge to edge like the engine, cooldown ready
-//   C. three enemies far away in the opposite corner
+//   C. three enemies far away in the opposite corner (plus an enemy wall and
+//      an enemy minion, M8.5)
+// Factories (M8.5) see `self.factory` filled in and may return rally/hold;
+// walls are never dry-run (no code runs for them).
 // update() must not throw or time out, and each return must be a valid Action
 // or undefined. The results also feed the non-fatal warnings.
 
@@ -14,10 +17,10 @@ import {
   UNIT_RADIUS,
   sizeOf,
   zoneCenter,
+  type BodyType,
   type OtherView,
   type SelfView,
   type StatsSnapshot,
-  type UnitType,
   type ValidationError,
   type ValidationWarning,
   type WorldView,
@@ -53,9 +56,18 @@ function median(values: readonly number[]): number {
   return sorted[Math.floor(sorted.length / 2)]!;
 }
 
-function other(id: string, ownerId: string, type: UnitType, x: number, y: number): OtherView {
-  const radius = UNIT_RADIUS[type];
-  return { id, ownerId, teamId: ownerId === ENEMY ? 1 : 0, type, name: type === 'tower' ? 'Enemy Tower' : 'Enemy Soldier', x, y, radius, hp: 100, maxHp: 100, range: 40 };
+/** Name, radius, hp and range of each body type in the practice worlds. */
+const PRACTICE_BODY: Record<BodyType, { name: string; radius: number; hp: number; range: number }> = {
+  soldier: { name: 'Enemy Soldier', radius: UNIT_RADIUS.soldier, hp: 100, range: 40 },
+  tower: { name: 'Enemy Tower', radius: UNIT_RADIUS.tower, hp: 100, range: 40 },
+  wall: { name: 'Enemy Wall', radius: UNIT_RADIUS.wall, hp: 400, range: 0 },
+  factory: { name: 'Enemy Factory', radius: UNIT_RADIUS.factory, hp: 300, range: 0 },
+  minion: { name: 'Minion', radius: 8, hp: 40, range: 20 },
+};
+
+function other(id: string, ownerId: string, type: BodyType, x: number, y: number): OtherView {
+  const b = PRACTICE_BODY[type];
+  return { id, ownerId, teamId: ownerId === ENEMY ? 1 : 0, type, name: b.name, x, y, radius: b.radius, hp: b.hp, maxHp: b.hp, range: b.range };
 }
 
 interface World {
@@ -79,6 +91,10 @@ function worlds(stats: StatsSnapshot, self: { x: number; y: number; radius: numb
         other('enemy-2', ENEMY, 'soldier', 680, 680),
         other('enemy-3', ENEMY, 'tower', 700, 620),
         other('enemy-4', ENEMY, 'soldier', 620, 700),
+        // M8.5 (§7 step 9): an enemy wall and an engine-made minion, so code
+        // that expects every enemy to be a soldier or tower still runs.
+        other('enemy-wall', ENEMY, 'wall', 660, 660),
+        other('enemy-minion', ENEMY, 'minion', 600, 640),
       ],
       allies: [],
       expectAttack: false,
@@ -96,16 +112,19 @@ export function badActionReason(a: unknown): string | undefined {
       return undefined;
     case 'attack':
       return typeof o.targetId === 'string' ? undefined : 'an attack needs targetId set to an enemy id (a string)';
-    case 'move': {
+    case 'move':
+    case 'rally': {
       const d = o.destination as Record<string, unknown> | undefined;
-      if (!d || typeof d !== 'object') return 'a move needs destination: { x, y }';
+      if (!d || typeof d !== 'object') return `a ${o.action} needs destination: { x, y }`;
       if (typeof d.x !== 'number' || typeof d.y !== 'number' || !Number.isFinite(d.x) || !Number.isFinite(d.y)) {
-        return 'a move destination needs finite numbers x and y';
+        return `a ${o.action} destination needs finite numbers x and y`;
       }
       return undefined;
     }
+    case 'hold':
+      return undefined;
     default:
-      return `"action" must be "idle", "move" or "attack" (got ${JSON.stringify(o.action) ?? 'nothing'})`;
+      return `"action" must be "idle", "move", "attack", "rally" or "hold" (got ${JSON.stringify(o.action) ?? 'nothing'})`;
   }
 }
 
@@ -165,8 +184,14 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
     errors.push({
       code: 'UPDATE_MISSING',
       field: 'update',
-      message: 'The unit has no update() method, so it would never do anything in battle.',
-      fix: 'Add an update(self, enemies, allies, world) method to the class that returns an action, e.g. return { action: "attack", targetId: enemies[0].id }.',
+      message:
+        stats.type === 'factory'
+          ? 'The factory has no update() method. A factory needs one to tell its minions where to go.'
+          : 'The unit has no update() method, so it would never do anything in battle.',
+      fix:
+        stats.type === 'factory'
+          ? 'Add an update(self, enemies, allies, world) method that says where the minions go, e.g. return { action: "rally", destination: world.center }.'
+          : 'Add an update(self, enemies, allies, world) method to the class that returns an action, e.g. return { action: "attack", targetId: enemies[0].id }.',
     });
     return { errors, warnings };
   }
@@ -176,6 +201,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
   const radius = sizeOf(stats); // the unit's own size, like in battle (§9 Radii)
   const battleTicks = ctx.config.timers.battleTicks;
   let returnedNothing = false;
+  let wrongTypeWarned = false;
   let moved = false;
   let attackedWhenAble = true;
   // W_SLOW: the per-call update() time the harness measures INSIDE the
@@ -223,6 +249,20 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
         speed: stats.speed,
         attackCooldown: stats.attackCooldown,
         cooldownRemaining: 0,
+        blockedBy: null,
+        blockedTicks: 0,
+        // §7 step 9 (M8.5): a factory sees its production state (5 minions left, rally = centre).
+        factory:
+          stats.type === 'factory'
+            ? {
+                productionInterval: stats.productionInterval ?? 900,
+                nextMinionIn: stats.productionInterval ?? 900,
+                minionsLeft: 5,
+                minionsAlive: 0,
+                maxAlive: ctx.config.factory.maxAlivePerFactory,
+                rally: { x: CENTER.x, y: CENTER.y },
+              }
+            : null,
       };
       const worldView: WorldView = {
         width: ARENA.width,
@@ -308,21 +348,50 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
         });
         return { errors, warnings };
       }
-      const reason = badActionReason(entry.action);
+      const rawKind = (entry.action as { action?: unknown } | undefined)?.action;
+      let reason = badActionReason(entry.action);
+      // A factory's broken move/attack: say what a factory can do, not how to aim an attack (§5.2).
+      if (reason && stats.type === 'factory' && (rawKind === 'move' || rawKind === 'attack')) {
+        reason = `a factory can't ${rawKind}, it only tells its minions where to go`;
+      }
       if (reason) {
         errors.push({
           code: 'BAD_ACTION',
           field: 'update',
           ...where,
           value: preview(entry.action),
-          allowed: { oneOf: ["{ action: 'idle' }", "{ action: 'move', destination: { x, y } }", "{ action: 'attack', targetId }"] },
+          allowed: {
+            oneOf:
+              stats.type === 'factory'
+                ? ["{ action: 'idle' }", "{ action: 'rally', destination: { x, y } }", "{ action: 'hold' }"]
+                : ["{ action: 'idle' }", "{ action: 'move', destination: { x, y } }", "{ action: 'attack', targetId }"],
+          },
           errorMessage: reason,
           message: `update() returned something that is not a valid action in a practice battle (${world.label}): ${reason}.`,
-          fix: "Return exactly one of { action: 'idle' }, { action: 'move', destination: { x: number, y: number } } or { action: 'attack', targetId: enemy.id }.",
+          fix:
+            stats.type === 'factory'
+              ? "Return exactly one of { action: 'rally', destination: { x: number, y: number } } (where the minions go), { action: 'hold' } (pause building) or { action: 'idle' }."
+              : "Return exactly one of { action: 'idle' }, { action: 'move', destination: { x: number, y: number } } or { action: 'attack', targetId: enemy.id }.",
         });
         return { errors, warnings };
       }
       const action = entry.action as { action?: string } | undefined;
+      // §5.2: rally/hold are factory actions; move/attack are not (the engine idles, no strike).
+      const kind = action?.action;
+      const factoryAction = kind === 'rally' || kind === 'hold';
+      if (!wrongTypeWarned && ((stats.type === 'factory' && (kind === 'move' || kind === 'attack')) || (stats.type !== 'factory' && factoryAction))) {
+        wrongTypeWarned = true;
+        warnings.push({
+          code: 'W_ACTION_NOT_FOR_TYPE',
+          field: 'update',
+          value: kind,
+          message: `update() returned { action: '${kind}' }, which a ${stats.type} can't do, so it waits instead.`,
+          fix:
+            stats.type === 'factory'
+              ? "A factory can only return { action: 'rally', destination: { x, y } } (where its minions go), { action: 'hold' } or { action: 'idle' }."
+              : "Only factories rally or hold. Soldiers return move/attack/idle; towers attack/idle.",
+        });
+      }
       if (action === undefined) returnedNothing = true;
       if (action?.action === 'move') moved = true;
       if (action?.action === 'attack') attacked = true;

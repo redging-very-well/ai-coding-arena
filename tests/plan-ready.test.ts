@@ -45,7 +45,7 @@ describe('PLAN Ready', () => {
     const none = await ready(a.client, true);
     expect(none.status).toBe(409);
     expect(none.body.error.code).toBe('NOTHING_SELECTED');
-    expect(none.body.error.hint).toContain('Tap up to 3 units');
+    expect(none.body.error.hint).toContain('Tap up to 4 units and 4 buildings');
     expect((await ready(a.client, false)).body).toEqual({ ready: false });
 
     await pick(a.client, ['basic-soldier']);

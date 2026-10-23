@@ -114,7 +114,7 @@ describe('MCP (stateless Streamable HTTP)', () => {
     apiKey = r.s.apiKey;
     expect(apiKey).toBe(player.apiKey);
     const units = await call(mcp, 'list_my_units', { apiKey });
-    expect(units.s.units.map((u: { unitId: string }) => u.unitId)).toEqual(['basic-soldier', 'basic-tower']);
+    expect(units.s.units.map((u: { unitId: string }) => u.unitId)).toEqual(['basic-soldier', 'basic-tower', 'basic-wall', 'basic-factory']);
     const st = await call(mcp, 'get_game_state', { apiKey });
     expect(st.s).toMatchObject({ phase: 'LOBBY', submissionsOpen: false, myBudget: 1000 });
   });

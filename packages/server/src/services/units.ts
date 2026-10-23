@@ -1,6 +1,6 @@
 // Units (plan §7, §6 re-pricing, §10): validate (dry run), submit (stores),
 // list, source, retire, re-price after a config change, sprite moderation.
-// Every player has the two templates pre-registered (never persisted; built
+// Every player has the four templates (soldier, tower, wall, factory) pre-registered (never persisted; built
 // from packages/starter-kit at boot).
 //
 // `private` is pushed to all the owner's sockets after every submit, retire,
@@ -13,7 +13,9 @@ import {
   armoryDisplayName,
   checkStats,
   computeCost,
+  pricingOf,
   fail,
+  groupOf,
   isArmoryUnitId,
   ok,
   tooExpensiveError,
@@ -32,7 +34,12 @@ import { RateLimiter, Semaphore } from '../util/ratelimit.js';
 import type { Game } from './game.js';
 import type { DesignRecord, PlayerRecord, UnitVersionRecord } from './store.js';
 
-export const TEMPLATE_FILES = { basic_soldier: 'basic_soldier.js', basic_tower: 'basic_tower.js' } as const;
+export const TEMPLATE_FILES = {
+  basic_soldier: 'basic_soldier.js',
+  basic_tower: 'basic_tower.js',
+  basic_wall: 'basic_wall.js',
+  basic_factory: 'basic_factory.js',
+} as const;
 
 export function templateSource(key: keyof typeof TEMPLATE_FILES): string {
   return readFileSync(repoPath('packages', 'starter-kit', 'units', TEMPLATE_FILES[key]), 'utf8');
@@ -105,7 +112,7 @@ export class UnitsService {
     return this.templates.map((t) => t.unitId);
   }
 
-  /** Pre-register both templates for a player (idempotent). */
+  /** Pre-register the templates for a player (idempotent). */
   addTemplates(playerId: string): void {
     const designs = this.game.store.designsOf(playerId);
     for (const t of this.templates) {
@@ -128,11 +135,18 @@ export class UnitsService {
   // Lookups
   // -------------------------------------------------------------------------
 
-  /** Active (not retired) designs of a player, newest first, templates last. */
+  /** Active (not retired) designs of a player, newest first, templates last (soldier, tower, wall, factory). */
   designs(playerId: string): DesignRecord[] {
+    const order = (d: DesignRecord) => (d.isTemplate ? this.templates.findIndex((t) => t.unitId === d.unitId) : -1);
     return [...this.game.store.designsOf(playerId).values()]
       .filter((d) => !d.retired)
-      .sort((a, b) => Number(a.isTemplate) - Number(b.isTemplate) || b.updatedAt - a.updatedAt || (a.unitId < b.unitId ? -1 : 1));
+      .sort(
+        (a, b) =>
+          Number(a.isTemplate) - Number(b.isTemplate) ||
+          b.updatedAt - a.updatedAt ||
+          order(a) - order(b) ||
+          (a.unitId < b.unitId ? -1 : 1),
+      );
   }
 
   design(playerId: string, unitId: string): DesignRecord | undefined {
@@ -163,6 +177,7 @@ export class UnitsService {
       name: v.stats.name,
       version: v.version,
       stats: v.stats,
+      group: groupOf(v.stats.type),
       cost: v.cost,
       breakdown: v.breakdown,
       status: v.status,
@@ -373,6 +388,13 @@ export class UnitsService {
     rs.submittedThisPlan = true;
     // A new or revised unit changes the army the player said Ready to (§3).
     this.game.round.armyChanged(player.id);
+    // A picked design revised into the other group (e.g. a soldier resubmitted
+    // as a tower) can push the selection over a type cap: tell the player now
+    // (Ready waits until it fits, §5.2).
+    if (this.game.store.match.phase === 'PLAN' && rs.selection.includes(unitId)) {
+      const over = this.game.round.overCap(player.id, rs.selection);
+      if (over) this.game.notifier.toast({ playerId: player.id }, 'warn', over.message);
+    }
     this.game.store.save();
     this.game.notifier.privateChanged(player.id);
     this.game.notifier.stateChanged();
@@ -421,11 +443,13 @@ export class UnitsService {
 
   /** Errors a version would have under `config` (empty = valid). */
   static checkVersion(v: Pick<UnitVersionRecord, 'stats'>, config: GameConfig): { error?: ValidationError; cost: ReturnType<typeof computeCost> } {
-    const priced = computeCost(v.stats, config.cost);
+    // Per type (§6): a factory's price also follows the minion, battle length and soldier coefficients.
+    const pricing = pricingOf(config);
+    const priced = computeCost(v.stats, config.cost, pricing);
     const checked = checkStats({ ...v.stats }, config.stats.bounds);
     if (!checked.ok) return { error: checked.errors[0]!, cost: priced };
     if (!Number.isFinite(priced.raw) || priced.cost > config.caps.unitCost) {
-      return { error: tooExpensiveError(v.stats, priced, config.caps.unitCost, config.cost, config.stats.bounds), cost: priced };
+      return { error: tooExpensiveError(v.stats, priced, config.caps.unitCost, config.cost, config.stats.bounds, pricing), cost: priced };
     }
     return { cost: priced };
   }

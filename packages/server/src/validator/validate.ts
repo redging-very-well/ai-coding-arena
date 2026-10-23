@@ -26,6 +26,7 @@ import {
   playerHintFor,
   playerHintForIssue,
   nearMaxWarnings,
+  pricingOf,
   tooExpensiveError,
   type GameConfig,
   type StatsSnapshot,
@@ -184,14 +185,16 @@ async function runSandboxSteps(
   }
 
   const stats: StatsSnapshot | undefined = checked.ok && errors.length === 0 ? checked.stats : undefined;
-  if (!stats) return failure(errors);
+  // The stat hints (e.g. W_STAT_IGNORED) come back with the errors, so every fix shows at once.
+  if (!stats) return failure(errors, checked.warnings);
 
-  // 8. Cost.
-  const priced = computeCost(stats, ctx.config.cost);
+  // 8. Cost (per type, §6; a factory's production follows the config's battle length and minion).
+  const pricing = pricingOf(ctx.config);
+  const priced = computeCost(stats, ctx.config.cost, pricing);
   const cap = ctx.config.caps.unitCost;
-  const warnings = statWarnings(stats, ctx.config);
+  const warnings = [...(checked.ok ? checked.warnings : []), ...statWarnings(stats, ctx.config)];
   if (!Number.isFinite(priced.raw) || priced.cost > cap) {
-    errors.push(tooExpensiveError(stats, priced, cap, ctx.config.cost, ctx.config.stats.bounds));
+    errors.push(tooExpensiveError(stats, priced, cap, ctx.config.cost, ctx.config.stats.bounds, pricing));
   }
 
   // 8b. Sprite (reported together with the other errors, so Claude can fix
@@ -200,14 +203,24 @@ async function runSandboxSteps(
   errors.push(...sp.errors);
   warnings.push(...sp.warnings);
 
-  // 9-10. Dry-run update() (unless sprite() took the sandbox down).
-  if (opts.dryRun !== false && !session.disposed) {
+  // 9-10. Dry-run update() (unless sprite() took the sandbox down). Walls have
+  // no code that runs in battle: an update() on one is ignored (§5.2).
+  if (stats.type === 'wall') {
+    if (hasUpdate) {
+      warnings.push({
+        code: 'W_UPDATE_IGNORED',
+        field: 'update',
+        message: "Walls don't think: this wall's update() is never called.",
+        fix: 'Remove update() from the wall (a wall only needs name, type, maxHealth, color and a sprite).',
+      });
+    }
+  } else if (opts.dryRun !== false && !session.disposed) {
     const dr = await dryRun(session, stats, hasUpdate, ctx);
     errors.push(...dr.errors);
     warnings.push(...dr.warnings);
   }
   // Pricing tips last: they are the least urgent (the player hint uses warnings[0]).
-  warnings.push(...nearMaxWarnings(stats, priced, ctx.config.cost, ctx.config.stats.bounds));
+  warnings.push(...nearMaxWarnings(stats, priced, ctx.config.cost, ctx.config.stats.bounds, pricing));
 
   if (errors.length > 0) {
     return failure(errors, warnings, Number.isFinite(priced.cost) ? priced.cost : null);
@@ -353,7 +366,7 @@ function constructError(out: CallOutcome, ctx: Ctx): ValidationError | undefined
         field: 'constructor',
         ...loc,
         message: `The constructor threw an error${at(loc)}: ${err.message}`,
-        fix: `Fix the constructor${at(loc)}. It should set this.name, this.type, this.maxHealth, this.damage, this.range, this.speed, this.attackCooldown and this.color (and optionally this.size) to plain values without throwing.`,
+        fix: `Fix the constructor${at(loc)}. It should set the stats to plain values without throwing: this.name, this.type, this.maxHealth and this.color, plus this.damage, this.range, this.speed and this.attackCooldown for a soldier or tower (optionally this.size), or this.productionInterval for a factory.`,
       };
     }
   }
@@ -452,6 +465,7 @@ function exampleFor(field: string): string {
     range: '40',
     speed: '1.5',
     attackCooldown: '60',
+    productionInterval: '900',
     color: '"#33CC66"',
     size: '10',
     shape: '"circle"',
@@ -471,6 +485,8 @@ function displayValue(v: unknown): unknown {
 
 function statWarnings(stats: StatsSnapshot, config: GameConfig): ValidationWarning[] {
   const out: ValidationWarning[] = [];
+  // Walls and factories can't attack (§5.2): no damage or cooldown advice for them.
+  if (stats.type === 'wall' || stats.type === 'factory') return out;
   if (stats.damage === 0) {
     out.push({
       code: 'W_ZERO_DAMAGE',

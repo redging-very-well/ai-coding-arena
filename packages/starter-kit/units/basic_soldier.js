@@ -29,7 +29,8 @@ export default class BasicSoldier {
 
   // Called once per tick (60 times a second) for each copy of this unit.
   //   self    - this copy: position, hp, range, radius, cooldownRemaining...
-  //   enemies - every living enemy unit
+  //   enemies - every living enemy unit (also enemy walls, factories and minions:
+  //             check enemy.type)
   //   allies  - my other living units (and in team mode my teammates' units)
   //   world   - arena size (world.width: 800, 1040 or 1200), world.center,
   //             tick, my start zone, the shrinking safe zone. Never assume 800!
@@ -41,14 +42,40 @@ export default class BasicSoldier {
       return { action: 'move', destination: world.center };
     }
 
-    // Find the nearest enemy, measuring the gap between the two bodies.
-    let target = enemies[0];
+    // Stuck behind an ENEMY wall for 2 seconds (120 ticks)? Smash through it.
+    // (Only while that wall is still standing: it is in `enemies` until it breaks.
+    // Our own and our teammates' walls are never in `enemies`.)
+    if (self.blockedTicks >= 120) {
+      const wall = enemies.find((enemy) => enemy.id === self.blockedBy);
+      if (wall) {
+        const gap = Math.hypot(wall.x - self.x, wall.y - self.y) - self.radius - wall.radius;
+        if (gap <= self.range) {
+          return self.cooldownRemaining === 0 ? { action: 'attack', targetId: wall.id } : { action: 'idle' };
+        }
+        return { action: 'move', destination: { x: wall.x, y: wall.y } };
+      }
+    }
+
+    // Find the nearest enemy that isn't a wall (walls can't fight back, and
+    // they're worth nothing at the end), measuring the gap between the bodies.
+    // If only walls are left, take the nearest wall.
+    let target = null;
     let bestGap = Infinity;
     for (const enemy of enemies) {
+      if (enemy.type === 'wall') continue;
       const gap = Math.hypot(enemy.x - self.x, enemy.y - self.y) - self.radius - enemy.radius;
       if (gap < bestGap) {
         bestGap = gap;
         target = enemy;
+      }
+    }
+    if (!target) {
+      for (const enemy of enemies) {
+        const gap = Math.hypot(enemy.x - self.x, enemy.y - self.y) - self.radius - enemy.radius;
+        if (gap < bestGap) {
+          bestGap = gap;
+          target = enemy;
+        }
       }
     }
 
@@ -61,7 +88,8 @@ export default class BasicSoldier {
       return { action: 'idle' };
     }
 
-    // Too far away: walk straight towards it.
+    // Too far away: walk towards it. If a wall is in the way, the game slides
+    // the soldier along it (self.blockedBy / self.blockedTicks say so).
     return { action: 'move', destination: { x: target.x, y: target.y } };
   }
 

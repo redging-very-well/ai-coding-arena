@@ -14,6 +14,14 @@ You don't write any code. Just tell Claude what you want, in your own words!
 - "Make a tiny robot that's hard to block."
 - "Make my soldiers wait near my towers until enemies come close."
 
+## Walls and factories
+
+- "Build me a wall to protect my towers."
+- "Make a super-tough castle wall that's still cheap."
+- "Make a factory that sends minions to the middle."
+- "Make a factory that sends lots of tiny robots at the strongest enemy."
+- "My soldiers keep getting stuck behind walls. Make them smash through."
+
 ## Change how it looks
 
 - "Draw my ninja with a red headband and make it bigger."
@@ -29,5 +37,6 @@ You don't write any code. Just tell Claude what you want, in your own words!
 
 - Send units in the **Plan** phase. Then **pick** them and **place** them on the game page.
 - If Claude says it can't send your unit yet, tell it **"The Plan phase started!"** when the game page says Plan.
-- You have **$1,000** each round, up to **3** kinds of units, and a unit can cost up to **$500**.
+- You have **$1,000** each round, up to **4** kinds of soldiers and **4** kinds of buildings (towers, walls, factories), and a unit can cost up to **$500**.
+- Walls block your own units too: leave a gap! And walls alone can't win: you always need a soldier, tower or factory.
 - After 50 seconds a safe circle shrinks. Units outside it get hurt!

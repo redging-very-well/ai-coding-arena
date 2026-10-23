@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { legacyCornerOf, parseConfig, type GameStateDTO, type PlacementDTO } from '@pixel-clash/shared';
 import { PASSWORD_WORDS, generatePassword } from '../packages/server/src/services/auth.js';
 import { BattleEngine, buildBattleReport, resultAtTick } from '../packages/server/src/sim/engine.js';
-import { frameAt } from '../packages/server/src/sim/frames.js';
+import { catchUpFrame, frameAt } from '../packages/server/src/sim/frames.js';
 import { RateLimiter } from '../packages/server/src/util/ratelimit.js';
 import { SOLDIER, TOWER, design, fakePlayers, soldierBrain, towerBrain } from './helpers/fakeRunner.js';
 import { Client, adminClient, bootServer, newPlayer, removeDir, tempDataDir } from './helpers/server.js';
@@ -259,4 +259,29 @@ describe('MCP replies (§10.4)', () => {
       removeDir(dir);
     }
   }, T);
+});
+
+describe('late joiner catch-up frame (M8.5, §9.3 Frames)', () => {
+  const f = (t: number, units: Array<[string, number, number, number, number]>, events: unknown[] = []) =>
+    ({ t, units, projectiles: [], safeZoneRadius: 500, events }) as Parameters<typeof catchUpFrame>[0][number];
+  const frames = [
+    f(0, [['s', 1, 1, 50, 0], ['w1', 100, 100, 400, 0], ['w2', 140, 100, 400, 0], ['w3', 180, 100, 400, 0]]),
+    f(2, [['s', 2, 1, 50, 1], ['w1', 100, 100, 300, 0]]),
+    f(4, [['s', 3, 1, 50, 1]], [{ type: 'death', instanceId: 'w2' }]),
+    f(6, [['s', 4, 1, 50, 1]]),
+  ];
+
+  it('lists every living wall at its last hp, and none that fell', () => {
+    const c = catchUpFrame(frames, 7)!;
+    expect(c.t).toBe(6);
+    expect(c.units.map((u) => u[0]).sort()).toEqual(['s', 'w1', 'w3']);
+    expect(c.units.find((u) => u[0] === 'w1')![3]).toBe(300);
+    // The recorded frame itself is not changed.
+    expect(frames[3]!.units).toHaveLength(1);
+  });
+
+  it('returns the spawn frame unchanged and nothing before it', () => {
+    expect(catchUpFrame(frames, 1)).toBe(frames[0]);
+    expect(catchUpFrame(frames, -1)).toBeUndefined();
+  });
 });

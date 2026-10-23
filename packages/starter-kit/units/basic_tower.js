@@ -32,19 +32,29 @@ export default class BasicTower {
       return { action: 'idle' };
     }
 
-    // Shoot the nearest enemy that is in range (gap between the bodies <= range).
+    // Shoot the nearest enemy in range (gap between the bodies <= range).
+    // Walls can't hurt anyone, so shoot one only when nothing else is in range.
+    // (Shots fly over walls, so a tower behind walls still hits.)
     let target = null;
     let bestGap = Infinity;
+    let wallTarget = null;
+    let bestWallGap = Infinity;
     for (const enemy of enemies) {
       const gap = Math.hypot(enemy.x - self.x, enemy.y - self.y) - self.radius - enemy.radius;
-      if (gap <= self.range && gap < bestGap) {
+      if (gap > self.range) continue;
+      if (enemy.type === 'wall') {
+        if (gap < bestWallGap) {
+          bestWallGap = gap;
+          wallTarget = enemy;
+        }
+      } else if (gap < bestGap) {
         bestGap = gap;
         target = enemy;
       }
     }
 
-    if (target) {
-      return { action: 'attack', targetId: target.id };
+    if (target || wallTarget) {
+      return { action: 'attack', targetId: (target || wallTarget).id };
     }
     return { action: 'idle' };
   }

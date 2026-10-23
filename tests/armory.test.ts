@@ -5,7 +5,7 @@
 //     designs);
 //   * frozen copies (a later submit doesn't change the entry; fielding v2
 //     replaces it), creator exclusion, display name "Ogre (Ninja Sam)" in the
-//     selection, reveal, results and report, ≤ 3 types including borrowed;
+//     selection, reveal, results and report, ≤ 4 unit types including borrowed;
 //   * a borrowed unit runs in the BORROWER's sandbox and its damage/points are
 //     the borrower's; its code is never shared (get_unit_source → NOT_FOUND);
 //   * 💡 Inventor badge, re-price invalidation, Hide sprite propagation,
@@ -254,7 +254,7 @@ describe('Open Armory: on', () => {
     expect(v.s.errors[0].code).toBe('NOT_FOUND');
   }, T);
 
-  it('round 2: frozen copy, ≤ 3 types incl. borrowed, creator excluded, Hide sprite propagates', async () => {
+  it('round 2: frozen copy, ≤ 4 unit types incl. borrowed, creator excluded, Hide sprite propagates', async () => {
     await admin.post('/admin/phase/next'); // → PLAN round 2
     // Sam's later revision (more damage) doesn't change the entry.
     expect((await sam.client.post('/units', { source: ogre({ damage: 35 }), unitId: 'ogre' })).status).toBe(200);
@@ -266,11 +266,15 @@ describe('Open Armory: on', () => {
     const own = await sam.client.put('/round/selection', { unitIds: [borrowId()] });
     expect(own.status).toBe(400);
     expect(own.body.error.code).toBe('ARMORY_OWN_UNIT');
-    // ≤ 3 types in total, borrowed ones included.
+    // ≤ 4 unit types (soldiers) per round, borrowed ones included (M8.5: + ≤ 4 building types).
     expect((await bob.client.post('/units', { source: ogre({ name: 'Bob Brute' }) })).status).toBe(200);
-    const four = await bob.client.put('/round/selection', { unitIds: [borrowId(), 'bob-brute', 'basic-soldier', 'basic-tower'] });
-    expect(four.body.error.code).toBe('TOO_MANY_TYPES');
-    expect((await bob.client.put('/round/selection', { unitIds: [borrowId(), 'bob-brute', 'basic-soldier'] })).status).toBe(200);
+    expect((await bob.client.post('/units', { source: ogre({ name: 'Bob Brute Two' }) })).status).toBe(200);
+    expect((await bob.client.post('/units', { source: ogre({ name: 'Bob Brute Three' }) })).status).toBe(200);
+    const five = await bob.client.put('/round/selection', {
+      unitIds: [borrowId(), 'bob-brute', 'bob-brute-two', 'bob-brute-three', 'basic-soldier', 'basic-tower'],
+    });
+    expect(five.body.error).toMatchObject({ code: 'TOO_MANY_TYPES', details: { group: 'units', max: 4, count: 5 } });
+    expect((await bob.client.put('/round/selection', { unitIds: [borrowId(), 'bob-brute', 'bob-brute-two', 'basic-soldier', 'basic-tower'] })).status).toBe(200);
     // Bob borrows only the Ogre; Sam fields his own (v2): a mirror match.
     const sel = await bob.client.put('/round/selection', { unitIds: [borrowId()] });
     expect(sel.body.selection).toEqual([borrowId()]);

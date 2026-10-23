@@ -86,3 +86,84 @@ describe('starter-kit templates (§5.1 sprites)', () => {
     expect(loose).toEqual([]);
   });
 });
+
+describe('starter-kit templates (M8.5 walls and factories)', () => {
+  const world = { width: 800, height: 800, tick: 0, ticksLeft: 5400, mapStyle: 'corners', myCorner: { x: 120, y: 120 }, center: { x: 400, y: 400 }, safeZone: { x: 400, y: 400, radius: 570 } };
+  type Updater = { update: (...a: unknown[]) => unknown };
+
+  it('basic_wall: 400 HP, no update(), → $32', async () => {
+    const u = await load('basic_wall.js');
+    const r = checkStats(u, DEFAULT_CONFIG.stats.bounds);
+    expect(r.ok && r.warnings).toEqual([]);
+    expect(u).toMatchObject({ type: 'wall', maxHealth: 400 });
+    expect('update' in u).toBe(false);
+    expect(computeCost(u as never, DEFAULT_CONFIG.cost).cost).toBe(32);
+  });
+
+  it('basic_factory: 300 HP, interval 900 → $193 ($53 body + 5 × $28)', async () => {
+    const u = await load('basic_factory.js');
+    const r = checkStats(u, DEFAULT_CONFIG.stats.bounds);
+    expect(r.ok && r.warnings).toEqual([]);
+    expect(u).toMatchObject({ type: 'factory', maxHealth: 300, productionInterval: 900 });
+    const priced = computeCost(u as never, DEFAULT_CONFIG.cost);
+    expect(priced.cost).toBe(193);
+    expect(priced.breakdown.production).toMatchObject({ expected: 5, minionValue: 28 });
+  });
+
+  it.each(['basic_wall.js', 'basic_factory.js'])('%s has a valid, deterministic 16x16 sprite', async (file) => {
+    const u = (await load(file)) as unknown as { sprite: () => unknown };
+    const spec = JSON.parse(JSON.stringify(u.sprite()));
+    const r = checkSprite(spec);
+    if (!r.ok) throw new Error(JSON.stringify(r.errors, null, 2));
+    expect(r.sprite.grid).toBe(16);
+    expect(JSON.stringify(u.sprite())).toBe(JSON.stringify(spec));
+  });
+
+  it('the factory sprite has 2 idle frames (chimney smoke) and an attack frame with the door lit', async () => {
+    const u = (await load('basic_factory.js')) as unknown as { sprite: () => { frames: Record<string, string[][]> } };
+    const s = u.sprite();
+    expect(s.frames.idle).toHaveLength(2);
+    expect(s.frames.attack).toHaveLength(1);
+    expect(s.frames.attack![0]!.join('')).not.toContain('dd');
+  });
+
+  it('factory rallies at the nearest enemy that is not a wall, else world.center', async () => {
+    const f = (await load('basic_factory.js')) as unknown as Updater;
+    const self = { id: '0-0-0', x: 100, y: 100, radius: 18, factory: { minionsLeft: 5 } };
+    const wall = { id: '1-0-0', type: 'wall', x: 140, y: 100, radius: 20 };
+    const soldier = { id: '1-0-1', type: 'soldier', x: 400, y: 300, radius: 10 };
+    expect(f.update(self, [wall, soldier], [], world)).toEqual({ action: 'rally', destination: { x: 400, y: 300 } });
+    expect(f.update(self, [wall], [], world)).toEqual({ action: 'rally', destination: { x: 400, y: 400 } });
+  });
+
+  it('soldier skips walls when picking a target, and smashes an enemy wall after 120 blocked ticks', async () => {
+    const soldier = (await load('basic_soldier.js')) as unknown as Updater;
+    const self = { id: '0-0-0', x: 100, y: 100, radius: 10, range: 40, cooldownRemaining: 0, blockedBy: null, blockedTicks: 0 };
+    const wall = { id: '1-0-0', type: 'wall', x: 140, y: 100, radius: 20 }; // touching: gap 10
+    const enemy = { id: '1-0-1', type: 'soldier', x: 300, y: 100, radius: 10 };
+    expect(soldier.update(self, [wall, enemy], [], world)).toEqual({ action: 'move', destination: { x: 300, y: 100 } });
+    const stuck = { ...self, blockedBy: '1-0-0', blockedTicks: 120 };
+    expect(soldier.update(stuck, [wall, enemy], [], world)).toEqual({ action: 'attack', targetId: '1-0-0' });
+    expect(soldier.update({ ...stuck, cooldownRemaining: 5 }, [wall, enemy], [], world)).toEqual({ action: 'idle' });
+    // Not long enough, or the wall is our own (not in enemies) / already broken: keep going for the enemy.
+    expect(soldier.update({ ...stuck, blockedTicks: 119 }, [wall, enemy], [], world)).toEqual({ action: 'move', destination: { x: 300, y: 100 } });
+    expect(soldier.update({ ...stuck, blockedBy: '0-0-9' }, [wall, enemy], [], world)).toEqual({ action: 'move', destination: { x: 300, y: 100 } });
+    // Only walls left: attack the nearest wall.
+    expect(soldier.update(self, [wall], [], world)).toEqual({ action: 'attack', targetId: '1-0-0' });
+  });
+
+  it('tower shoots a wall only when nothing else is in range', async () => {
+    const tower = (await load('basic_tower.js')) as unknown as Updater;
+    const self = { id: '0-0-0', x: 100, y: 100, radius: 14, range: 180, cooldownRemaining: 0 };
+    const wall = { id: '1-0-0', type: 'wall', x: 160, y: 100, radius: 20 };
+    const minion = { id: '1-0-1-m1', type: 'minion', x: 250, y: 100, radius: 8 };
+    expect(tower.update(self, [wall, minion], [], world)).toEqual({ action: 'attack', targetId: '1-0-1-m1' });
+    expect(tower.update(self, [wall, { ...minion, x: 700 }], [], world)).toEqual({ action: 'attack', targetId: '1-0-0' });
+  });
+
+  it('the factory template does not assume the 800 arena (it rallies at world.center)', () => {
+    const src = readFileSync(new URL('../packages/starter-kit/units/basic_factory.js', import.meta.url), 'utf8');
+    expect(src.replace(/\/\/.*$/gm, '')).not.toMatch(/\b(800|400)\b/);
+    expect(src).toContain('world.center');
+  });
+});

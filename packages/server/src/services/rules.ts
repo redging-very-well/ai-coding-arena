@@ -15,10 +15,15 @@ import {
   PHASES,
   TEAM_MODES,
   TEAM_STYLES,
+  FACTORY_RADIUS,
+  WALL_HALF,
   ZONE_SIZE,
   arenaSizeFor,
   defaultMapStyle,
+  expectedMinions,
   isValidTeamMode,
+  minionPrice,
+  pricingOf,
   placePointsTable,
   scaledBonusMax,
   teamModeLabel,
@@ -35,7 +40,7 @@ export function armoryRules(enabled: boolean): Record<string, unknown> {
   return {
     enabled,
     text: enabled
-      ? 'Open Armory is ON this match: every unit type that fought in a battle becomes borrowable by all OTHER players from the next Plan phase, as a frozen copy named "Unit (Creator)". Pick borrowed units on the Pixel Clash page (they count toward the 3 types). list_armory shows them.'
+      ? 'Open Armory is ON this match: every unit type that fought in a battle becomes borrowable by all OTHER players from the next Plan phase, as a frozen copy named "Unit (Creator)". Pick borrowed units on the Pixel Clash page (they count toward your unit and building types). list_armory shows them.'
       : 'Open Armory is off this match: players only use their own units.',
     rules: [
       'Only units fielded in a battle enter the Armory, when that battle ends. Unfielded designs stay private.',
@@ -82,6 +87,69 @@ export function teamRules(): Record<string, unknown> {
   };
 }
 
+/**
+ * The four unit types (§5.2): groups, per-type stats and prices, the
+ * factory's minions, and the fighter / living-value rules (§9.3).
+ */
+export function unitTypeRules(config: GameConfig): Record<string, unknown> {
+  const b = config.stats.bounds;
+  const c = config.cost;
+  const f = config.factory;
+  const pricing = pricingOf(config);
+  const { minionCost, minionValue } = minionPrice(c, pricing);
+  const iv = b.productionInterval;
+  const examples = [iv.min, 900, 1200, iv.max].filter((v, i, a) => v >= iv.min && v <= iv.max && a.indexOf(v) === i);
+  return {
+    text:
+      'Four types: soldier (moves and fights), tower (stays and shoots), wall (a solid block that stops everyone, never attacks, has no update), factory (stays and builds minions; its update only picks where they go). Soldiers are "units"; towers, walls and factories are "buildings".',
+    types: {
+      soldier: { group: 'unit', moves: true, attacks: true, update: 'required', needs: ['name', 'type', 'maxHealth', 'damage', 'range', 'speed', 'attackCooldown', 'color'], size: `${b.size.min}-${b.size.max}, default ${DEFAULT_SIZE.soldier}` },
+      tower: { group: 'building', moves: false, attacks: true, update: 'required', needs: ['name', 'type', 'maxHealth', 'damage', 'range', 'speed (0)', 'attackCooldown', 'color'], size: `${b.size.min}-${b.size.max}, default ${DEFAULT_SIZE.tower}` },
+      wall: {
+        group: 'building',
+        moves: false,
+        attacks: false,
+        update: 'none (an update() is ignored)',
+        needs: ['name', 'type', 'maxHealth', 'color'],
+        maxHealth: b.wallHealth,
+        body: `a ${WALL_HALF * 2}x${WALL_HALF * 2} px square filling its cell; for range it counts as a circle of radius ${WALL_HALF}`,
+        leaveOut: ['damage', 'range', 'speed', 'attackCooldown', 'size'],
+      },
+      factory: {
+        group: 'building',
+        moves: false,
+        attacks: false,
+        update: "required: return { action: 'rally', destination } (where its minions go, default world.center), { action: 'hold' } (pause building this tick) or { action: 'idle' }",
+        needs: ['name', 'type', 'maxHealth', 'productionInterval', 'color'],
+        maxHealth: b.factoryHealth,
+        productionInterval: { ...iv, integer: true, unit: 'ticks between two minions' },
+        body: `a circle of radius ${FACTORY_RADIUS}`,
+        leaveOut: ['damage', 'range', 'speed', 'attackCooldown', 'size'],
+      },
+    },
+    limits: {
+      perRound: `Up to ${config.caps.maxUnitTypes} unit types (soldiers) AND up to ${config.caps.maxBuildingTypes} building types (towers, walls, factories).`,
+      copies: `Up to ${config.caps.maxCopies} fighters placed (soldiers, towers and factories), of which at most ${config.caps.maxFactoryCopies} factories, plus up to ${config.caps.maxWallCopies} walls.`,
+    },
+    walls: [
+      'Walls block EVERY body, your own and your teammates\' too: leave a gap of one empty cell (two for size 19-20 bodies).',
+      'Enemies (soldiers, towers and minions) can attack and break walls. Shots fly over walls.',
+      'A unit that bumps into a wall slides along it; self.blockedBy is that wall\'s id and self.blockedTicks counts the ticks it has been in the way.',
+      'Sudden death hurts walls too (they crumble in about 14 s outside the circle).',
+    ],
+    factories: {
+      text: `A factory builds one minion every productionInterval ticks, at most ${f.maxAlivePerFactory} alive per factory and ${f.maxAlivePerPlayer} per player (fewer with 7-8 players), up to ${f.maxMinionsPerFactory} per battle. Destroying a factory stops it; its minions keep going.`,
+      minionsPerBattle: Object.fromEntries(examples.map((v) => [v, expectedMinions(v, pricing)])),
+      minion: { ...f.minion, type: 'minion', name: 'Minion', note: 'built-in AI: chases enemies near it or near the rally point, otherwise walks to the rally point; you never write minion code' },
+      minionCost,
+      minionValue,
+    },
+    fighters:
+      'Fighters are soldiers, towers, minions and factories that can still build. Walls are NOT fighters: Ready needs at least one fighter (NO_FIGHTERS), and a side with no fighters left is out (its walls crumble).',
+    livingValue: `At the time limit walls are worth $0, a factory is worth its body price only (minions it never built count nothing), and each living minion $${minionValue}. During the battle a factory counts $${minionValue} per minion it can still build in time, and one that holds or is walled in until it no longer has time to build one is not a fighter any more. Breaking an enemy wall still scores its full price as value destroyed.`,
+  };
+}
+
 export function buildRules(config: GameConfig, armoryEnabled = false, match?: MatchInfoDTO): RulesDTO {
   const t = config.timers;
   const arena = match?.map ? { width: match.map.width, height: match.map.height } : { width: ARENA.width, height: ARENA.height };
@@ -101,16 +169,26 @@ export function buildRules(config: GameConfig, armoryEnabled = false, match?: Ma
     costFormula:
       'each stat term = linear * (1 + c.curveK * (x / max)^2) with linear = maxHealth*c.hp (max 500), damage*c.damage (max 60), range*c.range (max 300), speed*c.speed (max 5), (size - 6)*c.size (max 14); ' +
       'raw = (c.base + sum of the terms) * max(1, c.referenceCooldown / attackCooldown); cost = ceil(raw), where c = coefficients and size defaults to bounds.defaultSize[type]. ' +
-      curveSentence(config.cost.curveK),
+      curveSentence(config.cost.curveK) +
+      ' Walls: cost = ceil(c.wall.base + maxHealth*c.wall.hp*(1 + c.curveK*(maxHealth/1500)^2)). ' +
+      'Factories: cost = ceil(c.factory.base + maxHealth*c.factory.hp*(1 + c.curveK*(maxHealth/1000)^2)) + minionValue * E, where E = the minions it can build in one battle (unitTypes.factories.minionsPerBattle) and minionValue = half the price of a minion priced as a soldier (unitTypes.factories.minionValue).',
     coefficients: { ...config.cost },
     bounds: {
       ...config.stats.bounds,
+      byType: {
+        soldier: { maxHealth: config.stats.bounds.maxHealth, damage: config.stats.bounds.damage, range: config.stats.bounds.range, speed: config.stats.bounds.soldierSpeed, attackCooldown: config.stats.bounds.attackCooldown, size: config.stats.bounds.size },
+        tower: { maxHealth: config.stats.bounds.maxHealth, damage: config.stats.bounds.damage, range: config.stats.bounds.range, speed: 0, attackCooldown: config.stats.bounds.attackCooldown, size: config.stats.bounds.size },
+        wall: { maxHealth: config.stats.bounds.wallHealth },
+        factory: { maxHealth: config.stats.bounds.factoryHealth, productionInterval: config.stats.bounds.productionInterval },
+      },
       towerSpeed: 0,
       defaultSize: DEFAULT_SIZE,
       color: '#RRGGBB',
       shape: ['circle', 'square', 'triangle', 'diamond'],
     },
     scoring: scoringRules(config),
+    unitTypes: unitTypeRules(config),
+    factory: { ...config.factory },
     arena: {
       width: arena.width,
       height: arena.height,
@@ -139,7 +217,7 @@ export function buildRules(config: GameConfig, armoryEnabled = false, match?: Ma
         }
       : {}),
     ranking:
-      'Survivors rank above the eliminated. At the time limit, survivors are ranked by the total cost of their living units. In team mode whole teams are ranked the same way (team living cost).',
+      'Survivors rank above the eliminated (a side with only walls left is out). At the time limit, survivors are ranked by the total value of their living units: soldiers and towers their cost, walls $0, factories their body (unbuilt minions count nothing), minions their minionValue. In team mode whole teams are ranked the same way (team living cost).',
     pointsSummary: `Round points = place points (1st gets players - 1 down to 0 for last; 4 players: ${placePointsTable(4).join('/')}) + damage bonus (0-${config.scoring.damageBonusMax} at 4 players) + value-destroyed bonus (0-${config.scoring.valueBonusMax} at 4 players). Bonuses scale with players / 4. See scoring.`,
   };
 }
@@ -196,8 +274,9 @@ export const ENGINE_RULES = [
   '1. Stats are snapshotted at validation. Changing this.damage inside update() has no effect.',
   '2. Extra fields on `this` persist between ticks for that copy. Module-level variables are shared by all your copies of the same type.',
   '3. update() is called once per tick (60 ticks = 1 s) with fresh plain copies. Mutating the inputs does nothing.',
-  "4. The returned action is a request: attack needs a living enemy within range (EDGE to edge, +0.5 px) and cooldownRemaining = 0, else the unit idles. move: soldiers only, at most `speed` px per tick, clamped to the arena. Anything else (or a throw) means idle; throws count strikes and 30 strikes disable the unit for the battle.",
+  "4. The returned action is a request: attack needs a living enemy within range (EDGE to edge, +0.5 px) and cooldownRemaining = 0, else the unit idles. move: soldiers only, at most `speed` px per tick, clamped to the arena; a wall in the way is slid along. rally {destination} and hold: factories only (rally sets where its minions go and is kept until changed; hold pauses building for the tick). An action the type can't do is an idle. Anything else (or a throw) means idle; throws count strikes and 30 strikes disable the unit for the battle.",
   '5. No import, require, network, timers or async. They do not exist in the sandbox.',
+  '6. Four types: soldier (moves, fights), tower (stays, shoots), wall (a 40x40 block with no update() that blocks everyone; enemies can break it), factory (stays and builds minions; its update() only rallies or holds). Minions are engine-made fighters (type "minion" in enemies/allies): you never write their code.',
 ];
 
 /** The costFormula sentence on the curve, built from curveK (k = 0 is linear: no "spread" claim). */
@@ -244,12 +323,22 @@ export const STRATEGY_TIPS = [
   "Tell friend from foe by teamId: allies include your teammates' units in team mode, and enemies are only the other teams' units.",
   SUDDEN_DEATH_TIP_SLOT,
   'Add a sprite() method with pixel art (drawn facing right); without it the unit gets a plain fallback look.',
+  'Walls block everyone, your own units too: leave a gap of one empty cell so your soldiers and minions can get out (two cells for size 19-20).',
+  "Walls can't attack and are worth $0 at the end, and a player with only walls left is out: walls protect fighters, they don't win.",
+  "Skip enemies with type 'wall' when picking targets, unless one blocks you: if self.blockedBy is an enemy wall (still in enemies) and self.blockedTicks is high (120 = 2 s), smash it.",
+  "Minions show up in enemies as type 'minion': weak (40 HP) but many. Shots fly over walls, so towers behind walls still shoot.",
+  'A factory pays up front for its minions: productionInterval 600 makes 8 per battle, 900 makes 5, 1800 makes 2, and the price follows. Rally them at the nearest enemy to attack, or in front of your towers to defend.',
 ];
 
 export function buildContract(config: GameConfig = DEFAULT_CONFIG): ContractDTO {
   return {
     typescript: contractTypescript(),
-    templates: { basic_soldier: templateSource('basic_soldier'), basic_tower: templateSource('basic_tower') },
+    templates: {
+      basic_soldier: templateSource('basic_soldier'),
+      basic_tower: templateSource('basic_tower'),
+      basic_wall: templateSource('basic_wall'),
+      basic_factory: templateSource('basic_factory'),
+    },
     notes: [...ENGINE_RULES, ...strategyTips(config).map((t) => `Tip: ${t}`)],
   };
 }

@@ -7,16 +7,20 @@ import {
   assignMapZones,
   assignTeamZones,
   fail,
+  groupOf,
   isArmoryUnitId,
   isValidCell,
   mapFor,
   ok,
   resolveMapStyle,
+  trappedCells,
   zoneCentredOnLine,
   type MapZone,
   type PlacementDTO,
   type PlacementResponse,
+  type PlacementWarningDTO,
   type Result,
+  type UnitType,
 } from '@pixel-clash/shared';
 import { autoPlace } from '../sim/autoPlace.js';
 import { ArmoryService } from './armory.js';
@@ -28,6 +32,7 @@ import { UnitsService } from './units.js';
 export interface LockedDesign extends LockedUnit {
   name: string;
   cost: number;
+  type: UnitType;
 }
 
 export class RoundService {
@@ -58,11 +63,11 @@ export class RoundService {
     for (const l of rs.locked ?? []) {
       if (isArmoryUnitId(l.unitId)) {
         const e = this.game.armory.forUnitId(l.unitId);
-        if (e) out.push({ ...l, name: ArmoryService.displayName(e), cost: e.cost });
+        if (e) out.push({ ...l, name: ArmoryService.displayName(e), cost: e.cost, type: e.stats.type });
         continue;
       }
       const v = this.game.units.versionOf(playerId, l.unitId, l.version);
-      if (v) out.push({ ...l, name: v.stats.name, cost: v.cost });
+      if (v) out.push({ ...l, name: v.stats.name, cost: v.cost, type: v.stats.type });
     }
     return out;
   }
@@ -83,14 +88,19 @@ export class RoundService {
       return fail('BAD_REQUEST', 'unitIds must be an array of unitId strings.');
     }
     const ids = [...new Set(unitIds as string[])];
-    const max = this.game.config.caps.maxTypes;
-    if (ids.length > max) {
-      return fail('TOO_MANY_TYPES', `You can pick at most ${max} unit types per round.`, { details: { max } });
+    const caps = this.game.config.caps;
+    const maxTotal = caps.maxUnitTypes + caps.maxBuildingTypes;
+    if (ids.length > maxTotal) {
+      return fail('TOO_MANY_TYPES', `You can pick at most ${caps.maxUnitTypes} unit types and ${caps.maxBuildingTypes} building types per round.`, {
+        details: { group: 'all', max: maxTotal, count: ids.length },
+      });
     }
+    const types: UnitType[] = [];
     for (const id of ids) {
       if (isArmoryUnitId(id)) {
         const e = this.game.armory.checkSelectable(playerId, id);
         if (!e.ok) return e;
+        types.push(e.data.stats.type);
         continue;
       }
       const d = this.game.units.design(playerId, id);
@@ -100,6 +110,26 @@ export class RoundService {
           hint: 'Ask Claude to fix it first (list_my_units shows the error).',
         });
       }
+      types.push(UnitsService.latestValid(d)!.stats.type);
+    }
+    // §5.2: ≤ maxUnitTypes soldiers and ≤ maxBuildingTypes buildings (towers, walls, factories).
+    // Un-picking is always allowed, even from a selection that a revised
+    // design pushed over a cap (that is how the player fixes it).
+    const unitCount = types.filter((t) => groupOf(t) === 'unit').length;
+    const buildingCount = types.length - unitCount;
+    const current = this.stateOf(playerId).selection;
+    const onlyRemoves = ids.every((id) => current.includes(id));
+    if (onlyRemoves) {
+      // nothing to check
+    } else if (unitCount > caps.maxUnitTypes) {
+      return fail('TOO_MANY_TYPES', `You can pick at most ${caps.maxUnitTypes} unit types (soldiers) per round.`, {
+        details: { group: 'units', max: caps.maxUnitTypes, count: unitCount },
+      });
+    }
+    if (!onlyRemoves && buildingCount > caps.maxBuildingTypes) {
+      return fail('TOO_MANY_TYPES', `You can pick at most ${caps.maxBuildingTypes} building types (towers, walls, factories) per round.`, {
+        details: { group: 'buildings', max: caps.maxBuildingTypes, count: buildingCount },
+      });
     }
     const rs = this.stateOf(playerId);
     if (!sameSet(rs.selection, ids)) this.armyChanged(playerId);
@@ -114,28 +144,51 @@ export class RoundService {
    * Lock every active player's selection at the end of PLAN (§3): each unitId
    * resolves to its latest valid version; invalid ones are dropped. Empty →
    * the previous round's selection if all still valid → the 3 most recently
-   * submitted valid units → the templates.
+   * submitted valid units → the templates. A walls-only result gets a
+   * starter fighter added (§5.2 Fighters).
    */
   lockSelections(): void {
-    const max = this.game.config.caps.maxTypes;
+    const caps = this.game.config.caps;
     for (const p of this.game.players.active()) {
       const rs = this.stateOf(p.id);
       const resolve = (ids: readonly string[]): LockedUnit[] => {
         const out: LockedUnit[] = [];
+        const count = { unit: 0, building: 0 };
+        const take = (l: LockedUnit, type: UnitType) => {
+          const g = groupOf(type);
+          if (count[g] >= (g === 'unit' ? caps.maxUnitTypes : caps.maxBuildingTypes)) return;
+          count[g]++;
+          out.push(l);
+        };
         for (const id of ids) {
           if (isArmoryUnitId(id)) {
             // A borrowed Armory unit: the frozen entry, if still selectable (§9.1).
             const e = this.game.armory.checkSelectable(p.id, id);
-            if (e.ok) out.push({ unitId: id, version: e.data.version });
+            if (e.ok) take({ unitId: id, version: e.data.version }, e.data.stats.type);
             continue;
           }
           const d = this.game.units.design(p.id, id);
           const v = d ? UnitsService.latestValid(d) : undefined;
-          if (v) out.push({ unitId: id, version: v.version });
+          if (v) take({ unitId: id, version: v.version }, v.stats.type);
         }
-        return out.slice(0, max);
+        return out;
       };
       let locked = resolve(rs.selection);
+      // Over a type cap (a picked design was revised into the other group and
+      // never un-picked): the later picks of the full group are left out; say which.
+      const over = this.overCap(p.id, rs.selection);
+      if (over) {
+        const kept = new Set(locked.map((l) => l.unitId));
+        const left = rs.selection.filter((id) => !kept.has(id) && this.selectedType(p.id, id) !== undefined);
+        const names = left.map((id) => this.displayName(p.id, id));
+        if (names.length > 0) {
+          this.game.notifier.toast(
+            { playerId: p.id },
+            'warn',
+            `${names.join(', ')} ${names.length === 1 ? "isn't" : "aren't"} in your army this round: ${over.max} ${over.group === 'unit' ? 'units' : 'buildings'} max.`,
+          );
+        }
+      }
       if (locked.length === 0 && rs.prevSelection && rs.prevSelection.length > 0) {
         const prev = resolve(rs.prevSelection);
         if (prev.length === rs.prevSelection.length) locked = prev;
@@ -149,6 +202,18 @@ export class RoundService {
         locked = resolve(recent);
       }
       if (locked.length === 0) locked = resolve(this.game.units.templateIds());
+      // §5.2 Fighters: walls can't win on their own, so a walls-only army gets
+      // the first starter fighter that fits the type caps (the Basic Soldier).
+      if (!locked.some((l) => this.selectedType(p.id, l.unitId) !== 'wall')) {
+        for (const id of this.game.units.templateIds()) {
+          if (this.selectedType(p.id, id) === 'wall') continue;
+          const extra = resolve([...locked.map((l) => l.unitId), id]);
+          if (extra.some((l) => l.unitId === id)) {
+            locked = extra;
+            break;
+          }
+        }
+      }
       rs.locked = locked;
       rs.selection = locked.map((l) => l.unitId);
       rs.prevSelection = rs.selection.slice();
@@ -195,13 +260,19 @@ export class RoundService {
   // PLACEMENT
   // -------------------------------------------------------------------------
 
-  /** Validate a full placement list against the locked selection, cells, copies and budget. */
+  /**
+   * Validate a full placement list against the locked selection, cells,
+   * copies (per group, §5.2 Copies) and budget. The result counts the copies
+   * per group and warns W_TRAPPED for every soldier or factory that its walls
+   * box in (non-fatal, §9.3 Placement check).
+   */
   checkPlacements(playerId: string, input: unknown): Result<PlacementResponse> {
     if (!Array.isArray(input)) return fail('BAD_REQUEST', 'placements must be an array of {unitId, col, row}.');
     const caps = this.game.config.caps;
-    const costs = new Map(this.lockedDesigns(playerId).map((d) => [d.unitId, d.cost]));
+    const designs = new Map(this.lockedDesigns(playerId).map((d) => [d.unitId, d]));
     const placements: PlacementDTO[] = [];
     const cells = new Set<string>();
+    const counts = { fighters: 0, factories: 0, walls: 0 };
     let spent = 0;
     for (const raw of input as unknown[]) {
       const p = raw as Partial<PlacementDTO> | null;
@@ -218,22 +289,50 @@ export class RoundService {
         return fail('CELL_TAKEN', `Cell (${p.col}, ${p.row}) already has a unit.`, { details: { col: p.col, row: p.row } });
       }
       cells.add(key);
-      const cost = costs.get(p.unitId);
-      if (cost === undefined) {
+      const d = designs.get(p.unitId);
+      if (d === undefined) {
         return fail('NOT_SELECTED', `"${p.unitId}" is not one of your units for this round.`, { details: { unitId: p.unitId } });
       }
-      spent += cost;
+      spent += d.cost;
+      if (d.type === 'wall') counts.walls++;
+      else counts.fighters++;
+      if (d.type === 'factory') counts.factories++;
       placements.push({ unitId: p.unitId, col: p.col, row: p.row });
     }
-    if (placements.length > caps.maxCopies) {
-      return fail('TOO_MANY_COPIES', `You can place at most ${caps.maxCopies} units.`, { details: { max: caps.maxCopies } });
+    if (counts.fighters > caps.maxCopies) {
+      return fail('TOO_MANY_COPIES', `You can place at most ${caps.maxCopies} fighters (soldiers, towers and factories).`, {
+        details: { group: 'fighters', max: caps.maxCopies, count: counts.fighters },
+      });
+    }
+    if (counts.factories > caps.maxFactoryCopies) {
+      return fail('TOO_MANY_COPIES', `You can place at most ${caps.maxFactoryCopies} factories.`, {
+        details: { group: 'factories', max: caps.maxFactoryCopies, count: counts.factories },
+      });
+    }
+    if (counts.walls > caps.maxWallCopies) {
+      return fail('TOO_MANY_COPIES', `You can place at most ${caps.maxWallCopies} walls.`, {
+        details: { group: 'walls', max: caps.maxWallCopies, count: counts.walls },
+      });
     }
     if (spent > caps.budget) {
       return fail('OVER_BUDGET', `That army costs $${spent} but your budget is $${caps.budget}.`, {
         details: { spent, budget: caps.budget },
       });
     }
-    return ok({ placements, spent, remaining: caps.budget - spent });
+    const warnings: PlacementWarningDTO[] = [];
+    const zone = this.zoneOf(playerId);
+    if (zone && counts.walls > 0) {
+      for (const t of trappedCells(zone, placements, (id) => designs.get(id)?.type)) {
+        warnings.push({
+          code: 'W_TRAPPED',
+          unitId: t.unitId,
+          col: t.col,
+          row: t.row,
+          message: `Your ${designs.get(t.unitId)?.name ?? 'unit'} is walled in! Leave a gap so it can get out.`,
+        });
+      }
+    }
+    return ok({ placements, spent, remaining: caps.budget - spent, counts, warnings });
   }
 
   setPlacements(playerId: string, input: unknown): Result<PlacementResponse> {
@@ -268,7 +367,27 @@ export class RoundService {
     const rs = this.stateOf(playerId);
     if (ready && this.game.store.match.phase === 'PLAN' && rs.selection.length === 0) {
       return fail('NOTHING_SELECTED', 'Pick at least one unit type before getting ready.', {
-        hint: `Tap up to ${this.game.config.caps.maxTypes} units in My Units first, then press Ready.`,
+        hint: `Tap up to ${this.game.config.caps.maxUnitTypes} units and ${this.game.config.caps.maxBuildingTypes} buildings in My Units first, then press Ready.`,
+      });
+    }
+    // §5.2 type caps: a picked design revised into the other group can push a
+    // selection over a cap after it was picked; Ready waits until it fits.
+    const over = ready && this.game.store.match.phase === 'PLAN' ? this.overCap(playerId, rs.selection) : null;
+    if (over) {
+      return fail('TOO_MANY_TYPES', over.message, {
+        hint: 'Tap a picked one in My Units to un-pick it, then press Ready.',
+        details: { group: over.group === 'unit' ? 'units' : 'buildings', max: over.max, count: over.count },
+      });
+    }
+    // §5.2 Fighters: walls alone can't win, so Ready needs a fighter.
+    if (ready && this.game.store.match.phase === 'PLAN' && !this.selectionHasFighter(playerId, rs.selection)) {
+      return fail('NO_FIGHTERS', "Walls can't win on their own. Pick a soldier, tower or factory too.", {
+        hint: 'Tap a soldier, tower or factory in My Units, then press Ready.',
+      });
+    }
+    if (ready && this.game.store.match.phase === 'PLACEMENT' && rs.placements.length > 0 && !this.placementHasFighter(playerId, rs.placements)) {
+      return fail('NO_FIGHTERS', "Walls can't win on their own. Place a soldier, tower or factory too.", {
+        hint: 'Put a soldier, tower or factory on your grid, then press Ready.',
       });
     }
     rs.ready = ready;
@@ -277,6 +396,50 @@ export class RoundService {
     this.game.notifier.privateChanged(playerId);
     this.game.notifier.stateChanged();
     return ok({ ready });
+  }
+
+  /** The type of a selectable id (own design's latest valid version or an Armory entry), if known. */
+  private selectedType(playerId: string, id: string): UnitType | undefined {
+    if (isArmoryUnitId(id)) return this.game.armory.forUnitId(id)?.stats.type;
+    const d = this.game.units.design(playerId, id);
+    return d ? UnitsService.latestValid(d)?.stats.type : undefined;
+  }
+
+  /** A selectable id's name for messages (own design's latest version or an Armory entry). */
+  private displayName(playerId: string, id: string): string {
+    if (isArmoryUnitId(id)) return this.game.armory.forUnitId(id)?.name ?? id;
+    const d = this.game.units.design(playerId, id);
+    return d ? UnitsService.latest(d).stats.name : id;
+  }
+
+  /** The first group (units, then buildings) a selection has more types of than its cap allows, or null. */
+  overCap(playerId: string, ids: readonly string[]): { group: 'unit' | 'building'; count: number; max: number; message: string } | null {
+    const caps = this.game.config.caps;
+    const count = { unit: 0, building: 0 };
+    for (const id of ids) {
+      const t = this.selectedType(playerId, id);
+      if (t) count[groupOf(t)]++;
+    }
+    const over = (group: 'unit' | 'building', max: number) => ({ group, count: count[group], max, message: overCapMessage({ group, count: count[group], max }) });
+    if (count.unit > caps.maxUnitTypes) return over('unit', caps.maxUnitTypes);
+    if (count.building > caps.maxBuildingTypes) return over('building', caps.maxBuildingTypes);
+    return null;
+  }
+
+  /** §5.2 Fighters: anything but a wall (soldiers, towers, factories). */
+  private selectionHasFighter(playerId: string, ids: readonly string[]): boolean {
+    return ids.some((id) => {
+      const t = this.selectedType(playerId, id);
+      return t !== undefined && t !== 'wall';
+    });
+  }
+
+  private placementHasFighter(playerId: string, placements: readonly PlacementDTO[]): boolean {
+    const types = new Map(this.lockedDesigns(playerId).map((d) => [d.unitId, d.type]));
+    return placements.some((p) => {
+      const t = types.get(p.unitId);
+      return t !== undefined && t !== 'wall';
+    });
   }
 
   /**
@@ -305,7 +468,8 @@ export class RoundService {
   }
 
   /**
-   * Auto-place (§9) at lock for every active player with zero placements.
+   * Auto-place (§9) at lock for every active player with zero placements
+   * (or only walls: fighters are added in the free cells, the walls stay).
    * Returns the names of the auto-placed players.
    */
   autoPlaceEmpty(): string[] {
@@ -313,11 +477,20 @@ export class RoundService {
     const names: string[] = [];
     for (const p of this.game.players.active()) {
       const rs = this.stateOf(p.id);
-      if (rs.placements.length > 0) continue;
+      // A layout with a fighter stays; a walls-only one gets fighters added (§9 Auto-place, M8.5).
+      if (rs.placements.length > 0 && this.placementHasFighter(p.id, rs.placements)) continue;
       const res = autoPlace({
-        available: this.lockedDesigns(p.id).map((d) => ({ unitId: d.unitId, cost: d.cost })),
+        ...(rs.placements.length > 0 ? { existing: rs.placements } : {}),
+        available: this.lockedDesigns(p.id).map((d) => ({ unitId: d.unitId, cost: d.cost, type: d.type })),
         lastLayout: rs.lastLayout,
-        caps: { budget: caps.budget, maxCopies: caps.maxCopies, maxTypes: caps.maxTypes },
+        caps: {
+          budget: caps.budget,
+          maxCopies: caps.maxCopies,
+          maxUnitTypes: caps.maxUnitTypes,
+          maxBuildingTypes: caps.maxBuildingTypes,
+          maxFactoryCopies: caps.maxFactoryCopies,
+          maxWallCopies: caps.maxWallCopies,
+        },
         ...(this.zoneOf(p.id) ? { facing: this.zoneOf(p.id)!.facing, centred: zoneCentredOnLine(this.zoneOf(p.id)!) } : {}),
       });
       rs.placements = res.placements;
@@ -329,4 +502,10 @@ export class RoundService {
 
 function sameSet(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((x) => b.includes(x));
+}
+
+/** "You picked 5 buildings; 4 max. Tap one to un-pick it." (TOO_MANY_TYPES after a revision, §5.2). */
+export function overCapMessage(over: { group: 'unit' | 'building'; count: number; max: number }): string {
+  const what = over.group === 'unit' ? 'units' : 'buildings';
+  return `You picked ${over.count} ${what}; ${over.max} max. Tap one to un-pick it.`;
 }
