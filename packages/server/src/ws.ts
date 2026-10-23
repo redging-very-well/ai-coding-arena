@@ -4,7 +4,11 @@
 //
 // Pushes: `state` (on change, coalesced, plus 1 Hz timer ticks), `private`
 // (own data, coalesced per player), `battle:reveal`, `battle:frames`,
-// `battle:end`, `toast`, `kicked`, `screen` (projector remote).
+// `battle:end`, `toast`, `kicked`, `screen` (projector remote), `terminal`
+// (players: own Claude seat, §11.2) and `terminals` (admins: every seat).
+//
+// The HTTP server's single 'upgrade' listener lives here: `/ws` is ours,
+// `/terminal/<N>/ws` goes to the seat terminal proxy, anything else gets 404.
 //
 // Team mode (§9.2): when a member's private data changes, every teammate's
 // `private` (with the `team` block) is re-sent too, at most 300 ms later. The
@@ -60,7 +64,12 @@ export function parseCookies(header: string | undefined): Record<string, string>
   return out;
 }
 
+/** Handles a `/terminal/…` upgrade (the seat terminal proxy, src/terminal). */
+export type UpgradeHandler = (req: IncomingMessage, socket: Duplex, head: Buffer) => void;
+
 export class WsHub implements Notifier {
+  private terminalUpgrade: UpgradeHandler | undefined;
+  private terminalsPending = false;
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
   private readonly clients = new Set<Client>();
   private statePending = false;
@@ -74,8 +83,22 @@ export class WsHub implements Notifier {
 
   attach(server: Server): void {
     server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-      const url = new URL(req.url ?? '/', 'http://localhost');
+      socket.on('error', () => undefined);
+      let url: URL;
+      try {
+        // An absolute-form target like `http://[` doesn't parse: refuse it, don't crash.
+        url = new URL(req.url ?? '/', 'http://localhost');
+      } catch {
+        socket.write('HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      if (url.pathname.startsWith('/terminal/') && this.terminalUpgrade) {
+        this.terminalUpgrade(req, socket, head);
+        return;
+      }
       if (url.pathname !== '/ws') {
+        socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
         socket.destroy();
         return;
       }
@@ -107,6 +130,11 @@ export class WsHub implements Notifier {
       }
     }, HEARTBEAT_MS);
     this.heartbeat.unref?.();
+  }
+
+  /** Route `/terminal/…` upgrades to the seat terminal proxy. */
+  setTerminalUpgrade(handler: UpgradeHandler | undefined): void {
+    this.terminalUpgrade = handler;
   }
 
   close(): void {
@@ -167,6 +195,8 @@ export class WsHub implements Notifier {
     this.send(client, { type: 'hello', role, ...(p ? { player: toPlayerDTO(p) } : {}) });
     this.sendState(client);
     if (client.playerId) this.sendPrivate(client);
+    if (client.playerId) this.send(client, { type: 'terminal', data: this.game.claudeSeats.terminalDTO(client.playerId) });
+    else if (role === 'admin') this.send(client, { type: 'terminals', data: this.game.claudeSeats.adminDTO(false) });
     // Late joiners: the running battle (already public after START) or the last result.
     const reveal = this.game.battle.currentReveal();
     if (reveal && this.game.store.match.phase === 'BATTLE') {
@@ -303,6 +333,28 @@ export class WsHub implements Notifier {
       c.role = 'screen';
       c.ws.close(4001, 'session ended');
     }
+  }
+
+  /**
+   * A Claude seat changed (§11.2): every player gets their own `terminal`
+   * (also when only another seat changed, so an open picker can refresh),
+   * admins get `terminals`. Never the seat password. Coalesced.
+   */
+  terminalsChanged(): void {
+    if (this.terminalsPending) return;
+    this.terminalsPending = true;
+    setImmediate(() => {
+      this.terminalsPending = false;
+      let adminText: string | undefined;
+      for (const c of this.clients) {
+        if (c.role === 'player' && c.playerId) {
+          this.send(c, { type: 'terminal', data: this.game.claudeSeats.terminalDTO(c.playerId) });
+        } else if (c.role === 'admin') {
+          adminText ??= JSON.stringify({ type: 'terminals', data: this.game.claudeSeats.adminDTO(false) } satisfies ServerWsMessage);
+          this.sendRaw(c, adminText);
+        }
+      }
+    });
   }
 
   /** Projector remote (§12.2): only 'screen' sockets get it (no game data in it). */

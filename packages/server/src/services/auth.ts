@@ -153,13 +153,17 @@ export class AuthService {
   }
 
   endSession(token: string | undefined): void {
-    if (token && this.game.store.sessions.delete(token)) this.game.store.save();
+    if (token && this.game.store.sessions.delete(token)) {
+      this.game.store.save();
+      this.game.claudeSeats.accessChanged();
+    }
   }
 
   /** Kill every web session of a player (PIN reset, kick). */
   endSessionsOf(playerId: string): void {
     for (const [t, id] of this.game.store.sessions) if (id === playerId) this.game.store.sessions.delete(t);
     this.game.store.save();
+    this.game.claudeSeats.accessChanged();
   }
 
   /**
@@ -204,7 +208,10 @@ export class AuthService {
   }
 
   adminLogout(token: string | undefined): void {
-    if (token && this.game.store.adminSessions.delete(token)) this.game.store.save();
+    if (token && this.game.store.adminSessions.delete(token)) {
+      this.game.store.save();
+      this.game.claudeSeats.accessChanged();
+    }
   }
 }
 

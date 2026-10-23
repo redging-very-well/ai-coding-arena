@@ -207,11 +207,33 @@ export function adminRoutes(game: Game): Router {
     '/setup',
     wrap(async (req, res) => {
       const b = body(req);
-      const result = game.setup.update({ claudeBoxHost: b.claudeBoxHost, preferredUrl: b.preferredUrl });
+      const result = game.setup.update({ claudeBoxHost: b.claudeBoxHost, preferredUrl: b.preferredUrl, seatSecret: b.seatSecret });
       if (!result.ok) return sendError(res, result.error);
-      res.json(await game.setup.info(req.headers.host));
+      res.json({ ...(await game.setup.info(req.headers.host)), seatSecretSet: game.setup.seatSecretSet });
     }),
   );
+
+  // Claude seats (§11.2): assignments, live terminals and the seat probe.
+  // The seat password and direct URLs only with ?details=1 ("Show details").
+  r.get('/claude-seats', (req, res) => {
+    res.json(game.claudeSeats.adminDTO(req.query.details === '1'));
+  });
+
+  r.post(
+    '/claude-seats/check',
+    wrap(async (_req, res) => {
+      await game.claudeSeats.probeAll();
+      res.json(game.claudeSeats.adminDTO(false));
+    }),
+  );
+
+  r.put('/claude-seats/:seat', (req, res) => {
+    const b = body(req);
+    if (!('playerId' in b)) {
+      return sendError(res, { code: 'BAD_REQUEST', message: 'Send {"playerId": "<id>"} to assign, or {"playerId": null} to unassign.' });
+    }
+    send(res, game.claudeSeats.adminAssign(String(req.params.seat), b.playerId));
+  });
 
   r.post('/wipe', (req, res) => {
     if (body(req).confirm !== 'WIPE') {
@@ -223,6 +245,9 @@ export function adminRoutes(game: Game): Router {
     game.config = game.bootConfig;
     game.auth.rebuildKeys();
     game.notifier.stateChanged();
+    // Every Claude seat is free now; live terminals of the old sessions close.
+    game.notifier.terminalsChanged?.();
+    game.claudeSeats.accessChanged();
     res.json({ ok: true });
   });
 

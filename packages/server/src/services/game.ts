@@ -17,6 +17,7 @@ import type { SessionOpener } from '../sandbox/session.js';
 import { ArmoryService } from './armory.js';
 import { AuthService } from './auth.js';
 import { BattleService } from './battle.js';
+import { ClaudeSeatsService } from './claudeSeats.js';
 import { MatchService } from './match.js';
 import { PlayersService } from './players.js';
 import { RoundService } from './round.js';
@@ -51,6 +52,8 @@ export interface Notifier {
   clientCount?(): number;
   /** A facilitator command for the projector (§12.2); returns how many sockets got it. */
   screenCommand?(command: ScreenCommandDTO): number;
+  /** A Claude seat's assignment, status or live terminal changed (§11.2): 'terminal' / 'terminals' pushes. */
+  terminalsChanged?(): void;
 }
 
 const NOOP_NOTIFIER: Notifier = {
@@ -98,6 +101,7 @@ export class Game {
   readonly battle: BattleService;
   readonly visibility: VisibilityService;
   readonly setup: SetupService;
+  readonly claudeSeats: ClaudeSeatsService;
   notifier: Notifier = NOOP_NOTIFIER;
   /** The boot config (config/default.json + options), before the admin patch. */
   readonly bootConfig: GameConfig;
@@ -117,6 +121,7 @@ export class Game {
     this.match = new MatchService(this);
     this.visibility = new VisibilityService(this);
     this.setup = new SetupService(this);
+    this.claudeSeats = new ClaudeSeatsService(this);
   }
 
   /** Load data/, validate the templates and recover from a restart. */

@@ -55,6 +55,11 @@ export interface PlayerRecord {
   activeFromRound: number;
   kicked: boolean;
   createdAt: number;
+  /**
+   * Claude seat 1-8 (the laptop's terminal container, §11.2), unique across
+   * players; null/absent = none. Independent of the game `seat`.
+   */
+  claudeSeat?: number | null;
 }
 
 export interface UnitVersionRecord {
@@ -208,6 +213,15 @@ export type PersistedMatchState = Omit<MatchState, 'armory'> & {
   armory?: { enabled: boolean; entries: Array<Omit<ArmoryEntryRecord, 'compiledJs'>>; pendingRemovals?: string[] };
 };
 
+/**
+ * /setup settings as stored: the public ones plus the shared seat password
+ * (§11.2 a). `seatSecret` never leaves the server except to an admin with
+ * "Show details" on.
+ */
+export interface SetupRecord extends SetupSettingsDTO {
+  seatSecret: string | null;
+}
+
 export interface PersistedState {
   schema: 1;
   players: PlayerRecord[];
@@ -218,8 +232,8 @@ export interface PersistedState {
   adminSessions: string[];
   adminPassword?: string;
   configPatch: DeepPartial<GameConfig>;
-  /** /setup settings (Claude box address, preferred LAN URL). */
-  setup?: SetupSettingsDTO;
+  /** /setup settings (Claude box address, preferred LAN URL, seat password). */
+  setup?: Partial<SetupRecord>;
 }
 
 export function newMatchState(defaultRounds: number): MatchState {
@@ -271,7 +285,7 @@ export class Store {
   adminPassword: string | undefined;
   configPatch: DeepPartial<GameConfig> = {};
   /** /setup settings; kept across a wipe (they describe the venue, not the game). */
-  setup: SetupSettingsDTO = { claudeBoxHost: null, preferredUrl: null };
+  setup: SetupRecord = { claudeBoxHost: null, preferredUrl: null, seatSecret: null };
   /** Monotonic counter for join order. */
   private joinSeq = 0;
 
@@ -384,7 +398,20 @@ export class Store {
     this.adminSessions = new Set(data.adminSessions ?? []);
     this.adminPassword = data.adminPassword;
     this.configPatch = migrateConfigPatch(data.configPatch ?? {});
-    if (data.setup) this.setup = { claudeBoxHost: data.setup.claudeBoxHost ?? null, preferredUrl: data.setup.preferredUrl ?? null };
+    if (data.setup) {
+      this.setup = {
+        claudeBoxHost: data.setup.claudeBoxHost ?? null,
+        preferredUrl: data.setup.preferredUrl ?? null,
+        seatSecret: typeof data.setup.seatSecret === 'string' ? data.setup.seatSecret : null,
+      };
+    }
+    // Claude seats are unique (§11.2 c): drop duplicates and junk from an edited file.
+    const claudeSeats = new Set<number>();
+    for (const p of this.players.values()) {
+      const s = p.claudeSeat;
+      if (p.kicked || typeof s !== 'number' || !Number.isInteger(s) || s < 1 || s > 8 || claudeSeats.has(s)) p.claudeSeat = null;
+      else claudeSeats.add(s);
+    }
     return true;
   }
 

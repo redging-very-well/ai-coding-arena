@@ -192,6 +192,7 @@ export class VisibilityService {
           designs: units.filter((u) => !u.isTemplate).length,
           strikes: last?.reports[p.id]?.strikes ?? 0,
           activeFromRound: p.activeFromRound,
+          claudeSeat: g.claudeSeats.seatOf(p),
           apiKey: p.apiKey,
           selection: rs.selection.slice(),
           placement: rs.placements.slice(),

@@ -98,6 +98,17 @@ export const SERVICE_ERROR_CODES = [
   'SAME_TEAM',
   'TEMPLATE_PROTECTED',
   'TEMPLATE_WOULD_BREAK',
+  // Claude seats and the seat terminal proxy (§11.2).
+  'BAD_CLAUDE_SEAT',
+  'CLAUDE_SEAT_TAKEN',
+  'BAD_SEAT_SECRET',
+  'TERMINAL_LOGIN_REQUIRED',
+  'CLAUDE_SEAT_NOT_YOURS',
+  'TERMINAL_BAD_ORIGIN',
+  'CLAUDE_BOX_NOT_SET',
+  'CLAUDE_BOX_DOWN',
+  'SEAT_PASSWORD_WRONG',
+  'TERMINAL_BUSY',
   'VALIDATION_FAILED',
   'INTERNAL',
 ] as const;
@@ -191,8 +202,11 @@ export function httpStatusFor(code: ErrorCode): number {
     case 'AUTH_REQUIRED':
     case 'KEY_INVALID':
     case 'BAD_LOGIN':
+    case 'TERMINAL_LOGIN_REQUIRED':
       return 401;
     case 'ADMIN_REQUIRED':
+    case 'CLAUDE_SEAT_NOT_YOURS':
+    case 'TERMINAL_BAD_ORIGIN':
       return 403;
     case 'NOT_FOUND':
       return 404;
@@ -206,11 +220,18 @@ export function httpStatusFor(code: ErrorCode): number {
     case 'SAME_TEAM':
     case 'TEMPLATE_PROTECTED':
     case 'TEMPLATE_WOULD_BREAK':
+    case 'CLAUDE_SEAT_TAKEN':
       return 409;
     case 'RATE_LIMITED':
       return 429;
     case 'INTERNAL':
       return 500;
+    case 'CLAUDE_BOX_DOWN':
+    case 'SEAT_PASSWORD_WRONG':
+      return 502;
+    case 'CLAUDE_BOX_NOT_SET':
+    case 'TERMINAL_BUSY':
+      return 503;
     default:
       return (VALIDATION_ERROR_CODES as readonly string[]).includes(code) ||
         code === 'VALIDATION_FAILED'

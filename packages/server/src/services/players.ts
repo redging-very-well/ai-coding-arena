@@ -106,6 +106,7 @@ export class PlayersService {
       activeFromRound,
       kicked: false,
       createdAt: Date.now(),
+      claudeSeat: null,
     };
     store.players.set(player.id, player);
     store.match.perPlayer[player.id] = newRoundState();
@@ -206,6 +207,8 @@ export class PlayersService {
     this.game.auth.endSessionsOf(p.id);
     this.game.auth.revokeKey(p.apiKey);
     this.game.notifier.playerRevoked(p.id);
+    // Kick frees the Claude seat (§11.2 c); closes their live terminal.
+    this.game.claudeSeats.release(p);
     if (deleteData) {
       this.purge(p.id);
       // Kick + delete: their Open Armory entries go too (a plain kick keeps them, §9.1).

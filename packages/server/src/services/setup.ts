@@ -1,17 +1,19 @@
 // /setup info (plan §11 "/setup page", §12.3 server info): the join URL + QR,
-// and the Claude box seat terminal links (§11.1). The server never talks to
-// ttyd; it only builds `http://<claude-box>:778N` links from the address the
-// facilitator typed in /admin.
+// the seat cards (`/play?seat=N` + QR for Claude seats 1-8, §11.2), and the
+// facilitator's settings: the Claude box address and the shared seat password
+// (`seatSecret`, §11.2 a), which never appears in any public payload.
 
 import QRCode from 'qrcode';
-import type { Result, SeatTerminalDTO, SetupInfoDTO, SetupSettingsDTO } from '@pixel-clash/shared';
+import { CLAUDE_SEATS, type Result, type SeatCardDTO, type SeatTerminalDTO, type SetupInfoDTO, type SetupSettingsDTO } from '@pixel-clash/shared';
 import { lanUrls } from '../util/lan.js';
+import { SEAT_SECRET_RE, directSeatUrl, seatNumbers } from './claudeSeats.js';
 import type { Game } from './game.js';
 import { safeHost } from './kit.js';
 
-/** ttyd host port of seat 0 (seat N → 7781 + N, §11.1). */
+/** ttyd host port of seat index 0 (index i → 7781 + i = Claude seat i + 1, §11.1). */
 export const SEAT_TERMINAL_BASE_PORT = 7781;
-export const SEAT_COUNT = 4;
+/** Claude seats on the box (seat1..seat8). */
+export const SEAT_COUNT = CLAUDE_SEATS;
 
 /** Host name or IPv4 (no scheme, port or path). */
 const HOST_RE = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?)*$/;
@@ -33,8 +35,9 @@ export function normalizeBaseUrl(input: string): string | null {
   return BASE_URL_RE.test(s) ? s : null;
 }
 
+/** Direct ttyd URL of seat index 0-7 (Claude seat index + 1; ttyd runs with `-b /terminal/N`). */
 export function seatTerminalUrl(host: string, seat: number): string {
-  return `http://${host}:${SEAT_TERMINAL_BASE_PORT + seat}`;
+  return directSeatUrl(host, seat + 1);
 }
 
 const qrCache = new Map<string, string>();
@@ -52,13 +55,20 @@ export async function qrSvg(text: string): Promise<string> {
 export class SetupService {
   constructor(private readonly game: Game) {}
 
+  /** The public settings (never the seat password). */
   get settings(): SetupSettingsDTO {
-    return { ...this.game.store.setup };
+    const { claudeBoxHost, preferredUrl } = this.game.store.setup;
+    return { claudeBoxHost, preferredUrl };
+  }
+
+  get seatSecretSet(): boolean {
+    return !!this.game.store.setup.seatSecret;
   }
 
   /** Update settings: `null` or "" clears a field, `undefined` leaves it. */
-  update(patch: { claudeBoxHost?: unknown; preferredUrl?: unknown }): Result<SetupSettingsDTO> {
-    const next = { ...this.game.store.setup };
+  update(patch: { claudeBoxHost?: unknown; preferredUrl?: unknown; seatSecret?: unknown }): Result<SetupSettingsDTO> {
+    const before = this.game.store.setup;
+    const next = { ...before };
     if (patch.claudeBoxHost !== undefined) {
       if (patch.claudeBoxHost === null || patch.claudeBoxHost === '') next.claudeBoxHost = null;
       else {
@@ -80,10 +90,32 @@ export class SetupService {
         next.preferredUrl = u;
       }
     }
+    if (patch.seatSecret !== undefined) {
+      if (patch.seatSecret === null || patch.seatSecret === '') next.seatSecret = null;
+      else {
+        const v = typeof patch.seatSecret === 'string' ? patch.seatSecret.trim() : '';
+        if (!SEAT_SECRET_RE.test(v)) {
+          return {
+            ok: false,
+            error: {
+              code: 'BAD_SEAT_SECRET',
+              message: 'The seat password must be 12-64 letters, digits, ".", "_", "~" or "-" (no spaces or ":").',
+              hint: 'Use the same value as SEAT_SECRET in sessions/.env on the Claude box, e.g. otter-lamp-quartz-ninety.',
+            },
+          };
+        }
+        next.seatSecret = v;
+      }
+    }
     this.game.store.setup = next;
     this.game.store.save();
     this.game.notifier.stateChanged();
-    return { ok: true, data: { ...next } };
+    if (next.claudeBoxHost !== before.claudeBoxHost || next.seatSecret !== before.seatSecret) {
+      // Statuses change at once (no-box / no-password); the probe re-checks every seat.
+      this.game.notifier.terminalsChanged?.();
+      void this.game.claudeSeats.probeAll();
+    }
+    return { ok: true, data: this.settings };
   }
 
   /**
@@ -115,6 +147,11 @@ export class SetupService {
         seatTerminals.push({ seat, url, qrSvg: await qrSvg(url) });
       }
     }
+    const seatCards: SeatCardDTO[] = [];
+    for (const seat of seatNumbers()) {
+      const url = `${baseUrl}/play?seat=${seat}`;
+      seatCards.push({ seat, playUrl: url, qrSvg: await qrSvg(url) });
+    }
     return {
       lanUrls: lan,
       baseUrl,
@@ -122,6 +159,7 @@ export class SetupService {
       playQrSvg: await qrSvg(playUrl),
       settings: this.settings,
       seatTerminals,
+      seatCards,
       sandboxMode: this.game.config.sandbox.mode,
     };
   }

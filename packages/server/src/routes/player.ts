@@ -20,10 +20,22 @@ export function playerRoutes(game: Game): Router {
       connected: game.notifier.isConnected(p.id),
       active: game.players.isActive(p),
       benched: game.teams.isBenched(p),
+      claudeSeat: game.claudeSeats.seatOf(p),
     };
     const teamId = game.teams.active ? game.teams.teamIdOf(p.id) : undefined;
     if (teamId !== undefined) me.teamId = teamId;
     res.json(me);
+  });
+
+  // Claude seat (§11.2 c): the laptop's terminal. Any phase, also for benched players.
+  r.get('/claude-seats', (req, res) => {
+    res.json(game.claudeSeats.playerDTO(req.player!));
+  });
+
+  r.put('/me/claude-seat', (req, res) => {
+    const b = body(req);
+    if (!('seat' in b)) return sendError(res, { code: 'BAD_REQUEST', message: 'Send {"seat": 1-8} or {"seat": null}.' });
+    send(res, game.claudeSeats.claim(req.player!, b.seat));
   });
 
   r.post(

@@ -38,7 +38,10 @@
 //   GET    /battles/:round/replay     -> ReplayDTO        (after playback ends)
 //   GET    /kit.zip                   -> personal kit zip (player)
 //   GET    /setup/kit.zip             -> generic kit zip (no auth)
-//   GET    /setup                     -> SetupInfoDTO (no auth: LAN/play URL + QR, seat terminal links)
+//   GET    /setup                     -> SetupInfoDTO (no auth: LAN/play URL + QR, seat cards; never the seat password)
+//   GET    /claude-seats              -> ClaudeSeatsDTO (player; the Claude seat picker, §11.2)
+//   PUT    /me/claude-seat {seat: 1-8 | null} -> {claudeSeat} (player, any phase, 1/s;
+//                                        BAD_CLAUDE_SEAT, CLAUDE_SEAT_TAKEN 409 with details {seat, takenBy})
 // Admin (cookie pc_admin):
 //   POST /admin/login {password}      -> {ok:true}
 //   POST /admin/logout                -> {ok:true}
@@ -65,7 +68,17 @@
 //   PUT  /admin/config  DeepPartial<GameConfig> -> AdminConfigResponse
 //   GET  /admin/overview              -> AdminOverviewDTO
 //   POST /admin/wipe {confirm:'WIPE'} -> {ok:true}
-//   PUT  /admin/setup {claudeBoxHost?, preferredUrl?} (null clears) -> SetupInfoDTO
+//   PUT  /admin/setup {claudeBoxHost?, preferredUrl?, seatSecret?} (null/"" clears) -> SetupInfoDTO & {seatSecretSet}
+//                                        (BAD_SEAT_SECRET: 12-64 of A-Z a-z 0-9 . _ ~ -)
+//   GET  /admin/claude-seats[?details=1] -> AdminClaudeSeatsDTO (seatSecret + directUrl only with details=1)
+//   PUT  /admin/claude-seats/:seat {playerId | null} -> AdminClaudeSeatsDTO (assign/move/unassign; BAD_CLAUDE_SEAT, NOT_FOUND)
+//   POST /admin/claude-seats/check    -> AdminClaudeSeatsDTO (probes every seat now)
+//
+// Seat terminal proxy (§11.2, same origin, not under /api; cookie auth: the
+// player assigned to Claude seat N, or the admin):
+//   GET/HEAD /terminal/<N>/…           -> the seat's ttyd (page, assets); friendly HTML error pages
+//   GET      /terminal/<N>/token       -> {"token":"pixel-clash"} (answered by the proxy)
+//   WS       /terminal/<N>/ws[?pane=id] -> the seat's terminal; one live terminal per seat, newest wins
 //   POST /admin/screen ScreenCommandDTO -> {ok:true, screens} (projector remote: replay, 1x/2x, join poster;
 //                                        replay only in RESULTS/MATCH_RESULTS; BAD_REQUEST for an unknown action)
 //
@@ -155,6 +168,8 @@ export interface MeResponse {
   teamId?: number;
   /** Joined after Start match in team mode: sits out until the next match (§4). */
   benched: boolean;
+  /** The player's Claude seat 1-8 (the laptop's terminal, §11.2), or null. Not the game seat. */
+  claudeSeat: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -773,6 +788,9 @@ export interface PrivateStateDTO {
  *  - 'toast'         short message for the recipient.
  *  - 'kicked'        this player was removed; the session is gone.
  *  - 'screen'        a facilitator command for the projector (replay, join poster), §12.2.
+ *  - 'terminal'      players: own Claude seat, its status and who holds its live terminal (§11.2).
+ *                    Sent on hello and whenever any Claude seat changes (refetch /claude-seats for the picker).
+ *  - 'terminals'     admins: every Claude seat (no secret, no direct URLs), on hello and on every change.
  */
 export type ServerWsMessage =
   | { type: 'hello'; role: ViewerRole; player?: PlayerDTO }
@@ -784,7 +802,9 @@ export type ServerWsMessage =
   | { type: 'toast'; level: 'info' | 'warn' | 'error'; message: string }
   | { type: 'kicked' }
   | { type: 'pong' }
-  | { type: 'screen'; command: ScreenCommandDTO };
+  | { type: 'screen'; command: ScreenCommandDTO }
+  | { type: 'terminal'; data: TerminalDTO }
+  | { type: 'terminals'; data: AdminClaudeSeatsDTO };
 
 /**
  * POST /admin/screen → 'screen' WS message (§12.2): the facilitator drives the
@@ -833,6 +853,8 @@ export interface AdminPlayerDTO extends PlayerStatusDTO {
   designs: number;
   strikes: number;
   activeFromRound: number;
+  /** Claude seat 1-8 (§11.2), or null. */
+  claudeSeat: number | null;
 }
 
 export interface AdminOverviewDTO {
@@ -885,11 +907,26 @@ export interface SetupSettingsDTO {
   preferredUrl: string | null;
 }
 
+/**
+ * @deprecated Direct ttyd links (adults' fallback, needs the seat password).
+ * Superseded by `seatCards` + the /terminal/<N>/ proxy (§11.2).
+ */
 export interface SeatTerminalDTO {
-  /** Seat 0-3 (shown as "Seat 1-4"). */
+  /** Index 0-7 (Claude seat `seat + 1`). */
   seat: number;
+  /** `http://<claude-box>:778N/terminal/N/` */
   url: string;
   /** QR code of `url` as an SVG document (server-generated). */
+  qrSvg: string;
+}
+
+/** A printed seat card (§11): the laptop's Claude seat and its /play link. */
+export interface SeatCardDTO {
+  /** Claude seat 1-8. */
+  seat: number;
+  /** `${baseUrl}/play?seat=N` */
+  playUrl: string;
+  /** QR code of `playUrl` as an SVG document. */
   qrSvg: string;
 }
 
@@ -904,8 +941,10 @@ export interface SetupInfoDTO {
   /** QR code of playUrl as an SVG document. */
   playQrSvg: string;
   settings: SetupSettingsDTO;
-  /** Empty until the facilitator sets the Claude box address. */
+  /** @deprecated Empty until the facilitator sets the Claude box address. Use `seatCards`. */
   seatTerminals: SeatTerminalDTO[];
+  /** Seat cards for Claude seats 1-8 (`/play?seat=N` + QR). Never contains the seat password. */
+  seatCards: SeatCardDTO[];
   sandboxMode: GameStateDTO['sandboxMode'];
 }
 
@@ -923,4 +962,69 @@ export interface AdminConfigResponse {
 
 export interface ApiErrorBody {
   error: { code: string; message: string; hint?: string; details?: Record<string, unknown> };
+}
+
+// ---------------------------------------------------------------------------
+// Claude seats and the embedded terminal (§11.2)
+// ---------------------------------------------------------------------------
+
+/** Claude seats 1-8 (containers seat1..seat8 on the Claude box, ports 7781-7788). */
+export const CLAUDE_SEATS = 8;
+
+/**
+ * Seat status for adults. `unknown` = not probed yet; `no-box` / `no-password`
+ * = the Claude box address / seat password is not set in /admin.
+ */
+export type ClaudeSeatStatus = 'up' | 'down' | 'wrong-password' | 'no-box' | 'no-password' | 'unknown';
+
+/** What players see: anything that needs a grown-up is just `unknown`. */
+export type PlayerClaudeSeatStatus = 'up' | 'down' | 'unknown';
+
+/** Who holds a seat's live terminal. `pane` is the /play iframe's id; null = a standalone tab (or the admin). */
+export interface TerminalLiveDTO {
+  pane: string | null;
+  by: 'player' | 'admin';
+  /** ms epoch the terminal was opened. */
+  since: number;
+}
+
+/** WS 'terminal' (players): the player's own Claude seat. */
+export interface TerminalDTO {
+  /** Own Claude seat 1-8, or null (show the picker). */
+  seat: number | null;
+  status: PlayerClaudeSeatStatus;
+  /** The Claude box address and the seat password are both set in /admin. */
+  boxReady: boolean;
+  /** The seat's live terminal, or null. */
+  live: TerminalLiveDTO | null;
+}
+
+/** GET /claude-seats (players). Names are public already (player tiles). */
+export interface ClaudeSeatsDTO {
+  mySeat: number | null;
+  boxReady: boolean;
+  seats: Array<{ seat: number; takenBy: string | null; mine: boolean; status: PlayerClaudeSeatStatus }>;
+}
+
+export interface AdminClaudeSeatDTO {
+  seat: number;
+  playerId: string | null;
+  playerName: string | null;
+  status: ClaudeSeatStatus;
+  /** Short reason for `down` (e.g. "ECONNREFUSED"). Never contains a secret. */
+  reason?: string;
+  /** ms epoch of the last probe, or null. */
+  checkedAt: number | null;
+  live: (TerminalLiveDTO & { playerName?: string }) | null;
+  /** `http://<box>:778N/terminal/N/` (details=1 only). */
+  directUrl?: string;
+}
+
+/** GET /admin/claude-seats, and WS 'terminals' (without the details fields). */
+export interface AdminClaudeSeatsDTO {
+  boxHost: string | null;
+  seatSecretSet: boolean;
+  /** The shared seat password (`?details=1` only). */
+  seatSecret?: string | null;
+  seats: AdminClaudeSeatDTO[];
 }
