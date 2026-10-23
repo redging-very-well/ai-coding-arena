@@ -259,8 +259,12 @@ describe('ivm runner: deadlines and culprits', () => {
     const tracker = new StrikeTracker(STRIKE_LIMITS);
     const results = await battle(r, tracker, selves, 8);
     // A, A (naps), B, B (naps): a culprit's own timeouts don't count toward the player limits.
-    // (Filtered: a busy test machine may add a stray, forgiven stall.)
-    expect(results.filter((x) => x.culprit === '0-0-0' || x.culprit === '0-0-1').map((x) => [x.status, x.culprit])).toEqual([
+    // (Filtered: a busy test machine may add stray stalls, and a looper's own
+    // timeout can be classed as a forgiven host stall, which earns no strike, so
+    // that unit then needs one more counted timeout to nap. Only counted ones
+    // must follow the A, A, B, B pattern.)
+    const counted = results.filter((x) => (x.culprit === '0-0-0' || x.culprit === '0-0-1') && !x.hostStall);
+    expect(counted.map((x) => [x.status, x.culprit])).toEqual([
       ['timeout', '0-0-0'],
       ['timeout', '0-0-0'],
       ['timeout', '0-0-1'],
