@@ -1,6 +1,6 @@
 # Pixel Clash Claude box (`sessions/`)
 
-One Docker container per seat (plan §11.1). Each container runs **ttyd**, which runs **Claude Code** straight inside that seat's kit folder `/kit`. Players open `http://<claude-box>:768N` in a browser and type to Claude; the terminal opens straight into Claude, and if Claude exits it starts again.
+One Docker container per seat (plan §11.1). Each container runs **ttyd**, which runs **Claude Code** straight inside that seat's kit folder `/kit`. Players open `http://<claude-box>:778N` in a browser and type to Claude; the terminal opens straight into Claude, and if Claude exits it starts again.
 
 **The container is the security boundary, not the ttyd loop.** Claude Code's `!` prefix runs any typed command in the container as user `player`, and a player can accept any approval prompt Claude raises. So treat each seat as "a player with a shell inside this container": they can reach `/kit`, the seat's own Claude state, and whatever the network allows, but not other seats, the host or the game server's files. In particular, **each seat can read its own Claude login** (`/home/player/.claude/.credentials.json`): use a dedicated event account and sign it out of all sessions after the event (§5). The image ships a root-owned `/etc/claude-code/managed-settings.json` that player-writable settings can't override: it turns off `bypassPermissions` mode and denies Claude reading the credentials file (the `!` prefix still can).
 
@@ -81,7 +81,7 @@ docker compose run --rm seatN check
 
 prints the Claude Code and ttyd versions, the game server URL, whether the kit is rendered, whether a player is saved, whether Claude looks logged in and trusted, and whether the container can reach the game server (`/api/health`) and Anthropic.
 
-Then, from a player laptop: open `http://<claude-box>:768N`, enter `player` + the seat word, and ask "Are you connected to Pixel Clash?". There must be **no approval prompts**.
+Then, from a player laptop: open `http://<claude-box>:778N`, enter `player` + the seat word, and ask "Are you connected to Pixel Clash?". There must be **no approval prompts**.
 
 Isolation check (dress rehearsal), so facilitators know what a player can reach from a seat:
 
@@ -125,7 +125,7 @@ Containers need the game server (LAN) and the internet (Anthropic). Nothing else
 # Run after `docker compose up` (the bridge must exist). -I 1 inserts at the top,
 # so the LAST rule below ends up FIRST. DOCKER-USER runs before Docker's own
 # ESTABLISHED/RELATED accept, so the final rule (replies to connections that
-# player laptops opened to the published 768N ports) is required: without it the
+# player laptops opened to the published 778N ports) is required: without it the
 # private-net REJECTs drop ttyd's replies and every seat terminal goes dead.
 sudo iptables -I DOCKER-USER 1 -i pcseats -j REJECT
 sudo iptables -I DOCKER-USER 1 -i pcseats -p tcp --dport 443 -j ACCEPT        # HTTPS (Anthropic)

@@ -373,7 +373,7 @@ export function claudeBoxHost(address: string | null | undefined): string | null
   return /^[a-z0-9.-]+$/i.test(s) ? s : null;
 }
 
-/** `http://<box>:768N` for Claude seat 1-4. */
+/** `http://<box>:778N` for Claude seat 1-8. */
 export function claudeTerminalUrl(address: string | null | undefined, claudeSeat: number): string | null {
   const host = claudeBoxHost(address);
   if (!host || !Number.isInteger(claudeSeat) || claudeSeat < 1 || claudeSeat > CLAUDE_SEATS) return null;

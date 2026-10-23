@@ -252,7 +252,7 @@ describe('"Ask Claude" prompts (RESULTS)', () => {
 });
 
 describe('Claude terminal links (§11.1)', () => {
-  it('builds http://<box>:768N for seats 1-8 from any address form', () => {
+  it('builds http://<box>:778N for seats 1-8 from any address form', () => {
     expect(claudeTerminalUrl('192.168.8.20', 1)).toBe('http://192.168.8.20:7781');
     expect(claudeTerminalUrl('http://claude-box.local:8080/', 4)).toBe('http://claude-box.local:7784');
     expect(claudeTerminalUrl('[fe80::1]:7781', 2)).toBe('http://[fe80::1]:7782');

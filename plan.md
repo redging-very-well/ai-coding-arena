@@ -35,7 +35,7 @@ Status: implementation-ready spec. Written 2026-10-20. The event is a few days a
 flowchart LR
   subgraph PLAYERS["Player laptops (x2-8), browser only"]
     PB[Tab: /play<br/>profile, select, place]
-    TT[Tab: ttyd seat N<br/>:768N]
+    TT[Tab: ttyd seat N<br/>:778N]
   end
   subgraph CBOX["Claude box (Docker)"]
     CC[Container per seat:<br/>ttyd -> claude in /kit<br/>CLAUDE.md + .mcp.json]
@@ -709,7 +709,7 @@ sessions/
 | Item | Spec |
 |---|---|
 | Container | one per seat (`seat1`…`seat8`, matching game seats 1-8), runs as non-root `player`. The only mounts are named volumes: `kitN:/kit` (the kit folder) and `claudeN:/home/player/.claude` (+ `.claude.json`) for Claude Code login and trust state. No host paths, no Docker socket, no privileged mode, `cap_drop: [ALL]`, `no-new-privileges`, memory limit 1.5 GB and CPU 1.0 per container (limits, not reservations: a seat typically uses well under 1 GB and under 1 core, and 8 × 1.5 GB still leaves ~4 GB for the host, so the box needs **~8 cores / 16 GB**, §15). For smaller games start only the seats in use (`docker compose up -d seat1 seat2 seat3`); the rest are never created. Compose still requires all 8 `TTYD_PASS_N`. |
-| ttyd | `ttyd -W -p 7781 -c player:${TTYD_PASS_N} -t fontSize=18 -t titleFixed="Pixel Clash seat N" bash -c 'cd /kit && while true; do claude; sleep 1; done'`. `-W` makes it writable. Claude is restarted if it exits, and the player never gets a shell prompt. The host port is `768N` (7781-7788). Basic auth is a short word printed on the seat card, so a player can't drive another seat's terminal. |
+| ttyd | `ttyd -W -p 7781 -c player:${TTYD_PASS_N} -t fontSize=18 -t titleFixed="Pixel Clash seat N" bash -c 'cd /kit && while true; do claude; sleep 1; done'`. `-W` makes it writable. Claude is restarted if it exits, and the player never gets a shell prompt. The host port is `778N` (7781-7788). Basic auth is a short word printed on the seat card, so a player can't drive another seat's terminal. |
 | Kit render | `entrypoint.sh` copies `starter-kit/` into `/kit` on first start (it never overwrites `.pixel-clash/player.json` or `units/`), fills `{{HOST}}` from `PIXEL_CLASH_URL` and renames the `*.tmpl` files. The generic kit has no key: the player gives their name and PIN once, and Claude saves the apiKey to `/kit/.pixel-clash/player.json`, which persists in the volume. |
 | Login (adults, beforehand) | `docker compose run --rm seatN claude` → `/login` with the event account, then accept the folder-trust dialog for `/kit`. The state persists in `claudeN`. Do this for all 8 seats, then check each with "Are you connected to Pixel Clash?" (Claude calls `get_game_state`). |
 | Permissions | the kit's `.claude/settings.json` allowlist (below). Because the container is the boundary, the M0 spike also tries `--permission-mode acceptEdits`, and the facilitator decides whether players may see any approval prompt. `bypassPermissions` is not used. |
@@ -926,7 +926,7 @@ Persistence: `data/state.json` (players, PIN hashes, keys, match state; debounce
 - **Network.** Plan for up to 8 player laptops + the game server + the Claude box (+ a facilitator device) on the router. Bring a travel router (or a phone hotspot that allows client-to-client traffic) **with an internet uplink**. The Claude box needs Anthropic. Don't rely on the venue Wi-Fi, which often has client isolation. Give the game server and the Claude box DHCP reservations. If the game server's IP changes, update `PIXEL_CLASH_URL` in `sessions/.env` and run `docker compose up -d` (the entrypoint re-renders `.mcp.json`).
 - **Claude box.** Docker (or Docker Desktop) with `sessions/` built and all 8 seats logged in the day before. Allow inbound 7781-7788. Disable sleep. Sizing: 8 Claude Code processes need about **8 cores and 16 GB RAM** (4 seats: 4 cores / 8 GB). For a smaller game, start only the seats in use.
 - **Host.** Run on the host OS (not the devcontainer, whose ports forward to localhost). Use **Node 24 LTS** (not 26: isolated-vm has no build for it) and `npm start`. The game server is a **macOS arm64** laptop. Install Python + a C++ toolchain (Xcode CLT / VS Build Tools) beforehand as insurance for isolated-vm. Allow Node through the OS firewall (macOS prompt / Windows Defender private-network rule / `ufw allow 8080/tcp`). Disable sleep. An 8-player battle ticks 8 isolates in parallel (§9.2): use a laptop with **≥ 8 cores**, on mains power, and confirm the 8-player load test (§14) on it.
-- **Prereqs per player laptop.** A browser only. A printed **seat card** per laptop (8 cards, showing the seat number and colour): the `/play` URL/QR, the ttyd seat URL (`http://<claude-box>:768N`) and its basic-auth word.
+- **Prereqs per player laptop.** A browser only. A printed **seat card** per laptop (8 cards, showing the seat number and colour): the `/play` URL/QR, the ttyd seat URL (`http://<claude-box>:778N`) and its basic-auth word.
 - **Run of show.** Players join `/play` from the QR (name + PIN) → open their seat's terminal tab (Claude is already running) → tell Claude their name and PIN → facilitator picks the map style and team mode in Start match (checks the preview, swaps players between teams if needed) and starts the match (round 1 PLAN = 15 min) → … → MATCH_RESULTS.
 - **Fallbacks:**
 

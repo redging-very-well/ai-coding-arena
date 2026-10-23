@@ -879,7 +879,7 @@ export interface AdminArmoryEntryDTO {
 
 /** Facilitator settings for /setup (persisted; survive a wipe). */
 export interface SetupSettingsDTO {
-  /** Claude box host or IP (no scheme/port); seat N's ttyd is http://<host>:768N (§11.1). */
+  /** Claude box host or IP (no scheme/port); seat N's ttyd is http://<host>:778N (§11.1). */
   claudeBoxHost: string | null;
   /** Preferred base URL (`http://ip:port`) for the join QR when there are several interfaces. */
   preferredUrl: string | null;

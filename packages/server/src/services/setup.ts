@@ -1,6 +1,6 @@
 // /setup info (plan §11 "/setup page", §12.3 server info): the join URL + QR,
 // and the Claude box seat terminal links (§11.1). The server never talks to
-// ttyd; it only builds `http://<claude-box>:768N` links from the address the
+// ttyd; it only builds `http://<claude-box>:778N` links from the address the
 // facilitator typed in /admin.
 
 import QRCode from 'qrcode';

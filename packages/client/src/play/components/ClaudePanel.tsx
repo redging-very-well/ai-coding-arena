@@ -1,4 +1,4 @@
-// "Open my Claude terminal" (seat picker → http://<claude-box>:768N, §11.1)
+// "Open my Claude terminal" (seat picker → http://<claude-box>:778N, §11.1)
 // and "Get my Claude kit" (API key reveal + personal kit download, §11).
 
 import { useEffect, useState } from 'preact/hooks';

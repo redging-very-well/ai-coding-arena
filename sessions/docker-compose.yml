@@ -4,7 +4,7 @@
 #   docker compose up -d --build                          # all 8 seats
 #   docker compose up -d --build seat1 seat2 seat3        # or only the seats in use
 #
-# Seat N (1-8) is http://<claude-box>:768N (basic auth: player / TTYD_PASS_N).
+# Seat N (1-8) is http://<claude-box>:778N (basic auth: player / TTYD_PASS_N).
 # See README.md for the pre-event login, resets and the wipe.
 
 name: pixel-clash-seats

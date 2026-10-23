@@ -72,7 +72,7 @@ export function ServerInfo() {
           )}
 
           <h3>Claude box (seat terminals)</h3>
-          <p class="dim small">The machine running the 4 seat containers (§11.1). Seat N's terminal is http://&lt;address&gt;:768N.</p>
+          <p class="dim small">The machine running the seat containers (§11.1). Seat N's terminal is http://&lt;address&gt;:778N.</p>
           <form
             class="btn-row"
             onSubmit={(e) => {
