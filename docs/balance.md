@@ -1,4 +1,4 @@
-# Pixel Clash balance (M6)
+# Pixel Clash balance (M6, M8.5 walls and factories)
 
 Plan §14 `balance.test.ts`, §6 ("no single archetype dominates"), §9 sudden death.
 Test: `tests/balance.test.ts` (harness `tests/helpers/balance.ts`). Regenerate every
@@ -11,7 +11,11 @@ npx tsx --conditions=source scripts/balance-matrix.ts
 Bots use the template logic: soldiers chase the nearest enemy (a seeded PRNG breaks
 near-ties, so seeds differ a little), towers shoot the nearest enemy in range. Every
 army is placed front cells first. All battles use the **default config** (5400 ticks,
-§6 costs unchanged).
+§6 costs unchanged). Since M8.5 the bots follow the wall-aware templates: soldiers and
+towers skip walls as targets (a wall only when nothing else is left / in range), a
+soldier smashes an enemy wall that has blocked it for 120 ticks, factories rally their
+minions on the nearest enemy that isn't a wall, and minions run the engine's built-in AI.
+The M8.5 results are in [Walls and factories (M8.5)](#walls-and-factories-m85) below.
 
 ## What changed: sudden death
 
@@ -56,6 +60,10 @@ Updated with it: `config/default.json`, `DEFAULT_CONFIG`, plan §5 (contract com
 (Five full 500-HP Big Tanks cost $2,310, so the "Big Tank army" uses the §6 Half Tank.)
 
 ## Round robin
+
+(Since M8.5 these 6×6 numbers are the first six rows and columns of the 13-archetype
+matrix below; each pair's battles don't depend on who else is in the matrix, so they are
+unchanged, and so are the `DOMINANCE_EXCEPTIONS` asserted on them.)
 
 Corners 4 (zones TL-TR and TL-BR) and Ring 8 (zones 0-1 edge-corner and 0-2 edge-edge),
 both orders, seeds 11 and 4242: 16 battles per pair. Row archetype's wins-draws-losses
@@ -166,3 +174,232 @@ battle at 89 s). Smarter player units
 this in real play, so no retune was made for it (it is a capped exception in the test instead). If it shows up on the day, the lever is
 tower cost (raise `cost.range`, which mostly prices towers) rather than more sudden death,
 because the turtle wins most of these long before 50 s.
+
+## Walls and factories (M8.5)
+
+Plan §5.2 / §6: walls (40×40 blocks, 50-1500 HP, no attack, no code) and factories
+(radius 18, 100-1000 HP, built-in 40 HP / 5 damage minions every 600-1800 ticks).
+Same harness, same default config, same sites and seeds as the round robin above.
+
+### Building archetypes ($1,000 budget each)
+
+| key | army | cost |
+|---|---|---|
+| fortress | **sealed** wall fortress: 11 Basic Walls closing the zone off (diagonal zones: row 0 + col 0, the other two sides are the arena edge; N/S/E/W zones: front row + both flanks), 3 Basic Towers inside | $946 |
+| snipewall | walled sniper nest: 6 Basic Walls in the front cells, 2 Sniper Towers + 1 Basic Tower behind | $1000 |
+| swarm | factory swarm (plan §6): 4 Basic Soldiers in front, 2 Swarm Factories (300 HP, interval 600: 8 minions each) behind | $922 |
+| wallrush | walls + rush: 4 Basic Walls in the front cells, 9 Basic Soldiers behind them | $956 |
+| mixed | plan §6 mixed: 4 Basic Soldiers, then 6 Basic Walls, then 2 Basic Towers | $956 |
+| quad | all four templates: 5 Basic Soldiers, 4 Basic Walls, 1 Basic Tower, 1 Basic Factory | $979 |
+| bunker | all-building bunker: 2 Basic Towers in front of 2 Swarm Factories (no soldier, no wall) | $950 |
+| openfort | plan §14 open fortress (not in the round robin): 10 Basic Walls in a U (front row + both outer columns of rows 1-2), 3 Basic Towers on rows 3-4 | $914 |
+
+Reference prices (unchanged, §6): Basic Wall $32, Basic Factory $193, Swarm Factory $277,
+minion $55 → $28 per minion paid up front.
+
+### Round robin, 13 archetypes
+
+16 battles per pair (Corners 4 TL-TR and TL-BR, Ring 8 zones 0-1 and 0-2, both orders,
+seeds 11 and 4242). Row archetype's wins-draws-losses against the column; **bold** =
+winning record.
+
+| vs | bricks | templates | tanks | turtle | scouts | snipers | fortress | snipewall | swarm | wallrush | mixed | quad | bunker | beats |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| bricks | · | **16-0-0** | 7-0-9 | **16-0-0** | **16-0-0** | **16-0-0** | 2-0-14 | 8-0-8 | **16-0-0** | **11-0-5** | **16-0-0** | **16-0-0** | **16-0-0** | 9/12 |
+| templates | 0-0-16 | · | 0-0-16 | 2-0-14 | **16-0-0** | 2-0-14 | 6-0-10 | **14-0-2** | 2-0-14 | 0-0-16 | **14-0-2** | 2-0-14 | 0-0-16 | 3/12 |
+| tanks | **9-0-7** | **16-0-0** | · | 8-0-8 | **16-0-0** | **14-0-2** | 0-0-16 | 2-0-14 | **16-0-0** | **16-0-0** | **14-0-2** | **16-0-0** | **16-0-0** | 9/12 |
+| turtle | 0-0-16 | **14-0-2** | 8-0-8 | · | **16-0-0** | 2-12-2 | **14-0-2** | **14-0-2** | 2-0-14 | **16-0-0** | **14-0-2** | 2-0-14 | 0-0-16 | 6/12 |
+| scouts | 0-0-16 | 0-0-16 | 0-0-16 | 0-0-16 | · | **16-0-0** | 0-0-16 | 4-0-12 | **16-0-0** | 0-0-16 | 0-0-16 | **9-0-7** | **10-0-6** | 4/12 |
+| snipers | 0-0-16 | **14-0-2** | 2-0-14 | 2-12-2 | 0-0-16 | · | **14-0-2** | **14-0-2** | **10-0-6** | 4-0-12 | **14-0-2** | 6-0-10 | 2-4-10 | 5/12 |
+| fortress | **14-0-2** | **10-0-6** | **16-0-0** | 2-0-14 | **16-0-0** | 2-0-14 | · | **10-4-2** | 2-0-14 | **14-0-2** | **14-0-2** | 2-0-14 | 2-0-14 | 7/12 |
+| snipewall | 8-0-8 | 2-0-14 | **14-0-2** | 2-0-14 | **12-0-4** | 2-0-14 | 2-4-10 | · | 2-0-14 | **14-0-2** | **14-0-2** | 2-0-14 | 2-0-14 | 4/12 |
+| swarm | 0-0-16 | **14-0-2** | 0-0-16 | **14-0-2** | 0-0-16 | 6-0-10 | **14-0-2** | **14-0-2** | · | 0-0-16 | **14-0-2** | 0-0-16 | **9-0-7** | 6/12 |
+| wallrush | 5-0-11 | **16-0-0** | 0-0-16 | 0-0-16 | **16-0-0** | **12-0-4** | 2-0-14 | 2-0-14 | **16-0-0** | · | **13-0-3** | **16-0-0** | **14-0-2** | 7/12 |
+| mixed | 0-0-16 | 2-0-14 | 2-0-14 | 2-0-14 | **16-0-0** | 2-0-14 | 2-0-14 | 2-0-14 | 2-0-14 | 3-0-13 | · | 2-0-14 | 1-0-15 | 1/12 |
+| quad | 0-0-16 | **14-0-2** | 0-0-16 | **14-0-2** | 7-0-9 | **10-0-6** | **14-0-2** | **14-0-2** | **16-0-0** | 0-0-16 | **14-0-2** | · | 2-0-14 | 7/12 |
+| bunker | 0-0-16 | **16-0-0** | 0-0-16 | **16-0-0** | 6-0-10 | **10-4-2** | **14-0-2** | **14-0-2** | 7-0-9 | 2-0-14 | **15-0-1** | **14-0-2** | · | 7/12 |
+
+| archetype | wins vs the six | wins vs all 12 |
+|---|---|---|
+| bricks | 71/80 (89%) | 156/192 (81%) |
+| templates | 20/80 (25%) | 58/192 (30%) |
+| tanks | 63/80 (79%) | 143/192 (74%) |
+| turtle | 40/80 (50%) | 102/192 (53%) |
+| scouts | 16/80 (20%) | 55/192 (29%) |
+| snipers | 18/80 (23%) | 82/192 (43%) |
+| fortress | - | 104/192 (54%) |
+| snipewall | - | 76/192 (40%) |
+| swarm | - | 85/192 (44%) |
+| wallrush | - | 112/192 (58%) |
+| mixed | - | 36/192 (19%) |
+| quad | - | 105/192 (55%) |
+| bunker | - | 114/192 (59%) |
+
+Asserted on the full matrix (`tests/balance.test.ts`): nobody beats every other archetype,
+everyone beats at least one and loses to at least one (the tanks are no longer unbeaten:
+the sealed fortress and the walled sniper nest beat them), nobody wins more than 70% of
+its 192 battles, and **no battle is won by a side with only walls left**. Every building
+archetype fits the general caps with **no exceptions**: fortress 54%, snipewall 40%,
+swarm 44%, wallrush 58%, mixed 19%, quad 55%, bunker 59%. The two old exceptions are
+capped again at today's full-matrix numbers (`FULL_DOMINANCE_EXCEPTIONS`): bricks 156 of
+192 (81%, down from 89% among the six; they lose to the tanks, the sealed fortress and
+walls + rush), tanks 143 of 192 (74%).
+
+The shape (asserted where marked):
+
+- **Walls stop melee.** The sealed fortress beats the tanks 16-0, the bricks 14-2 and the
+  scouts 16-0 (asserted) and holds the rush (below): chase-nearest soldiers wait 2 s at
+  the wall, then each hits the wall that blocked *it*, so 10 soldiers spread over 11 walls
+  while 3 towers shoot them. Focus fire on one wall is the counterplay (kids' code, not
+  the template).
+- **Range and minions break walls.** The fortress loses to the turtle, the sniper nest,
+  the factory swarm and the bunker (asserted): projectiles fly over walls, and on Corners
+  the sealed towers sit one cell deeper than a turtle's, so the sudden-death circle
+  reaches them first. Walls never help in a pure tower-vs-tower race.
+- **Factories** beat the tower armies (swarm vs turtle 14-2, asserted; bunker vs turtle
+  16-0) and the fortress, and lose to big melee bodies: 40 HP / 5 damage minions barely
+  scratch a 250 HP Half Tank or a 430 HP brick (tanks beat the swarm 16-0, asserted).
+  Swarm vs bunker (both on 2 Swarm Factories) is a close matchup: 9-7 to the swarm
+  (asserted: neither side wins more than 10 of 16). It was 7-9 before the minion AI fixes
+  (smash a wall in the way while chasing, sidestep towers and factories) and `canMake`.
+- **A factory that never builds can't turtle.** A factory is a fighter, and its unbuilt
+  minions count toward its living value, only while it can still build them before time
+  runs out (`canMake`, plan §9.3); at the time limit it is worth its body alone. 4 Basic
+  Walls + 2 *holding* Fortress Factories (1000 HP, interval 1800; $980, no damage) lose
+  all 32 duels against the walled sniper nest and the sealed fortress and are out by
+  60 s at the latest (asserted). Before this rule they beat the sniper nest 14 of 16.
+- **Partial walls are a weak buy.** mixed (19%) and the open U fortress lose to almost
+  everything; wallrush (walls in front of soldiers) beats the templates (asserted) but
+  loses to the plain rush. Walls placed in front of fighters push the fighters one band
+  deeper into the zone, where sudden death reaches them first, and enemies slide round an
+  unclosed line. Even free walls don't help: 4 soldiers + 6 walls + **3** towers (the
+  templates plus 6 walls) still lose to the templates 2-14. So the cost of a partial wall
+  is geometry, not price (see tuning below).
+
+### Fortress vs rush
+
+| fortress | rush wins | ends |
+|---|---|---|
+| open U (plan §14) | **16 of 16** | 8.5-25.1 s, elimination |
+| sealed (11 walls) | **0 of 16** | 21.1-24.1 s, elimination |
+
+Asserted: the rush beats the plan's open fortress in ≥ 3 of 4 duels (the stated outcome
+of plan §14), and the sealed fortress holds the rush (≤ 1 in 4); both are decided by
+fighting before sudden death. The sealed box is the strong fortress; its answers are
+range, factories and sudden death (matrix above).
+
+### All-building armies: no turtle wins
+
+Every map style at its largest arena, as for the all-tower table. "lost (placed)" counts
+placed bodies (walls included, minions not); "standing" is what is left at the end.
+
+| map | armies | zones | first hit | lost (placed) | standing | end | places |
+|---|---|---|---|---|---|---|---|
+| duel 2 | fortress / fortress | all | - | 14, 14 | none; none | 84.6 s elimination | 1, 1 |
+| duel 2 | bunker / fortress | all | 14.4 s | 1, 14 | 2 tower + 1 factory + 6 minion; none | 84.6 s elimination | 1, 2 |
+| duel 2 | snipewall / bunker | all | 13.7 s | 9, 0 | none; 2 tower + 2 factory + 6 minion | 82.3 s elimination | 2, 1 |
+| triangle 3 | fortress / fortress | 0, 1 | - | 3, 6 | 8 wall + 3 tower; 6 wall + 2 tower | 90.0 s timeout | 1, 2 |
+| triangle 3 | fortress / fortress | all | - | 3, 6, 6 | 8 wall + 3 tower; 6 wall + 2 tower; 6 wall + 2 tower | 90.0 s timeout | 1, 2, 2 |
+| triangle 3 | bunker / fortress | 0, 1 | 11.1 s | 0, 6 | 2 factory + 2 minion + 2 tower; 6 wall + 2 tower | 90.0 s timeout | 1, 2 |
+| triangle 3 | bunker / fortress | all | 10.6 s | 0, 6, 0 | 2 factory + 2 tower; 6 wall + 2 tower; 2 tower + 2 factory | 90.0 s timeout | 1, 3, 1 |
+| triangle 3 | snipewall / bunker | 0, 1 | 0.5 s | 0, 1 | 6 wall + 3 tower; 1 tower + 2 factory | 90.0 s timeout | 1, 2 |
+| triangle 3 | snipewall / bunker | all | 0.5 s | 5, 1, 3 | 2 wall + 2 tower; 1 tower + 2 factory; 3 wall + 3 tower | 90.0 s timeout | 2, 3, 1 |
+| corners 4 | fortress / fortress | 0, 2 | - | 14, 14 | none; none | 84.6 s elimination | 1, 1 |
+| corners 4 | fortress / fortress | all | - | 14, 14, 14, 14 | none; none; none; none | 84.6 s elimination | 1, 1, 1, 1 |
+| corners 4 | bunker / fortress | 0, 2 | 14.4 s | 1, 14 | 2 tower + 1 factory + 6 minion; none | 84.6 s elimination | 1, 2 |
+| corners 4 | bunker / fortress | all | 12.2 s | 4, 14, 4, 14 | 1 minion; none; 1 minion; none | 90.0 s timeout | 1, 3, 1, 3 |
+| corners 4 | snipewall / bunker | 0, 2 | 13.7 s | 9, 0 | none; 2 tower + 2 factory + 6 minion | 82.3 s elimination | 2, 1 |
+| corners 4 | snipewall / bunker | all | 11.2 s | 9, 4, 9, 4 | none; 1 minion; none; 1 minion | 90.0 s timeout | 3, 1, 3, 1 |
+| ring 8 | fortress / fortress | 0, 4 | - | 14, 14 | none; none | 87.0 s elimination | 1, 1 |
+| ring 8 | fortress / fortress | all | - | 14, 14, 14, 14, 14, 14, 14, 14 | none; none; none; none; none; none; none; none | 87.0 s elimination | 1, 5, 1, 5, 1, 5, 1, 5 |
+| ring 8 | bunker / fortress | 0, 4 | 16.6 s | 0, 14 | 2 factory + 4 minion + 2 tower; none | 87.0 s elimination | 1, 2 |
+| ring 8 | bunker / fortress | all | 11.8 s | 4, 14, 4, 14, 4, 14, 4, 14 | none; none; none; none; none; none; none; none | 89.1 s elimination | 1, 5, 1, 5, 1, 5, 1, 5 |
+| ring 8 | snipewall / bunker | 0, 4 | 15.7 s | 9, 0 | none; 2 factory + 4 minion + 2 tower | 87.0 s elimination | 2, 1 |
+| ring 8 | snipewall / bunker | all | 10.8 s | 9, 4, 9, 4, 9, 4, 9, 4 | none; none; none; none; none; none; none; none | 87.0 s elimination | 1, 6, 1, 7, 1, 7, 1, 5 |
+| lanes 8 | fortress / fortress | 0, 4 | - | 14, 14 | none; none | 84.2 s elimination | 1, 1 |
+| lanes 8 | fortress / fortress | all | 0.2 s | 14, 8, 8, 14, 14, 8, 8, 14 | none; 4 wall + 2 tower; 4 wall + 2 tower; none; none; 4 wall + 2 tower; 4 wall + 2 tower; none | 90.0 s timeout | 5, 1, 1, 5, 5, 1, 1, 5 |
+| lanes 8 | bunker / fortress | 0, 4 | 18.6 s | 2, 14 | 2 tower + 4 minion; none | 84.2 s elimination | 1, 2 |
+| lanes 8 | bunker / fortress | all | 0.2 s | 4, 14, 1, 14, 4, 14, 1, 14 | none; none; 1 tower + 2 factory + 1 minion; none; none; none; 1 tower + 2 factory + 1 minion; none | 90.0 s timeout | 3, 7, 1, 5, 3, 7, 1, 5 |
+| lanes 8 | snipewall / bunker | 0, 4 | 17.2 s | 9, 3 | none; 1 tower + 4 minion | 86.0 s elimination | 2, 1 |
+| lanes 8 | snipewall / bunker | all | 0.2 s | 9, 4, 3, 4, 9, 4, 3, 4 | none; none; 4 wall + 2 tower; none; none; none; 4 wall + 2 tower; none | 90.0 s timeout | 3, 7, 1, 5, 3, 7, 1, 5 |
+| islands 8 | fortress / fortress | 0, 4 | - | 14, 14 | none; none | 78.0 s elimination | 1, 1 |
+| islands 8 | fortress / fortress | all | 0.2 s | 14, 14, 14, 14, 14, 14, 14, 14 | none; none; none; none; none; none; none; none | 86.4 s elimination | 5, 1, 5, 1, 5, 1, 5, 1 |
+| islands 8 | bunker / fortress | 0, 4 | 20.6 s | 1, 14 | 2 tower + 1 factory + 6 minion; none | 78.0 s elimination | 1, 2 |
+| islands 8 | bunker / fortress | all | 0.2 s | 4, 14, 4, 14, 4, 14, 4, 14 | none; none; none; none; none; none; none; none | 86.4 s elimination | 5, 1, 5, 1, 5, 1, 5, 1 |
+| islands 8 | snipewall / bunker | 0, 4 | 20.0 s | 9, 0 | none; 2 tower + 2 factory + 6 minion | 76.5 s elimination | 2, 1 |
+| islands 8 | snipewall / bunker | all | 0.4 s | 9, 4, 9, 4, 9, 4, 9, 4 | none; none; none; none; none; none; none; none | 88.9 s elimination | 5, 1, 5, 1, 5, 1, 5, 1 |
+
+Asserted on every row: fighters die in every battle, every side that sits it out is
+reached by the circle, and a side with only walls left never places above a side with
+fighters. Fortress mirrors on Duel, Corners, Ring 8 and Islands die to the circle at
+78-87 s (shared places); in Triangle and Lanes the zones nearest the centre reach the
+timeout with towers alive, exactly as the all-tower turtles do (walls are worth $0 there,
+so the towers decide it).
+
+### 2-team Lanes 8 with building armies
+
+| team 0 | team 1 | round 0 (seeds 11, 4242) | round 1 (seeds 11, 4242) |
+|---|---|---|---|
+| fortress + swarm + wallrush + mixed | bricks + tanks + rush + snipers | team 1 at 80.5 s, 43.6 s | team 1 at 28.8 s, 32.3 s |
+| bunker + snipewall + fortress + swarm | rush + rush + templates + turtle | team 0 at the 90 s timeout (both) | team 1 at 84.2 s (both) |
+
+First hit at 1.2-1.7 s in every battle. Asserted: contact before sudden death, every
+battle decided, the winning team has a fighter standing, and the building team wins some
+and loses some.
+
+### Ring 8 free-for-all with building armies
+
+fortress, swarm, snipewall, wallrush, bunker, mixed, quad, rush; 8 rotations × 2 seeds.
+
+- 1st places by army: **swarm 7**, bunker 5, fortress 4 (nobody else wins one).
+- 1st places by zone index 0-7: 5, 0, 2, 0, 3, 1, 5, 0.
+
+Asserted: no army takes more than half the 1st places, nobody wins every battle, and no
+winner has only walls left. **Watch item:** like the turtle in the original free-for-all,
+the armies that stay home outlast the chase-nearest soldier armies, and these battles run
+to 76-87 s, so the Ring 8 corner zones (odd indices, further from the centre) rarely win:
+the circle reaches them first. Rotation gives every player every zone over a match. Who
+outlasts depends on the lineup: with no tower-only army present (fortress, tanks, swarm,
+bricks, snipewall, rush, bunker, wallrush) the sealed fortress took or shared all 16 1st
+places; with the turtle and the sniper nest in the lineup (bricks, tanks, turtle,
+snipers, fortress, swarm, rush, wallrush) it took none (turtle 8, snipers 8). If it shows
+up on the day, the lever is the same as for the turtle (smarter player code, the §9
+damage/value bonuses), not wall prices: the sweep below found none that changes it.
+
+### Tuning (M8.5): none needed, defaults confirmed
+
+The first-guess defaults (wall `cost.wall.hp` 0.06, `cost.factory.minionDiscount` 0.5,
+minion 40 HP / 5 damage / speed 1.5 / size 8, alive caps 4 per factory and 6 per player)
+pass every assertion above, so **no config default, bound or coefficient was changed**:
+the §6 reference tables, CLAUDE.md, `get_rules` and the cost tests stay as they are.
+Sweeps that back this up (`tests/helpers/balance.ts` with config overrides):
+
+- **Wall HP / price.** Sealed fortress with 11 walls of 50-400 HP and 2 or 3 towers vs
+  rush / tanks / bricks: with 3 towers the rush only wins against 50-HP walls (11 × 150
+  HP walls still hold it 14-2, 11 × 100 HP 10-6); with 2 towers the rush wins against
+  ≤ 250 HP walls and splits 8-8 at 300 HP. So a price change only moves which HP kids
+  buy, not who wins: making walls dear enough for the rush to beat a sealed box would
+  price walls like soldier HP (≈ 0.25/HP) and make every partial wall build (already the
+  weakest) useless. Cheaper walls (≈ 0.03/HP) buy a 4th tower: the sealed fortress then
+  still loses 2-14 to the turtle, snipers, swarm, bunker and quad (sudden death decides
+  those), so it doesn't break out either.
+- **Minion damage 5 → 8** (minion $55 → $61, Swarm Factory $277 → $293): swarm 43% →
+  43%, bunker 58% → 56%, quad 55% → 57%; no matchup against the bricks or tanks flips
+  (minions lose to big bodies by design). Not worth re-pricing every factory.
+- **Factories** sit at 43-58% with a minion discount of 0.5; nothing in the matrix asks
+  for a different discount.
+
+Engine time for the 1,097 battles with walls or factories in the matrix script (lean
+runner, the sim alone): median 23 ms, max 359 ms per 5400-tick battle, at most 0.066 ms
+per tick on average. Real-isolate timing of the buildings worst case (8 × (10 soldiers +
+2 Swarm Factories + 12 walls), minions at the cap) is `tests/buildings-perf.test.ts` in
+`npm run test:perf` (sim p99 < 8 ms/tick).
+
+### Bots (`npm run bots`)
+
+Two personalities use the new types: `fortress` (6 Stone Walls, $24 each, in a line
+between Archers in front and Turrets behind) and `factory` (two Workshops, 250 HP /
+interval 900, $184, behind Brawlers and Darts). Both are in the `mixed` rotation. Bot
+soldiers skip walls as targets and smash an enemy wall that blocks them for 2 s, bot
+factories rally on the nearest enemy, and placement keeps ≤ 6 walls (≤ 25% of the
+budget), ≤ 2 factories and the 4 + 4 type caps.

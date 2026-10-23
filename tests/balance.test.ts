@@ -17,14 +17,34 @@
 //     often than the others, and no army takes more than half the 1st places
 //     (except the documented, capped turtle).
 //
+// M8.5 (walls and factories, plan §5.2/§6): seven building archetypes join the
+// round robin (sealed wall fortress, walled sniper nest, factory swarm, walls +
+// rush, mixed, all four templates, all-building bunker):
+//
+//   * the six §14 archetypes keep their assertions and capped exceptions on
+//     their own 6×6 part of the matrix (unchanged numbers);
+//   * the full 13×13 matrix: nobody beats everyone, everyone beats someone and
+//     loses to someone, nobody wins more than 70% (bricks and tanks: capped
+//     exceptions at today's numbers), and no battle is ever won by a side
+//     with only walls standing;
+//   * all-building armies (walls + towers, towers + factories) on every map
+//     style: sudden death reaches them and kills fighters, and walls never win;
+//   * the rush beats the open §14 wall fortress (a U); the sealed one holds the
+//     rush but loses to towers, snipers and factory swarms (stated outcomes);
+//   * 2-team Lanes and a Ring 8 free-for-all with building armies.
+//
 // The matrix and the numbers are recorded in docs/balance.md; regenerate with
 // `npx tsx --conditions=source scripts/balance-matrix.ts`.
 
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG, computeCost, mapFor, type MapStyle } from '@pixel-clash/shared';
 import {
+  ALL_ARCHETYPES,
   ARCHETYPES,
+  BUILDING_ARCHETYPES,
+  DORMANT,
   DUEL_SITES,
+  OPEN_FORTRESS,
   RUSH,
   SEEDS,
   UNITS,
@@ -33,10 +53,13 @@ import {
   balanceBattle,
   beats,
   duel,
+  hasFighter,
   lanesTeams,
   matrixMarkdown,
   roundRobin,
+  unitCost,
   type Archetype,
+  type MatchupCell,
 } from './helpers/balance.js';
 
 const T = 60_000;
@@ -59,16 +82,47 @@ const DOMINANCE_EXCEPTIONS: Record<string, { roundRobinWinCap?: number; unbeaten
   // 14 of 16 Ring 8 free-for-alls: it mops up after the soldier armies grind each other down.
   turtle: { ffaWinShareCap: 14 / 16 },
 };
-const byKey = (k: string): Archetype => (k === RUSH.key ? RUSH : ARCHETYPES.find((a) => a.key === k)!);
+/**
+ * The same caps over the full M8.5 matrix (13 archetypes, 192 battles each). Only the
+ * two old soldier archetypes need one; every building archetype fits the general caps.
+ */
+const FULL_DOMINANCE_EXCEPTIONS: Record<string, { roundRobinWinCap: number }> = {
+  // 156-0-36 (81%, down from 89% among the six): loses to the tanks (7-9), the sealed
+  // fortress (2-14) and walls + rush (5-11). Minions and walls barely scratch 430 HP.
+  bricks: { roundRobinWinCap: 156 / 192 },
+  // 143-0-49 (74%): loses to the sealed fortress (0-16) and the walled sniper nest (2-14).
+  tanks: { roundRobinWinCap: 143 / 192 },
+};
+const byKey = (k: string): Archetype =>
+  k === RUSH.key ? RUSH : k === OPEN_FORTRESS.key ? OPEN_FORTRESS : ALL_ARCHETYPES.find((a) => a.key === k)!;
+const WALL_KEYS = BUILDING_ARCHETYPES.filter((a) => a.army.some(([k]) => UNITS[k].type === 'wall')).map((a) => a.key);
+const FACTORY_KEYS = BUILDING_ARCHETYPES.filter((a) => a.army.some(([k]) => UNITS[k].type === 'factory')).map((a) => a.key);
+
+/** One full round robin (all 13 archetypes) shared by the tests below: the 6×6 part is the §14 matrix. */
+let fullMatrix: Promise<{ m: Map<string, Map<string, MatchupCell>>; wallOnlyWins: string[] }> | undefined;
+const full = () =>
+  (fullMatrix ??= (async () => {
+    const wallOnlyWins: string[] = [];
+    const m = await roundRobin(ALL_ARCHETYPES, undefined, (a, b, battle, outcome) => {
+      // The winner always has a fighter standing (§5.2: a side of walls only is eliminated).
+      if (outcome !== 0 && !hasFighter(battle.standing[outcome === 1 ? 0 : 1]!)) wallOnlyWins.push(`${a.key} vs ${b.key}`);
+    });
+    return { m, wallOnlyWins };
+  })());
 
 describe('the archetypes are legal $1,000 armies', () => {
-  it.each([...ARCHETYPES, RUSH].map((a) => [a.key, a] as const))('%s', (_key, a) => {
+  it.each([...ALL_ARCHETYPES, RUSH, OPEN_FORTRESS, DORMANT].map((a) => [a.key, a] as const))('%s', (_key, a) => {
     const caps = DEFAULT_CONFIG.caps;
     expect(armyCost(a)).toBeLessThanOrEqual(caps.budget);
     expect(armyCost(a)).toBeGreaterThan(caps.budget * 0.85); // nobody is handicapped by leftover money
-    expect(armyCopies(a)).toBeLessThanOrEqual(caps.maxCopies);
-    expect(a.army.length).toBeLessThanOrEqual(caps.maxTypes);
-    for (const [k] of a.army) expect(computeCost(UNITS[k], DEFAULT_CONFIG.cost).cost).toBeLessThanOrEqual(caps.unitCost);
+    // §5.2 copy caps: ≤ 12 fighters, of which ≤ 2 factories, plus ≤ 12 walls; at least one fighter.
+    expect(armyCopies(a, 'fighters')).toBeLessThanOrEqual(caps.maxCopies);
+    expect(armyCopies(a, 'fighters')).toBeGreaterThan(0);
+    expect(armyCopies(a, 'factories')).toBeLessThanOrEqual(caps.maxFactoryCopies);
+    expect(armyCopies(a, 'walls')).toBeLessThanOrEqual(caps.maxWallCopies);
+    expect(a.army.filter(([k]) => UNITS[k].type === 'soldier').length).toBeLessThanOrEqual(caps.maxUnitTypes);
+    expect(a.army.filter(([k]) => UNITS[k].type !== 'soldier').length).toBeLessThanOrEqual(caps.maxBuildingTypes);
+    for (const [k] of a.army) expect(unitCost(k)).toBeLessThanOrEqual(caps.unitCost);
   });
 
   it('the bricks are max-cost units and the tanks the §6 Half Tank', () => {
@@ -76,13 +130,25 @@ describe('the archetypes are legal $1,000 armies', () => {
     expect(computeCost(UNITS.tank, DEFAULT_CONFIG.cost).cost).toBe(180);
     expect(computeCost(UNITS.sniper, DEFAULT_CONFIG.cost).cost).toBe(305);
   });
+
+  it('the buildings are the §6 reference buildings (M8.5)', () => {
+    expect(unitCost('wall')).toBe(32);
+    expect(unitCost('factory')).toBe(193);
+    expect(unitCost('swarmFactory')).toBe(277);
+    expect(armyCost(byKey('fortress'))).toBe(946);
+    expect(armyCost(OPEN_FORTRESS)).toBe(914);
+    expect(armyCost(byKey('swarm'))).toBe(922);
+  });
 });
 
 describe('round robin: no archetype dominates (§6, §14)', () => {
   it(
     'on Corners 4 and Ring 8, over zone pairs, both orders and seeds: nobody beats everyone, everyone beats someone',
     async () => {
-      const m = await roundRobin();
+      const { m: all } = await full();
+      // The §14 six among themselves (each pair's battles don't depend on who else is in the matrix).
+      const old = new Set(ARCHETYPES.map((a) => a.key));
+      const m = new Map([...all].filter(([a]) => old.has(a)).map(([a, row]) => [a, new Map([...row].filter(([b]) => old.has(b)))]));
       if (process.env.BALANCE_REPORT) console.log(matrixMarkdown(m));
       const battlesPerPair = DUEL_SITES.reduce((n, s) => n + s.pairs.length * 2, 0) * SEEDS.length;
       for (const [a, row] of m) {
@@ -107,7 +173,43 @@ describe('round robin: no archetype dominates (§6, §14)', () => {
       expect(beats(m.get('scouts')!.get('snipers')!)).toBe(true); // fast swarm vs few slow-firing towers
       expect(beats(m.get('tanks')!.get('turtle')!)).toBe(false);
     },
-    T,
+    3 * T,
+  );
+
+  it(
+    'with walls and factories (M8.5, 13 archetypes): nobody dominates, walls and factories win some and lose some',
+    async () => {
+      const { m, wallOnlyWins } = await full();
+      if (process.env.BALANCE_REPORT) console.log(matrixMarkdown(m, ALL_ARCHETYPES));
+      const battlesPerPair = DUEL_SITES.reduce((n, s) => n + s.pairs.length * 2, 0) * SEEDS.length;
+      for (const [a, row] of m) {
+        const beaten = [...row].filter(([, c]) => beats(c)).map(([b]) => b);
+        const losingTo = [...row].filter(([, c]) => c.losses > c.wins).map(([b]) => b);
+        expect(beaten.length, `${a} beats ${beaten.join(', ')}`).toBeLessThan(row.size);
+        expect(beaten.length, `${a} beats nobody`).toBeGreaterThan(0);
+        // No "unbeaten" exception here: the sealed fortress beats the tanks.
+        expect(losingTo.length, `${a} has no losing matchup`).toBeGreaterThan(0);
+        const wins = [...row].reduce((n, [, c]) => n + c.wins, 0);
+        const rate = wins / (battlesPerPair * row.size);
+        expect(rate, `${a} wins ${wins} of ${battlesPerPair * row.size}`).toBeLessThanOrEqual(FULL_DOMINANCE_EXCEPTIONS[a]?.roundRobinWinCap ?? ROUND_ROBIN_WIN_CAP);
+      }
+      // Every wall and factory archetype fits the general caps (no exceptions for buildings).
+      for (const k of BUILDING_ARCHETYPES.map((a) => a.key)) expect(FULL_DOMINANCE_EXCEPTIONS[k]).toBeUndefined();
+      expect(WALL_KEYS.length).toBeGreaterThanOrEqual(4);
+      expect(FACTORY_KEYS.length).toBeGreaterThanOrEqual(3);
+      // Walls can't win on their own: no battle was won by a side with only walls left.
+      expect(wallOnlyWins).toEqual([]);
+      // The shape recorded in docs/balance.md: walls stop melee, range and minions break walls.
+      const f = m.get('fortress')!;
+      for (const melee of ['tanks', 'bricks', 'scouts']) expect(beats(f.get(melee)!), `fortress vs ${melee}`).toBe(true);
+      for (const breaker of ['turtle', 'snipers', 'swarm', 'bunker']) expect(f.get(breaker)!.losses, `fortress vs ${breaker}`).toBeGreaterThan(f.get(breaker)!.wins);
+      expect(beats(m.get('swarm')!.get('turtle')!)).toBe(true); // minions overrun a tower turtle
+      const sb = m.get('swarm')!.get('bunker')!;
+      expect(Math.max(sb.wins, sb.losses), 'swarm vs bunker is close').toBeLessThanOrEqual(10); // two factory armies
+      expect(beats(m.get('tanks')!.get('swarm')!)).toBe(true); // ...and big melee bodies too
+      expect(beats(m.get('wallrush')!.get('templates')!)).toBe(true);
+    },
+    3 * T,
   );
 });
 
@@ -164,6 +266,98 @@ describe('all-tower armies interact before 90 s: sudden death bites (§9, tuned 
   });
 });
 
+/** All-building armies (M8.5): walls + towers, and towers + factories, with no soldier at all. */
+const BUILDING_PAIRS: Array<[string, string]> = [
+  ['fortress', 'fortress'],
+  ['bunker', 'fortress'],
+  ['snipewall', 'bunker'],
+];
+
+describe('factories that never build can\'t turtle (§9.3 canMake)', () => {
+  it(
+    'walls + holding Fortress Factories never win and are always eliminated, even with nobody reaching them',
+    async () => {
+      const ticks = DEFAULT_CONFIG.timers.battleTicks;
+      const interval = UNITS.fortressFactory.productionInterval!;
+      for (const foe of [byKey('snipewall'), byKey('fortress')]) {
+        for (const site of DUEL_SITES)
+          for (const [z1, z2] of site.pairs)
+            for (const zones of [[z1, z2], [z2, z1]] as Array<[number, number]>)
+              for (const seed of SEEDS) {
+                const { outcome, battle } = await duel(site.style, site.players, DORMANT, foe, zones, seed);
+                const label = `dormant vs ${foe.key} on ${site.name} zones ${zones.join(',')} seed ${seed}`;
+                expect(outcome, label).toBe(-1);
+                // Out by the time it could no longer build a minion, at the latest.
+                const out = battle.result.players.find((p) => p.playerId === 'p0')!.eliminatedAtTick;
+                expect(out, label).not.toBeNull();
+                expect(out!, label).toBeLessThanOrEqual(ticks - interval);
+              }
+      }
+    },
+    T,
+  );
+});
+
+describe('all-building armies can\'t win by turtling: sudden death and elimination bite (M8.5)', () => {
+  for (const [style, players] of TOWER_SITES) {
+    it(
+      `${style} ${players}`,
+      async () => {
+        const map = mapFor(style, players);
+        for (const [ka, kb] of BUILDING_PAIRS) {
+          for (const zones of [[0, Math.floor(players / 2)], map.zones.map((z) => z.index)]) {
+            const entrants = zones.map((zone, i) => ({ archetype: byKey(i % 2 ? kb : ka), zone }));
+            const b = await balanceBattle(style, players, entrants, 7);
+            const label = `${ka}/${kb} in zones ${zones.join(',')}`;
+            // Fighters die before 90 s in every battle (shot, or caught by the circle)...
+            const fightersLost = b.result.units.filter((u) => u.type !== 'wall' && u.type !== 'minion' && !u.survived).length;
+            expect(fightersLost, label).toBeGreaterThan(0);
+            // ...a side that sits it out is reached by the circle...
+            b.suddenDeathBy.forEach((t, i) => {
+              if (!hasFighter(b.standing[i]!) && b.result.endReason === 'elimination' && b.firstContactTick !== null) return;
+              if (b.lost[i] === armyCopies(entrants[i]!.archetype)) return;
+              expect(t, `${label}: army ${i}`).not.toBeNull();
+            });
+            // ...and nobody places above a side with fighters with only walls left.
+            b.places.forEach((p, i) => {
+              if (hasFighter(b.standing[i]!)) return;
+              for (let j = 0; j < entrants.length; j++) if (hasFighter(b.standing[j]!)) expect(p, `${label}: army ${i} (walls only) vs ${j}`).toBeGreaterThan(b.places[j]!);
+            });
+          }
+        }
+      },
+      T,
+    );
+  }
+});
+
+describe('wall fortress vs soldier rush (stated expected outcomes, M8.5)', () => {
+  it(
+    'the rush beats the open §14 fortress (a U of 10 walls) at least 3 in 4; the sealed fortress holds the rush',
+    async () => {
+      let open = 0;
+      let sealed = 0;
+      let total = 0;
+      for (const site of DUEL_SITES)
+        for (const [z1, z2] of site.pairs)
+          for (const seed of SEEDS)
+            for (const [za, zb] of [[z1, z2], [z2, z1]] as Array<[number, number]>) {
+              const o = await duel(site.style, site.players, RUSH, OPEN_FORTRESS, [za, zb], seed);
+              const s = await duel(site.style, site.players, RUSH, byKey('fortress'), [za, zb], seed);
+              open += o.outcome === 1 ? 1 : 0;
+              sealed += s.outcome === 1 ? 1 : 0;
+              total++;
+              // Both are decided by fighting, before sudden death.
+              for (const d of [o, s]) expect(d.battle.result.endTick).toBeLessThan(DEFAULT_CONFIG.suddenDeath.startTick);
+            }
+      expect(open / total).toBeGreaterThanOrEqual(0.75);
+      // Walls stop chase-nearest soldiers: the sealed box wins (its answers are range and minions, see the matrix).
+      expect(sealed / total).toBeLessThanOrEqual(0.25);
+    },
+    T,
+  );
+});
+
 describe('tower turtle vs soldier rush: the rush wins (stated expected outcome)', () => {
   it(
     'duels on Corners 4 and Ring 8 (both orders, all zone pairs and seeds): the rush wins at least 3 in 4',
@@ -212,6 +406,30 @@ describe('2-team Lanes with mixed armies', () => {
   });
 });
 
+describe('2-team Lanes with building armies (M8.5)', () => {
+  const CASES: Array<[string[], string[]]> = [
+    [['fortress', 'swarm', 'wallrush', 'mixed'], ['bricks', 'tanks', 'rush', 'snipers']],
+    [['bunker', 'snipewall', 'fortress', 'swarm'], ['rush', 'rush', 'templates', 'turtle']],
+  ];
+  it('contact before sudden death, every battle decided, the building team wins some and loses some', async () => {
+    const won: boolean[] = [];
+    for (const [t0, t1] of CASES)
+      for (const round of [0, 1])
+        for (const seed of SEEDS) {
+          const b = await lanesTeams(8, t0.map(byKey), t1.map(byKey), round, seed + round);
+          const label = `${t0.join('+')} round ${round} seed ${seed}`;
+          expect(b.firstContactTick, label).not.toBeNull();
+          expect(b.firstContactTick!, label).toBeLessThan(DEFAULT_CONFIG.suddenDeath.startTick);
+          expect(b.winner, label).not.toBeNull();
+          // The winning team has a fighter standing.
+          expect(b.standing.some((st, i) => b.result.teams?.find((t) => t.place === 1)?.teamId === (i < 4 ? 0 : 1) && hasFighter(st)), label).toBe(true);
+          won.push(b.winner === 0);
+        }
+    expect(won).toContain(true);
+    expect(won).toContain(false);
+  });
+});
+
 describe('Ring 8 free-for-all over zone rotations (§14)', () => {
   it(
     'every army plays from every zone; no zone index wins far more often than the others',
@@ -240,6 +458,32 @@ describe('Ring 8 free-for-all over zone rotations (§14)', () => {
         expect(w, `${k} wins ${w} of ${battles}`).toBeLessThanOrEqual(battles * (DOMINANCE_EXCEPTIONS[k]?.ffaWinShareCap ?? FFA_WIN_SHARE_CAP));
         expect(w, k).toBeLessThan(battles);
       }
+    },
+    T,
+  );
+});
+
+describe('Ring 8 free-for-all with building armies (M8.5)', () => {
+  it(
+    'walls never win alone, nobody wins every battle, and no army takes more than half the 1st places',
+    async () => {
+      const lineup = ['fortress', 'swarm', 'snipewall', 'wallrush', 'bunker', 'mixed', 'quad', 'rush'].map(byKey);
+      const wins = new Map<string, number>();
+      let battles = 0;
+      for (const seed of SEEDS)
+        for (let r = 0; r < 8; r++) {
+          const entrants = lineup.map((archetype, i) => ({ archetype, zone: (i + r) % 8 }));
+          const b = await balanceBattle('ring', 8, entrants, seed + r);
+          battles++;
+          b.places.forEach((p, i) => {
+            if (p !== 1) return;
+            expect(hasFighter(b.standing[i]!) || b.result.endReason === 'elimination', `${lineup[i]!.key} won with walls only`).toBe(true);
+            wins.set(lineup[i]!.key, (wins.get(lineup[i]!.key) ?? 0) + 1);
+          });
+        }
+      if (process.env.BALANCE_REPORT) console.log({ wins });
+      for (const [k, w] of wins) expect(w, `${k} wins ${w} of ${battles}`).toBeLessThanOrEqual(battles * FFA_WIN_SHARE_CAP);
+      expect(wins.size).toBeGreaterThan(1);
     },
     T,
   );

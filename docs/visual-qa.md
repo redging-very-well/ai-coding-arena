@@ -336,3 +336,86 @@ aarch64 static binary from the GitHub release, checked against `TTYD_SHA256_ARM6
 - **Toasts overlap the pane header:** in tabs mode the phase toast ("Place your army!") briefly
   covers "Open in new tab" and "Change seat" (`s4-badge-place.png`). Toasts behaved this way before
   the terminal was added.
+
+## Walls and factories (M8.5)
+
+QA of the walls, factories and minions in a real browser, after the server, client and balance
+work landed. Not committed.
+
+### How it was run
+
+- **Server:** the production build (`npm run build`, then `packages/server/dist/index.js`) on
+  :18140 with a fresh data dir and an admin password.
+- **Players:** one browser player ("Ann", Playwright Chromium installed outside the repo) and the
+  rest `npm run bots`. That gives 2 players against the `fortress` bot (Duel), then against the
+  `factory` bot, and 8 players with 7 `mixed` bots (Ring: brawl, rush, turtle, swarm, fortress,
+  factory).
+- **Ann's army:** she picks all four starter types. Her placement is a wall line across the middle
+  row with a one-cell gap, three Basic Soldiers in front, and two Basic Factories behind. The Basic
+  Tower no longer fits the budget. 5 walls, $822.
+- **Screenshots:** /screen at 1920×1080 every few seconds through the battle (PLACEMENT, BATTLE,
+  sudden death, RESULTS). /play at 1400×1000: the roster, the editor on a wall, placement, the
+  battle panel and results.
+- **Late joiner:** a second /screen opens 38 s into the battle and is compared with the one that
+  watched from the start.
+- **Script and shots:**
+  `/tmp/claude-1000/-workspaces-kidscodingday/9c9e875f-8be6-4b5a-93eb-d016b9d3d229/scratchpad/qa/`
+  (`game.cjs`; `d2-*` Duel vs fortress, `e8-*` 8 players, `f2-*` Duel vs factory after the fixes).
+  No page errors or console errors in any run.
+
+### Checked and working
+
+- **/play roster:** two groups, "Units 1 / 4 picked" and "Buildings 3 / 4 picked", with the
+  Basic Tower under Buildings. The header reads "Units 1/4 · Buildings 3/4".
+  - With only a wall picked, Ready is off and says "Pick a soldier, tower or factory too: walls
+    alone can't win!".
+  - The factory card shows "Builds 15 s · 1 minion every 15 s · makes 5 minions".
+- **Editor on a copy of Basic Wall:** the cost panel shows Base $4, Health 400 $27.41, Cost $32. The
+  sprite is folded and locked.
+- **Placement:**
+  - The counter reads "Fighters 5/12 · Factories 2/2 · Walls 5/12".
+  - The Factories counter fills up, and a $198 tower that no longer fits gets "Not enough money!
+    It costs $198 but you only have $178 left."
+  - The mini-map draws walls as raised blocks.
+  - /screen keeps every army hidden.
+- **Battle:**
+  - Walls are drawn as 3D blocks in both zones.
+  - The fortress bot's archers shoot over its walls, and its turrets sit behind them.
+  - Minions spawn at 15 s, take their factory's colour and walk to the rally point. In the 8-player
+    run the factory bot's minions leave its zone and fight in the open.
+  - Enemy minions hit Ann's walls and factory. Damage numbers and wall cracks show.
+  - Army bars count walls as $0 and show "N/M units standing · K minions". "Walls protect, but only
+    fighters count!" appears.
+  - When Ann is knocked out, her leftover walls crumble.
+- **Sudden death (8 players):** the red ring closes over the corner zones, and the fortress bot's
+  walls stand inside the danger area.
+- **Results:**
+  - "Last army standing!": the factory bot won with its last minion.
+  - Top damage cards appear on both /screen and /play.
+  - /play's "My units last battle" lists Basic Wall 0/5 and Basic Factory 0/2 with damage 35, plus
+    "🏭 Basic Factory made 3 minions (3 lost), 35 minion damage".
+- **Late joiner:** the /screen opened mid-battle matches the reference frame exactly. That includes
+  Ann's crumbled walls (gone) and the fortress bot's untouched walls (present).
+
+### Bugs found and fixed
+
+| # | Where | Bug | Fix | Evidence |
+|---|---|---|---|---|
+| 26 | /play battle panel | "My army: 7 / 10 standing" counted walls as standing, while /screen said "2/5 units standing" for the same army. | Counts fighters only, like /screen, plus a separate "🧱 Walls: 5 / 5 up" line (`Battle.tsx`). | `d2-play-b15.png` → `f2-play-b15.png` |
+| 27 | Late joiner (server + client) | A player or /screen that joined mid-battle got one catch-up frame. Frames list a wall only when its hp changes, so the client filled the missing walls in from the reveal at full hp. A wall destroyed before the join was drawn standing until the battle ended (reported by the client agent). | `catchUpFrame()` in `sim/frames.ts` (used by `BattleService.currentFrame()`) adds every living wall that the frame leaves out, at its last hp. `FrameBuffer` carries reveal walls only into a t=0 frame, and trusts a later first frame. Tests are in `server-fixes.test.ts` and `buildings-client.test.ts`. | `e8-late-join.png` = `e8-late-join-ref.png` |
+| 28 | Editor | The help under the code said "Change the numbers in constructor() and the moves in update()" for a wall, which has no update(). | For a wall it says "Change the numbers in constructor(). Walls have no update(): they just stand there." | `f2-editor-wall.png` |
+
+The fix texts in `docs/dryrun-report.md` (M8.5) were also tuned.
+
+### Notes (not fixed)
+
+- **Zone number vs seat badge (from before M8.5):** placement says "This round you're in zone 2
+  (bottom right)", but the arena marks that zone with Ann's seat badge **1**. A player could look for
+  a "2". Not caused by walls or factories.
+- **Bots show "offline" on /screen** in the player list, because they play over REST with no
+  socket. This is expected for rehearsal bots.
+- **The "Place your army!" toast** covers the top-right corner of the placement panel for a moment.
+  Toasts behaved this way before M8.5.
+- **Unsaved badge on a fresh copy:** "Copy to a new unit" opens the editor already marked
+  "unsaved", so Close asks "Keep editing / Close (keep my draft) / Throw my changes away" even if
+  nothing was typed. Harmless, and it was like this before M8.5.

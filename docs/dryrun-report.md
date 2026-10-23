@@ -73,3 +73,73 @@ The dry run itself changed no fix texts in `packages/shared/src/errors.ts`: no s
 - **"Plan started" is player-driven:** Claude can't know when PLAN opens. The PROMPTS.md tip covers it, and a facilitator announcement on the projector would help.
 - **Not run in a real seat container (ttyd + trust dialog).** This run emulated the trusted state with `--settings`. The M8 dress rehearsal should confirm that a trusted seat shows no prompt for the first `login` and `Write`.
 - **The user's claude.ai connectors** (Gmail, Drive and others) appeared as pending MCP servers in some runs. A seat's fresh event account won't have them, but if the event account has connectors, disconnect them from that account (they add noise and tool choices the player's Claude should never use).
+
+## Walls and factories (M8.5)
+
+Date: 2026-10-23. Claude Code 2.1.304, the same setup as above:
+- **Server:** the production build on :18140, with players Cara, Dev, Eli and Fay created over REST
+  (PIN 1234) and the match in PLAN with the timer paused.
+- **Kit:** a fresh copy of the generic kit (`GET /api/setup/kit.zip`, `Host: 127.0.0.1:18140`)
+  per player, unzipped outside the repo.
+- **Command:** `claude -p "<prompt>" --output-format stream-json --verbose --settings
+  .claude/settings.json`.
+
+5 runs, about $2.84.
+
+| # | Player says | Calls | Validates | Outcome | Notes |
+|---|---|---|---|---|---|
+| w1 | "I'm Cara, PIN 1234. Build me a strong wall to protect my towers" | 11 | 1 | Submitted "Castle Wall" wall, 1000 HP, $118 | Read `basic_wall.js` first. 16×16 stone-and-iron sprite. Told the player to put it in front of the towers ("their shots fly right over it") and to leave a gap for their own fighters. No warnings |
+| w2 | "I'm Dev, PIN 1234. Make a factory that sends minions to the middle" | 12 | 1 | Submitted "Middle Maker" factory, 300 HP, interval 900, $193 | `update()` returns `{ action: 'rally', destination: world.center }`. Blue workshop sprite with chimney smoke and a door that lights up (2 idle smoke frames + a door-lit `attack` frame, as in the template). Explained "a minion every 15 seconds, up to 5 in each battle" |
+| w3 | "I'm Eli, PIN 1234. Make me a cheap wall and a fast soldier" | 14 | 1 + 1 | Submitted "Plank Wall" (200 HP, $17) and "Speedy Runner" (speed 3.5, $138) | Two units, each validated once. The runner is wall-aware: it skips `type === 'wall'` targets and smashes the wall in `self.blockedBy` after 120 blocked ticks, like the template |
+| w4 | "I'm Fay, PIN 1234. Make the biggest, toughest factory EVER that makes minions super super fast! Max everything!" | 14 | 1 | Submitted "Mega Factory", 870 HP, interval 600 (8 minions), $497 | It priced the unit under $500 from CLAUDE.md before validating, and told the kid kindly: "Maxing everything would cost $594, and no unit can cost more than $500". Purple fortress sprite with two chimneys |
+| w5 | "My runners might get stuck behind walls. Make them smash through enemy walls fast, and make my wall tougher too" (`--resume` w3) | 13 | 1 + 1 | Submitted v2 of both: Plank Wall 450 HP $36, and Speedy Runner, which now smashes after 30 blocked ticks | Called `get_unit_source` for both before editing, and passed `unitId` + `baseVersion: 1` on validate and submit. It remembers the wall in `this.smashId` and drops it when the wall is gone or is its own |
+
+- **Validates:** every run submitted valid units after **1 validate per unit**.
+- **Sprites:** every unit had a 16×16 sprite. Factory sprites had smoke idle frames and a door-lit frame.
+- **Permissions:** no permission denials, and no shell commands.
+- **Talking to the player:** answers were short and in kid words. Claude never asked the player to
+  edit code, and it always ended by saying where to pick and place the unit.
+- **Rules followed:** CLAUDE.md §4c (unit types) and the wall and factory cost examples were enough.
+  - Claude got the cost formulas right.
+  - Factories never had damage or speed.
+  - Walls never had update().
+  - It left a gap in walls for its own units.
+  - It skipped walls when picking targets.
+
+### Fix texts (checked directly)
+
+None of the runs made a validation error, so the wall and factory fix texts were checked with
+REST `POST /units/validate` on broken sources. All gave a precise fix and a kid-friendly
+`playerHint`:
+- **`BUILDING_CANNOT_ATTACK` and `BUILDING_CANNOT_MOVE`:** "Remove this.damage … Want something
+  that shoots? Make a tower."
+- **`W_UPDATE_IGNORED`:** a wall with `update()`.
+- **`STAT_OUT_OF_RANGE`:** the productionInterval fix says "(one minion every 15 s)".
+- **`UPDATE_MISSING`:** a factory with no `update()`. The fix gives a rally example.
+- **`UNIT_TOO_EXPENSIVE`:** for a factory, this names the 870 HP fix that w4 also found.
+
+Four were tuned:
+
+- **`BAD_ACTION`, factory:** a factory that returned an attack with no target was told "an attack
+  needs targetId set to an enemy id", which invites Claude to fix the attack. It now says "a factory
+  can't attack, it only tells its minions where to go" (`validator/dryrun.ts`).
+- **`STAT_OUT_OF_RANGE`, maxHealth:** for a wall or factory the example was the soldier's
+  `this.maxHealth = 120`. It is now the starter value: 400 for a wall, 300 for a factory
+  (`shared/bounds.ts`).
+- **`UNIT_TOO_EXPENSIVE`, walls and factories:** the fix said "costs $360 before the factor".
+  Buildings have no cooldown factor, so the phrase is now only used for soldiers and towers
+  (`shared/cost.ts`).
+- **Unknown type** (e.g. `this.type = "gate"`): apart from the type error, the result also listed
+  STAT_MISSING for damage, range, speed and attackCooldown, which pushed a wall towards soldier
+  stats. Now only the type error and the fields every type needs are listed (`shared/bounds.ts`).
+
+Tests are in `tests/validator-buildings.test.ts` ("fix texts for walls and factories"). CLAUDE.md
+and PROMPTS.md weren't changed, because no run showed a gap.
+
+### Remaining
+
+- **Little real-Claude coverage of the building fix texts:** Claude got walls and factories right
+  first time, as it did with soldiers in M4, so the tuned texts are covered by unit tests only.
+- **The success `playerHint` says "Your unit is ready! Find it in My Units"** for walls and
+  factories too. That is true (the /play panel is called My Units, with a Buildings group), but
+  "building" would read better.
