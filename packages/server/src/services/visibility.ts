@@ -43,7 +43,7 @@ export class VisibilityService {
       connected: g.notifier.isConnected(p.id),
       submitted: rs?.submittedThisPlan ?? false,
       selected: (rs?.selection.length ?? 0) > 0,
-      ready: phase === 'PLACEMENT' ? (rs?.ready ?? false) : false,
+      ready: phase === 'PLAN' || phase === 'PLACEMENT' ? (rs?.ready ?? false) : false,
       points: g.store.match.points[p.id] ?? 0,
       active: g.players.isActive(p),
     };
@@ -103,7 +103,7 @@ export class VisibilityService {
       selection: rs.selection.slice(),
       placement: showRound ? rs.placements.slice() : [],
       myZone: zone ? mapZoneDTO(zone) : null,
-      ready: phase === 'PLACEMENT' ? rs.ready : false,
+      ready: phase === 'PLAN' || phase === 'PLACEMENT' ? rs.ready : false,
       submissionsOpen: g.match.submissionsOpen(),
       active: g.players.isActive(p),
       hasLastLayout: (rs.lastLayout?.length ?? 0) > 0,
@@ -128,7 +128,10 @@ export class VisibilityService {
       sandboxMode: g.config.sandbox.mode,
       armory: g.armory.info(),
       match: g.teams.matchInfo(),
+      allReady: g.round.everyoneReady(),
     };
+    const pending = g.match.pendingAdvanceDTO();
+    if (pending) state.pendingAdvance = pending;
     if (m.phase === 'BATTLE') {
       const pb = g.battle.playback();
       if (pb) state.battle = pb;

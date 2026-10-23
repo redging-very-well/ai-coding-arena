@@ -30,6 +30,7 @@ import { ClaudePane } from './ClaudePanel.js';
 import { Header } from './Header.js';
 import { Join } from './Join.js';
 import { Placement } from './Placement.js';
+import { PlanReady } from './PlanReady.js';
 import { Results } from './Results.js';
 import { Roster } from './Roster.js';
 import { TeamPanel } from './TeamPanel.js';
@@ -87,6 +88,7 @@ function Main({ phase }: { phase: Phase }) {
       return (
         <>
           <Benched />
+          <PlanReady />
           <TeamPanel phase={phase} />
           <Roster phase={phase} />
         </>

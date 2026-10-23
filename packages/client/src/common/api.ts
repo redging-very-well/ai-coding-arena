@@ -177,6 +177,9 @@ export const api = {
     skipPhase: () => request<GameStateDTO>('POST', '/admin/phase/skip'),
     timer: (t: { setSeconds?: number; addSeconds?: number; paused?: boolean }) => request<TimerDTO>('POST', '/admin/timer', t),
     start: (force = false) => request<GameStateDTO>('POST', '/admin/start', { force }),
+    /** Start the cancellable countdown to Next (PLAN) / START (PLACEMENT). */
+    advance: (delaySec = 3) => request<GameStateDTO>('POST', '/admin/phase/advance', { delaySec }),
+    cancelAdvance: () => request<GameStateDTO>('POST', '/admin/phase/advance/cancel'),
     battle: (b: { paused?: boolean; speed?: 1 | 2 }) => request<PlaybackDTO>('POST', '/admin/battle', b),
     /** Projector remote (§12.2): replay, 1x/2x, pause, join poster. `screens` = projectors reached. */
     screen: (command: ScreenCommandDTO) => request<{ ok: true; screens: number }>('POST', '/admin/screen', command),

@@ -3,11 +3,15 @@
 //
 //   LOBBY → PLAN → PLACEMENT → BATTLE → RESULTS → PLAN … → MATCH_RESULTS → LOBBY
 //
-// PLAN auto-advances when its timer ends; PLACEMENT never auto-starts (the
-// timer just runs out and shows "Waiting for host START"). BATTLE → RESULTS
+// PLAN auto-advances when its timer ends, or (timers.autoAdvanceWhenAllReady)
+// ~3 s after every active player is Ready; PLACEMENT never auto-starts (the
+// timer just runs out and shows "Waiting for host START"). The host can also
+// start a short, cancellable countdown to Next/START (the pending advance). BATTLE → RESULTS
 // follows the PLAYBACK clock (services/battle.ts releases the result).
 
-import { fail, ok, type Phase, type Result, type TimerDTO } from '@pixel-clash/shared';
+import { fail, ok, type PendingAdvanceDTO, type Phase, type Result, type TimerDTO } from '@pixel-clash/shared';
+
+type AdvanceTarget = PendingAdvanceDTO['to'];
 import { log } from '../util/log.js';
 import type { Game } from './game.js';
 import { teamRoundRanking } from '../sim/scoring.js';
@@ -21,7 +25,7 @@ export const PHASE_GATES: Record<GatedOp, readonly Phase[]> = {
   retire: ['PLAN'],
   selection: ['PLAN'],
   placement: ['PLACEMENT'],
-  ready: ['PLACEMENT'],
+  ready: ['PLAN', 'PLACEMENT'],
   adminSubmit: ['PLAN'],
 };
 
@@ -35,10 +39,16 @@ const OP_TEXT: Record<GatedOp, string> = {
 };
 
 const TICK_MS = 250;
+const AUTO_ADVANCE_MS = 3000;
 
 export class MatchService {
   private ticker: NodeJS.Timeout | undefined;
   private lastBroadcastSecond: number | null = null;
+  /** The countdown to the next step (host or auto), or null. Not persisted. */
+  private pending: { to: AdvanceTarget; at: number; by: 'host' | 'auto'; phase: Phase; round: number } | null = null;
+  private lastPendingSecond: number | null = null;
+  /** The host cancelled the auto countdown; it re-arms once someone un-readies. */
+  private autoCancelled = false;
 
   constructor(private readonly game: Game) {}
 
@@ -140,6 +150,7 @@ export class MatchService {
         : { deadline: Date.now() + rem, remainingMs: null, paused: false };
       if (rem > 0) delete this.m.timer.expired;
     }
+    this.syncAutoAdvance();
     this.changed();
     return ok(this.timerDTO());
   }
@@ -156,9 +167,130 @@ export class MatchService {
     this.ticker = undefined;
   }
 
+  // -------------------------------------------------------------------------
+  // Pending advance: a short countdown to the next step (§3, §10.3)
+  // -------------------------------------------------------------------------
+  //
+  //  * by 'host': the facilitator pressed "Start placement ▶" / "START battle ▶"
+  //    (/admin or /screen with the admin cookie). It keeps counting when
+  //    someone un-readies (the host chose it); at zero it does exactly what
+  //    Next (PLAN) or START without force (PLACEMENT) does, so a PLACEMENT one
+  //    can still be refused with NOT_ALL_READY (toast to the admin).
+  //  * by 'auto': timers.autoAdvanceWhenAllReady, PLAN only. Runs while every
+  //    active player is Ready and the PLAN timer isn't paused; cancelled as
+  //    soon as that stops being true.
+  // Either can be cancelled by the host; any other phase change drops it. A
+  // cancelled auto countdown stays off until someone un-readies (or the phase
+  // changes), so Cancel isn't undone a tick later. Kept in memory only.
+
+  /** True when the auto countdown should run now. */
+  private wantAuto(): boolean {
+    return this.m.phase === 'PLAN' && this.game.config.timers.autoAdvanceWhenAllReady && !this.m.timer.paused && this.game.round.everyoneReady();
+  }
+
+  /**
+   * Bring the pending advance in line with the state: drop it after a phase
+   * change, start/cancel the auto one. Returns true when it changed.
+   */
+  syncAutoAdvance(): boolean {
+    const p = this.pending;
+    if (p && (p.phase !== this.m.phase || p.round !== this.m.round)) {
+      this.pending = null;
+      this.autoCancelled = false;
+      return true;
+    }
+    if (!this.game.round.everyoneReady() || this.m.phase !== 'PLAN') this.autoCancelled = false;
+    if (p?.by === 'host') return false;
+    const want = this.wantAuto() && !this.autoCancelled;
+    if (want && !p) {
+      this.setPending('PLACEMENT', this.game.options.autoAdvanceDelayMs ?? AUTO_ADVANCE_MS, 'auto');
+      log.info(`round ${this.m.round}: everyone is ready, placement starts in a moment`);
+      return true;
+    }
+    if (!want && p) {
+      this.pending = null;
+      return true;
+    }
+    return false;
+  }
+
+  private setPending(to: AdvanceTarget, delayMs: number, by: 'host' | 'auto'): void {
+    this.pending = { to, at: Date.now() + delayMs, by, phase: this.m.phase, round: this.m.round };
+    this.lastPendingSecond = null;
+  }
+
+  /** The countdown for the state DTO, or null. */
+  pendingAdvanceDTO(): PendingAdvanceDTO | null {
+    const p = this.pending;
+    if (!p || p.phase !== this.m.phase || p.round !== this.m.round) return null;
+    return { to: p.to, by: p.by, secondsLeft: Math.max(1, Math.ceil((p.at - Date.now()) / 1000)) };
+  }
+
+  /**
+   * Admin: start the countdown to the next step (PLAN → PLACEMENT any time,
+   * PLACEMENT → BATTLE when everyone is Ready). Replaces an auto countdown.
+   */
+  startAdvance(delayIn: unknown): Result<true> {
+    const delay = delayIn === undefined || delayIn === null ? 3 : delayIn;
+    if (typeof delay !== 'number' || !Number.isFinite(delay) || delay < 0 || delay > 10) {
+      return fail('BAD_REQUEST', 'delaySec must be a number from 0 to 10.');
+    }
+    const phase = this.m.phase;
+    if (phase !== 'PLAN' && phase !== 'PLACEMENT') {
+      return fail('PHASE_CLOSED', 'The countdown works only in PLAN and PLACEMENT.', { details: { phase, opensIn: 'PLAN' } });
+    }
+    if (phase === 'PLACEMENT' && !this.game.round.allReady()) return this.notAllReady();
+    this.setPending(phase === 'PLAN' ? 'PLACEMENT' : 'BATTLE', delay * 1000, 'host');
+    log.info(`round ${this.m.round}: host countdown to ${this.pending!.to} (${delay} s)`);
+    this.game.notifier.stateChanged();
+    return ok(true);
+  }
+
+  /** Admin: cancel a running countdown (host or auto). Idempotent. */
+  cancelAdvance(): Result<true> {
+    if (this.pending) {
+      if (this.pending.by === 'auto') this.autoCancelled = true;
+      this.pending = null;
+      this.game.notifier.toast({ all: true }, 'info', 'Countdown cancelled.');
+      this.game.notifier.stateChanged();
+    }
+    return ok(true);
+  }
+
+  /** The pending advance reached zero. */
+  private firePending(): void {
+    const p = this.pending!;
+    this.pending = null;
+    this.autoCancelled = false;
+    if (p.to === 'PLACEMENT') {
+      log.info(`round ${this.m.round}: countdown over (${p.by}), starting placement`);
+      this.enterPlacement();
+      return;
+    }
+    const r = this.start(false);
+    if (!r.ok) {
+      this.game.notifier.toast({ admin: true }, 'warn', `${r.error.message} Use Force start, or start the countdown again.`);
+      this.game.notifier.stateChanged();
+    }
+  }
+
   private tick(): void {
     const phase = this.m.phase;
     if (phase === 'BATTLE') return; // the battle service pushes its own clock
+    if (phase === 'PLAN' || phase === 'PLACEMENT') {
+      if (this.syncAutoAdvance()) this.game.notifier.stateChanged();
+      if (this.pending) {
+        if (Date.now() >= this.pending.at) {
+          this.firePending();
+          return;
+        }
+        const sec = this.pendingAdvanceDTO()?.secondsLeft ?? null;
+        if (sec !== this.lastPendingSecond) {
+          this.lastPendingSecond = sec;
+          this.game.notifier.stateChanged();
+        }
+      }
+    }
     const rem = this.remainingMs();
     if (rem === null || this.m.timer.expired) {
       this.lastBroadcastSecond = null;
@@ -260,6 +392,7 @@ export class MatchService {
 
   private enterPlacement(): void {
     const m = this.m;
+    this.pending = null;
     this.game.round.lockSelections();
     this.game.round.assignZones();
     m.phase = 'PLACEMENT';
@@ -274,16 +407,8 @@ export class MatchService {
     if (this.m.phase !== 'PLACEMENT') {
       return fail('PHASE_CLOSED', 'START works only in PLACEMENT.', { details: { phase: this.m.phase, opensIn: 'PLACEMENT' } });
     }
-    if (!force && !this.game.round.allReady()) {
-      const notReady = this.game.players
-        .active()
-        .filter((p) => !this.game.round.stateOf(p.id).ready)
-        .map((p) => p.name);
-      return fail('NOT_ALL_READY', `Not everyone is ready: ${notReady.join(', ')}.`, {
-        hint: 'Wait for everyone, or use Force start.',
-        details: { notReady },
-      });
-    }
+    if (!force && !this.game.round.allReady()) return this.notAllReady();
+    this.pending = null;
     // A kick since PLACEMENT began changes the zone set (§9 Zones: per active count).
     const activeIds = this.game.players.active().map((p) => p.id);
     const zoned = Object.keys(this.m.zones);
@@ -300,6 +425,17 @@ export class MatchService {
     this.allPrivateChanged();
     this.game.battle.start();
     return ok(true);
+  }
+
+  private notAllReady(): Result<never> {
+    const notReady = this.game.players
+      .active()
+      .filter((p) => !this.game.round.stateOf(p.id).ready)
+      .map((p) => p.name);
+    return fail('NOT_ALL_READY', `Not everyone is ready: ${notReady.join(', ')}.`, {
+      hint: 'Wait for everyone, or use Force start.',
+      details: { notReady },
+    });
   }
 
   /** The battle service could not start the battle: back to PLACEMENT. */
@@ -404,6 +540,7 @@ export class MatchService {
   private resetToLobby(): Result<true> {
     const m = this.m;
     this.game.players.applyPendingKicks();
+    this.pending = null;
     m.phase = 'LOBBY';
     m.round = 0;
     m.results = [];

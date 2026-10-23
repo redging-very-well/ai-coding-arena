@@ -452,6 +452,16 @@ main.join {
 .ready-btn.on { background: var(--good) !important; color: #052e16 !important; }
 .ready-btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #0a0c16; }
 
+/* PLAN "I'm ready!" (army picked) */
+.plan-ready { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+.plan-ready .ready-btn { margin-left: 0; }
+.plan-ready.is-ready { border-color: var(--good); }
+.plan-ready-text { flex: 1 1 220px; }
+.plan-ready-text p { margin: 0.2rem 0; }
+.plan-ready .good-text { color: var(--good); font-weight: 700; }
+.ready-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.note.countdown { border-left-color: var(--accent); color: var(--accent); font-size: 18px; }
+
 @media (max-width: 760px) {
   .placement-layout { grid-template-columns: 1fr; }
   .grid-wrap { padding: 18px; }

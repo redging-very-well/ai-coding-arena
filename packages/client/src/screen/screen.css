@@ -1289,3 +1289,79 @@ canvas.arena {
     animation: none;
   }
 }
+
+/* "Everyone's ready!" over the top of the arena (the centre stays clear). */
+.ready-banner {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 36px;
+  background: color-mix(in srgb, var(--good) 88%, #000);
+  color: #052e16;
+  border: 4px solid #05060c;
+  box-shadow: 6px 6px 0 #05060c;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: pc-pop 0.4s ease-out;
+  z-index: 3;
+}
+.ready-banner .pixel {
+  font-size: 30px;
+}
+.ready-banner small {
+  font-size: 24px;
+  font-weight: 700;
+}
+.ready-banner.counting {
+  background: color-mix(in srgb, var(--accent) 90%, #000);
+  color: #2a1d00;
+}
+.ready-banner .count {
+  font-size: 110px;
+  line-height: 1;
+  margin: 6px 0 2px;
+  text-shadow: 6px 6px 0 rgba(0, 0, 0, 0.25);
+  animation: pc-pop 0.35s ease-out;
+}
+.adv-buttons {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 6px;
+  pointer-events: auto;
+}
+.adv-btn {
+  font-size: 22px;
+  padding: 14px 24px;
+  border: 4px solid #05060c;
+  box-shadow: 5px 5px 0 #05060c;
+  cursor: pointer;
+}
+.adv-btn.go {
+  background: #fff;
+  color: #052e16;
+}
+.adv-btn.cancel {
+  background: #b91c1c;
+  color: #fff;
+}
+.adv-btn:active {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 #05060c;
+}
+.adv-keys {
+  font-size: 16px;
+  opacity: 0.75;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ready-banner,
+  .ready-banner .count {
+    animation: none;
+  }
+}

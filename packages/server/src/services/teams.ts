@@ -434,7 +434,7 @@ export class TeamsService {
         playerId: id,
         name: p.name,
         seat: p.seat,
-        ready: phase === 'PLACEMENT' ? rs.ready : false,
+        ready: phase === 'PLAN' || phase === 'PLACEMENT' ? rs.ready : false,
         zone: zone ? mapZoneDTO(zone) : null,
         selection: rs.selection.map((u) => this.teammateCard(id, u)).filter((c): c is UnitCardDTO => c !== null),
         placement: showRound ? rs.placements.map((x) => ({ ...x })) : [],

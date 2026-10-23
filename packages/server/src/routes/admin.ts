@@ -68,6 +68,14 @@ export function adminRoutes(game: Game): Router {
     stateAfter(game.match.next(), res);
   });
 
+  r.post('/phase/advance', (req, res) => {
+    stateAfter(game.match.startAdvance(body(req).delaySec), res);
+  });
+
+  r.post('/phase/advance/cancel', (_req, res) => {
+    stateAfter(game.match.cancelAdvance(), res);
+  });
+
   r.post(
     '/phase/skip',
     wrap(async (_req, res) => {

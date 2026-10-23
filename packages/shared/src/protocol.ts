@@ -33,7 +33,8 @@
 //   PUT    /round/selection {unitIds} -> {selection: string[]}            (PLAN only; own unitIds and
 //                                        `armory:<armoryId>` ids when Open Armory is on, ≤ 3 in total)
 //   PUT    /round/placement {placements} -> PlacementResponse            (PLACEMENT only)
-//   POST   /round/ready {ready}       -> {ready: boolean}                 (PLACEMENT only)
+//   POST   /round/ready {ready}       -> {ready: boolean}                 (PLAN and PLACEMENT; separate per phase,
+//                                        reset on phase change; PLAN needs a selection: NOTHING_SELECTED)
 //   GET    /battles/:round/report     -> BattleReportDTO  (own units; after playback ends)
 //   GET    /battles/:round/replay     -> ReplayDTO        (after playback ends)
 //   GET    /kit.zip                   -> personal kit zip (player)
@@ -58,6 +59,9 @@
 //   POST /admin/phase/skip            -> GameStateDTO
 //   POST /admin/timer {setSeconds?,addSeconds?,paused?} -> TimerDTO
 //   POST /admin/start {force?}        -> GameStateDTO (PLACEMENT -> BATTLE)
+//   POST /admin/phase/advance {delaySec?} -> GameStateDTO (countdown, default 3 s, then Next from PLAN /
+//                                        START without force from PLACEMENT; PLACEMENT needs everyone Ready)
+//   POST /admin/phase/advance/cancel  -> GameStateDTO (cancels a host or auto countdown)
 //   POST /admin/battle {paused?,speed?} -> PlaybackDTO
 //   POST /admin/players/:id/kick {deleteData?} -> {ok:true, effective:'now'|'after-battle'}
 //   POST /admin/players/:id/pin {pin} -> {ok:true}
@@ -100,8 +104,8 @@
 //   * Maps and teams (§9.2): `MapDTO` is public (no zone owners before START),
 //     `TeamDTO` is public; teammates' live selections/zones/placements travel
 //     only in each member's `private.team` block (`TeamPrivateDTO`).
-//   * Phase gates (§10.2): submit/retire/selection only in PLAN; placement and
-//     ready only in PLACEMENT; validate always. A closed gate is HTTP 409
+//   * Phase gates (§10.2): submit/retire/selection only in PLAN; placement
+//     only in PLACEMENT; ready in PLAN and PLACEMENT; validate always. A closed gate is HTTP 409
 //     PHASE_CLOSED with details {phase, opensIn, secondsLeft?}.
 // ===========================================================================
 
@@ -138,7 +142,7 @@ export interface PlayerStatusDTO extends PlayerDTO {
   submitted: boolean;
   /** Has a (non-empty) selection for this round. */
   selected: boolean;
-  /** Ready toggle during PLACEMENT. */
+  /** Ready toggle: PLAN = army picked and done, PLACEMENT = army placed (reset on every phase change). */
   ready: boolean;
   points: number;
   /** False when the player joined mid-round: "you're in from the next round". */
@@ -471,6 +475,15 @@ export interface PlaybackDTO {
   totalTicks: number;
 }
 
+/** The countdown to the next step (§3 pending advance). */
+export interface PendingAdvanceDTO {
+  to: 'PLACEMENT' | 'BATTLE';
+  /** 'host' = the facilitator pressed go; 'auto' = everyone Ready with the auto-advance option. */
+  by: 'host' | 'auto';
+  /** Whole seconds left (≥ 1). */
+  secondsLeft: number;
+}
+
 export interface GameStateDTO {
   phase: Phase;
   round: number;
@@ -492,6 +505,17 @@ export interface GameStateDTO {
   armory: ArmoryInfoDTO;
   /** Map, teams and team table (§9.2). */
   match?: MatchInfoDTO;
+  /**
+   * PLAN / PLACEMENT: every active player (≥ 1) is Ready in the current phase
+   * (PLAN Ready = army picked, PLACEMENT Ready = army placed). False otherwise.
+   */
+  allReady: boolean;
+  /**
+   * A countdown to the next step is running (PLAN → PLACEMENT or PLACEMENT →
+   * BATTLE): started by the host (cancellable) or by the auto-advance option
+   * (timers.autoAdvanceWhenAllReady). Absent when none runs.
+   */
+  pendingAdvance?: PendingAdvanceDTO;
   /** Owner-only block. */
   me?: MyStateDTO;
 }

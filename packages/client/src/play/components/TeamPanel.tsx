@@ -42,7 +42,7 @@ function Member({ m, phase, me, submitted, arena }: { m: TeamMemberPrivateDTO; p
         <strong>{me ? `${m.name} (you)` : m.name}</strong>
         {phase === 'PLAN' && <Tick on={submitted} label="new unit" />}
         <Tick on={m.selection.length > 0} label="picked" />
-        {phase === 'PLACEMENT' && <Tick on={m.ready} label="ready" />}
+        {(phase === 'PLAN' || phase === 'PLACEMENT') && <Tick on={m.ready} label="ready" />}
       </div>
       {m.zone && phase === 'PLACEMENT' && (
         <div class="dim small">

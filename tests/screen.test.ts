@@ -117,6 +117,7 @@ describe('/screen view model', () => {
     expect(statusTicks(p, 'PLAN')).toEqual([
       { label: 'New unit', done: true },
       { label: 'Army picked', done: false },
+      { label: 'Ready', done: false },
     ]);
     expect(statusTicks({ ...p, ready: true, selected: true }, 'PLACEMENT').every((t) => t.done)).toBe(true);
     expect(statusTicks({ ...p, active: false }, 'PLAN')).toEqual([{ label: 'Joins next round', done: false }]);

@@ -241,6 +241,40 @@ export function toggleSelection(selection: readonly string[], unit: Pick<UnitCar
 }
 
 // ---------------------------------------------------------------------------
+// PLAN Ready ("my army is picked", §12.1)
+// ---------------------------------------------------------------------------
+
+export interface PlanReadyView {
+  /** The button can be pressed (un-ready always; ready needs ≥ 1 picked type). */
+  enabled: boolean;
+  label: string;
+  /** Small text under the button. */
+  hint: string;
+}
+
+/** The PLAN "I'm ready!" toggle for a selection of `picked` types (`placementIn`: a countdown to placement runs). */
+export function planReadyView(picked: number, ready: boolean, max: number, placementIn?: number): PlanReadyView {
+  if (placementIn !== undefined) {
+    // A countdown to placement runs (host or auto): say so whatever Ready is.
+    return { enabled: ready || picked > 0, label: ready ? "✓ I'm ready!" : "I'm ready!", hint: `Placement starts in ${placementIn}…` };
+  }
+  if (ready) {
+    return { enabled: true, label: "✓ I'm ready!", hint: 'Waiting for the others. Change your picks any time (then press Ready again).' };
+  }
+  if (picked === 0) return { enabled: false, label: "I'm ready!", hint: `Pick up to ${max} units first` };
+  return { enabled: true, label: "I'm ready!", hint: `Picked ${picked} of ${max}. Happy with your army? Press Ready!` };
+}
+
+/**
+ * Show "You changed your army: press Ready again" when PLAN Ready went from
+ * on to off without the player pressing the button (a new pick, or Claude
+ * sent a new or revised unit). Same phase only: a phase change also resets it.
+ */
+export function readyWasCleared(prev: { phase: string; ready: boolean } | null, next: { phase: string; ready: boolean }, ownToggle: boolean): boolean {
+  return !!prev && !ownToggle && prev.phase === 'PLAN' && next.phase === 'PLAN' && prev.ready && !next.ready;
+}
+
+// ---------------------------------------------------------------------------
 // Stat bars and cost breakdown
 // ---------------------------------------------------------------------------
 

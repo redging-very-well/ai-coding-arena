@@ -10,6 +10,7 @@ export type SfxName =
   | 'place'
   | 'remove'
   | 'ready'
+  | 'allReady'
   | 'beep'
   | 'beepFinal'
   | 'clash'
@@ -66,6 +67,13 @@ export const SFX: Readonly<Record<SfxName, readonly SfxStep[]>> = {
   place: [note('square', 660, 0, 0.06, 0.16, 990)],
   remove: [note('square', 520, 0, 0.07, 0.14, 300)],
   ready: [note('triangle', C5, 0, 0.12, 0.22), note('triangle', E5, 0.08, 0.12, 0.22), note('triangle', G5, 0.16, 0.22, 0.22)],
+  // Everyone is ready: a soft, rising chord (quieter and longer than 'ready').
+  allReady: [
+    note('sine', C5, 0, 0.5, 0.12),
+    note('sine', E5, 0.1, 0.5, 0.12),
+    note('sine', G5, 0.2, 0.55, 0.12),
+    note('triangle', C6, 0.32, 0.6, 0.1),
+  ],
   beep: [note('square', 880, 0, 0.09, 0.16)],
   beepFinal: [note('square', 1320, 0, 0.38, 0.18)],
   clash: [noise('lowpass', 1400, 0, 0.45, 0.4), note('sawtooth', 220, 0, 0.5, 0.22, 55), note('square', C6, 0, 0.2, 0.1, G5)],

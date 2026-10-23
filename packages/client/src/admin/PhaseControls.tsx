@@ -6,15 +6,16 @@
 
 import { useEffect, useState } from 'preact/hooks';
 import { teamModeLabel, type GameStateDTO, type Phase } from '@pixel-clash/shared';
+import { advanceControls, countdownText } from '../common/advance.js';
 import { api } from '../common/api.js';
 import { mapName } from '../common/maps.js';
-import { formatClock, ordinal } from '../common/ui.js';
+import { cx, formatClock, ordinal } from '../common/ui.js';
 import { useAdmin } from './context.js';
 import { MatchSetup } from './MatchSetup.js';
 
 const PHASE_HELP: Record<Phase, string> = {
   LOBBY: 'Players join (up to 8). Pick the map and teams, then start the match when 2-8 players are in.',
-  PLAN: 'Players ask Claude for units and pick up to 3. Ends when the timer runs out, or press Next.',
+  PLAN: 'Players ask Claude for units, pick up to 3 and press Ready. Ends when the timer runs out, or press Next (any time: Ready never blocks you).',
   PLACEMENT: 'Players place their armies and press READY. START when everyone is ready, or Force start.',
   BATTLE: 'The battle is playing. Pause, 1x/2x, or Skip to the results.',
   RESULTS: 'Round results. Press Next for the next round (or the final results).',
@@ -51,7 +52,9 @@ export function PhaseControls() {
   const hasTimer = p === 'PLAN' || p === 'PLACEMENT';
   const active = s.players.filter((pl) => pl.active);
   const readyCount = active.filter((pl) => pl.ready).length;
-  const allReady = active.length > 0 && readyCount === active.length;
+  // The server's flag (active players only: benched and joining-next-round don't count).
+  const allReady = s.allReady ?? (active.length > 0 && readyCount === active.length);
+  const adv = advanceControls(s, true);
   const battle = s.battle;
   const secondsLeft = s.timer.secondsLeft;
 
@@ -86,6 +89,15 @@ export function PhaseControls() {
         </div>
       </div>
       <p class="help">{PHASE_HELP[p]}</p>
+      {s.pendingAdvance && (
+        <div class="countdown-row" role="status">
+          <span class="pixel">⏱ {countdownText(s.pendingAdvance)}</span>
+          <span class="dim">{s.pendingAdvance.by === 'auto' ? '(everyone is ready: auto-advance is on)' : '(your countdown)'}</span>
+          <button class="btn danger" disabled={busy} onClick={() => act(() => api.admin.cancelAdvance())}>
+            ✕ Cancel
+          </button>
+        </div>
+      )}
       {p === 'LOBBY' && <MatchSetup rounds={Math.round(rounds)} />}
 
       <div class="btn-row">
@@ -109,7 +121,22 @@ export function PhaseControls() {
             </button>
           </>
         )}
-        {(p === 'PLAN' || p === 'RESULTS') && (
+        {p === 'PLAN' && (
+          <button
+            class={cx('btn primary', allReady && 'big all-ready')}
+            disabled={busy}
+            title={allReady ? '' : 'You can start placement any time; players who are not ready keep their current picks'}
+            onClick={() => act(() => api.admin.nextPhase())}
+          >
+            {allReady ? "Everyone's ready: start placement ▶" : `Next ▶ (${readyCount}/${active.length} ready)`}
+          </button>
+        )}
+        {adv.go && (
+          <button class="btn" disabled={busy} title="A 3-second countdown on every screen; you can cancel it" onClick={() => act(() => api.admin.advance(3))}>
+            ⏱ 3-2-1, {adv.go.label}
+          </button>
+        )}
+        {p === 'RESULTS' && (
           <button class="btn primary" disabled={busy} onClick={() => act(() => api.admin.nextPhase())}>
             Next ▶
           </button>
@@ -117,12 +144,12 @@ export function PhaseControls() {
         {p === 'PLACEMENT' && (
           <>
             <button
-              class="btn primary big"
+              class={cx('btn primary big', allReady && 'all-ready')}
               disabled={busy || !allReady}
               title={allReady ? '' : 'Not everyone is ready: use Force start'}
               onClick={() => act(() => api.admin.start(false), 'CLASH!')}
             >
-              START ({readyCount}/{active.length} ready)
+              {allReady ? "Everyone's ready: START ▶" : `START (${readyCount}/${active.length} ready)`}
             </button>
             {confirmForce ? (
               <>

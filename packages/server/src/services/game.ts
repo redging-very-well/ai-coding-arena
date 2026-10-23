@@ -85,6 +85,8 @@ export interface GameOptions {
   playbackRate?: number;
   /** Hold playback this long after the reveal ("3-2-1 CLASH!" animation). Default 3000. */
   revealDelayMs?: number;
+  /** PLAN auto-advance countdown once everyone is Ready (timers.autoAdvanceWhenAllReady). Default 3000. */
+  autoAdvanceDelayMs?: number;
   /** Debounce for state.json writes. */
   saveDebounceMs?: number;
 }

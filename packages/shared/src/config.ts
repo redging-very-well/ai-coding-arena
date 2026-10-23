@@ -84,6 +84,8 @@ export const ConfigSchema = z.object({
     /** Battle length in sim ticks (90 s at 60 ticks/s). */
     battleTicks: posInt(),
     ticksPerSecond: posInt(),
+    /** PLAN → PLACEMENT ~3 s after every active player is Ready (§3). Never starts the battle. */
+    autoAdvanceWhenAllReady: z.boolean(),
   }),
   /** Match size (§9.2). Arena sizes, zone tables and team colours are code (shared/maps.ts, teams.ts). */
   match: z.object({
@@ -204,6 +206,7 @@ export const DEFAULT_CONFIG: GameConfig = {
     placementSec: 3 * 60,
     battleTicks: 5400,
     ticksPerSecond: 60,
+    autoAdvanceWhenAllReady: false,
   },
   match: {
     maxPlayers: 8,

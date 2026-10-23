@@ -8,6 +8,8 @@ import { BADGES, MAX_PLAYERS, teamModeLabel, type BadgeId, type GameStateDTO, ty
 import { groupByTeam, mapName } from '../common/maps.js';
 import { seatStyle, teamLook } from '../common/seats.js';
 import { PHASE_TEXT, PLACE_MEDALS, cx, formatClock, formatMoney, ordinal } from '../common/ui.js';
+import { advanceControls, advanceKey, type AdvanceControls } from '../common/advance.js';
+import { api } from '../common/api.js';
 import { Confetti } from './Confetti.js';
 import { ScreenController, prefersReducedMotion, type ScreenSnapshot } from './controller.js';
 import {
@@ -23,10 +25,12 @@ import {
   freeTiles,
   podiumOrder,
   rankRows,
+  readyBanner,
   revealStep,
   standings,
   statusTicks,
   teamArmyValues,
+  tileDone,
   teamRankRows,
   teamStandings,
   type ArmyValue,
@@ -89,8 +93,46 @@ function useStageScale(): number {
   return scale;
 }
 
+/**
+ * Whether this browser also holds an /admin session (the facilitator's
+ * laptop): only then /screen shows the go / cancel buttons. /screen itself
+ * has no login. Re-checked when the window gets focus (log in on /admin in
+ * another tab, come back).
+ */
+function useIsAdmin(): boolean {
+  const [admin, setAdmin] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const check = () =>
+      void api.admin
+        .session()
+        .then((r) => alive && setAdmin(r.admin))
+        .catch(() => alive && setAdmin(false));
+    check();
+    window.addEventListener('focus', check);
+    return () => {
+      alive = false;
+      window.removeEventListener('focus', check);
+    };
+  }, []);
+  return admin;
+}
+
+/** Go / cancel from /screen: the server runs the countdown (errors show as a toast there). */
+function useAdvanceActions(): { go: () => void; cancel: () => void } {
+  return {
+    go: () => void api.admin.advance(3).catch(() => undefined),
+    cancel: () => void api.admin.cancelAdvance().catch(() => undefined),
+  };
+}
+
 export function App() {
   const [ctrl, snap, attach] = useController();
+  const isAdmin = useIsAdmin();
+  const actions = useAdvanceActions();
+  const controls = advanceControls(snap?.state, isAdmin);
+  const controlsRef = useRef<AdvanceControls>(controls);
+  controlsRef.current = controls;
   const now = useNow(100);
   const scale = useStageScale();
   useEffect(() => ctrl?.syncReplay(), [ctrl, now]);
@@ -101,6 +143,14 @@ export function App() {
     if (!ctrl) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // Facilitator only: Space/Enter starts the countdown, Esc cancels it.
+      const adv = advanceKey(e.key, controlsRef.current);
+      if (adv) {
+        e.preventDefault();
+        if (adv === 'go') actions.go();
+        else actions.cancel();
+        return;
+      }
       if (e.key === 'p' || e.key === 'P' || e.key === 'q' || e.key === 'Q') return ctrl.setPoster();
       if (e.key === 'Escape') return ctrl.setPoster(false);
       if (e.key === 'm' || e.key === 'M') return ctrl.toggleMuted();
@@ -131,7 +181,7 @@ export function App() {
         <main class="body">
           <section class="arena-panel">
             <canvas ref={attach} class="arena pixelated" />
-            {snap && ctrl && <ArenaOverlays snap={snap} ctrl={ctrl} now={now} />}
+            {snap && ctrl && <ArenaOverlays snap={snap} ctrl={ctrl} now={now} controls={controls} actions={actions} />}
           </section>
           <aside class="side">{snap && ctrl && <Sidebar snap={snap} ctrl={ctrl} now={now} />}</aside>
         </main>
@@ -208,15 +258,61 @@ function Header({ snap, ctrl, now }: { snap: ScreenSnapshot | null; ctrl: Screen
 // Overlays on the arena
 // ---------------------------------------------------------------------------
 
-function ArenaOverlays({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenController; now: number }) {
+function ArenaOverlays({
+  snap,
+  ctrl,
+  now,
+  controls,
+  actions,
+}: {
+  snap: ScreenSnapshot;
+  ctrl: ScreenController;
+  now: number;
+  controls: AdvanceControls;
+  actions: { go: () => void; cancel: () => void };
+}) {
   const phase = snap.state?.phase;
   const step = snap.revealAt !== null ? revealStep(now - snap.revealAt) : null;
   const pb = snap.playback;
   const battle = phase === 'BATTLE';
   // Not over the results: a battle that ends right as sudden death starts must not keep the banner up.
   const sd = (battle || !!snap.replay?.playing) && snap.suddenDeathAt !== null && now - snap.suddenDeathAt < SUDDEN_DEATH_BANNER_MS;
+  const ready = readyBanner(snap.state);
   return (
     <>
+      {ready && (
+        <div class={cx('ready-banner', ready.countdown !== undefined && 'counting')} role="status">
+          {ready.countdown !== undefined ? (
+            <>
+              <small>{ready.sub}</small>
+              <span class="pixel">{ready.title}</span>
+              <span class="count pixel" key={ready.countdown}>
+                {ready.countdown}
+              </span>
+            </>
+          ) : (
+            <>
+              <span class="pixel">{ready.title}</span>
+              <small>{ready.sub}</small>
+            </>
+          )}
+          {(controls.go || controls.cancel) && (
+            <div class="adv-buttons">
+              {controls.go && (
+                <button class="adv-btn go pixel" onClick={actions.go} title="Space / Enter: start the 3-second countdown">
+                  {controls.go.label}
+                </button>
+              )}
+              {controls.cancel && (
+                <button class="adv-btn cancel pixel" onClick={actions.cancel} title="Esc">
+                  ✕ Cancel
+                </button>
+              )}
+              <span class="adv-keys">{controls.go ? 'Space / Enter' : 'Esc'}</span>
+            </div>
+          )}
+        </div>
+      )}
       {(phase === 'LOBBY' || phase === 'PLAN' || phase === 'PLACEMENT') && snap.toasts.length === 0 && (
         <div class="arena-caption pixel">{phase === 'PLACEMENT' ? 'Armies stay secret until START!' : 'The arena awaits…'}</div>
       )}
@@ -466,7 +562,7 @@ function PlayerTiles({ state, maxPlayers = MAX_PLAYERS }: { state: GameStateDTO;
 function PlayerTile({ p, state }: { p: PlayerStatusDTO; state: GameStateDTO }) {
   const seat = seatStyle(p.seat);
   const ticks = statusTicks(p, state.phase);
-  const allDone = ticks.length > 0 && ticks.every((t) => t.done);
+  const allDone = tileDone(p, state.phase);
   return (
     <div class={cx('tile', `seat-${p.seat}`, !p.connected && 'offline', allDone && 'done')}>
       <div class="tile-head">

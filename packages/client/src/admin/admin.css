@@ -97,6 +97,23 @@ a.btn {
   background: #2f6f3f;
   border-color: var(--good);
 }
+.btn.primary.all-ready {
+  background: var(--good);
+  color: #052e16;
+  font-weight: 700;
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.35);
+  animation: adm-glow 1.6s ease-in-out infinite;
+}
+@keyframes adm-glow {
+  50% {
+    box-shadow: 0 0 0 7px rgba(74, 222, 128, 0.15);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn.primary.all-ready {
+    animation: none;
+  }
+}
 .btn.warn {
   border-color: var(--warn);
   color: var(--warn);
@@ -738,4 +755,20 @@ input.pin {
   gap: 6px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+/* The cancellable countdown to Next / START (§12.3). */
+.countdown-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+  padding: 10px 14px;
+  border: 2px solid var(--accent);
+  background: rgba(255, 209, 72, 0.12);
+}
+.countdown-row .pixel {
+  font-size: 18px;
+  color: var(--accent);
 }

@@ -333,6 +333,8 @@ export class UnitsService {
     }
     const rs = this.game.round.stateOf(player.id);
     rs.submittedThisPlan = true;
+    // A new or revised unit changes the army the player said Ready to (§3).
+    this.game.round.armyChanged(player.id);
     this.game.store.save();
     this.game.notifier.privateChanged(player.id);
     this.game.notifier.stateChanged();
@@ -351,6 +353,7 @@ export class UnitsService {
     if (d.isTemplate) return templateProtected(unitId);
     d.retired = true;
     const rs = this.game.round.stateOf(playerId);
+    if (rs.selection.includes(unitId)) this.game.round.armyChanged(playerId);
     rs.selection = rs.selection.filter((id) => id !== unitId);
     this.game.store.save();
     this.game.notifier.privateChanged(playerId);
@@ -457,6 +460,7 @@ export class UnitsService {
       });
       if (rs.selection.length !== before) {
         touched.add(playerId);
+        this.game.round.armyChanged(playerId);
         if (dropped.length > 0) {
           this.game.notifier.toast(
             { playerId },

@@ -43,6 +43,7 @@ describe('admin overview refetch key', () => {
     scoreboard: [],
     sandboxMode: 'ivm',
     armory: { enabled: false, entries: 0 },
+    allReady: false,
     ...over,
   });
 

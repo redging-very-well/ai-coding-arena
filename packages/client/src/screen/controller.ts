@@ -37,6 +37,7 @@ import {
   battleSecondsLeft,
   liveSecondsLeft,
   newlyDone,
+  becameAllReady,
   rankRows,
 } from './model.js';
 import { ReplayController, type ReplayView } from './replay.js';
@@ -290,6 +291,7 @@ export class ScreenController {
     if (!prev) return; // first state after (re)connect: nothing "happened"
     if (!changed) {
       const done = newlyDone(prev.players, state.players, state.phase);
+      if (becameAllReady(prev, state)) this.sound.play('allReady', { delayMs: done.ready > 0 ? 350 : 0 });
       if (done.ready > 0) this.sound.play('ready');
       else if (done.ticks > 0) this.sound.play('place');
       return;

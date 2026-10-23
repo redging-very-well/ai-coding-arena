@@ -327,7 +327,10 @@ export class ArmoryService {
       const before = rs.selection.length;
       rs.selection = rs.selection.filter((id) => !gone.has(id));
       if (rs.prevSelection) rs.prevSelection = rs.prevSelection.filter((id) => !gone.has(id));
-      if (rs.selection.length !== before) this.game.notifier.privateChanged(pid);
+      if (rs.selection.length !== before) {
+        this.game.round.armyChanged(pid);
+        this.game.notifier.privateChanged(pid);
+      }
     }
     this.game.store.save();
   }

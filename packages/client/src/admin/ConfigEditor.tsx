@@ -20,18 +20,22 @@ import { configDiff, parseConfigText } from './configDiff.js';
 import { errorText, stateKey } from './useAdmin.js';
 import {
   QUICK_GROUPS,
+  QUICK_TOGGLES,
   costPreview,
   displayValue,
   fieldChanged,
   formatShown,
   inputErrorText,
   refusalIssues,
+  setPath,
+  toggleValue,
   typeIntoField,
   unique,
   validateDraft,
   type CostPreview,
   type DraftIssues,
   type QuickField,
+  type QuickToggle,
 } from './quickSettings.js';
 
 const EDITABLE = new Set(['LOBBY', 'PLAN', 'RESULTS', 'MATCH_RESULTS']);
@@ -173,7 +177,7 @@ export function ConfigEditor() {
     return p && u ? `${p.name}: ${u.name}` : key;
   };
 
-  const changedCount = draft && base !== null ? QUICK_GROUPS.flatMap((g) => g.fields).filter((f) => fieldChanged(f, base, draft)).length : 0;
+  const changedCount = draft && base !== null ? [...QUICK_GROUPS.flatMap((g) => g.fields), ...QUICK_TOGGLES].filter((f) => fieldChanged(f, base, draft)).length : 0;
   const saveDisabled = saving || !parsed.ok || patch === undefined || inputErrorMsg !== '' || stale || !editable;
 
   const actions = (
@@ -330,9 +334,33 @@ function QuickSettings({ base, draft, issues, refused, generation, locked, onCha
               />
             ))}
           </div>
+          {g.toggles?.map((t) => <ToggleField key={t.path} toggle={t} base={base} draft={draft} onChange={onChange} />)}
           {g.id === 'costs' && <PreviewTable preview={preview} />}
         </fieldset>
       ))}
+    </div>
+  );
+}
+
+function ToggleField({ toggle, base, draft, onChange }: { toggle: QuickToggle; base: GameConfig; draft: GameConfig; onChange(next: GameConfig): void }) {
+  const id = `qs-${toggle.path.replace(/\./g, '-')}`;
+  const changed = fieldChanged(toggle, base, draft);
+  return (
+    <div class={cx('qs-field qs-toggle', changed && 'qs-changed')}>
+      <label for={id} class="inline">
+        <input
+          id={id}
+          type="checkbox"
+          checked={toggleValue(draft, toggle.path)}
+          aria-describedby={`${id}-help`}
+          onChange={(e) => onChange(setPath(draft, toggle.path, e.currentTarget.checked))}
+        />
+        {toggle.label}
+        {changed && <span class="qs-was">was {toggleValue(base, toggle.path) ? 'on' : 'off'}</span>}
+      </label>
+      <p class="qs-help" id={`${id}-help`}>
+        {toggle.help}
+      </p>
     </div>
   );
 }

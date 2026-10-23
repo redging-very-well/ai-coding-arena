@@ -55,7 +55,8 @@
     "planLaterRoundsSec": 480,
     "placementSec": 180,
     "battleTicks": 5400,
-    "ticksPerSecond": 60
+    "ticksPerSecond": 60,
+    "autoAdvanceWhenAllReady": false
   },
   "match": {
     "maxPlayers": 8

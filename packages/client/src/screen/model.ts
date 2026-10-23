@@ -140,6 +140,7 @@ export function statusTicks(p: PlayerStatusDTO, phase: Phase): StatusTick[] {
       return [
         { label: 'New unit', done: p.submitted },
         { label: 'Army picked', done: p.selected },
+        { label: 'Ready', done: p.ready },
       ];
     case 'PLACEMENT':
       return [
@@ -149,6 +150,53 @@ export function statusTicks(p: PlayerStatusDTO, phase: Phase): StatusTick[] {
     default:
       return [];
   }
+}
+
+/**
+ * A tile lights up when the player is done for the phase: in PLAN and
+ * PLACEMENT that is Ready (a new unit is optional), in LOBBY having joined.
+ */
+export function tileDone(p: PlayerStatusDTO, phase: Phase): boolean {
+  if (!p.active && phase !== 'LOBBY') return false;
+  if (phase === 'PLAN' || phase === 'PLACEMENT') return p.ready;
+  const ticks = statusTicks(p, phase);
+  return ticks.length > 0 && ticks.every((t) => t.done);
+}
+
+export interface ReadyBanner {
+  title: string;
+  sub: string;
+  /** A countdown to the next step runs: its whole seconds left (shown big). */
+  countdown?: number;
+}
+
+/**
+ * The banner over the top of the arena (§12.2), from the public flags: the
+ * countdown to the next step while one runs (even if someone un-readied
+ * during a host countdown), else "everyone's ready". Null otherwise.
+ */
+export function readyBanner(state: Pick<GameStateDTO, 'phase' | 'allReady' | 'pendingAdvance'> | null | undefined): ReadyBanner | null {
+  if (!state) return null;
+  const p = state.pendingAdvance;
+  if (p && (state.phase === 'PLAN' || state.phase === 'PLACEMENT')) {
+    return {
+      title: p.to === 'PLACEMENT' ? 'Placement starts in' : 'Battle starts in',
+      sub: p.by === 'auto' ? "Everyone's ready! 🎉" : 'Get ready!',
+      countdown: p.secondsLeft,
+    };
+  }
+  if (!state.allReady) return null;
+  if (state.phase === 'PLAN') return { title: "Everyone's ready! 🎉", sub: 'Waiting for the host to start placement' };
+  if (state.phase === 'PLACEMENT') return { title: "Everyone's placed and ready!", sub: 'START when you like!' };
+  return null;
+}
+
+/** All-ready just switched on within the same phase (the projector's soft chime). */
+export function becameAllReady(
+  prev: Pick<GameStateDTO, 'phase' | 'allReady'> | null | undefined,
+  next: Pick<GameStateDTO, 'phase' | 'allReady'>,
+): boolean {
+  return !!prev && prev.phase === next.phase && !prev.allReady && !!next.allReady && (next.phase === 'PLAN' || next.phase === 'PLACEMENT');
 }
 
 // ---------------------------------------------------------------------------
@@ -342,7 +390,7 @@ export function resultsBadgePops(
 
 /**
  * What players finished between two state pushes (projector sounds): how many
- * became ready (PLACEMENT, a chime) and how many other status ticks turned on
+ * became ready (PLAN or PLACEMENT, a chime) and how many other status ticks turned on
  * (a new unit or a picked army in PLAN, a blip). Only within the same phase.
  */
 export function newlyDone(
@@ -357,7 +405,7 @@ export function newlyDone(
   for (const p of next) {
     const b = before.get(p.id);
     if (!b) continue;
-    if (phase === 'PLACEMENT' && p.ready && !b.ready) ready++;
+    if ((phase === 'PLAN' || phase === 'PLACEMENT') && p.ready && !b.ready) ready++;
     if (phase === 'PLAN' && p.submitted && !b.submitted) ticks++;
     if ((phase === 'PLAN' || phase === 'PLACEMENT') && p.selected && !b.selected) ticks++;
   }

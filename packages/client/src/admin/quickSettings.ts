@@ -29,10 +29,18 @@ export interface QuickField {
   integer?: boolean;
 }
 
+/** An on/off setting shown as a checkbox (a boolean at `path`). */
+export interface QuickToggle {
+  path: string;
+  label: string;
+  help: string;
+}
+
 export interface QuickGroup {
   id: string;
   title: string;
   fields: QuickField[];
+  toggles?: QuickToggle[];
 }
 
 const minutes = {
@@ -94,6 +102,13 @@ export const QUICK_GROUPS: QuickGroup[] = [
         min: 10,
       },
     ],
+    toggles: [
+      {
+        path: 'timers.autoAdvanceWhenAllReady',
+        label: 'Start placement automatically when everyone is ready',
+        help: 'In Plan time, placement starts 3 seconds after every player pressed Ready (un-readying cancels it; a paused timer holds it). The battle itself still waits for your START.',
+      },
+    ],
   },
   {
     id: 'costs',
@@ -128,6 +143,12 @@ export const QUICK_GROUPS: QuickGroup[] = [
 ];
 
 export const QUICK_FIELDS: QuickField[] = QUICK_GROUPS.flatMap((g) => g.fields);
+export const QUICK_TOGGLES: QuickToggle[] = QUICK_GROUPS.flatMap((g) => g.toggles ?? []);
+
+/** A quick toggle's value in the draft (false when missing). */
+export function toggleValue(cfg: unknown, path: string): boolean {
+  return getPath(cfg, path) === true;
+}
 
 // --- paths --------------------------------------------------------------------
 
@@ -303,7 +324,7 @@ export function unique(messages: readonly string[]): string[] {
 }
 
 /** Whether a quick field differs between the saved config and the draft. */
-export function fieldChanged(field: QuickField, base: unknown, draft: unknown): boolean {
+export function fieldChanged(field: Pick<QuickField, 'path'>, base: unknown, draft: unknown): boolean {
   return JSON.stringify(getPath(base, field.path)) !== JSON.stringify(getPath(draft, field.path));
 }
 

@@ -102,6 +102,7 @@ export class RoundService {
       }
     }
     const rs = this.stateOf(playerId);
+    if (!sameSet(rs.selection, ids)) this.armyChanged(playerId);
     rs.selection = ids;
     this.game.store.save();
     this.game.notifier.privateChanged(playerId);
@@ -250,20 +251,57 @@ export class RoundService {
     return checked;
   }
 
+  /**
+   * The Ready toggle (§3): in PLAN "my army is picked" (needs a non-empty
+   * selection), in PLACEMENT "my army is placed". One flag, reset whenever the
+   * phase changes (enterPlan, lockSelections), so PLAN Ready never carries
+   * into PLACEMENT. Only active players can be ready.
+   */
   setReady(playerId: string, ready: unknown): Result<{ ready: boolean }> {
     const gate = this.game.match.gate('ready');
     if (gate) return gate;
     if (typeof ready !== 'boolean') return fail('BAD_REQUEST', 'ready must be true or false.');
+    const player = this.game.players.get(playerId);
+    if (!player || !this.game.players.isActive(player)) {
+      return fail('PHASE_CLOSED', "You're in from the next round.", { details: { phase: this.game.store.match.phase } });
+    }
     const rs = this.stateOf(playerId);
+    if (ready && this.game.store.match.phase === 'PLAN' && rs.selection.length === 0) {
+      return fail('NOTHING_SELECTED', 'Pick at least one unit type before getting ready.', {
+        hint: `Tap up to ${this.game.config.caps.maxTypes} units in My Units first, then press Ready.`,
+      });
+    }
     rs.ready = ready;
     this.game.store.save();
+    this.game.match.syncAutoAdvance();
     this.game.notifier.privateChanged(playerId);
     this.game.notifier.stateChanged();
     return ok({ ready });
   }
 
+  /**
+   * The player's PLAN army changed (a different selection, or a new/revised
+   * unit of theirs was submitted, retired or invalidated): their PLAN Ready no
+   * longer stands, so it is cleared. Callers save and push state themselves.
+   */
+  armyChanged(playerId: string): void {
+    if (this.game.store.match.phase !== 'PLAN') return;
+    const rs = this.game.store.match.perPlayer[playerId];
+    if (!rs?.ready) return;
+    rs.ready = false;
+    this.game.match.syncAutoAdvance();
+  }
+
   allReady(): boolean {
     return this.game.players.active().every((p) => this.stateOf(p.id).ready);
+  }
+
+  /** Public `allReady` (§10.3): PLAN or PLACEMENT, at least one active player, all of them ready. */
+  everyoneReady(): boolean {
+    const phase = this.game.store.match.phase;
+    if (phase !== 'PLAN' && phase !== 'PLACEMENT') return false;
+    const active = this.game.players.active();
+    return active.length > 0 && active.every((p) => this.stateOf(p.id).ready);
   }
 
   /**
@@ -287,4 +325,8 @@ export class RoundService {
     }
     return names;
   }
+}
+
+function sameSet(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((x) => b.includes(x));
 }

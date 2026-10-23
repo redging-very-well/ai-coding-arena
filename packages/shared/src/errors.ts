@@ -91,6 +91,7 @@ export const SERVICE_ERROR_CODES = [
   'ARMORY_OFF',
   'ARMORY_OWN_UNIT',
   'NOT_ALL_READY',
+  'NOTHING_SELECTED',
   'NOT_ENOUGH_PLAYERS',
   'BAD_MAP_STYLE',
   'BAD_TEAM_MODE',
@@ -215,6 +216,7 @@ export function httpStatusFor(code: ErrorCode): number {
     case 'PHASE_CLOSED':
     case 'CELL_TAKEN':
     case 'NOT_ALL_READY':
+    case 'NOTHING_SELECTED':
     case 'NOT_ENOUGH_PLAYERS':
     case 'NO_TEAMS':
     case 'SAME_TEAM':

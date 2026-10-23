@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { cornerZone, sizeOf, type MapZone, type PlacementDTO, type UnitCardDTO } from '@pixel-clash/shared';
+import { countdownText } from '../../common/advance.js';
 import { ApiError, api } from '../../common/api.js';
 import { resolveSprite } from '../../common/render/sprites.js';
 import { arenaFor, toMapZone, zoneLabel } from '../../common/maps.js';
@@ -319,6 +320,13 @@ export function Placement() {
         </button>
       </div>
       {ready && <p class="dim small">You're ready! You can still change things until the host presses START.</p>}
+      {st.game?.pendingAdvance?.to === 'BATTLE' ? (
+        <p class="note countdown pixel" role="status">
+          {countdownText(st.game.pendingAdvance)}
+        </p>
+      ) : (
+        st.game?.allReady && <p class="note">Everyone's placed and ready! Waiting for the host to press START.</p>
+      )}
       {st.game?.timer.expired && <p class="note">Time's up! Waiting for the host to press START.</p>}
     </section>
   );
