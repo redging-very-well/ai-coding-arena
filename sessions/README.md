@@ -6,14 +6,14 @@ One Docker container per seat (plan §11.1). Each container runs **ttyd**, which
 
 | Seat | Terminal URL | Basic auth | Volumes |
 |---|---|---|---|
-| 1 | `http://<claude-box>:7681` | `player` / `TTYD_PASS_1` | `kit1`, `claude1` |
-| 2 | `http://<claude-box>:7682` | `player` / `TTYD_PASS_2` | `kit2`, `claude2` |
-| 3 | `http://<claude-box>:7683` | `player` / `TTYD_PASS_3` | `kit3`, `claude3` |
-| 4 | `http://<claude-box>:7684` | `player` / `TTYD_PASS_4` | `kit4`, `claude4` |
-| 5 | `http://<claude-box>:7685` | `player` / `TTYD_PASS_5` | `kit5`, `claude5` |
-| 6 | `http://<claude-box>:7686` | `player` / `TTYD_PASS_6` | `kit6`, `claude6` |
-| 7 | `http://<claude-box>:7687` | `player` / `TTYD_PASS_7` | `kit7`, `claude7` |
-| 8 | `http://<claude-box>:7688` | `player` / `TTYD_PASS_8` | `kit8`, `claude8` |
+| 1 | `http://<claude-box>:7781` | `player` / `TTYD_PASS_1` | `kit1`, `claude1` |
+| 2 | `http://<claude-box>:7782` | `player` / `TTYD_PASS_2` | `kit2`, `claude2` |
+| 3 | `http://<claude-box>:7783` | `player` / `TTYD_PASS_3` | `kit3`, `claude3` |
+| 4 | `http://<claude-box>:7784` | `player` / `TTYD_PASS_4` | `kit4`, `claude4` |
+| 5 | `http://<claude-box>:7785` | `player` / `TTYD_PASS_5` | `kit5`, `claude5` |
+| 6 | `http://<claude-box>:7786` | `player` / `TTYD_PASS_6` | `kit6`, `claude6` |
+| 7 | `http://<claude-box>:7787` | `player` / `TTYD_PASS_7` | `kit7`, `claude7` |
+| 8 | `http://<claude-box>:7788` | `player` / `TTYD_PASS_8` | `kit8`, `claude8` |
 
 - `kitN` → `/kit`: the rendered starter kit (CLAUDE.md, `.mcp.json`, `.claude/settings.json`, `units/`) plus `.pixel-clash/player.json` (the player's apiKey, written by Claude after login).
 - `claudeN` → `/home/player/.claude`: all Claude Code state (`CLAUDE_CONFIG_DIR`): the login, folder trust, `.claude.json` and chat history.
@@ -38,7 +38,7 @@ docker compose up -d --build
 docker compose ps        # all eight seats "running (healthy)" after ~30 s
 ```
 
-Allow inbound TCP 7681-7688 on the Claude box firewall. Turn off sleep.
+Allow inbound TCP 7781-7788 on the Claude box firewall. Turn off sleep.
 
 ### Running fewer seats (games are 2-8 players)
 
@@ -137,10 +137,10 @@ sudo iptables -I DOCKER-USER 1 -i pcseats -p tcp --dport 53 -j ACCEPT
 sudo iptables -I DOCKER-USER 1 -i pcseats -d 192.168.8.10 -p tcp --dport 8080 -j ACCEPT  # game server
 sudo iptables -I DOCKER-USER 1 -i pcseats -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT  # replies (MUST end up first)
 # Seats talking to the Claude box itself (e.g. another seat's ttyd port):
-sudo iptables -I INPUT 1 -i pcseats -m conntrack --ctstate NEW -p tcp --dport 7681:7688 -j REJECT
+sudo iptables -I INPUT 1 -i pcseats -m conntrack --ctstate NEW -p tcp --dport 7781:7788 -j REJECT
 ```
 
-Check with `docker compose run --rm seat1 check` (game server and Anthropic must still be reachable). That only tests outbound traffic, so also check inbound: from a player laptop, open `http://<claude-box>:7681`, log in with the seat word and type to Claude. `sudo iptables -L DOCKER-USER -n --line-numbers` must show the `ESTABLISHED,RELATED` rule as line 1. The rules disappear on reboot unless saved (`iptables-save`/`netfilter-persistent`). Allowing only `api.anthropic.com` and `claude.ai` by name needs an HTTPS proxy; port 443 to the internet is the practical middle ground. On Docker Desktop (macOS/Windows) these rules don't apply; rely on the router instead.
+Check with `docker compose run --rm seat1 check` (game server and Anthropic must still be reachable). That only tests outbound traffic, so also check inbound: from a player laptop, open `http://<claude-box>:7781`, log in with the seat word and type to Claude. `sudo iptables -L DOCKER-USER -n --line-numbers` must show the `ESTABLISHED,RELATED` rule as line 1. The rules disappear on reboot unless saved (`iptables-save`/`netfilter-persistent`). Allowing only `api.anthropic.com` and `claude.ai` by name needs an HTTPS proxy; port 443 to the internet is the practical middle ground. On Docker Desktop (macOS/Windows) these rules don't apply; rely on the router instead.
 
 ## 8. Troubleshooting
 

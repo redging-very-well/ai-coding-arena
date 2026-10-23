@@ -9,8 +9,8 @@ import { lanUrls } from '../util/lan.js';
 import type { Game } from './game.js';
 import { safeHost } from './kit.js';
 
-/** ttyd host port of seat 0 (seat N → 7681 + N, §11.1). */
-export const SEAT_TERMINAL_BASE_PORT = 7681;
+/** ttyd host port of seat 0 (seat N → 7781 + N, §11.1). */
+export const SEAT_TERMINAL_BASE_PORT = 7781;
 export const SEAT_COUNT = 4;
 
 /** Host name or IPv4 (no scheme, port or path). */

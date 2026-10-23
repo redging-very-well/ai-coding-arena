@@ -98,10 +98,10 @@ serve() {
   [[ "${TTYD_PASS}" =~ ^[^[:space:]:]+$ ]] || die "TTYD_PASS must be one word with no spaces or ':'"
   local user="${TTYD_USER:-player}"
   render_kit
-  log "ttyd on :7681 (user '$user'); claude starts in $KIT_DIR"
+  log "ttyd on :7781 (user '$user'); claude starts in $KIT_DIR"
   # -W writable, -O same-origin websockets only, -c basic auth, -w start dir.
   # Each browser connection gets its own claude-loop (and so its own claude).
-  exec ttyd -W -O -p 7681 -w "$KIT_DIR" \
+  exec ttyd -W -O -p 7781 -w "$KIT_DIR" \
     -c "${user}:${TTYD_PASS}" \
     -t fontSize=18 \
     -t "titleFixed=Pixel Clash seat ${SEAT}" \

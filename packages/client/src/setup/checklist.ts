@@ -50,7 +50,7 @@ export const CHECKLIST: readonly ChecklistSection[] = [
         detail: 'Claude should call get_game_state with no approval prompts.',
       },
       { id: 'box-admin', title: 'Enter the Claude box address in /admin so the seat links below appear' },
-      { id: 'box-firewall', title: 'Claude box allows inbound 7681-7688; sleep is disabled' },
+      { id: 'box-firewall', title: 'Claude box allows inbound 7781-7788; sleep is disabled' },
     ],
   },
   {

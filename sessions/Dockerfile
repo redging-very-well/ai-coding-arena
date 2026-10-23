@@ -92,11 +92,11 @@ ENV HOME=/home/player \
 
 USER player
 WORKDIR /kit
-EXPOSE 7681
+EXPOSE 7781
 
 # ttyd answers 401 without the basic-auth word; any HTTP answer means it is up.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7681/)" && [ "$code" = 200 ] || [ "$code" = 401 ]
+  CMD code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7781/)" && [ "$code" = 200 ] || [ "$code" = 401 ]
 
 ENTRYPOINT ["/usr/local/bin/pixel-clash-seat"]
 CMD ["serve"]

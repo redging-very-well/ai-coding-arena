@@ -355,8 +355,8 @@ export function unitPrompts(roster: readonly UnitCardDTO[], round: number, repor
 // Claude terminal links (§11.1)
 // ---------------------------------------------------------------------------
 
-export const TTYD_BASE_PORT = 7680;
-/** Seat containers on the Claude box: seat1..seat8 on ports 7681-7688 (§11.1). */
+export const TTYD_BASE_PORT = 7780;
+/** Seat containers on the Claude box: seat1..seat8 on ports 7781-7788 (§11.1). */
 export const CLAUDE_SEATS = 8;
 
 /** Host part of a Claude box address ("192.168.8.20", "http://box:8080/x" → "box"). */

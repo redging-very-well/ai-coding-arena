@@ -13,7 +13,7 @@ const T = 60_000;
 describe('setup address normalisation', () => {
   it('accepts hosts and IPs, strips scheme/port/path, refuses junk', () => {
     expect(normalizeClaudeBoxHost('192.168.8.20')).toBe('192.168.8.20');
-    expect(normalizeClaudeBoxHost(' http://Claude-Box.local:7681/ ')).toBe('claude-box.local');
+    expect(normalizeClaudeBoxHost(' http://Claude-Box.local:7781/ ')).toBe('claude-box.local');
     expect(normalizeClaudeBoxHost('bad host')).toBeNull();
     expect(normalizeClaudeBoxHost('<script>')).toBeNull();
     expect(normalizeBaseUrl('http://192.168.8.10:8080/')).toBe('http://192.168.8.10:8080');
@@ -53,15 +53,15 @@ describe('GET /api/setup and PUT /api/admin/setup', () => {
     expect(bad.status).toBe(400);
     expect(bad.body.error.code).toBe('BAD_REQUEST');
 
-    const ok = await admin.put<SetupInfoDTO>('/admin/setup', { claudeBoxHost: 'http://10.0.0.5:7681', preferredUrl: 'http://10.0.0.9:8080' });
+    const ok = await admin.put<SetupInfoDTO>('/admin/setup', { claudeBoxHost: 'http://10.0.0.5:7781', preferredUrl: 'http://10.0.0.9:8080' });
     expect(ok.status).toBe(200);
     expect(ok.body.settings).toEqual({ claudeBoxHost: '10.0.0.5', preferredUrl: 'http://10.0.0.9:8080' });
     expect(ok.body.playUrl).toBe('http://10.0.0.9:8080/play');
     expect(ok.body.seatTerminals.map((t) => t.url)).toEqual([
-      'http://10.0.0.5:7681',
-      'http://10.0.0.5:7682',
-      'http://10.0.0.5:7683',
-      'http://10.0.0.5:7684',
+      'http://10.0.0.5:7781',
+      'http://10.0.0.5:7782',
+      'http://10.0.0.5:7783',
+      'http://10.0.0.5:7784',
     ]);
     expect(ok.body.seatTerminals[0]!.qrSvg).toContain('<svg');
 

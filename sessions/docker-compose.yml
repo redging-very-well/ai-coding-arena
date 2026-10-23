@@ -44,7 +44,7 @@ services:
       <<: *seat-env
       SEAT: "1"
       TTYD_PASS: ${TTYD_PASS_1:?set TTYD_PASS_1 in sessions/.env}
-    ports: ["7681:7681"]
+    ports: ["7781:7781"]
     volumes:
       - kit1:/kit
       - claude1:/home/player/.claude
@@ -56,7 +56,7 @@ services:
       <<: *seat-env
       SEAT: "2"
       TTYD_PASS: ${TTYD_PASS_2:?set TTYD_PASS_2 in sessions/.env}
-    ports: ["7682:7681"]
+    ports: ["7782:7781"]
     volumes:
       - kit2:/kit
       - claude2:/home/player/.claude
@@ -68,7 +68,7 @@ services:
       <<: *seat-env
       SEAT: "3"
       TTYD_PASS: ${TTYD_PASS_3:?set TTYD_PASS_3 in sessions/.env}
-    ports: ["7683:7681"]
+    ports: ["7783:7781"]
     volumes:
       - kit3:/kit
       - claude3:/home/player/.claude
@@ -80,7 +80,7 @@ services:
       <<: *seat-env
       SEAT: "4"
       TTYD_PASS: ${TTYD_PASS_4:?set TTYD_PASS_4 in sessions/.env}
-    ports: ["7684:7681"]
+    ports: ["7784:7781"]
     volumes:
       - kit4:/kit
       - claude4:/home/player/.claude
@@ -92,7 +92,7 @@ services:
       <<: *seat-env
       SEAT: "5"
       TTYD_PASS: ${TTYD_PASS_5:?set TTYD_PASS_5 in sessions/.env}
-    ports: ["7685:7681"]
+    ports: ["7785:7781"]
     volumes:
       - kit5:/kit
       - claude5:/home/player/.claude
@@ -104,7 +104,7 @@ services:
       <<: *seat-env
       SEAT: "6"
       TTYD_PASS: ${TTYD_PASS_6:?set TTYD_PASS_6 in sessions/.env}
-    ports: ["7686:7681"]
+    ports: ["7786:7781"]
     volumes:
       - kit6:/kit
       - claude6:/home/player/.claude
@@ -116,7 +116,7 @@ services:
       <<: *seat-env
       SEAT: "7"
       TTYD_PASS: ${TTYD_PASS_7:?set TTYD_PASS_7 in sessions/.env}
-    ports: ["7687:7681"]
+    ports: ["7787:7781"]
     volumes:
       - kit7:/kit
       - claude7:/home/player/.claude
@@ -128,7 +128,7 @@ services:
       <<: *seat-env
       SEAT: "8"
       TTYD_PASS: ${TTYD_PASS_8:?set TTYD_PASS_8 in sessions/.env}
-    ports: ["7688:7681"]
+    ports: ["7788:7781"]
     volumes:
       - kit8:/kit
       - claude8:/home/player/.claude
