@@ -29,6 +29,7 @@ import { Battle } from './Battle.js';
 import { ClaudePane } from './ClaudePanel.js';
 import { Header } from './Header.js';
 import { Join } from './Join.js';
+import { PastBattles, PastBattlesButton } from './PastBattles.js';
 import { Placement } from './Placement.js';
 import { PlanReady } from './PlanReady.js';
 import { Results } from './Results.js';
@@ -196,6 +197,7 @@ function PlayShell() {
   const [focusSeq, setFocusSeq] = useState(0);
   const [split, setSplit] = useState(() => parseSplit(readStorage('local', SPLIT_KEY)));
   const [dragging, setDragging] = useState(false);
+  const [pastOpen, setPastOpen] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
 
   const isSplit = layout === 'split';
@@ -282,6 +284,8 @@ function PlayShell() {
             {st.priv && !st.priv.active && !st.priv.benched && phase !== 'LOBBY' && phase !== 'PLACEMENT' && (
               <p class="note">You joined partway through a round. You're in from the next round!</p>
             )}
+            <PastBattlesButton open={pastOpen} onToggle={() => setPastOpen(!pastOpen)} />
+            {pastOpen && <PastBattles onClose={() => setPastOpen(false)} />}
             <Main phase={phase} />
           </main>
         </section>

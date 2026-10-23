@@ -91,6 +91,26 @@ export function publicRoutes(game: Game): Router {
     }),
   );
 
+  // The public result of a released round (ranking, points breakdown, badges,
+  // top damage units). Past rounds stay readable for the whole match (§12.1
+  // Past battles); never a battle that is still playing.
+  r.get('/battles/:round/results', (req, res) => {
+    const round = roundParam(req.params.round);
+    if (round === undefined || Number.isNaN(round)) {
+      return sendError(res, { code: 'BAD_REQUEST', message: 'round must be a positive whole number.' });
+    }
+    const end = game.battle.results(round);
+    if (!end) return sendError(res, { code: 'NOT_FOUND', message: `There are no results for round ${round} yet.` });
+    if ('stillPlaying' in end) {
+      return sendError(res, {
+        code: 'PHASE_CLOSED',
+        message: `The battle for round ${round} is still playing.`,
+        details: { phase: 'BATTLE', opensIn: 'RESULTS' },
+      });
+    }
+    res.json(end);
+  });
+
   r.get('/battles/:round/replay', (req, res) => {
     const round = roundParam(req.params.round);
     if (round === undefined || Number.isNaN(round)) {

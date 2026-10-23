@@ -525,3 +525,67 @@ export const BADGE_PLAYER_TEXT: Readonly<Record<BadgeId, string>> = {
   ironWall: 'Your army had the most still standing at the end!',
   inventor: 'Another player borrowed your unit from the Open Armory!',
 };
+
+// ---------------------------------------------------------------------------
+// Past battles (§12.1): the round picker and a round's ranking rows
+// ---------------------------------------------------------------------------
+
+/**
+ * The rounds of this match whose results are public: every finished round
+ * (RESULTS / MATCH_RESULTS include the current one; PLAN, PLACEMENT and BATTLE
+ * only the earlier ones: a battle still playing is never shown). None in LOBBY.
+ */
+export function releasedRounds(g: { phase: string; round: number } | null | undefined): number[] {
+  if (!g || g.phase === 'LOBBY') return [];
+  const latest = g.phase === 'RESULTS' || g.phase === 'MATCH_RESULTS' ? g.round : g.round - 1;
+  return Array.from({ length: Math.max(0, latest) }, (_, i) => i + 1);
+}
+
+/** Keep the picked round while it is still listed, else show the latest. */
+export function pickRound(rounds: readonly number[], current: number | null): number | null {
+  if (rounds.length === 0) return null;
+  return current !== null && rounds.includes(current) ? current : rounds[rounds.length - 1]!;
+}
+
+export interface PastRankRow {
+  playerId: string;
+  name: string;
+  seat: number;
+  place: number;
+  placePoints: number;
+  damageBonus: number;
+  valueBonus: number;
+  pointsGained: number;
+  damage: number;
+  badges: BadgeId[];
+  me: boolean;
+}
+
+/** A released round's ranking with names (from that round's scoreboard, else the live player list). */
+export function pastRankRows(
+  end: { ranking: readonly RankingEntryDTO[]; scoreboard?: ReadonlyArray<{ playerId: string; name: string; seat: number }> },
+  players: ReadonlyArray<{ id: string; name: string; seat: number }>,
+  meId: string | undefined,
+): PastRankRow[] {
+  const board = new Map((end.scoreboard ?? []).map((s) => [s.playerId, s]));
+  const live = new Map(players.map((p) => [p.id, p]));
+  return [...end.ranking]
+    .sort((a, b) => a.place - b.place)
+    .map((r) => {
+      const who = board.get(r.playerId) ?? live.get(r.playerId);
+      const parts = scoreParts(r);
+      return {
+        playerId: r.playerId,
+        name: who?.name ?? '?',
+        seat: who?.seat ?? -1,
+        place: r.place,
+        placePoints: parts.placePoints,
+        damageBonus: parts.damageBonus,
+        valueBonus: parts.valueBonus,
+        pointsGained: r.pointsGained,
+        damage: Math.round(r.damage ?? 0),
+        badges: [...r.badges],
+        me: r.playerId === meId,
+      };
+    });
+}

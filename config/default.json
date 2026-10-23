@@ -63,7 +63,8 @@
   },
   "scoring": {
     "damageBonusMax": 2,
-    "valueBonusMax": 1
+    "valueBonusMax": 1,
+    "topUnitsShown": 3
   },
   "suddenDeath": {
     "startTick": 3000,

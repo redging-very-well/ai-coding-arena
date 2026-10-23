@@ -40,7 +40,7 @@ const badges = (rows: ReturnType<typeof computeRoundScore>) => Object.fromEntrie
 
 describe('config', () => {
   it('defaults: damage bonus up to 2 and value bonus up to 1 at 4 players; no place-points table; 8 players', () => {
-    expect(DEFAULT_CONFIG.scoring).toEqual({ damageBonusMax: 2, valueBonusMax: 1 });
+    expect(DEFAULT_CONFIG.scoring).toEqual({ damageBonusMax: 2, valueBonusMax: 1, topUnitsShown: 3 });
     expect('points' in DEFAULT_CONFIG).toBe(false);
     expect(DEFAULT_CONFIG.match).toEqual({ maxPlayers: 8 });
     expect(safeParseConfig({ match: { maxPlayers: 9 } }).success).toBe(false);
@@ -48,8 +48,8 @@ describe('config', () => {
   });
 
   it('drops the old fixed place-points table (`points`, `scoring.placePoints`): place points are a formula now', () => {
-    expect(parseConfig({ points: [5, 3, 1, 0] }).scoring).toEqual({ damageBonusMax: 2, valueBonusMax: 1 });
-    expect(parseConfig({ points: [5, 3, 1, 0], scoring: { placePoints: [4, 2, 1, 0], damageBonusMax: 3 } }).scoring).toEqual({ damageBonusMax: 3, valueBonusMax: 1 });
+    expect(parseConfig({ points: [5, 3, 1, 0] }).scoring).toEqual({ damageBonusMax: 2, valueBonusMax: 1, topUnitsShown: 3 });
+    expect(parseConfig({ points: [5, 3, 1, 0], scoring: { placePoints: [4, 2, 1, 0], damageBonusMax: 3 } }).scoring).toEqual({ damageBonusMax: 3, valueBonusMax: 1, topUnitsShown: 3 });
     expect(safeParseConfig({ points: [1, 2] }).success).toBe(true);
     expect(safeParseConfig({ scoring: { damageBonusMax: -1 } }).success).toBe(false);
   });

@@ -353,7 +353,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Battle report',
       description:
-        "Report for the player's own units in a finished battle (default: the latest): survivors, damage, kills, value destroyed, the round score (place points + damage bonus + value bonus, badges), strikes, and errors with unit, line and message.",
+        "Report for the player's own units in a finished battle (default: the latest): survivors, damage, kills, value destroyed, the round score (place points + damage bonus + value bonus, badges), strikes, errors with unit, line and message, and the round's top damage units of all players (`mine: true` marks the player's own).",
       inputSchema: { round: z.number().int().positive().optional().describe('Round number (default: latest finished)'), apiKey: API_KEY },
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },
@@ -374,9 +374,16 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
         const score = sc
           ? ` Place ${sc.place}: ${sc.placePoints} place + ${sc.damageBonus} damage bonus (${sc.damage} damage) + ${sc.valueBonus} value bonus ($${sc.valueDestroyed} destroyed) = ${sc.total} points${sc.badges.length > 0 ? `; badges: ${sc.badges.map((b) => BADGES[b].title).join(', ')}` : ''}.`
           : '';
+        // Top damage units of the round, without sprite pixels (Claude only needs who and how much).
+        const top = (report.topUnits ?? []).map(({ sprite: _s, stats: _st, ...t }) => ({ ...t, mine: t.playerId === p.id }));
+        const mine = top.filter((t) => t.mine);
+        const topText =
+          top.length > 0
+            ? ` Top damage: ${top.map((t) => `${t.rank}. ${t.displayName} by ${t.playerName} (${t.damage})`).join(', ')}.${mine.length > 0 ? ` The player's ${mine[0]!.displayName} is in the top ${mine[0]!.rank === 1 ? 'spot' : 'list'}!` : ''}`
+            : '';
         return toolResult(
-          { ok: true, ...report },
-          `Round ${report.round}: ${report.survived} survived, ${report.kills} kills, ${report.errors.length} errors.${score}`,
+          { ok: true, ...report, topUnits: top },
+          `Round ${report.round}: ${report.survived} survived, ${report.kills} kills, ${report.errors.length} errors.${score}${topText}`,
         );
       }),
   );

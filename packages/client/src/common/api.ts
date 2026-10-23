@@ -7,6 +7,7 @@ import type {
   AdminConfigResponse,
   AdminOverviewDTO,
   ApiErrorBody,
+  BattleEndDTO,
   BattleReportDTO,
   ClaudeSeatsDTO,
   ContractDTO,
@@ -150,6 +151,8 @@ export const api = {
   setPlacement: (placements: PlacementDTO[]) => request<PlacementResponse>('PUT', '/round/placement', { placements }),
   setReady: (ready: boolean) => request<{ ready: boolean }>('POST', '/round/ready', { ready }),
   report: (round: number | 'latest') => request<BattleReportDTO>('GET', `/battles/${round}/report`),
+  /** A released round's public result (ranking, points, badges, top units). */
+  results: (round: number) => request<BattleEndDTO>('GET', `/battles/${round}/results`),
   /** The Claude seat picker (§11.2 c). */
   claudeSeats: () => request<ClaudeSeatsDTO>('GET', '/claude-seats'),
   /** Pick the laptop's Claude seat 1-8 (null = none). CLAUDE_SEAT_TAKEN (409) has details {seat, takenBy}. */

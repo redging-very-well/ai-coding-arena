@@ -713,6 +713,38 @@ export interface RankingEntryDTO extends Omit<RoundScoreDTO, 'total'> {
   eliminatedAtTick: number | null;
 }
 
+/**
+ * A "top damage" unit of a round (§9 Results): one fielded unit type of one
+ * player, all its copies summed. Public with the released result (fielded
+ * types were revealed at START); never source.
+ */
+export interface TopUnitDTO {
+  /** 1-based; equal damage shares a place. */
+  rank: number;
+  unitId: string;
+  /** The name it fought under ("Ogre (Ninja Sam)" for a borrowed Armory unit). */
+  displayName: string;
+  /** The player who fielded it. */
+  playerId: string;
+  playerName: string;
+  seat: number;
+  teamId?: number;
+  /** Effective damage of all copies (whole number). */
+  damage: number;
+  kills: number;
+  valueDestroyed: number;
+  /** Copies fielded. */
+  copies: number;
+  stats?: StatsSnapshot;
+  /** null when there is none or it is hidden (draw the fallback from stats). */
+  sprite: SpriteSpec | null;
+  spriteHidden: boolean;
+  /** Borrowed from the Open Armory: the creator's name (§9.1). */
+  borrowedFrom?: string;
+  /** The player was kicked during the battle (the damage still counts here). */
+  left?: boolean;
+}
+
 /** Sent only when playback reaches the final frame (§9 Result release). */
 export interface BattleEndDTO {
   round: number;
@@ -729,6 +761,8 @@ export interface BattleEndDTO {
    * this battle (💡 Inventor, no points), with "used by N players".
    */
   inventors?: Array<{ playerId: string; name: string; usedBy: number; units: string[] }>;
+  /** The round's top damage units (config scoring.topUnitsShown places, ties included). */
+  topUnits?: TopUnitDTO[];
 }
 
 export interface BattleReportErrorDTO {
@@ -758,6 +792,8 @@ export interface BattleReportDTO {
   strikes: number;
   disabled: number;
   errors: BattleReportErrorDTO[];
+  /** The round's public top damage units (same as BattleEndDTO.topUnits). */
+  topUnits?: TopUnitDTO[];
 }
 
 /** GET /battles/:round/replay */

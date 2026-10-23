@@ -15,6 +15,7 @@ import { getStore, useStore } from '../store.js';
 import { ArenaView } from './Battle.js';
 import { CopyButton } from './CopyButton.js';
 import { TeamChip } from './TeamPanel.js';
+import { TopUnits } from './TopUnits.js';
 
 /** Team table (§9.2): average member total, then place points; my team highlighted. */
 function TeamTable({ rows, game, myTeamId }: { rows: readonly TeamTableRowDTO[]; game: GameStateDTO; myTeamId: number | undefined }) {
@@ -203,6 +204,7 @@ export function Results() {
         </p>
       )}
       {last?.reason === 'timeout' && !final && <p class="dim small">Time ran out, so the army with the most $ still standing won.</p>}
+      {last && <TopUnits top={last.topUnits} round={last.round} meId={meId} />}
 
       <div class="results-layout">
         <div>

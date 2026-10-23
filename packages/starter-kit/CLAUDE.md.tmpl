@@ -288,7 +288,7 @@ Every round, each player scores **place points + damage bonus + value bonus**:
 
 ## 7. After a battle
 
-Call `get_battle_report`. Its `score` shows how the player's points were made (place, damage bonus, value bonus, badges): tell them in one cheerful sentence, e.g. "You came 2nd and your army dealt the most damage: +4 points and the Biggest Hitter badge!". If a unit threw errors, timed out, or got switched off, the report names the unit and the line. Fix that unit (pass its `unitId`), validate it, and submit it in the next Plan phase. Tell the player what went wrong in simple words, e.g. "Your ninja got confused when there were no enemies left. I fixed it!"
+Call `get_battle_report`. Its `score` shows how the player's points were made (place, damage bonus, value bonus, badges): tell them in one cheerful sentence, e.g. "You came 2nd and your army dealt the most damage: +4 points and the Biggest Hitter badge!". `topUnits` lists the round's top damage units of all players (`mine: true` marks your player's): if one is theirs, cheer, e.g. "Your Ninja hit hardest!". If a unit threw errors, timed out, or got switched off, the report names the unit and the line. Fix that unit (pass its `unitId`), validate it, and submit it in the next Plan phase. Tell the player what went wrong in simple words, e.g. "Your ninja got confused when there were no enemies left. I fixed it!"
 
 ### Open Armory (only when the host switched it on)
 

@@ -38,6 +38,7 @@ import {
 import { frameAt } from '../sim/frames.js';
 import { rankAtPlaybackTick, rankResult } from '../sim/ranking.js';
 import { playerMetrics, scoreRanking } from '../sim/scoring.js';
+import { topUnits } from '../sim/topUnits.js';
 import { log } from '../util/log.js';
 import { ArmoryService, type BorrowedUse, type FieldedDesign } from './armory.js';
 import type { Game } from './game.js';
@@ -584,6 +585,7 @@ export class BattleService {
     this.lastMetrics = this.metricsOf(a);
     const end: BattleEndDTO = { round: a.round, endTick, reason, ranking, scoreboard: [] };
     if (inventors.length > 0) end.inventors = inventors;
+    end.topUnits = topUnits({ reveal: a.reveal, summaries: unitSummaries, kicked, shown: scoring.topUnitsShown });
     const record: RoundResultRecord = { round: a.round, end, reports, unitSummaries };
     this.active = undefined;
     // The fielded types enter the Open Armory now that the result is public (§9.1).
@@ -625,12 +627,24 @@ export class BattleService {
     if (m.phase === 'BATTLE' && (round === undefined || round === m.round)) return { stillPlaying: m.round };
     const target = round ?? m.results[m.results.length - 1]?.round;
     if (target === undefined) return undefined;
-    return this.released(target)?.reports[playerId];
+    const rec = this.released(target);
+    const own = rec?.reports[playerId];
+    return own ? { ...own, topUnits: rec!.end.topUnits ?? [] } : undefined;
+  }
+
+  /** The public result of a released round of the current match (ranking, points, top units). */
+  results(round: number): BattleEndDTO | { stillPlaying: number } | undefined {
+    const m = this.game.store.match;
+    if (m.phase === 'BATTLE' && m.round === round) return { stillPlaying: round };
+    return this.released(round)?.end;
   }
 
   replay(round: number): ReplayDTO | { stillPlaying: number } | undefined {
     const m = this.game.store.match;
     if (m.phase === 'BATTLE' && m.round === round) return { stillPlaying: round };
+    // Only rounds released in this match (a new match starts over at round 1:
+    // an older data/replays/round-N.json is not this match's).
+    if (!this.released(round)) return undefined;
     if (this.lastReplay?.round === round) return this.lastReplay;
     return this.game.store.readReplay(round) ?? undefined;
   }

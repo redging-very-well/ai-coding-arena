@@ -10,6 +10,9 @@ import { seatStyle, teamLook } from '../common/seats.js';
 import { PHASE_TEXT, PLACE_MEDALS, cx, formatClock, formatMoney, ordinal } from '../common/ui.js';
 import { advanceControls, advanceKey, type AdvanceControls } from '../common/advance.js';
 import { api } from '../common/api.js';
+import { projectorTopCards, topRankLabel, topUnitBy, topUnitKey, topUnitLine, topUnitLook } from '../common/topUnits.js';
+import { resolveSprite } from '../common/render/sprites.js';
+import { SpriteView } from '../play/components/SpriteView.js';
 import { Confetti } from './Confetti.js';
 import { ScreenController, prefersReducedMotion, type ScreenSnapshot } from './controller.js';
 import {
@@ -354,6 +357,9 @@ function ArenaOverlays({
       {phase === 'RESULTS' && snap.end && !snap.replay?.playing && (
         <div class="end-reason pixel">{endReasonText(snap.end.reason)}</div>
       )}
+      {phase === 'RESULTS' && !snap.replay?.playing && (snap.state?.lastBattle ?? snap.end)?.topUnits?.length ? (
+        <TopDamage end={(snap.state?.lastBattle ?? snap.end)!} now={now} />
+      ) : null}
       <div class="toasts">
         {snap.toasts.map((t) => (
           <div key={t.id} class={cx('toast', `toast-${t.level}`)} style={{ '--seat': seatStyle(t.seat).color }}>
@@ -363,6 +369,50 @@ function ArenaOverlays({
         ))}
       </div>
     </>
+  );
+}
+
+/**
+ * RESULTS (§12.2): the round's top damage units over the bottom of the arena,
+ * each with its sprite, the player who fielded it (seat badge + name, team
+ * chip) and a damage count-up; cards pop in one after another.
+ */
+function TopDamage({ end, now }: { end: NonNullable<GameStateDTO['lastBattle']>; now: number }) {
+  const { cards: top, more } = projectorTopCards(end.topUnits ?? []);
+  const shownAt = useRef<number | null>(null);
+  if (shownAt.current === null) shownAt.current = now;
+  const elapsed = REDUCED_MOTION ? Number.POSITIVE_INFINITY : now - shownAt.current;
+  return (
+    <div class="top-damage">
+      <h2 class="pixel">💥 Top damage</h2>
+      <div class={cx('top-cards', top.length > 3 && 'many')}>
+        {top.map((t, i) => {
+          const seat = seatStyle(t.seat);
+          return (
+            <div
+              key={`${t.playerId}-${t.unitId}`}
+              class={cx('top-card', t.rank === 1 && 'first', t.left && 'left')}
+              style={{ '--seat': seat.color, animationDelay: REDUCED_MOTION ? undefined : `${i * 250}ms` }}
+            >
+              <span class="top-rank">{topRankLabel(t.rank)}</span>
+              <span class="top-sprite">
+                <SpriteView spec={resolveSprite(topUnitLook(t))} specKey={topUnitKey(t, end.round)} outline={seat.color} width={56} />
+              </span>
+              <div class="top-info">
+                <div class="top-name">{t.displayName}</div>
+                <div class="top-by">
+                  <span class="sym seat-num">{seat.symbol}</span>
+                  {topUnitBy(t)}
+                  {t.teamId !== undefined && <TeamChip teamId={t.teamId} />}
+                </div>
+                <div class="top-dmg pixel">{topUnitLine(t, countUp(t.damage, elapsed - (300 + i * 250)))}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {more > 0 && <p class="top-more">+{more} more with the same damage</p>}
+    </div>
   );
 }
 

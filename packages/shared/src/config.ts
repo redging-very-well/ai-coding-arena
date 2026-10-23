@@ -103,6 +103,8 @@ export const ConfigSchema = z.object({
     damageBonusMax: z.number().int().nonnegative(),
     /** Max value-destroyed bonus AT 4 PLAYERS (for the top value destroyer); scaled × P/4. */
     valueBonusMax: z.number().int().nonnegative(),
+    /** How many places the round's "top damage" units list shows (ties included). */
+    topUnitsShown: z.number().int().min(1).max(10),
   }),
   suddenDeath: z
     .object({
@@ -214,6 +216,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   scoring: {
     damageBonusMax: 2,
     valueBonusMax: 1,
+    topUnitsShown: 3,
   },
   suddenDeath: {
     // Tuned in M6 against tests/balance.test.ts (docs/balance.md): from 50 s,

@@ -1480,3 +1480,96 @@ canvas.arena {
     animation: none;
   }
 }
+
+/* ------------------------------------------- RESULTS: top damage units */
+
+.top-damage {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 20px;
+  padding: 14px 18px 16px;
+  background: rgba(13, 15, 26, 0.92);
+  border: 4px solid var(--border);
+  box-shadow: 6px 6px 0 #05060c;
+  z-index: 2;
+}
+.top-damage h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  color: var(--accent);
+}
+.top-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 12px;
+}
+.top-card {
+  display: grid;
+  grid-template-columns: auto 64px minmax(0, 1fr);
+  grid-template-areas: 'rank sprite info';
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 3px solid var(--seat, var(--border));
+  background: color-mix(in srgb, var(--seat) 14%, var(--panel-2));
+  animation: pc-pop 0.4s ease-out both;
+}
+.top-card.first {
+  background: color-mix(in srgb, var(--seat) 28%, var(--panel-2));
+}
+.top-card.left {
+  opacity: 0.6;
+}
+.top-rank {
+  grid-area: rank;
+  font-size: 28px;
+}
+.top-sprite {
+  grid-area: sprite;
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+}
+.top-info {
+  grid-area: info;
+  min-width: 0;
+}
+.top-name {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.top-by {
+  font-size: 17px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.top-by .team-chip {
+  margin-left: 8px;
+}
+/* 4+ cards (ties): sprite above the text so names keep their room. */
+.top-cards.many .top-card {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: 'rank sprite' 'info info';
+  justify-items: start;
+}
+.top-dmg {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #ffb4a8;
+}
+.top-more {
+  margin: 8px 0 0;
+  font-size: 18px;
+  color: var(--text-dim);
+}
+@media (prefers-reduced-motion: reduce) {
+  .top-card {
+    animation: none;
+  }
+}
