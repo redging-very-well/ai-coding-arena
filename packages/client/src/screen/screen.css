@@ -1290,6 +1290,121 @@ canvas.arena {
   }
 }
 
+/* ------------------------------------------------- play layout (§12.2) */
+/* PLAN, PLACEMENT and BATTLE: the arena takes most of the stage and the side
+   is a narrow strip (names, points, ticks, army bars stay readable from the
+   back of the room). LOBBY, RESULTS and MATCH_RESULTS keep the wide side. */
+
+.play-layout .body {
+  grid-template-columns: 1fr 380px;
+  gap: 20px;
+  padding: 20px 28px 24px;
+}
+.play-layout .side {
+  gap: 14px;
+}
+.play-layout .side .panel {
+  padding: 14px 16px;
+  border-width: 3px;
+}
+.play-layout .side .panel h2 {
+  font-size: 18px;
+  margin-bottom: 12px;
+}
+.play-layout .join .join-row {
+  gap: 14px;
+}
+.play-layout .join .qr {
+  width: 120px;
+  height: 120px;
+  padding: 5px;
+}
+.play-layout .join .join-text {
+  font-size: 18px;
+}
+.play-layout .join .join-text p {
+  margin-bottom: 6px;
+}
+.play-layout .join .url {
+  font-size: 14px;
+  margin-top: 10px;
+  padding: 6px 8px;
+}
+.play-layout .players .tiles {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.play-layout .players .tile {
+  min-height: 0;
+  padding: 7px 12px;
+  border-width: 3px;
+}
+.play-layout .players .tile.empty {
+  display: none;
+}
+.play-layout .players .tile-head {
+  font-size: 23px;
+}
+.play-layout .players .ticks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 4px;
+  font-size: 16px;
+}
+.play-layout .players .ticks li {
+  margin-top: 0;
+  gap: 5px;
+}
+.play-layout .players .ticks .box {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+  font-size: 14px;
+}
+.off-tag {
+  display: none;
+}
+.play-layout .players .off-tag {
+  display: inline;
+  align-self: center;
+  margin-right: 10px;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--bad);
+}
+.play-layout .players .ticks li.off {
+  display: none;
+}
+.play-layout .players .tile-group + .tile-group {
+  margin-top: 10px;
+}
+.play-layout .players .group-head {
+  font-size: 17px;
+  margin-bottom: 6px;
+}
+.play-layout .armies .army {
+  margin-bottom: 14px;
+}
+.play-layout .armies .army-head {
+  font-size: 22px;
+}
+.play-layout .armies .army-head .val {
+  font-size: 17px;
+}
+.play-layout .armies .bar {
+  height: 22px;
+  margin-top: 5px;
+}
+.play-layout .armies .army-foot {
+  font-size: 15px;
+  margin-top: 3px;
+}
+.play-layout .armies.dense .cnt {
+  margin: 0 8px;
+  font-size: 14px;
+}
+
 /* "Everyone's ready!" over the top of the arena (the centre stays clear). */
 .ready-banner {
   position: absolute;

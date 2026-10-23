@@ -170,11 +170,14 @@ export function App() {
 
   const state = snap?.state ?? null;
   const phase = state?.phase ?? 'LOBBY';
+  // In play (PLAN, PLACEMENT, BATTLE) the arena takes most of the stage and the
+  // side becomes a narrow strip; LOBBY and the results keep the wide side.
+  const playLayout = phase === 'PLAN' || phase === 'PLACEMENT' || phase === 'BATTLE';
 
   return (
     <div class="viewport">
       <div
-        class={cx('stage', `phase-${phase.toLowerCase()}`)}
+        class={cx('stage', `phase-${phase.toLowerCase()}`, playLayout && 'play-layout')}
         style={{ transform: `translate(-50%, -50%) scale(${scale})` }}
       >
         <Header snap={snap} ctrl={ctrl} now={now} />
@@ -568,6 +571,9 @@ function PlayerTile({ p, state }: { p: PlayerStatusDTO; state: GameStateDTO }) {
       <div class="tile-head">
         <span class="sym seat-num">{seat.symbol}</span>
         <span class="name">{p.name}</span>
+        {/* The narrow play-layout strip shows these as tags in the head row (the list rows are hidden there). */}
+        {!p.connected && <span class="off-tag">offline</span>}
+        {p.benched && <span class="off-tag">next match</span>}
         {state.round > 0 && <span class="pts pixel">{p.points}</span>}
       </div>
       <ul class="ticks">
