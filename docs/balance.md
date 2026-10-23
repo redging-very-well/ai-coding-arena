@@ -1,4 +1,4 @@
-# Pixel Clash balance (M6, M8.5 walls and factories, M8.6 minion kinds)
+# Pixel Clash balance (M6, M8.5 walls and factories, M8.6 minion kinds, M8.7 routing)
 
 Plan §14 `balance.test.ts`, §6 ("no single archetype dominates"), §9 sudden death.
 Test: `tests/balance.test.ts` (harness `tests/helpers/balance.ts`). Regenerate every
@@ -185,8 +185,8 @@ Same harness, same default config, same sites and seeds as the round robin above
 
 | key | army | cost |
 |---|---|---|
-| fortress | **sealed** wall fortress: 11 Basic Walls closing the zone off (diagonal zones: row 0 + col 0, the other two sides are the arena edge; N/S/E/W zones: front row + both flanks), 3 Basic Towers inside | $946 |
-| snipewall | walled sniper nest: 6 Basic Walls in the front cells, 2 Sniper Towers + 1 Basic Tower behind | $1000 |
+| fortress | **sealed** wall fortress: 11 Basic Walls closing the zone off (diagonal zones: row 0 + col 0, the other two sides are the arena edge; N/S/E/W zones, since M8.7: a pocket of rows 3-5 × cols 1-4 against the back edge, or a 7-wall ring round an L of 3 cells where the back isn't the edge), 3 Basic Towers inside | $946 |
+| snipewall | walled sniper nest: 6 Basic Walls, 2 Sniper Towers + 1 Basic Tower (since M8.7 the walls close the towers into the zone's back corner / back edge; Lanes: front cells as before) | $1000 |
 | swarm | factory swarm (plan §6): 4 Basic Soldiers in front, 2 Swarm Factories (300 HP, interval 600: 8 minions each) behind | $922 |
 | wallrush | walls + rush: 4 Basic Walls in the front cells, 9 Basic Soldiers behind them | $956 |
 | mixed | plan §6 mixed: 4 Basic Soldiers, then 6 Basic Walls, then 2 Basic Towers | $956 |
@@ -551,3 +551,100 @@ with Brawlers and Darts) and `brutes` (a Brute Smithy swarming the nearest enemy
 Brawlers and Stone Walls). Their factories (250 HP, interval 900: $219 / $234 / $219)
 release stored minions early when the factory drops below half health.
 
+
+## Routing round walls (M8.7)
+
+Units now path round walls (plan §9.3 Routing round walls): a soldier or minion walks
+the shortest open way to its destination and only presses on (and smashes) a wall when
+the destination is walled off. Every number in this file above the M8.7 heading that
+involves walls was measured with the old slide-only steering; the round robin and the
+free-for-alls below are the current numbers (`scripts/balance-matrix.ts`).
+
+### What routing changed
+
+- **Open walls no longer stop melee.** Walls that don't enclose anything are now just
+  obstacles: the walled sniper nest (6 walls in the front cells) fell from 40% to 21%
+  round-robin wins, beaten by every melee army that used to get stuck smashing its walls
+  (bricks 8-8 → 16-0, tanks 2-14 → 11-5, walls + rush 2-14 → 16-0).
+- **The "sealed" fortress wasn't sealed on N/S/E/W zones.** Its 11 walls (front row + both
+  flanks) left rows 4-5 of the flanks open; closing a whole edge zone takes 16 walls, above
+  the cap of 12. The slide steering never found that back door, routing does (the rush
+  went from 0 to 6 wins of 16 against it).
+- **Own walls stop slowing their own army.** Walls + rush's 9 soldiers walk out round
+  their 4 front walls instead of queueing behind them.
+
+### Fixes (bot archetypes, not config)
+
+Both changes make the archetypes mean what their names say in a routing world; no
+config value changed (`sim.replanTicks` = 10 is new, everything else is as in M8.6):
+
+- `fortress`: on N/S/E/W zones whose back row is the arena edge the 11 walls now close a
+  pocket of rows 3-5 × cols 1-4 against the edge (row 2 cols 1-4, both flanks of rows 3-5,
+  one spare doubling (2, 2)), the most forward seal 11 walls allow; elsewhere (Lanes) a
+  7-wall ring round an L of three cells plus 4 walls doubling the front. Diagonal zones are
+  unchanged. Result: the rush wins 0 of 16 again.
+- `snipewall` ("walled sniper nest"): the 6 walls close the 3 towers into the back corner
+  (diagonal zones: (4,4)-(5,5) behind (3,4), (3,5), (4,3), (5,3), doubled at (2,4), (4,2))
+  or the back edge ((1..3,5) behind (0,5), (4,5), (1..3,4), doubled at (2,3)); Lanes keeps
+  the front cells (6 walls can't close a pocket away from the edge).
+
+### Round robin (17 archetypes, 256 battles each)
+
+| archetype | vs the six | vs the M8.5 13 | vs all 16 | M8.6 (all 16) |
+|---|---|---|---|---|
+| bricks | 71/80 (89%) | 145/192 (76%) | 209/256 (82%) | 220/256 (86%) |
+| templates | 20/80 (25%) | 58/192 (30%) | 86/256 (34%) | 86/256 (34%) |
+| tanks | 63/80 (79%) | 140/192 (73%) | 204/256 (80%) | 207/256 (81%) |
+| turtle | 40/80 (50%) | 104/192 (54%) | 120/256 (47%) | 118/256 (46%) |
+| scouts | 16/80 (20%) | 68/192 (35%) | 126/256 (49%) | 113/256 (44%) |
+| snipers | 18/80 (23%) | 88/192 (46%) | 116/256 (45%) | 114/256 (45%) |
+| fortress | - | 99/192 (52%) | 103/256 (40%) | |
+| snipewall | - | 72/192 (38%) | 76/256 (30%) | |
+| swarm | - | 89/192 (46%) | 135/256 (53%) | |
+| wallrush | - | 119/192 (62%) | **183/256 (71.5%)** | 176/256 (69%) |
+| mixed | - | 36/192 (19%) | 78/256 (30%) | |
+| quad | - | 98/192 (51%) | 146/256 (57%) | |
+| bunker | - | 116/192 (60%) | 151/256 (59%) | |
+| archers | - | - | 75/256 (29%) | |
+| runners | - | - | 48/256 (19%) | |
+| brutes | - | - | 115/256 (45%) | |
+| homeguard | - | - | **181/256 (70.7%)** | 179/256 (69.9%) |
+
+The six (no walls) are unchanged battle for battle. The 13×13 part passes every M8.5
+assertion and cap (bricks 145 ≤ 156, tanks 140 ≤ 143). In the 17×17 part two archetypes
+sit just above the 70% cap:
+
+- **walls + rush 183/256 (71.5%)**: it beats every kind archetype 16-0 (as in M8.6) and now
+  beats the bricks 11-5 (was 5-11): its soldiers leave round their own walls together.
+- **grunt home guard 181/256 (70.7%)**: +2 from the walled sniper nest (the M8.6 watch item
+  at 69.9%).
+
+No price-neutral config knob moves them below the cap: `sim.replanTicks` 5-15 gives walls +
+rush 177-184, `factory.defendRadius` 140-180 gives the home guard 177-182, and prices don't
+change these fixed archetypes' battles. They are recorded as capped exceptions in
+`KIND_DOMINANCE_EXCEPTIONS` at today's numbers (**the only building/kind exceptions; an open
+decision for the event: accept them, or retune the soldier price / minion stats**).
+
+### Stated outcomes, Lanes and free-for-alls
+
+- Rush vs open U fortress 16/16, vs the sealed fortress 0/16; brutes break the sealed
+  fortress 14-2; archers beat the turtle, fortress and walled sniper nest 16-0; home guard
+  beats the bunker 15-1-0; turtle vs rush: the rush wins (Lanes too).
+- 2-team Lanes with building armies: the building team wins the bunker + snipewall +
+  fortress + swarm case in round 0 (90 s timeout) and loses the others.
+- Ring 8 free-for-all with building armies: fortress 7, swarm 6, bunker 2, walls + rush 1,
+  quad 1 (was swarm 7, bunker 5, fortress 4). With minion kinds: brutes 5, home guard 5,
+  swarm 3, rush 2, fortress 1.
+- Engine time: 2,041 battles with walls or factories, median 26 ms, max 358 ms per battle
+  (routing included).
+
+### Performance (timing pass, `tests/buildings-perf.test.ts`)
+
+| case (8 players, Ring 8, 1,900 ticks, real isolates) | p50 | p99 | max |
+|---|---|---|---|
+| M8.5 buildings worst case | 1.88 ms | 4.93 ms | 15.8 ms |
+| M8.6 kinds, orders, bursts | 1.88 ms | 5.62 ms | 10.3 ms |
+| **M8.7 maze** (12 walls per zone in a U, an L and blocks; 236 bodies; 3,166 plans, 103 fields built, 413 cache hits) | 1.86 ms | 5.72 ms | 10.4 ms |
+
+Before routing the first two measured p99 5.45 / 5.64 ms on the same machine: routing costs
+no measurable time. Target unchanged: p99 < 8 ms/tick.

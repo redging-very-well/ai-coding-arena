@@ -270,7 +270,7 @@ export interface Archetype {
    *   'u':    the plan §14 fortress, walls on the front row and both outer columns of rows 1-2,
    *           the fighters on rows 3-4 (`uCells`).
    */
-  layout?: 'seal' | 'u';
+  layout?: 'seal' | 'u' | 'nest';
   /** Its factories hold every tick (never build). */
   holdFactories?: boolean;
   /** M8.6: its factories' squad-order brain (default 'rally', the template). */
@@ -290,17 +290,69 @@ export function uCells(facing: Facing, centred: boolean): { walls: Cell[]; fight
  * The cells a wall fortress fills, in order (zone-local, row 0 = front).
  * Diagonal zones: the two inner sides, row 0 and col 0, from the centre-most
  * cell out (11 cells seal the zone: its other two sides are the arena edge).
- * N/S/E/W zones: the front row, then both flanks from the front back.
+ * N/S/E/W zones whose back row is the arena edge: the most forward seal 11
+ * walls allow, a pocket of rows 3-5 × cols 1-4 walled by row 2 (cols 1-4) and
+ * both flanks of rows 3-5 (10 walls; walls that only touch at a corner leave
+ * no gap), plus one doubling (2, 2). Other N/S/E/W zones (Lanes): a 7-wall ring round an L of three
+ * cells, (2,1), (3,1) and (2,2), plus 4 more doubling the front row (walls
+ * that only touch at a corner leave no gap). (M8.7: the old "front row + both
+ * flanks" left rows 4-5 of the flanks open: closing a whole zone takes 16
+ * walls, above the cap of 12. Units now route round walls, so they found that
+ * back door.)
  */
-export function sealCells(facing: Facing): Cell[] {
+export function sealCells(facing: Facing, backOnEdge = true): Cell[] {
   const cells: Cell[] = [{ col: 0, row: 0 }];
+  if (facing !== 'diag' && backOnEdge) {
+    cells.length = 0;
+    for (const col of [2, 3, 1, 4]) cells.push({ col, row: 2 });
+    for (const row of [3, 4, 5]) cells.push({ col: 0, row }, { col: GRID_SIZE - 1, row });
+    cells.push({ col: 2, row: 1 });
+    return cells;
+  }
   if (facing === 'diag') {
     for (let i = 1; i < GRID_SIZE; i++) cells.push({ col: i, row: 0 }, { col: 0, row: i });
     return cells;
   }
-  for (let col = 1; col < GRID_SIZE; col++) cells.push({ col, row: 0 });
-  for (let row = 1; row < GRID_SIZE; row++) cells.push({ col: 0, row }, { col: GRID_SIZE - 1, row });
-  return cells;
+  return [
+    { col: 2, row: 0 }, { col: 3, row: 0 }, { col: 1, row: 1 }, { col: 4, row: 1 }, { col: 1, row: 2 }, { col: 3, row: 2 }, { col: 2, row: 3 },
+    { col: 1, row: 0 }, { col: 4, row: 0 }, { col: 0, row: 0 }, { col: 5, row: 0 },
+  ];
+}
+
+/**
+ * M8.7 walled sniper nest ('nest'): the towers sit in the zone's back, closed
+ * off by the walls (routing walks melee round walls that don't enclose
+ * anything, so the nest's walls now close its towers in). Diagonal zones: the
+ * 2×2 arena corner (5,5)-(4,4) behind (3,5), (3,4), (4,3), (5,3), doubled at
+ * (2,4) and (4,2). N/S/E/W zones with the back row on the arena edge: back-row
+ * cells 1-3 behind (0,5), (4,5), (1,4), (2,4), (3,4), doubled at (2,3).
+ * Elsewhere (Lanes) 6 walls can't close a pocket: the front cells as before.
+ */
+export function nestCells(facing: Facing, backOnEdge: boolean, front: Cell[]): { walls: Cell[]; fighters: Cell[] } {
+  if (facing === 'diag') {
+    return {
+      walls: [{ col: 3, row: 5 }, { col: 3, row: 4 }, { col: 4, row: 3 }, { col: 5, row: 3 }, { col: 2, row: 4 }, { col: 4, row: 2 }],
+      fighters: [{ col: 4, row: 4 }, { col: 5, row: 4 }, { col: 4, row: 5 }, { col: 5, row: 5 }],
+    };
+  }
+  if (backOnEdge) {
+    return {
+      walls: [{ col: 0, row: 5 }, { col: 4, row: 5 }, { col: 1, row: 4 }, { col: 2, row: 4 }, { col: 3, row: 4 }, { col: 2, row: 3 }],
+      fighters: [{ col: 2, row: 5 }, { col: 1, row: 5 }, { col: 3, row: 5 }],
+    };
+  }
+  return { walls: front, fighters: front };
+}
+
+/** Where a sealed fortress's fighters go: inside the seal (diagonal zones: the front cells left). */
+export function sealFighterCells(facing: Facing, front: Cell[], backOnEdge = true): Cell[] {
+  if (facing === 'diag') return front;
+  if (backOnEdge) {
+    const pocket: Cell[] = [];
+    for (const row of [3, 4, 5]) for (const col of [2, 3, 1, 4]) pocket.push({ col, row });
+    return pocket;
+  }
+  return [{ col: 2, row: 1 }, { col: 3, row: 1 }, { col: 2, row: 2 }];
 }
 
 /** The §14 archetypes, $1,000 budget each (checked by the test). */
@@ -320,7 +372,7 @@ export const ARCHETYPES: Archetype[] = [
  */
 export const BUILDING_ARCHETYPES: Archetype[] = [
   { key: 'fortress', label: 'wall fortress (11 Basic Walls sealing in 3 Basic Towers)', army: [['wall', 11], ['tower', 3]], layout: 'seal' },
-  { key: 'snipewall', label: 'walled sniper nest (6 Basic Walls in front of 2 Sniper Towers + 1 Basic Tower)', army: [['wall', 6], ['sniper', 2], ['tower', 1]] },
+  { key: 'snipewall', label: 'walled sniper nest (6 Basic Walls in front of 2 Sniper Towers + 1 Basic Tower)', army: [['wall', 6], ['sniper', 2], ['tower', 1]], layout: 'nest' },
   { key: 'swarm', label: 'factory swarm (4 Basic Soldiers in front of 2 Swarm Factories)', army: [['soldier', 4], ['swarmFactory', 2]] },
   { key: 'wallrush', label: 'walls + rush (4 Basic Walls in front of 9 Basic Soldiers)', army: [['wall', 4], ['soldier', 9]] },
   { key: 'mixed', label: 'mixed (4 Basic Soldiers, 6 Basic Walls, 2 Basic Towers behind them)', army: [['soldier', 4], ['wall', 6], ['tower', 2]] },
@@ -383,13 +435,24 @@ export function armyCopies(a: Archetype, group: 'all' | 'fighters' | 'walls' | '
   return a.army.reduce((sum, [k, n]) => sum + (counts(k) ? n : 0), 0);
 }
 
+/** Whether a N/S/E/W zone's back row (row 5) lies on the arena edge. */
+function backRowOnEdge(zone: MapZone): boolean {
+  if (zone.facing === 'S') return zone.y === 0;
+  if (zone.facing === 'N') return zone.y + zone.height === zone.arena;
+  if (zone.facing === 'E') return zone.x === 0;
+  if (zone.facing === 'W') return zone.x + zone.width === zone.arena;
+  return true;
+}
+
 /** Designs + front-first placements for an archetype in a zone. */
 function deploy(a: Archetype, zone: MapZone, config: GameConfig): { units: BattleUnitDesign[]; placements: PlacementDTO[] } {
   const centred = zoneCentredOnLine(zone);
   const front = frontCells(zone.facing, centred);
   const u = a.layout === 'u' ? uCells(zone.facing, centred) : null;
-  const wallCells = a.layout === 'seal' ? sealCells(zone.facing) : u ? u.walls : front;
-  const fighterCells = u ? u.fighters : front;
+  const backOnEdge = backRowOnEdge(zone);
+  const nest = a.layout === 'nest' ? nestCells(zone.facing, backOnEdge, front) : null;
+  const wallCells = a.layout === 'seal' ? sealCells(zone.facing, backOnEdge) : u ? u.walls : nest ? nest.walls : front;
+  const fighterCells = u ? u.fighters : nest ? nest.fighters : a.layout === 'seal' ? sealFighterCells(zone.facing, front, backOnEdge) : front;
   const taken = new Set<string>();
   const take = (from: Cell[]): Cell => {
     const cell = from.find((c) => !taken.has(`${c.col},${c.row}`))!;

@@ -285,6 +285,7 @@ Tips:
 - **When choosing targets, skip `enemy.type === 'wall'`**, unless `self.blockedBy` is an enemy wall (it is still in `enemies`) and `self.blockedTicks` is high (120 = 2 s): then smash it. With `self.pathing === 'no-route'` the unit can't get there any other way, so you may smash at once.
 - **Minions** show up in `enemies` as `type: 'minion'`: weak (40 HP) but many.
 - **Shots fly over walls**, so towers behind walls still shoot. Walls are great for funnelling enemies past your towers.
+- **Enemies walk round walls too.** A wall with a way round it only makes them walk further; to keep them out, close the gap completely (they then have to smash a wall).
 - **Factories pay off over time:** their minions arrive during the battle, so a factory is a slow start and a strong finish. Rally minions at the nearest enemy to attack, or just in front of your towers to defend.
 
 ### Factories: minion kinds, orders and burst
