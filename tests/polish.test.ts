@@ -51,7 +51,7 @@ import { Client, WsRecorder, adminClient, bootServer, removeDir, tempDataDir } f
 
 describe('sound recipes (§12.4)', () => {
   it('has every effect, each a short, quiet, well-formed recipe', () => {
-    const names: SfxName[] = ['place', 'remove', 'ready', 'allReady', 'beep', 'beepFinal', 'clash', 'shoot', 'swing', 'hit', 'bigHit', 'death', 'siren', 'victory', 'badge'];
+    const names: SfxName[] = ['place', 'remove', 'ready', 'allReady', 'beep', 'beepFinal', 'clash', 'shoot', 'swing', 'hit', 'bigHit', 'death', 'siren', 'victory', 'badge', 'wallHit', 'crumble', 'spawn'];
     for (const n of names) {
       const steps = SFX[n];
       expect(steps.length, n).toBeGreaterThan(0);

@@ -22,14 +22,26 @@
 // while the sprite outline always keeps the seat colour.
 //
 // The canvas should be sized by CSS; the renderer follows its box (HiDPI).
+//
+// Buildings and minions (M8.5, §12.5): walls are iso blocks (buildings.ts,
+// baked per design, seat, crack level and zoom) depth-sorted with everything
+// else and kept between the frames that list them (the FrameBuffer carries
+// them forward); factories are billboards with a production ring on the
+// ground, a door flash, "pop" and "+1" when they make a minion, and a rally
+// flag (option `rallyFlags`); minions are adopted from the frames by their id
+// (`${factoryId}-mN`) and drawn with the built-in sprite in the factory's
+// colour. The reveal drops buildings first (walls slam down), then units.
 
 import {
   ARENA,
   FRAME_FLAGS,
+  WALL_HALF,
   zoneRect,
   type BattleRevealDTO,
   type Corner,
+  type BodyType,
   type FrameDTO,
+  type FrameFactory,
   type MapStyle,
   type MapZoneDTO,
   type Rect,
@@ -40,6 +52,7 @@ import {
   type SpriteSpec,
   type StatsSnapshot,
 } from '@pixel-clash/shared';
+import { WALL_HEIGHT, minionFactoryId, minionLook, productionRing, renderWallBlock, wallCrackLevel } from './buildings.js';
 import { fitCanvasToBox, pixelContext, pixelsToCanvas, type Bitmap } from './canvas.js';
 import { FxLayer, bobOffset, isBigHit } from './fx.js';
 import {
@@ -111,6 +124,11 @@ export interface ArenaOptions {
   fx?: boolean;
   /** prefers-reduced-motion: no shake or bob, fewer particles (default false). */
   reducedMotion?: boolean;
+  /**
+   * Factory rally flags (§12.5): every factory's ('all', the projector),
+   * only `highlightSeat`'s ('mine', the /play battle view) or none. Default 'all'.
+   */
+  rallyFlags?: 'all' | 'mine' | 'none';
   /** Extra drawing after the units (fx layer: damage numbers, particles…). */
   overlay?: (ctx: CanvasRenderingContext2D, view: IsoView, arena: ArenaRenderer, now: number) => void;
 }
@@ -125,6 +143,10 @@ export interface ArenaInstance {
   teamId?: number | null;
   /** Drawn see-through and without HP (a teammate's placement on the /play mini-map). */
   ghost?: boolean;
+  /** What the body is (M8.5): a design's type, or 'minion' for a factory's minion. Default: stats.type. */
+  body?: BodyType;
+  /** Minions: the factory that made it. */
+  factoryId?: string;
   name: string;
   stats: StatsSnapshot;
   spec: SpriteSpec;
@@ -146,6 +168,26 @@ interface InstanceState {
   alive: boolean;
   /** Idle-bob phase (ms), so copies don't float in step. */
   bobPhase: number;
+  /** Reveal drop-in order (buildings first); -1 = not part of the drop (minions). */
+  dropIndex: number;
+  /** Last dust puff of a blocked unit (ms). */
+  dustAt: number;
+}
+
+/** The body kind of an instance (walls, factories and minions draw differently). */
+export function bodyOf(info: Pick<ArenaInstance, 'body' | 'stats'>): BodyType {
+  return info.body ?? info.stats.type;
+}
+
+/** Drop-in order of a reveal (§12.5): walls slam down first, then the other buildings, then soldiers. */
+export function dropRank(body: BodyType): number {
+  return body === 'wall' ? 0 : body === 'soldier' || body === 'minion' ? 2 : 1;
+}
+
+/** HP bars of walls and minions show only while damaged (§12.5); everything else always. */
+export function showsHpBar(body: BodyType, hp: number, maxHp: number): boolean {
+  if (body === 'wall' || body === 'minion') return hp < maxHp - 1e-6;
+  return true;
 }
 
 /** One entry of the per-frame draw list (reused between frames: no allocation). */
@@ -201,6 +243,12 @@ export function revealZones(reveal: BattleRevealDTO): ArenaZone[] {
 export function revealMap(reveal: BattleRevealDTO): ArenaMap | null {
   return reveal.map ? { style: reveal.map.style, width: reveal.map.width, zones: reveal.map.zones } : null;
 }
+
+/** The built-in minion's stats when a reveal doesn't carry them (§5.2 defaults). */
+const MINION_FALLBACK = { maxHealth: 40, damage: 5, range: 20, speed: 1.5, attackCooldown: 60, size: 8 };
+
+/** Wall block bakes kept (per design × seat × crack level × zoom). */
+const WALL_BAKES = 96;
 
 /** Floor bitmaps kept per zone combination. */
 const FLOOR_MEMO = 8;
@@ -280,6 +328,11 @@ export class ArenaRenderer {
   private readonly drawItems: DrawItem[] = [];
   private readonly seenIds = new Set<string>();
   private readonly liveProjectiles = new Set<number>();
+  /** Living factories of the current sample (M8.5). */
+  private readonly factories = new Map<string, FrameFactory>();
+  /** The reveal's built-in minion (stats; drawn with its factory's colour). */
+  private minionStats: Omit<StatsSnapshot, 'type' | 'name' | 'color' | 'shape'> | null = null;
+  private readonly wallBakes = new Map<string, { bitmap: Bitmap; groundX: number; groundY: number; scale: number }>();
   /** The font last set on the context this frame (setting ctx.font re-parses it: costly ×96 badges). */
   private font = '';
 
@@ -340,6 +393,7 @@ export class ArenaRenderer {
     this.instances.clear();
     this.projectiles.clear();
     this.lastFireByTarget.clear();
+    this.factories.clear();
     this.fx.clear();
     this.sample = null;
     this.endT = null;
@@ -359,6 +413,10 @@ export class ArenaRenderer {
     this.setMap(revealMap(reveal));
     this.teamMode = teamModeOf(reveal);
     this.zones = revealZones(reveal);
+    const m = reveal.minion?.stats;
+    this.minionStats = m
+      ? { maxHealth: m.maxHealth, damage: m.damage, range: m.range, speed: m.speed, attackCooldown: m.attackCooldown, size: m.size }
+      : null;
     for (const p of reveal.players) {
       const ghost = opts.ghosts?.has(p.playerId) ?? false;
       const designs = new Map(p.units.map((u) => [u.unitId, u]));
@@ -373,6 +431,7 @@ export class ArenaRenderer {
           seat: p.seat,
           teamId: this.teamMode ? (p.teamId ?? null) : null,
           ghost,
+          body: u.stats.type,
           name: u.name,
           stats: u.stats,
           spec: sprite.spec,
@@ -389,9 +448,18 @@ export class ArenaRenderer {
           flags: 0,
           alive: true,
           bobPhase: phaseOf(inst.instanceId),
+          dropIndex: 0,
+          dustAt: 0,
         });
       }
     }
+    // Buildings drop first (walls slam down), then the soldiers (§12.5); reveal order within each.
+    const order = [...this.instances.values()].sort((a, b) => dropRank(bodyOf(a.info)) - dropRank(bodyOf(b.info)));
+    order.forEach((st, i) => (st.dropIndex = i));
+    // Walls are listed only when they change: the buffer carries them between frames.
+    this.buffer.setSticky(
+      [...this.instances.values()].filter((st) => bodyOf(st.info) === 'wall').map((st) => [st.info.instanceId, st.x, st.y, st.hp, 0] as [string, number, number, number, number]),
+    );
     this.revealAt = performance.now();
     this.clock.mode = 'live';
   }
@@ -405,8 +473,13 @@ export class ArenaRenderer {
     this.floorFor(revealZones(reveal), revealMap(reveal));
     for (const p of reveal.players) {
       const color = seatStyle(p.seat).color;
+      const outline = teamLook(teamModeOf(reveal) ? p.teamId : null)?.color ?? color;
       for (const u of p.units) {
         const { spec, key } = revealedSprite(p.playerId, u);
+        if (u.stats.type === 'wall') {
+          this.wallBake(key, spec, u.stats.color, outline, 0);
+          continue;
+        }
         const width = billboardWidth(u.stats.size, this.view);
         this.sprites.get(key, spec, color, chooseBakeScale(spec.grid, width * this.cssSize.dpr));
       }
@@ -564,6 +637,8 @@ export class ArenaRenderer {
     this.lastTick = t;
     this.sample = this.buffer.sample(t);
     if (!this.sample) return;
+    this.factories.clear();
+    for (const f of this.sample.fac) this.factories.set(f[0], f);
     const seen = this.seenIds;
     seen.clear();
     for (const u of this.sample.units) {
@@ -575,6 +650,12 @@ export class ArenaRenderer {
       s.flags = u.flags;
       s.alive = true;
       s.anim.update(u.flags, now);
+      // Pushing on a wall: a tiny dust puff now and then (§12.5).
+      if (this.options.fx && (u.flags & FRAME_FLAGS.BLOCKED) !== 0 && now - s.dustAt > 280 && !s.info.ghost) {
+        s.dustAt = now;
+        const p = toScreen(this.view, s.x, s.y);
+        this.fx.dust(p.sx, p.sy, this.view.zoom);
+      }
     }
     for (const s of this.instances.values()) {
       if (seen.has(s.info.instanceId) || !s.alive) continue;
@@ -586,7 +667,7 @@ export class ArenaRenderer {
 
   private applyEvent(event: FrameEvent, now: number): void {
     if (event.type === 'fire' && !event.melee) this.lastFireByTarget.set(event.targetId, event.instanceId);
-    const ids = event.type === 'hit' ? [event.targetId, event.instanceId] : [event.instanceId];
+    const ids = event.type === 'hit' ? [event.targetId, event.instanceId] : event.type === 'crumble' ? event.ids : [event.instanceId];
     for (const id of ids) this.instances.get(id)?.anim.onEvent(event, now);
     if (this.options.fx) this.eventFx(event, now);
     this.options.onEvent?.(event, this);
@@ -624,10 +705,41 @@ export class ArenaRenderer {
     } else if (ev.type === 'death') {
       const t = this.instances.get(ev.instanceId);
       if (!t || t.info.ghost) return;
+      if (bodyOf(t.info) === 'wall') {
+        this.crumbleFx(t);
+        return;
+      }
       const p = toScreen(view, t.x, t.y);
       const h = billboardWidth(t.info.stats.size, view);
       this.fx.deathPop(p.sx, p.sy - h * 0.4, t.info.stats.size, view.zoom, [seatStyle(t.info.seat).color, t.info.stats.color, '#FFFFFF']);
+    } else if (ev.type === 'crumble') {
+      for (const id of ev.ids) {
+        const t = this.instances.get(id);
+        if (!t || t.info.ghost) continue;
+        if (bodyOf(t.info) === 'wall') this.crumbleFx(t);
+        else {
+          const p = toScreen(view, t.x, t.y);
+          this.fx.crumble(p.sx, p.sy, billboardWidth(t.info.stats.size, view), view.zoom, [t.info.stats.color, '#6B6B6B']);
+        }
+      }
+    } else if (ev.type === 'spawn' && ev.factoryId) {
+      // A factory made a minion: a "pop" where it appears and a rising "+1" over the factory.
+      const f = this.instances.get(ev.factoryId);
+      if (!f || f.info.ghost) return;
+      const seat = seatStyle(f.info.seat);
+      const at = ev.x !== undefined && ev.y !== undefined ? toScreen(view, ev.x, ev.y) : toScreen(view, f.x, f.y);
+      this.fx.puff(at.sx, at.sy - 4 * view.zoom, view.zoom, ['#FFFFFF', f.info.stats.color, seat.color]);
+      const fp = toScreen(view, f.x, f.y);
+      this.fx.label(fp.sx, fp.sy - billboardWidth(f.info.stats.size, view) * 1.05, '+1', seat.light, now);
     }
+  }
+
+  /** Falling stone chunks and a dust cloud over a wall's block. */
+  private crumbleFx(t: InstanceState): void {
+    const { view } = this;
+    const p = toScreen(view, t.x, t.y);
+    const width = 2 * WALL_HALF * view.zoom;
+    this.fx.crumble(p.sx, p.sy - WALL_HEIGHT * view.zoom * 0.5, width, view.zoom, [t.info.stats.color, '#5A5E66', '#2E3038']);
   }
 
   /** After a seek or a mid-battle join: units missing from the frame are long dead. */
@@ -641,8 +753,15 @@ export class ArenaRenderer {
     }
   }
 
-  /** A unit in the frames that the reveal didn't mention (should not happen): draw a fallback. */
+  /**
+   * A body in the frames that the reveal didn't list: a factory's minion
+   * (id `${factoryId}-mN`, M8.5), or (should not happen) an unknown unit,
+   * drawn as a fallback.
+   */
   private adoptUnknown(u: SampledUnit): InstanceState {
+    const factoryId = minionFactoryId(u.id);
+    const factory = factoryId ? this.instances.get(factoryId) : undefined;
+    if (factory && factoryId) return this.adoptMinion(u, factory, factoryId);
     const seat = Number.parseInt(u.id, 10);
     const stats: StatsSnapshot = {
       name: '?',
@@ -676,6 +795,56 @@ export class ArenaRenderer {
       flags: u.flags,
       alive: true,
       bobPhase: phaseOf(u.id),
+      dropIndex: -1,
+      dustAt: 0,
+    };
+    this.instances.set(u.id, st);
+    return st;
+  }
+
+  /** A minion: the built-in sprite tinted with its factory's colour, owned like the factory (§12.5). */
+  private adoptMinion(u: SampledUnit, factory: InstanceState, factoryId: string): InstanceState {
+    const m = this.minionStats ?? MINION_FALLBACK;
+    const f = factory.info;
+    const look = minionLook(f.stats.color);
+    const stats: StatsSnapshot = {
+      name: 'Minion',
+      type: 'soldier',
+      maxHealth: m.maxHealth,
+      damage: m.damage,
+      range: m.range,
+      speed: m.speed,
+      attackCooldown: m.attackCooldown,
+      color: f.stats.color,
+      size: m.size,
+      shape: 'circle',
+    };
+    const st: InstanceState = {
+      info: {
+        instanceId: u.id,
+        unitId: f.unitId,
+        playerId: f.playerId,
+        seat: f.seat,
+        teamId: f.teamId ?? null,
+        ghost: f.ghost ?? false,
+        body: 'minion',
+        factoryId,
+        name: `${f.name} minion`,
+        stats,
+        spec: look.spec,
+        specKey: look.key,
+        x0: u.x,
+        y0: u.y,
+      },
+      anim: new UnitAnimator(u.id),
+      x: u.x,
+      y: u.y,
+      hp: u.hp,
+      flags: u.flags,
+      alive: true,
+      bobPhase: phaseOf(u.id),
+      dropIndex: -1,
+      dustAt: 0,
     };
     this.instances.set(u.id, st);
     return st;
@@ -723,6 +892,7 @@ export class ArenaRenderer {
     if (this.options.badges !== false) this.drawZoneBadges();
     this.drawSafeZone(now);
     this.drawRings(now);
+    this.drawRallies();
     this.drawBillboards(now);
     this.drawProjectiles();
     if (this.options.fx) {
@@ -847,6 +1017,8 @@ export class ArenaRenderer {
     const { ctx, view } = this;
     for (const s of this.instances.values()) {
       if (!s.alive) continue;
+      const body = bodyOf(s.info);
+      if (body === 'wall') continue; // the block covers its cell
       const seat = seatStyle(s.info.seat);
       const team = teamLook(s.info.teamId);
       const color = team?.color ?? seat.color;
@@ -874,7 +1046,72 @@ export class ArenaRenderer {
       }
       ctx.setLineDash([]);
       ctx.lineCap = 'butt';
+      if (body === 'factory') this.drawProductionRing(s, p, rx, ry);
       ctx.globalAlpha = 1;
+    }
+  }
+
+  /** A factory's production ring (§12.5): an arc filling with the next minion's progress, grey while holding or done. */
+  private drawProductionRing(s: InstanceState, p: ScreenPoint, rx: number, ry: number): void {
+    const f = this.factories.get(s.info.instanceId);
+    if (!f) return;
+    const ring = productionRing(f);
+    const { ctx, view } = this;
+    const lw = Math.max(2, view.zoom * 2.2);
+    const grow = lw * 1.6;
+    ctx.beginPath();
+    ctx.ellipse(p.sx, p.sy, rx + grow, ry + grow / 2, 0, 0, Math.PI * 2);
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = 'rgba(5, 4, 10, 0.55)';
+    ctx.stroke();
+    if (ring.frac <= 0) return;
+    const start = -Math.PI / 2;
+    ctx.beginPath();
+    ctx.ellipse(p.sx, p.sy, rx + grow, ry + grow / 2, 0, start, start + ring.frac * Math.PI * 2);
+    ctx.strokeStyle = ring.idle ? '#8A8F98' : seatStyle(s.info.seat).light;
+    ctx.stroke();
+  }
+
+  /** Rally flags (§12.5): a small seat-coloured flag at each factory's rally point, with a faint dotted line to it. */
+  private drawRallies(): void {
+    const mode = this.options.rallyFlags ?? 'all';
+    if (mode === 'none' || this.factories.size === 0) return;
+    const { ctx, view } = this;
+    const mine = this.options.highlightSeat;
+    for (const f of this.factories.values()) {
+      const s = this.instances.get(f[0]);
+      if (!s || !s.alive || s.info.ghost) continue;
+      if (mode === 'mine' && (mine === null || mine === undefined || s.info.seat !== mine)) continue;
+      const ring = productionRing(f);
+      const seat = seatStyle(s.info.seat);
+      const color = teamLook(s.info.teamId)?.color ?? seat.color;
+      const a = toScreen(view, s.x, s.y);
+      const b = toScreen(view, ring.rally.x, ring.rally.y);
+      ctx.globalAlpha = 0.45;
+      ctx.beginPath();
+      ctx.moveTo(a.sx, a.sy);
+      ctx.lineTo(b.sx, b.sy);
+      ctx.lineWidth = Math.max(1, view.zoom);
+      ctx.setLineDash([Math.max(2, 3 * view.zoom), Math.max(3, 4 * view.zoom)]);
+      ctx.strokeStyle = color;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      // The flag: a pole and a pennant.
+      const pole = Math.max(10, 14 * view.zoom);
+      const w = Math.max(1, Math.round(view.zoom));
+      ctx.fillStyle = '#05040A';
+      ctx.fillRect(Math.round(b.sx - w), Math.round(b.sy - pole), w * 2, Math.round(pole));
+      ctx.beginPath();
+      ctx.moveTo(b.sx + w, b.sy - pole);
+      ctx.lineTo(b.sx + w + pole * 0.6, b.sy - pole * 0.78);
+      ctx.lineTo(b.sx + w, b.sy - pole * 0.55);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = '#05040A';
+      ctx.lineWidth = Math.max(1, view.zoom * 0.6);
+      ctx.stroke();
     }
   }
 
@@ -909,12 +1146,10 @@ export class ArenaRenderer {
         tick: this.clock.tick,
         firstT: this.buffer.firstT,
       });
-    let i = 0;
     for (const s of this.instances.values()) {
       let lift = 0;
-      if (drop) {
-        const t = dropProgress(now - this.revealAt, i);
-        i++;
+      if (drop && s.dropIndex >= 0) {
+        const t = dropProgress(now - this.revealAt, s.dropIndex);
         if (t < 0) continue;
         lift = dropLift(t);
       }
@@ -954,7 +1189,76 @@ export class ArenaRenderer {
     return top + baked.pad * k;
   }
 
+  /** The baked block of a wall design (seat outline, crack level) at the current zoom. */
+  private wallBake(specKey: string, spec: SpriteSpec, color: string, outline: string | null, crack: 0 | 1 | 2) {
+    const dpr = this.cssSize.dpr;
+    const kb = Math.max(0.05, this.view.k * dpr);
+    const id = `${specKey}|${outline ?? '-'}|${crack}|${kb.toFixed(3)}`;
+    let hit = this.wallBakes.get(id);
+    if (hit) {
+      this.wallBakes.delete(id);
+    } else {
+      const img = renderWallBlock({ spec, color, outline, k: kb, height: WALL_HEIGHT * this.view.zoom * dpr, crack, outlineWidth: Math.max(1, Math.round(1.6 * dpr * Math.min(1.5, this.view.zoom))) });
+      hit = { bitmap: pixelsToCanvas(img.image), groundX: img.groundX, groundY: img.groundY, scale: dpr };
+    }
+    this.wallBakes.set(id, hit);
+    while (this.wallBakes.size > WALL_BAKES) this.wallBakes.delete(this.wallBakes.keys().next().value!);
+    return hit;
+  }
+
+  /** A wall: its iso block, fading on death/crumble, with an HP bar only while damaged (§12.5). */
+  private drawWall(s: InstanceState, lift: number, now: number): void {
+    const { ctx, view } = this;
+    const pose = s.anim.pose(now, () => 1, true);
+    if (pose.gone) return;
+    const team = teamLook(s.info.teamId);
+    const outline = team?.color ?? seatStyle(s.info.seat).color;
+    const bake = this.wallBake(s.info.specKey, s.info.spec, s.info.stats.color, outline, wallCrackLevel(s.hp, s.info.stats.maxHealth));
+    const feet = toScreen(view, s.x, s.y);
+    const k = 1 / bake.scale;
+    ctx.globalAlpha = (s.info.ghost ? 0.5 : 1) * pose.alpha;
+    ctx.drawImage(
+      bake.bitmap,
+      Math.round(feet.sx - bake.groundX * k),
+      Math.round(feet.sy - bake.groundY * k - lift),
+      Math.round(bake.bitmap.width * k),
+      Math.round(bake.bitmap.height * k),
+    );
+    ctx.globalAlpha = 1;
+    if (!s.alive || lift > 0 || s.info.ghost || this.options.hpBars === false) return;
+    if (!showsHpBar('wall', s.hp, s.info.stats.maxHealth)) return;
+    const top = feet.sy - WALL_HEIGHT * view.zoom - WALL_HALF * view.k;
+    this.drawHpBar(s, feet.sx, top - Math.max(4, 3 * view.zoom), 2 * WALL_HALF * view.zoom * 0.8);
+  }
+
+  /** An HP bar centred on `cx` with its bottom at `y`; returns the y above it. */
+  private drawHpBar(s: InstanceState, cx: number, y: number, width: number): number {
+    const { ctx, view } = this;
+    const frac = Math.max(0, Math.min(1, s.hp / s.info.stats.maxHealth));
+    const bw = Math.max(14, Math.round(width * 0.9));
+    const bh = Math.max(3, Math.round(2.2 * view.zoom));
+    const bx = Math.round(cx - bw / 2);
+    const by = Math.round(y - bh);
+    ctx.fillStyle = HP_COLORS.border;
+    ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
+    ctx.fillStyle = HP_COLORS.back;
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = frac > 0.5 ? HP_COLORS.good : frac > 0.25 ? HP_COLORS.mid : HP_COLORS.low;
+    ctx.fillRect(bx, by, Math.max(frac > 0 ? 1 : 0, Math.round(bw * frac)), bh);
+    // Seat-number badge on the bar's left end (kept readable when zoomed out).
+    if (this.options.badges !== false && s.info.seat >= 0) {
+      const side = Math.max(10, Math.round(bh * 2.4));
+      this.drawBadge(bx - side + 1, by + bh / 2 - side / 2, side, s.info.seat);
+    }
+    return by - 2;
+  }
+
   private drawUnit(s: InstanceState, lift: number, now: number): void {
+    const body = bodyOf(s.info);
+    if (body === 'wall') {
+      this.drawWall(s, lift, now);
+      return;
+    }
     const { ctx, view } = this;
     const width = billboardWidth(s.info.stats.size, view);
     const baked = this.bakedFor(s, width);
@@ -967,29 +1271,11 @@ export class ArenaRenderer {
     const top = this.blit(baked.frame(pose.state, pose.frame, pose.mirror), baked, feet, width, lift + bob, ghost * pose.alpha * (pose.napping ? 0.75 : 1));
     if (!s.alive || lift > 0 || s.info.ghost) return;
 
-    // HP bar.
+    // HP bar (minions: only while damaged).
     let y = top - Math.max(4, 3 * view.zoom);
-    if (this.options.hpBars !== false) {
-      const frac = Math.max(0, Math.min(1, s.hp / s.info.stats.maxHealth));
-      const bw = Math.max(14, Math.round(width * 0.9));
-      const bh = Math.max(3, Math.round(2.2 * view.zoom));
-      const bx = Math.round(feet.sx - bw / 2);
-      const by = Math.round(y - bh);
-      ctx.fillStyle = HP_COLORS.border;
-      ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
-      ctx.fillStyle = HP_COLORS.back;
-      ctx.fillRect(bx, by, bw, bh);
-      ctx.fillStyle = frac > 0.5 ? HP_COLORS.good : frac > 0.25 ? HP_COLORS.mid : HP_COLORS.low;
-      ctx.fillRect(bx, by, Math.max(frac > 0 ? 1 : 0, Math.round(bw * frac)), bh);
-      // Seat-number badge on the bar's left end (kept readable when zoomed out).
-      if (this.options.badges !== false && s.info.seat >= 0) {
-        const side = Math.max(10, Math.round(bh * 2.4));
-        this.drawBadge(bx - side + 1, by + bh / 2 - side / 2, side, s.info.seat);
-      }
-      y = by - 2;
-    }
-    // Own-unit marker: a small seat-coloured arrow.
-    if (this.options.highlightSeat !== undefined && this.options.highlightSeat !== null && s.info.seat === this.options.highlightSeat) {
+    if (this.options.hpBars !== false && showsHpBar(body, s.hp, s.info.stats.maxHealth)) y = this.drawHpBar(s, feet.sx, y, width);
+    // Own-unit marker: a small seat-coloured arrow (not over every minion).
+    if (body !== 'minion' && this.options.highlightSeat !== undefined && this.options.highlightSeat !== null && s.info.seat === this.options.highlightSeat) {
       const a = Math.max(3, 2.5 * view.zoom);
       const bob = Math.sin(now / 200) * a * 0.3;
       ctx.beginPath();

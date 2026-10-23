@@ -10,6 +10,9 @@
 //   * Animation (8 fps): `walk` while MOVING, `attack` for 250 ms after the
 //     unit fires, `hit` for 100 ms after it takes damage, `death` once and
 //     then fade. Priority death > hit > attack > walk > idle.
+//   * M8.5 (§12.5): a factory plays `attack` (door flash) when it makes a
+//     minion (`spawn` with its factoryId), a unit with the BLOCKED flag walks
+//     in place (it is pushing on a wall), and `crumble` ends a body like a death.
 //
 // DOM-free: the cache is generic over the bitmap type, and arena.ts passes a
 // PixelImage → canvas converter (render/canvas.ts). Tests pass identity.
@@ -265,7 +268,7 @@ export class UnitAnimator {
 
   /** Apply the frame flags (FrameUnit[4]). */
   update(flags: number, now: number): void {
-    const moving = (flags & FRAME_FLAGS.MOVING) !== 0;
+    const moving = (flags & (FRAME_FLAGS.MOVING | FRAME_FLAGS.BLOCKED)) !== 0;
     if (moving && !this.moving) this.walkSince = now;
     this.moving = moving;
     this.facingLeft = (flags & FRAME_FLAGS.FACING_LEFT) !== 0;
@@ -283,6 +286,12 @@ export class UnitAnimator {
         break;
       case 'death':
         if (ev.instanceId === this.instanceId && this.deathAt === null) this.deathAt = now;
+        break;
+      case 'crumble':
+        if (ev.ids.includes(this.instanceId) && this.deathAt === null) this.deathAt = now;
+        break;
+      case 'spawn':
+        if (ev.factoryId === this.instanceId) this.attackAt = now;
         break;
       case 'disable':
         if (ev.instanceId === this.instanceId) this.disabled = true;

@@ -21,7 +21,11 @@ export type SfxName =
   | 'death'
   | 'siren'
   | 'victory'
-  | 'badge';
+  | 'badge'
+  /** M8.5 (§12.5): a hit on a wall (stone tick), a wall crumbling (low thud), a factory making a minion (pop). */
+  | 'wallHit'
+  | 'crumble'
+  | 'spawn';
 
 /** Oscillator wave shapes (the WebAudio OscillatorType values we use). */
 export type Wave = 'sine' | 'square' | 'sawtooth' | 'triangle';
@@ -96,6 +100,9 @@ export const SFX: Readonly<Record<SfxName, readonly SfxStep[]>> = {
     note('triangle', C5 / 2, 0.36, 0.5, 0.18),
   ],
   badge: [note('sine', 990, 0, 0.1, 0.16, 1980), note('sine', 1480, 0.07, 0.12, 0.1)],
+  wallHit: [noise('highpass', 2600, 0, 0.035, 0.09), note('square', 1900, 0, 0.03, 0.04, 1500)],
+  crumble: [noise('lowpass', 400, 0, 0.35, 0.3), note('sine', 90, 0, 0.3, 0.26, 40)],
+  spawn: [note('sine', 600, 0, 0.07, 0.14, 1200)],
 };
 
 /** Length of a recipe in seconds (its last step's end). */
@@ -109,7 +116,7 @@ export function sfxDuration(name: SfxName): number {
 
 export const RANGE_MIN = 20;
 export const RANGE_MAX = 300;
-const TYPE_BASE_HZ: Record<UnitType, number> = { soldier: 330, tower: 196 };
+const TYPE_BASE_HZ: Record<UnitType, number> = { soldier: 330, tower: 196, wall: 110, factory: 262 };
 
 /** The shoot pitch (Hz) of a unit: its type's base, up to 1.5 octaves higher at max range. */
 export function shotPitch(stats: { type: UnitType; range: number }): number {
@@ -159,6 +166,9 @@ export const SFX_MIN_GAP_MS: Partial<Record<SfxName, number>> = {
   bigHit: 120,
   death: 70,
   badge: 90,
+  wallHit: 50,
+  crumble: 90,
+  spawn: 60,
   place: 30,
 };
 
@@ -169,6 +179,9 @@ export const SFX_PER_SECOND: Partial<Record<SfxName, number>> = {
   hit: 14,
   bigHit: 6,
   death: 10,
+  wallHit: 10,
+  crumble: 6,
+  spawn: 8,
 };
 
 /** Decides whether a sound may play now (min gap + per-second budget per name). DOM-free. */

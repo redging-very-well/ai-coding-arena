@@ -33,7 +33,7 @@ export const PLACE_MEDALS = ['🥇', '🥈', '🥉', '🎖️'] as const;
 /** Friendly language for each phase (plan §12.4): banner title and a one-line hint. */
 export const PHASE_TEXT: Readonly<Record<Phase, { title: string; hint: string }>> = {
   LOBBY: { title: 'Get ready!', hint: 'The game starts soon. Say hi to Claude!' },
-  PLAN: { title: 'Plan time!', hint: 'Ask Claude for new units, then pick up to 3.' },
+  PLAN: { title: 'Plan time!', hint: 'Ask Claude for new units, then pick up to 4 units and 4 buildings.' },
   PLACEMENT: { title: 'Place your army!', hint: 'Tap a unit, then tap a square. Press READY when you\'re done.' },
   BATTLE: { title: 'CLASH!', hint: 'Watch your army fight!' },
   RESULTS: { title: 'Results!', hint: 'How did your army do?' },

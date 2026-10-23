@@ -23,7 +23,7 @@ import {
 } from '@pixel-clash/shared';
 import { api, request } from '../common/api.js';
 import { SoundEngine, type AudioState } from '../common/audio.js';
-import { ArenaRenderer } from '../common/render/arena.js';
+import { ArenaRenderer, bodyOf } from '../common/render/arena.js';
 import { isBigHit } from '../common/render/fx.js';
 import { MUTE_KEY_SCREEN, countdownCue, revealCue, shotPitch } from '../common/sfx.js';
 import { GameSocket, type WsStatus } from '../common/ws.js';
@@ -317,11 +317,20 @@ export class ScreenController {
       }
       case 'hit': {
         const target = arena.instance(ev.targetId);
-        this.sound.play(target && isBigHit(ev.damage, target.stats.maxHealth) ? 'bigHit' : 'hit');
+        if (target && bodyOf(target) === 'wall') this.sound.play('wallHit');
+        else this.sound.play(target && isBigHit(ev.damage, target.stats.maxHealth) ? 'bigHit' : 'hit');
         break;
       }
-      case 'death':
-        this.sound.play('death');
+      case 'death': {
+        const target = arena.instance(ev.instanceId);
+        this.sound.play(target && bodyOf(target) === 'wall' ? 'crumble' : 'death');
+        break;
+      }
+      case 'crumble':
+        this.sound.play('crumble');
+        break;
+      case 'spawn':
+        if (ev.factoryId) this.sound.play('spawn');
         break;
       default:
         break;

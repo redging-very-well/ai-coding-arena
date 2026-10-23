@@ -3,13 +3,18 @@
 // the breakdown), version, "new!" badge,
 // warnings, the invalid-unit error with an "Ask Claude" prompt, and the code
 // editor buttons ("✏️ Edit code" on own units, "Copy to a new unit" on starters).
+// M8.5 (§12.5): a type tag (⚔️ soldier, 🏹 tower, 🧱 wall, 🏭 factory); wall
+// cards show HP only, factory cards HP, "1 minion every 15 s", "makes 5
+// minions" and the minion's mini sprite in the factory's colour, and the
+// price breakdown its production line.
 
 import { useState } from 'preact/hooks';
-import { playerHintFor, playerHintForIssue, sizeOf, type StatBounds, type UnitCardDTO } from '@pixel-clash/shared';
+import { isNonCombatBuilding, playerHintFor, playerHintForIssue, sizeOf, type StatBounds, type UnitCardDTO } from '@pixel-clash/shared';
+import { minionLook } from '../../common/render/buildings.js';
 import { resolveSprite } from '../../common/render/sprites.js';
 import { seatStyle } from '../../common/seats.js';
 import { cx, formatMoney } from '../../common/ui.js';
-import { breakdownRows, statBars } from '../logic.js';
+import { TYPE_TAGS, breakdownRows, factoryLines, statBars } from '../logic.js';
 import { CopyButton } from './CopyButton.js';
 import { SpriteView } from './SpriteView.js';
 
@@ -45,6 +50,9 @@ export function UnitCard(props: UnitCardProps) {
   const [confirmRetire, setConfirmRetire] = useState(false);
   const size = sizeOf(u.stats);
   const invalid = u.status !== 'valid';
+  const building = isNonCombatBuilding(u.stats.type);
+  const factory = u.stats.type === 'factory';
+  const minion = factory ? minionLook(u.stats.color) : null;
   const seen = () => props.onSeen?.();
 
   const stop = (fn: () => void) => (e: Event) => {
@@ -90,8 +98,8 @@ export function UnitCard(props: UnitCardProps) {
             {u.name}
           </h3>
           <div class="card-tags">
-            <span class="tag">{u.stats.type === 'tower' ? '🏰 tower' : '🗡️ soldier'}</span>
-            <span class="tag">size {size}</span>
+            <span class={cx('tag', `type-${u.stats.type}`)}>{TYPE_TAGS[u.stats.type] ?? u.stats.type}</span>
+            {!building && <span class="tag">size {size}</span>}
             <span class="tag dim">v{u.version}</span>
             {u.isTemplate && <span class="tag dim">starter</span>}
             {props.borrowedRound !== undefined && (
@@ -120,6 +128,13 @@ export function UnitCard(props: UnitCardProps) {
           </li>
         ))}
       </ul>
+
+      {factory && minion && (
+        <div class="factory-info">
+          <SpriteView spec={minion.spec} specKey={minion.key} outline={seatStyle(seat).color} width={24} state={hover ? 'walk' : 'idle'} title="Its minion" />
+          <span>{factoryLines(u.stats, u.breakdown.production?.expected).join(' · ')}</span>
+        </div>
+      )}
 
       {showWarn && (
         <ul class="warnings">
@@ -205,6 +220,15 @@ export function UnitCard(props: UnitCardProps) {
               </tr>
             ))}
           </tbody>
+          {u.breakdown.production && (
+            <tfoot>
+              <tr>
+                <td colSpan={2} class="dim small">
+                  {u.breakdown.production.text}
+                </td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       )}
     </article>

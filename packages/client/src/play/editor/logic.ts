@@ -307,9 +307,12 @@ export interface CostPanel {
 export function costPanel(b: CostBreakdown, cap: number): CostPanel {
   const rows: CostRow[] = [{ label: 'Base', value: null, price: money(b.terms.base), surcharge: 0, nearMax: false }];
   let surcharge = 0;
+  // Walls and factories (§6) pay for health only; a factory adds its production up front.
+  const building = b.formula === 'wall' || b.formula === 'factory';
   for (const stat of PRICED_STATS) {
+    if (building && stat !== 'maxHealth') continue;
     const p = b.parts[stat];
-    const nearMax = p.ratio >= NEAR_MAX_RATIO && p.linear > 0 && CURVE_MAX[stat] > 0;
+    const nearMax = p.ratio >= NEAR_MAX_RATIO && p.linear > 0 && (building || CURVE_MAX[stat] > 0);
     if (nearMax) surcharge += p.curve;
     rows.push({
       label: STAT_LABEL[stat],
@@ -319,6 +322,10 @@ export function costPanel(b: CostBreakdown, cap: number): CostPanel {
       surcharge: p.curve,
       nearMax,
     });
+  }
+  const prod = b.production;
+  if (prod) {
+    rows.push({ label: 'Minions', value: prod.expected, price: `${prod.expected} × ${money(prod.minionValue)} = ${money(prod.total)}`, surcharge: 0, nearMax: false });
   }
   const factor = b.factor > 1 + 1e-9 ? `×${b.factor.toFixed(2).replace(/\.?0+$/, '')} for fast attacks` : null;
   return { cost: b.cost, cap, overCap: b.cost > cap, rows, factor, surcharge };

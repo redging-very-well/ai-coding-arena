@@ -4,11 +4,12 @@
 // other's picks and placements but can't change them. Data comes only from
 // this player's own `private.team` block (never source code).
 
-import { sizeOf, type Phase, type TeamMemberPrivateDTO } from '@pixel-clash/shared';
+import { groupOf, isNonCombatBuilding, sizeOf, type Phase, type TeamMemberPrivateDTO } from '@pixel-clash/shared';
 import { arenaFor, zoneLabel } from '../../common/maps.js';
 import { resolveSprite } from '../../common/render/sprites.js';
 import { seatStyle, teamLook } from '../../common/seats.js';
 import { cx, formatMoney } from '../../common/ui.js';
+import { TYPE_TAGS } from '../logic.js';
 import { useStore } from '../store.js';
 import { SpriteView } from './SpriteView.js';
 import { specKeyOf } from './UnitCard.js';
@@ -51,8 +52,17 @@ function Member({ m, phase, me, submitted, arena }: { m: TeamMemberPrivateDTO; p
       )}
       <div class="tm-cards">
         {m.selection.length === 0 && <span class="dim small">No units picked yet.</span>}
-        {m.selection.map((u) => (
-          <span key={u.unitId} class="tm-card" title={`${u.name}: ${u.stats.maxHealth} HP, ${u.stats.damage} damage, range ${u.stats.range}`}>
+        {/* Units first, then buildings (§12.5), each titled with its type. */}
+        {[...m.selection].sort((a, b) => Number(groupOf(a.stats.type) === 'building') - Number(groupOf(b.stats.type) === 'building')).map((u) => (
+          <span
+            key={u.unitId}
+            class={`tm-card type-${u.stats.type}`}
+            title={
+              isNonCombatBuilding(u.stats.type)
+                ? `${u.name} (${TYPE_TAGS[u.stats.type]}): ${u.stats.maxHealth} HP`
+                : `${u.name} (${TYPE_TAGS[u.stats.type]}): ${u.stats.maxHealth} HP, ${u.stats.damage} damage, range ${u.stats.range}`
+            }
+          >
             <SpriteView spec={resolveSprite(u)} specKey={`tm-${m.playerId}-${specKeyOf(u)}`} outline={seat.color} width={Math.max(18, sizeOf(u.stats) * 2)} />
             <span class="tm-name">{u.name}</span>
             <span class="tm-cost">{formatMoney(u.cost)}</span>

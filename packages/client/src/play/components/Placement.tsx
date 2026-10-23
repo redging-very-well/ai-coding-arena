@@ -5,9 +5,14 @@
 // (debounced 300 ms) and an iso mini-map. Works for every zone orientation of
 // the §9.2 maps (row 0 is always the front). Team mode: the mini-map shows the
 // teammates' zones and placements live as ghosts, and the Team panel their picks.
+// M8.5 (§12.5): the palette has a Units row and a Buildings row, counters
+// "Fighters 7/12 · Factories 1/2 · Walls 6/12", walls are solid squares that
+// join their neighbours, soldiers and factories boxed in by walls get a red
+// outline ("Walled in! Leave a gap."), and with a wall chosen a press-and-drag
+// paints walls along the cells passed over (stops at the copy cap or budget).
 
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { cornerZone, sizeOf, type MapZone, type PlacementDTO, type UnitCardDTO } from '@pixel-clash/shared';
+import { cornerZone, groupOf, sizeOf, type MapZone, type PlacementDTO, type UnitCardDTO } from '@pixel-clash/shared';
 import { countdownText } from '../../common/advance.js';
 import { ApiError, api } from '../../common/api.js';
 import { resolveSprite } from '../../common/render/sprites.js';
@@ -15,15 +20,21 @@ import { arenaFor, toMapZone, zoneLabel } from '../../common/maps.js';
 import { seatStyle } from '../../common/seats.js';
 import { cx, debounce, formatMoney } from '../../common/ui.js';
 import {
+  GROUP_TITLES,
+  TYPE_TAGS,
   budgetText,
   cellFill,
   copiesOf,
+  copyCounterText,
+  copyCounts,
   copyLastLayout,
   isFrontCell,
   placementAt,
   spentOf,
   tapCell,
   towardCentre,
+  trappedKeys,
+  typeLookup,
   zoneGrid,
   type PlacementRules,
 } from '../logic.js';
@@ -77,10 +88,24 @@ export function Placement() {
     return (priv?.selection ?? []).map((id) => byId.get(id)).filter((u): u is UnitCardDTO => !!u);
   }, [priv?.roster, priv?.armory, priv?.selection]);
   const unitsById = useMemo(() => new Map(palette.map((u) => [u.unitId, u])), [palette]);
+  const typeOf = useMemo(() => typeLookup(palette), [palette]);
   const rules: PlacementRules = useMemo(
-    () => ({ costs: new Map(palette.map((u) => [u.unitId, u.cost])), budget: priv?.budget ?? st.caps.budget, maxCopies: st.caps.maxCopies }),
-    [palette, priv?.budget, st.caps],
+    () => ({
+      costs: new Map(palette.map((u) => [u.unitId, u.cost])),
+      budget: priv?.budget ?? st.caps.budget,
+      maxCopies: st.caps.maxCopies,
+      typeOf,
+      maxWallCopies: st.caps.maxWallCopies,
+      maxFactoryCopies: st.caps.maxFactoryCopies,
+    }),
+    [palette, typeOf, priv?.budget, st.caps],
   );
+  /** The newest placements (a wall paint stroke places several before the next render). */
+  const latest = useRef<PlacementDTO[]>([]);
+  /** A wall paint stroke is under way (pointer held down with a wall chosen). */
+  const painting = useRef(false);
+  /** The click that ends a press which already placed a wall must not remove it again. */
+  const swallowClick = useRef(false);
 
   // Server placement wins unless we have unsaved local edits.
   useEffect(() => {
@@ -92,8 +117,20 @@ export function Placement() {
   }, [palette]);
 
   const placements = local ?? priv?.placement ?? [];
+  latest.current = placements;
   const spent = spentOf(placements, rules.costs);
   const copies = copiesOf(placements);
+  const counts = copyCounts(placements, typeOf);
+  const trapped = useMemo(() => (zone ? trappedKeys(zone, placements, typeOf) : new Set<string>()), [zone, placements, typeOf]);
+  useEffect(() => {
+    const stop = () => (painting.current = false);
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+    return () => {
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+    };
+  }, []);
 
   const save = useMemo(
     () =>
@@ -123,6 +160,7 @@ export function Placement() {
   useEffect(() => () => save.flush(), [save]);
 
   const commit = (next: PlacementDTO[]) => {
+    latest.current = next;
     seq.current++;
     dirty.current = true;
     setLocal(next);
@@ -156,14 +194,50 @@ export function Placement() {
   if (!zone) return <section class="panel">Getting your zone…</section>;
 
   const onCell = (col: number, row: number) => {
-    const r = tapCell(placements, col, row, chosen, rules);
+    if (swallowClick.current) {
+      swallowClick.current = false;
+      return;
+    }
+    const now = latest.current;
+    const r = tapCell(now, col, row, chosen, rules);
     if (!r.ok) {
       bump(`${col},${row}`, r.message);
       return;
     }
     setNote(null);
-    store.sound.play(r.placements.length < placements.length ? 'remove' : 'place', { force: true });
+    store.sound.play(r.placements.length < now.length ? 'remove' : 'place', { force: true });
     commit(r.placements);
+  };
+
+  const wallChosen = chosen !== null && typeOf(chosen) === 'wall';
+  /** Paint a wall on an empty cell (press or drag); false stops the stroke (cap, budget). */
+  const paintAt = (col: number, row: number): boolean => {
+    if (placementAt(latest.current, col, row)) return true;
+    const r = tapCell(latest.current, col, row, chosen, rules);
+    if (!r.ok) {
+      bump(`${col},${row}`, r.message);
+      return false;
+    }
+    setNote(null);
+    store.sound.play('place', { force: true });
+    commit(r.placements);
+    return true;
+  };
+  const onCellDown = (e: PointerEvent, col: number, row: number) => {
+    swallowClick.current = false;
+    if (!wallChosen || e.button > 0 || placementAt(latest.current, col, row)) return;
+    painting.current = paintAt(col, row);
+    swallowClick.current = true;
+    // Touch pointers are captured by the pressed cell: release so the stroke can cross cells.
+    (e.target as Element | null)?.releasePointerCapture?.(e.pointerId);
+  };
+  const onGridMove = (e: PointerEvent) => {
+    if (!painting.current) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-cell]');
+    const key = el?.dataset.cell;
+    if (!key) return;
+    const [col, row] = key.split(',').map(Number) as [number, number];
+    if (!paintAt(col, row)) painting.current = false;
   };
 
   const dir = towardCentre(zone);
@@ -203,25 +277,35 @@ export function Placement() {
 
       <div class="placement-layout">
         <div class="grid-wrap">
-          <div class={cx('zone-grid', ready && 'is-ready')} ref={gridRef} role="grid" aria-label={`Your ${where}, 6 by 6 squares`}>
+          <div
+            class={cx('zone-grid', ready && 'is-ready', wallChosen && 'paint-walls')}
+            ref={gridRef}
+            role="grid"
+            aria-label={`Your ${where}, 6 by 6 squares`}
+            onPointerMove={onGridMove}
+          >
             {grid.map((c) => {
               const p = placementAt(placements, c.col, c.row);
               const u = p ? unitsById.get(p.unitId) : undefined;
               const key = `${c.col},${c.row}`;
               const front = isFrontCell(zone, c.col, c.row);
+              const wall = u?.stats.type === 'wall';
+              const boxed = !!u && trapped.has(key);
               return (
                 <button
                   key={key}
-                  class={cx('cell', p && 'filled', front && 'front', (c.gx + c.gy) % 2 === 1 && 'alt', shakeCell === key && 'shake')}
-                  style={{ gridColumn: c.gx + 1, gridRow: c.gy + 1 }}
+                  data-cell={key}
+                  class={cx('cell', p && 'filled', wall && 'wall', boxed && 'trapped', front && 'front', (c.gx + c.gy) % 2 === 1 && 'alt', shakeCell === key && 'shake')}
+                  style={{ gridColumn: c.gx + 1, gridRow: c.gy + 1, ...(wall && u ? { '--wall': u.stats.color } : {}) }}
+                  onPointerDown={(e) => onCellDown(e, c.col, c.row)}
                   onClick={() => onCell(c.col, c.row)}
-                  aria-label={u ? `${u.name}, tap to remove` : 'Empty square'}
+                  aria-label={u ? `${u.name}${boxed ? ', walled in' : ''}, tap to remove` : 'Empty square'}
                 >
                   {u && (
                     <SpriteView
                       spec={resolveSprite(u)}
                       specKey={specKeyOf(u)}
-                      outline={seatStyle(seat).color}
+                      outline={wall ? null : seatStyle(seat).color}
                       width={cellFill(u.stats) * cellPx}
                       mirror={dir.dx < 0}
                     />
@@ -254,8 +338,11 @@ export function Placement() {
               <span class="budget-fill" style={{ width: `${pct}%` }} />
             </div>
             <div class="budget-text">{budgetText(spent, rules.budget)}</div>
-            <div class="dim small">
-              {placements.length} / {rules.maxCopies} units
+            <div class="dim small copy-counts">
+              {copyCounterText(counts, rules, {
+                walls: palette.some((u) => u.stats.type === 'wall'),
+                factories: palette.some((u) => u.stats.type === 'factory'),
+              })}
             </div>
           </div>
         </aside>
@@ -266,33 +353,58 @@ export function Placement() {
           {note.text}
         </p>
       )}
+      {trapped.size > 0 && (
+        <p class="note bad trapped-note" role="status">
+          🧱 Walled in! Leave a gap so your {trapped.size === 1 ? 'unit' : 'units'} can get out.
+        </p>
+      )}
 
-      <div class="palette" role="radiogroup" aria-label="Choose a unit to place">
+      <div class="palette-groups" role="radiogroup" aria-label="Choose a unit to place">
         {palette.length === 0 && <p class="dim">No units picked for this round.</p>}
-        {palette.map((u) => {
-          const affordable = spent + u.cost <= rules.budget;
+        {(['unit', 'building'] as const).map((group) => {
+          const items = palette.filter((u) => groupOf(u.stats.type) === group);
+          if (items.length === 0) return null;
           return (
-            <button
-              key={u.unitId}
-              role="radio"
-              aria-checked={chosen === u.unitId}
-              class={cx('pal-item', chosen === u.unitId && 'chosen', !affordable && 'cant')}
-              onClick={() => {
-                setChosen(chosen === u.unitId ? null : u.unitId);
-                setNote(null);
-              }}
-            >
-              <span class="pal-sprite">
-                <SpriteView spec={resolveSprite(u)} specKey={specKeyOf(u)} outline={seatStyle(seat).color} width={Math.max(20, sizeOf(u.stats) * 2.4)} />
-              </span>
-              <span class="pal-name">{u.name}</span>
-              <span class="pal-cost">{formatMoney(u.cost)}</span>
-              <span class="pal-copies">×{copies.get(u.unitId) ?? 0}</span>
-            </button>
+            <div key={group} class="palette-row">
+              <span class="palette-title">{GROUP_TITLES[group]}</span>
+              <div class="palette">
+                {items.map((u) => {
+                  const affordable = spent + u.cost <= rules.budget;
+                  return (
+                    <button
+                      key={u.unitId}
+                      role="radio"
+                      aria-checked={chosen === u.unitId}
+                      class={cx('pal-item', chosen === u.unitId && 'chosen', !affordable && 'cant')}
+                      title={TYPE_TAGS[u.stats.type]}
+                      onClick={() => {
+                        setChosen(chosen === u.unitId ? null : u.unitId);
+                        setNote(null);
+                      }}
+                    >
+                      <span class="pal-sprite">
+                        <SpriteView
+                          spec={resolveSprite(u)}
+                          specKey={specKeyOf(u)}
+                          outline={u.stats.type === 'wall' ? null : seatStyle(seat).color}
+                          width={u.stats.type === 'wall' ? 40 : Math.max(20, sizeOf(u.stats) * 2.4)}
+                        />
+                      </span>
+                      <span class="pal-name">{u.name}</span>
+                      <span class="pal-cost">{formatMoney(u.cost)}</span>
+                      <span class="pal-copies">×{copies.get(u.unitId) ?? 0}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           );
         })}
       </div>
-      <p class="dim small hint">Tap a unit above, then tap a square. Tap a placed unit to take it away.</p>
+      <p class="dim small hint">
+        Tap a unit above, then tap a square. Tap a placed unit to take it away.
+        {wallChosen && ' With a wall chosen, press and drag to paint a line of walls.'}
+      </p>
 
       <div class="placement-actions">
         <button

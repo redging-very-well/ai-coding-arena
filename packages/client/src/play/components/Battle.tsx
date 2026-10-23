@@ -45,7 +45,11 @@ export function Battle() {
   const pb = st.game?.battle;
   const secondsLeft = pb ? ticksToSeconds(pb.totalTicks - pb.tick) : null;
   const mine = st.myBattle;
-  const alive = mine.filter((u) => u.alive).length;
+  // Fighters only, like the /screen army bars (§5.2: walls don't count as standing).
+  const fighters = mine.filter((u) => !u.wall);
+  const alive = fighters.filter((u) => u.alive).length;
+  const walls = mine.length - fighters.length;
+  const wallsUp = mine.filter((u) => u.wall && u.alive).length;
   const fielded = st.reveal?.players.some((p) => p.playerId === st.player?.id) ?? false;
   const napping = mine.filter((u) => u.alive && u.napping);
 
@@ -69,8 +73,18 @@ export function Battle() {
           {fielded ? (
             <>
               <h3>
-                My army: {alive} / {mine.length} standing
+                My army: {alive} / {fighters.length} standing
               </h3>
+              {walls > 0 && (
+                <p class="small dim">
+                  🧱 Walls: {wallsUp} / {walls} up
+                </p>
+              )}
+              {st.myMinions > 0 && (
+                <p class="small minion-count">
+                  🏭 {st.myMinions} minion{st.myMinions === 1 ? '' : 's'} out fighting
+                </p>
+              )}
               <ul class="bu-list">
                 {mine.map((u) => (
                   <UnitRow key={u.instanceId} u={u} />

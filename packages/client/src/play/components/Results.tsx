@@ -5,12 +5,12 @@
 // buttons for units with errors. Also a replay of the last battle.
 
 import { useEffect, useState } from 'preact/hooks';
-import { BADGES, BADGE_IDS, type BattleReportDTO, type GameStateDTO, type TeamTableRowDTO } from '@pixel-clash/shared';
+import { BADGES, BADGE_IDS, DEFAULT_CONFIG, type BattleReportDTO, type GameStateDTO, type TeamTableRowDTO } from '@pixel-clash/shared';
 import { ApiError, api } from '../../common/api.js';
 import { teamOfPlayer } from '../../common/maps.js';
 import { seatStyle } from '../../common/seats.js';
 import { PLACE_MEDALS, cx, ordinal } from '../../common/ui.js';
-import { BADGE_PLAYER_TEXT, groupErrors, scoreLines, scoreParts, unitPrompts } from '../logic.js';
+import { BADGE_PLAYER_TEXT, groupErrors, scoreLines, scoreParts, factoryReportLines, stuckPrompts, unitPrompts } from '../logic.js';
 import { getStore, useStore } from '../store.js';
 import { ArenaView } from './Battle.js';
 import { CopyButton } from './CopyButton.js';
@@ -107,7 +107,8 @@ export function Results() {
   const fieldedCards = last ? [...roster, ...(st.priv?.armory ?? [])].filter((u) => u.lastBattle?.round === last.round) : [];
   const myInvention = last?.inventors?.find((i) => i.playerId === meId);
   const groups = report ? groupErrors(report.errors) : [];
-  const extra = last ? unitPrompts(roster, last.round, report) : [];
+  const extra = last ? [...unitPrompts(roster, last.round, report), ...stuckPrompts(report, st.reveal?.totalTicks ?? DEFAULT_CONFIG.timers.battleTicks)] : [];
+  const factoryLinesOfReport = factoryReportLines(report);
   const myBoard = game.scoreboard.findIndex((s) => s.playerId === meId);
   const myEntry = myBoard >= 0 ? game.scoreboard[myBoard]! : undefined;
   const myPlace = myEntry?.place ?? myBoard + 1;
@@ -256,6 +257,11 @@ export function Results() {
                 })}
               </tbody>
             </table>
+            {factoryLinesOfReport.map((l) => (
+              <p key={l} class="small factory-line">
+                {l}
+              </p>
+            ))}
           </div>
         )}
       </div>

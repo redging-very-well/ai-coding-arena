@@ -118,6 +118,8 @@ export interface DamageNumber {
   at: number;
   text: string;
   big: boolean;
+  /** Fill colour of a label ("+1" in the seat colour); null = the damage-number colours. */
+  color: string | null;
 }
 
 /**
@@ -205,7 +207,7 @@ export class FxLayer {
     gravity: 0,
   }));
   readonly flashes = new Pool<Flash>(MAX_FLASHES, () => ({ alive: false, x: 0, y: 0, at: 0, size: 4, color: '#fff' }));
-  readonly numbers = new Pool<DamageNumber>(MAX_DAMAGE_NUMBERS, () => ({ alive: false, x: 0, y: 0, at: 0, text: '', big: false }));
+  readonly numbers = new Pool<DamageNumber>(MAX_DAMAGE_NUMBERS, () => ({ alive: false, x: 0, y: 0, at: 0, text: '', big: false, color: null }));
   readonly shake = new ScreenShake();
 
   constructor(public options: FxOptions = {}) {}
@@ -255,6 +257,51 @@ export class FxLayer {
     // A minus sign and a warm colour keep it apart from the white seat-number badges.
     d.text = `-${Math.max(1, Math.round(damage))}`;
     d.big = big;
+    d.color = null;
+  }
+
+  /** A rising label in a colour (a factory's "+1" when it makes a minion, §12.5). */
+  label(x: number, y: number, text: string, color: string, now: number): void {
+    const d = this.numbers.take();
+    d.x = x;
+    d.y = y;
+    d.at = now;
+    d.text = text;
+    d.big = false;
+    d.color = color;
+  }
+
+  /** A small "pop" puff (a minion appears): a ring of light particles. */
+  puff(x: number, y: number, scale: number, colors: readonly string[]): void {
+    const n = this.reducedMotion ? 4 : 10;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const sp = (40 + rand() * 40) * scale;
+      const color = colors[i % colors.length] ?? '#fff';
+      this.spawn(x, y, Math.cos(a) * sp, Math.sin(a) * sp * 0.5 - 20 * scale, 260 + rand() * 120, Math.max(1, Math.round(scale * 1.5)), color, 60 * scale);
+    }
+  }
+
+  /** A wall crumbles: stone chunks falling off and a dust cloud (§12.5). */
+  crumble(x: number, y: number, width: number, scale: number, colors: readonly string[]): void {
+    const chunks = this.reducedMotion ? 6 : 18;
+    for (let i = 0; i < chunks; i++) {
+      const color = colors[i % colors.length] ?? '#888';
+      const ox = (rand() - 0.5) * width;
+      const oy = -rand() * width * 0.6;
+      this.spawn(x + ox, y + oy, (rand() - 0.5) * 70 * scale, -rand() * 60 * scale, 500 + rand() * 300, Math.max(2, Math.round(scale * (2 + rand() * 2))), color, 520 * scale);
+    }
+    const dust = this.reducedMotion ? 3 : 10;
+    for (let i = 0; i < dust; i++) {
+      const a = (i / dust) * Math.PI * 2;
+      this.spawn(x + Math.cos(a) * width * 0.3, y, Math.cos(a) * 50 * scale, Math.sin(a) * 18 * scale - 10 * scale, 600 + rand() * 300, Math.max(2, Math.round(scale * 3)), '#B8B2A6', -10 * scale);
+    }
+  }
+
+  /** A tiny dust puff at the feet of a unit pushing on a wall. */
+  dust(x: number, y: number, scale: number): void {
+    if (this.reducedMotion) return;
+    this.spawn(x + (rand() - 0.5) * 6 * scale, y, (rand() - 0.5) * 30 * scale, -15 * scale - rand() * 15 * scale, 280, Math.max(1, Math.round(scale * 1.5)), '#A89F90', 0);
   }
 
   bigHit(fraction: number, now: number): void {
@@ -338,7 +385,7 @@ export class FxLayer {
       ctx.globalAlpha = pose.alpha;
       const y = Math.round(d.y - pose.rise);
       ctx.strokeText(d.text, Math.round(d.x), y);
-      ctx.fillStyle = d.big ? '#FFD447' : '#FF8A7A';
+      ctx.fillStyle = d.color ?? (d.big ? '#FFD447' : '#FF8A7A');
       ctx.fillText(d.text, Math.round(d.x), y);
     }
     ctx.globalAlpha = 1;

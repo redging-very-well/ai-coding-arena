@@ -1,13 +1,15 @@
-// "My Units" (plan §12.1): the roster as cards. In PLAN a tap selects a card
-// (max 3 types; a 4th tap shakes the card). Outside PLAN the cards are
-// read-only and the status line explains when Claude can submit. With Open
-// Armory on (§9.1) a second tab "Armory" lists other players' units named
-// "Ogre (Ninja Sam)", selectable in the same ≤ 3 pool.
+// "My Units" (plan §12.1, §12.5): the roster as cards in two sections,
+// Units (soldiers) and Buildings (towers, walls, factories). In PLAN a tap
+// selects a card (up to 4 of each group; a 5th tap in a group shakes the card
+// with "4 buildings max"). Outside PLAN the cards are read-only and the status
+// line explains when Claude can submit. With Open Armory on (§9.1) a second
+// tab "Armory" lists other players' units named "Ogre (Ninja Sam)", grouped
+// the same way and selectable in the same pools.
 
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import type { Phase, UnitCardDTO } from '@pixel-clash/shared';
+import { groupOf, type Phase, type UnitCardDTO, type UnitGroup } from '@pixel-clash/shared';
 import { ApiError, api } from '../../common/api.js';
-import { toggleSelection } from '../logic.js';
+import { GROUP_TITLES, groupFullText, overCapText, pickCounterText, pickCounts, toggleGroupedSelection, typeLookup } from '../logic.js';
 import { getStore, useStore } from '../store.js';
 import { UnitCard } from './UnitCard.js';
 
@@ -76,7 +78,11 @@ export function Roster(props: { phase: Phase }) {
   const armory = priv?.armory ?? [];
   const shakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selection = pending ?? priv?.selection ?? [];
-  const max = st.caps.maxTypes;
+  const limits: Record<UnitGroup, number> = { unit: st.caps.maxUnitTypes, building: st.caps.maxBuildingTypes };
+  const typeOf = useMemo(() => typeLookup([...(roster ?? []), ...armory]), [roster, armory]);
+  const counts = pickCounts(selection, typeOf);
+  const full = counts.unit >= limits.unit && counts.building >= limits.building;
+  const overCap = planning ? overCapText(counts, limits) : null;
 
   // Server state wins once it catches up.
   useEffect(() => setPending(null), [priv?.selection.join(',')]);
@@ -90,12 +96,12 @@ export function Roster(props: { phase: Phase }) {
   };
 
   const tap = async (u: UnitCardDTO) => {
-    const r = toggleSelection(selection, u, max);
+    const r = toggleGroupedSelection(selection, u, typeOf, limits);
     if (!r.ok) {
       doShake(
         u.unitId,
         r.reason === 'full'
-          ? `You can pick ${max} units. Tap a picked one to swap it out.`
+          ? groupFullText(r.group, r.max)
           : 'armoryId' in u
             ? `${u.name} doesn't fit the rules right now. Pick another one!`
             : `${u.name} needs fixing before you can pick it. Ask Claude!`,
@@ -152,16 +158,15 @@ export function Roster(props: { phase: Phase }) {
         ) : (
           <h2>My Units</h2>
         )}
-        {planning ? (
-          <span class={`pick-count ${selection.length === max ? 'full' : ''}`}>
-            Picked {selection.length} / {max}
-          </span>
-        ) : null}
+        {planning ? <span class={`pick-count ${full ? 'full' : ''}`}>{pickCounterText(counts, limits)}</span> : null}
       </div>
       <p class="status-line">
         {planning ? (
           <>
-            <strong>Tap up to {max} units</strong> to use this round. Claude can send new units now!
+            <strong>
+              Tap up to {limits.unit} units and {limits.building} buildings
+            </strong>{' '}
+            to use this round. Claude can send new units now!
           </>
         ) : props.phase === 'LOBBY' ? (
           <>Claude can send new units at Plan time. It can already make and check them now!</>
@@ -169,20 +174,40 @@ export function Roster(props: { phase: Phase }) {
           <>Claude can send new units at Plan time.</>
         )}
       </p>
-      {note && (
+      {(note ?? overCap) && (
         <p class="note bad" role="alert">
-          {note}
+          {note ?? overCap}
         </p>
       )}
       {armoryOn && tab === 'armory' && (
         <>
           <p class="dim small">
-            Open Armory: units other players used in a battle. Borrow them for your army (they count toward your {max} picks). They can't
+            Open Armory: units other players used in a battle. Borrow them for your army (they count toward your picks). They can't
             be changed, but Claude can build you a counter or an improved version!
           </p>
           {armory.length === 0 && <p class="dim">No units in the Armory yet. Units join it when a battle ends.</p>}
-          <div class="card-grid">
-            {armory.map((u) => (
+          {grouped(armory).map(([group, cards]) => (
+            <RosterSection key={group} group={group} picked={counts[group]} max={limits[group]} planning={planning}>
+              {cards.map((u) => (
+                <UnitCard
+                  key={u.unitId}
+                  unit={u}
+                  seat={seat}
+                  bounds={st.bounds}
+                  selected={selection.includes(u.unitId)}
+                  onTap={planning ? () => void tap(u) : undefined}
+                  shake={shake?.id === u.unitId}
+                  borrowedRound={u.roundAdded}
+                />
+              ))}
+            </RosterSection>
+          ))}
+        </>
+      )}
+      <div hidden={armoryOn && tab === 'armory'}>
+        {grouped(sorted).map(([group, cards]) => (
+          <RosterSection key={group} group={group} picked={counts[group]} max={limits[group]} planning={planning}>
+            {cards.map((u) => (
               <UnitCard
                 key={u.unitId}
                 unit={u}
@@ -191,30 +216,41 @@ export function Roster(props: { phase: Phase }) {
                 selected={selection.includes(u.unitId)}
                 onTap={planning ? () => void tap(u) : undefined}
                 shake={shake?.id === u.unitId}
-                borrowedRound={u.roundAdded}
+                isNew={isNew(u)}
+                onSeen={() => markSeen(u)}
+                onRetire={planning ? () => void retire(u) : undefined}
+                onEdit={() => store.openEditor({ mode: 'edit', unitId: u.unitId, name: u.name })}
+                onCopy={() => store.openEditor({ mode: 'copy', templateId: u.unitId, templateName: u.name })}
               />
             ))}
-          </div>
-        </>
-      )}
-      <div class="card-grid" hidden={armoryOn && tab === 'armory'}>
-        {sorted.map((u) => (
-          <UnitCard
-            key={u.unitId}
-            unit={u}
-            seat={seat}
-            bounds={st.bounds}
-            selected={selection.includes(u.unitId)}
-            onTap={planning ? () => void tap(u) : undefined}
-            shake={shake?.id === u.unitId}
-            isNew={isNew(u)}
-            onSeen={() => markSeen(u)}
-            onRetire={planning ? () => void retire(u) : undefined}
-            onEdit={() => store.openEditor({ mode: 'edit', unitId: u.unitId, name: u.name })}
-            onCopy={() => store.openEditor({ mode: 'copy', templateId: u.unitId, templateName: u.name })}
-          />
+          </RosterSection>
         ))}
       </div>
     </section>
+  );
+}
+
+/** Cards split into Units and Buildings (in order; an empty group is left out). */
+function grouped<T extends UnitCardDTO>(cards: readonly T[]): Array<[UnitGroup, T[]]> {
+  const out: Array<[UnitGroup, T[]]> = [
+    ['unit', cards.filter((u) => groupOf(u.stats.type) === 'unit')],
+    ['building', cards.filter((u) => groupOf(u.stats.type) === 'building')],
+  ];
+  return out.filter(([, list]) => list.length > 0);
+}
+
+function RosterSection(props: { group: UnitGroup; picked: number; max: number; planning: boolean; children: preact.ComponentChildren }) {
+  return (
+    <div class="roster-group">
+      <h3 class="group-head">
+        {props.group === 'unit' ? '⚔️' : '🏰'} {GROUP_TITLES[props.group]}
+        {props.planning && (
+          <span class={`pick-count ${props.picked > props.max ? 'over' : props.picked >= props.max ? 'full' : ''}`}>
+            {props.picked} / {props.max} picked
+          </span>
+        )}
+      </h3>
+      <div class="card-grid">{props.children}</div>
+    </div>
   );
 }

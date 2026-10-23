@@ -294,7 +294,7 @@ export function UnitEditor({ target }: { target: EditorTarget }) {
             setOpened({ unitId: null, baseVersion: null, saved: u.source, start: draft.source, draftKey: key, name: `Copy of ${u.name}` });
           } else {
             setCopySource(u.source);
-            setCopyName(`My ${u.stats.type === 'tower' ? 'Tower' : 'Soldier'}`);
+            setCopyName(`My ${({ soldier: 'Soldier', tower: 'Tower', wall: 'Wall', factory: 'Factory' } as const)[u.stats.type] ?? 'Unit'}`);
           }
         }
       })
@@ -656,7 +656,12 @@ export function UnitEditor({ target }: { target: EditorTarget }) {
       <div class="editor-body">
         <div class="code-box">
           <div ref={hostRef} class="code-host" />
-          <p class="dim small code-help">Change the numbers in constructor() and the moves in update(). Tab indents; press Esc then Tab to leave the code.</p>
+          <p class="dim small code-help">
+            {result?.ok && result.unit.stats.type === 'wall'
+              ? 'Change the numbers in constructor(). Walls have no update(): they just stand there.'
+              : 'Change the numbers in constructor() and the moves in update().'}{' '}
+            Tab indents; press Esc then Tab to leave the code.
+          </p>
         </div>
         <aside class="editor-side" aria-live="polite">
           <CheckStatus status={status} result={result} requestError={requestError} />

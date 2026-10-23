@@ -8,7 +8,7 @@
 // The zod ConfigSchema is checked too (validateDraft), so its bounds and
 // cross-field rules (e.g. sudden death start < end) show inline as well.
 
-import { ConfigSchema, checkStats, computeCost, type CostStats, type GameConfig } from '@pixel-clash/shared';
+import { ConfigSchema, checkStats, computeCost, isNonCombatBuilding, pricingOf, type CostStats, type GameConfig } from '@pixel-clash/shared';
 
 export interface QuickField {
   /** Config path, e.g. "caps.budget" or "scoring.placePoints.0". */
@@ -81,8 +81,11 @@ export const QUICK_GROUPS: QuickGroup[] = [
     fields: [
       { path: 'caps.budget', label: 'Budget per round ($)', help: 'Credits each player gets to place units every round (resets each round).', unit: '$', min: 1, step: 50, integer: true },
       { path: 'caps.unitCost', label: 'Max cost of one unit ($)', help: 'A unit priced above this is rejected. The starter templates must stay under it.', unit: '$', min: 1, step: 10, integer: true },
-      { path: 'caps.maxTypes', label: 'Unit types per round', help: 'How many different designs a player can field in one round.', min: 1, step: 1, integer: true },
-      { path: 'caps.maxCopies', label: 'Max units placed per player', help: 'Total copies a player can put on the arena in one round.', min: 1, step: 1, integer: true },
+      { path: 'caps.maxUnitTypes', label: 'Unit types per round', help: 'How many different soldier designs a player can field in one round.', min: 1, step: 1, integer: true },
+      { path: 'caps.maxBuildingTypes', label: 'Building types per round', help: 'How many different tower, wall and factory designs a player can field in one round.', min: 1, step: 1, integer: true },
+      { path: 'caps.maxCopies', label: 'Max fighters placed per player', help: 'Soldiers, towers and factories a player can put on the arena in one round (walls count separately).', min: 1, step: 1, integer: true },
+      { path: 'caps.maxWallCopies', label: 'Max walls placed per player', help: 'Walls a player can put on the arena in one round, on top of the fighters.', min: 0, step: 1, integer: true },
+      { path: 'caps.maxFactoryCopies', label: 'Max factories placed per player', help: 'Of the fighters, how many can be factories.', min: 0, step: 1, integer: true },
       { path: 'caps.maxDesigns', label: 'Max designs per player', help: 'Active designs each player can keep (the two templates don’t count).', min: 1, step: 1, integer: true },
     ],
   },
@@ -121,6 +124,42 @@ export const QUICK_GROUPS: QuickGroup[] = [
       { ...money, path: 'cost.speed', label: '$ per speed', help: 'Price of each px/tick of movement speed (towers have 0).', step: 0.5 },
       { ...money, path: 'cost.size', label: '$ per px size (above 6)', help: 'Price of each pixel of body radius above 6.' },
       { path: 'cost.curveK', label: 'Max-stat steepness k (maxed stat costs 1+k ×)', help: '0 = straight-line prices. With k = 2 a maxed stat costs 3× and a half-max stat 1.5×.', min: 0, max: 5, step: 0.25 },
+    ],
+  },
+  {
+    // M8.5 (§5.2, §6, §9.3): wall and factory prices, their stat ranges, the minion and the factory caps.
+    id: 'buildings',
+    title: 'Walls & factories',
+    fields: [
+      { ...money, path: 'cost.wall.base', label: 'Wall base cost', help: 'Every wall pays this before its health.', step: 1 },
+      { ...money, path: 'cost.wall.hp', label: 'Wall $ per HP', help: 'Price of each point of wall health (before the curve). Walls are cheap per HP: they can’t move or fight and count $0 at the end.', step: 0.01 },
+      { ...money, path: 'cost.factory.base', label: 'Factory base cost', help: 'Every factory pays this before its health and minions.', step: 1 },
+      { ...money, path: 'cost.factory.hp', label: 'Factory $ per HP', help: 'Price of each point of factory health (before the curve).', step: 0.01 },
+      {
+        path: 'cost.factory.minionDiscount',
+        label: 'Minion price share',
+        help: 'A factory pays this share of a minion’s soldier price for each minion it can make (they arrive during the battle, so less than 100%).',
+        unit: '%',
+        toDisplay: (v: number) => v * 100,
+        fromDisplay: (v: number) => v / 100,
+        min: 1,
+        max: 100,
+        step: 5,
+      },
+      { path: 'stats.bounds.wallHealth.min', label: 'Wall health: min', help: 'The least HP a wall can have.', min: 1, step: 10, integer: true },
+      { path: 'stats.bounds.wallHealth.max', label: 'Wall health: max', help: 'The most HP a wall can have.', min: 1, step: 50, integer: true },
+      { path: 'stats.bounds.factoryHealth.min', label: 'Factory health: min', help: 'The least HP a factory can have.', min: 1, step: 10, integer: true },
+      { path: 'stats.bounds.factoryHealth.max', label: 'Factory health: max', help: 'The most HP a factory can have.', min: 1, step: 50, integer: true },
+      { ...tickSeconds, path: 'stats.bounds.productionInterval.min', label: 'Fastest minion every', help: 'The shortest time a factory can take to build one minion.', min: 1 },
+      { ...tickSeconds, path: 'stats.bounds.productionInterval.max', label: 'Slowest minion every', help: 'The longest time a factory can take to build one minion.', min: 1 },
+      { path: 'factory.maxMinionsPerFactory', label: 'Minions per factory per battle', help: 'The most minions one factory makes in a battle (its price counts them).', min: 1, step: 1, integer: true },
+      { path: 'factory.maxAlivePerFactory', label: 'Minions alive per factory', help: 'A factory waits while this many of its minions are alive.', min: 1, step: 1, integer: true },
+      { path: 'factory.maxAlivePerPlayer', label: 'Minions alive per player', help: 'All of a player’s factories together (also limited to 40 ÷ players).', min: 1, step: 1, integer: true },
+      { path: 'factory.maxAlivePerBattle', label: 'Minions alive per battle', help: 'The most minions in the whole arena at once (keeps big battles smooth).', min: 1, step: 1, integer: true },
+      { path: 'factory.minion.maxHealth', label: 'Minion health', help: 'The built-in minion’s HP (must stay within the soldier bounds).', min: 1, step: 5 },
+      { path: 'factory.minion.damage', label: 'Minion damage', help: 'Damage per minion hit (melee).', min: 0, step: 1 },
+      { path: 'factory.minion.speed', label: 'Minion speed', help: 'Pixels per tick (60 ticks = 1 s).', unit: 'px/tick', min: 0.1, step: 0.1 },
+      { path: 'factory.minion.size', label: 'Minion size', help: 'Body radius in px.', unit: 'px', min: 1, step: 1 },
     ],
   },
   {
@@ -372,15 +411,25 @@ export function refusalIssues(
   return out;
 }
 
-const TEMPLATE_LOOKS: Record<'basicSoldier' | 'basicTower', { name: string; color: string; shape: string }> = {
+const TEMPLATE_LOOKS: Partial<Record<PreviewUnit['key'], { name: string; color: string; shape: string }>> = {
   basicSoldier: { name: 'Basic Soldier', color: '#3399FF', shape: 'circle' },
   basicTower: { name: 'Basic Tower', color: '#FF9933', shape: 'square' },
+  basicWall: { name: 'Basic Wall', color: '#8A8F98', shape: 'square' },
+  basicFactory: { name: 'Basic Factory', color: '#C0A060', shape: 'square' },
 };
+
+/** The stat fields a design of this type sets (walls and factories leave the attack stats out, §5.2). */
+function ownStats(stats: CostStats): Record<string, unknown> {
+  if (!isNonCombatBuilding(stats.type)) return { ...stats };
+  const out: Record<string, unknown> = { type: stats.type, maxHealth: stats.maxHealth };
+  if (stats.type === 'factory') out.productionInterval = stats.productionInterval;
+  return out;
+}
 
 /** The stat-bound error (checkStats, as the server's templateBreaks runs it) for a preview unit, or null. */
 export function boundsError(u: Pick<PreviewUnit, 'key' | 'label' | 'stats'>, cfg: GameConfig): string | null {
-  const looks = u.key === 'basicSoldier' || u.key === 'basicTower' ? TEMPLATE_LOOKS[u.key] : { name: 'Preview', color: '#888888', shape: 'circle' };
-  const r = checkStats({ ...looks, ...u.stats }, cfg.stats.bounds);
+  const looks = TEMPLATE_LOOKS[u.key] ?? { name: 'Preview', color: '#888888', shape: 'circle' };
+  const r = checkStats({ ...looks, ...ownStats(u.stats) }, cfg.stats.bounds);
   return r.ok ? null : (r.errors[0]?.message ?? 'Out of bounds.');
 }
 
@@ -394,7 +443,7 @@ function templateProblems(cfg: GameConfig): TemplateProblems {
   const out: TemplateProblems = { outOfBounds: [], overCap: [] };
   for (const u of previewUnits(cfg).filter((x) => x.template)) {
     if (boundsError(u, cfg)) out.outOfBounds.push(u.label);
-    const r = computeCost(u.stats, cfg.cost);
+    const r = computeCost(u.stats, cfg.cost, pricingOf(cfg));
     if (!Number.isFinite(r.raw) || r.cost > cfg.caps.unitCost) out.overCap.push(u.label);
   }
   return out;
@@ -403,7 +452,7 @@ function templateProblems(cfg: GameConfig): TemplateProblems {
 // --- live cost preview -------------------------------------------------------------
 
 export interface PreviewUnit {
-  key: 'basicSoldier' | 'basicTower' | 'bigTank' | 'allMax';
+  key: 'basicSoldier' | 'basicTower' | 'bigTank' | 'allMax' | 'basicWall' | 'basicFactory' | 'swarmFactory';
   label: string;
   stats: CostStats;
   /** A starter template: if it goes over the cap the server refuses the save. */
@@ -413,6 +462,10 @@ export interface PreviewUnit {
 export const BASIC_SOLDIER: CostStats = { type: 'soldier', maxHealth: 120, damage: 10, range: 40, speed: 1.5, attackCooldown: 60, size: 10 };
 export const BASIC_TOWER: CostStats = { type: 'tower', maxHealth: 150, damage: 15, range: 180, speed: 0, attackCooldown: 45, size: 14 };
 export const BIG_TANK: CostStats = { type: 'soldier', maxHealth: 500, damage: 20, range: 40, speed: 0.8, attackCooldown: 60, size: 20 };
+/** M8.5 templates (§11) and the plan's Swarm Factory (§6). */
+export const BASIC_WALL: CostStats = { type: 'wall', maxHealth: 400, damage: 0, range: 0, speed: 0, attackCooldown: 60 };
+export const BASIC_FACTORY: CostStats = { type: 'factory', maxHealth: 300, damage: 0, range: 0, speed: 0, attackCooldown: 60, productionInterval: 900 };
+export const SWARM_FACTORY: CostStats = { ...BASIC_FACTORY, productionInterval: 600 };
 
 /** The preview units; the all-max one uses the draft's stat bounds. */
 export function previewUnits(cfg: GameConfig): PreviewUnit[] {
@@ -431,6 +484,9 @@ export function previewUnits(cfg: GameConfig): PreviewUnit[] {
     { key: 'basicTower', label: 'Basic Tower', stats: BASIC_TOWER, template: true },
     { key: 'bigTank', label: 'Big Tank (500 HP soldier)', stats: BIG_TANK, template: false },
     { key: 'allMax', label: 'Everything maxed', stats: allMax, template: false },
+    { key: 'basicWall', label: 'Basic Wall (400 HP)', stats: BASIC_WALL, template: true },
+    { key: 'basicFactory', label: 'Basic Factory (5 minions)', stats: BASIC_FACTORY, template: true },
+    { key: 'swarmFactory', label: 'Swarm Factory (8 minions)', stats: SWARM_FACTORY, template: false },
   ];
 }
 
@@ -453,8 +509,9 @@ export interface CostPreview {
 /** Prices the preview units with the shared computeCost under the draft. */
 export function costPreview(cfg: GameConfig): CostPreview {
   const cap = cfg.caps.unitCost;
+  const pricing = pricingOf(cfg);
   const rows = previewUnits(cfg).map((u) => {
-    const r = computeCost(u.stats, cfg.cost);
+    const r = computeCost(u.stats, cfg.cost, pricing);
     return { ...u, cost: r.cost, overCap: !Number.isFinite(r.raw) || r.cost > cap, outOfBounds: boundsError(u, cfg) };
   });
   const soldier = rows.find((r) => r.key === 'basicSoldier')!.cost;

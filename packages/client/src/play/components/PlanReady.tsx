@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { ApiError, api } from '../../common/api.js';
 import { cx } from '../../common/ui.js';
-import { planReadyView, readyWasCleared } from '../logic.js';
+import { onlyWallsPicked, pickCounterText, pickCounts, planReadyView, readyWasCleared, typeLookup } from '../logic.js';
 import { getStore, useStore } from '../store.js';
 
 export function PlanReady() {
@@ -33,7 +33,13 @@ export function PlanReady() {
   if (!priv || !priv.active || priv.benched) return null;
   const allReady = st.game?.allReady ?? false;
   const pending = st.game?.pendingAdvance?.to === 'PLACEMENT' ? st.game.pendingAdvance.secondsLeft : undefined;
-  const view = planReadyView(priv.selection.length, ready, st.caps.maxTypes, pending);
+  const cards = [...priv.roster, ...(priv.armory ?? [])];
+  const typeOf = typeLookup(cards);
+  const limits = { unit: st.caps.maxUnitTypes, building: st.caps.maxBuildingTypes };
+  const view = planReadyView(priv.selection.length, ready, limits.unit + limits.building, pending, {
+    onlyWalls: onlyWallsPicked(priv.selection, typeOf),
+    counter: pickCounterText(pickCounts(priv.selection, typeOf), limits),
+  });
 
   const toggle = async () => {
     setBusy(true);

@@ -2,16 +2,24 @@
 // zone grid orientation, placement edits with budget/copy/cell rules, "Copy
 // last layout", selection toggling, stat bars, cost breakdown rows, the
 // "Ask Claude" prompts and Claude-terminal links.
+//
+// M8.5 (§5.2, §12.5): soldiers are "units", towers, walls and factories are
+// "buildings". A round picks up to 4 of each; placement caps fighters
+// (soldiers, towers, factories), factories among them, and walls apart.
 
 import {
   CELL_SIZE,
   DEFAULT_CONFIG,
   GRID_SIZE,
   cellAt,
+  groupOf,
   isValidCell,
   sizeOf,
+  trappedCells,
   zoneAxes,
   zoneRect,
+  type UnitGroup,
+  type UnitType,
   type ZoneRef,
   type BadgeId,
   type BattleReportDTO,
@@ -24,6 +32,69 @@ import {
   type StatsSnapshot,
   type UnitCardDTO,
 } from '@pixel-clash/shared';
+
+// ---------------------------------------------------------------------------
+// Caps and unit types (M8.5)
+// ---------------------------------------------------------------------------
+
+/** Round caps (§5.2, M8.5): up to 4 unit + 4 building types; fighters, factories and walls counted apart. */
+export interface PlayCaps {
+  budget: number;
+  /** Soldier types per round. */
+  maxUnitTypes: number;
+  /** Tower, wall and factory types per round. */
+  maxBuildingTypes: number;
+  /** Fighters placed: soldiers + towers + factories. */
+  maxCopies: number;
+  /** Of the fighters, factories. */
+  maxFactoryCopies: number;
+  /** Walls placed (on top of the fighters). */
+  maxWallCopies: number;
+}
+
+/** The caps from GET /rules (`caps`), falling back to `prev` (an older server's single `maxTypes` caps both groups). */
+export function capsFromRules(caps: Partial<Record<string, number>>, budget: number | undefined, prev: PlayCaps): PlayCaps {
+  const legacy = caps.maxTypes;
+  return {
+    budget: caps.budget ?? budget ?? prev.budget,
+    maxUnitTypes: caps.maxUnitTypes ?? legacy ?? prev.maxUnitTypes,
+    maxBuildingTypes: caps.maxBuildingTypes ?? legacy ?? prev.maxBuildingTypes,
+    maxCopies: caps.maxCopies ?? prev.maxCopies,
+    maxFactoryCopies: caps.maxFactoryCopies ?? prev.maxFactoryCopies,
+    maxWallCopies: caps.maxWallCopies ?? prev.maxWallCopies,
+  };
+}
+
+export const DEFAULT_PLAY_CAPS: PlayCaps = {
+  budget: DEFAULT_CONFIG.caps.budget,
+  maxUnitTypes: DEFAULT_CONFIG.caps.maxUnitTypes,
+  maxBuildingTypes: DEFAULT_CONFIG.caps.maxBuildingTypes,
+  maxCopies: DEFAULT_CONFIG.caps.maxCopies,
+  maxFactoryCopies: DEFAULT_CONFIG.caps.maxFactoryCopies,
+  maxWallCopies: DEFAULT_CONFIG.caps.maxWallCopies,
+};
+
+
+/** Card tag per type (§12.5). */
+export const TYPE_TAGS: Readonly<Record<UnitType, string>> = {
+  soldier: '⚔️ soldier',
+  tower: '🏹 tower',
+  wall: '🧱 wall',
+  factory: '🏭 factory',
+};
+
+/** "Units" / "Buildings" (section headers, counters). */
+export const GROUP_TITLES: Readonly<Record<UnitGroup, string>> = { unit: 'Units', building: 'Buildings' };
+
+/** The type of a design looked up by id (palette, selection), undefined when unknown. */
+export type TypeOf = (unitId: string) => UnitType | undefined;
+
+/** A `TypeOf` over cards. */
+export function typeLookup(cards: ReadonlyArray<{ unitId: string; stats: { type: UnitType } }>): TypeOf {
+  const m = new Map(cards.map((c) => [c.unitId, c.stats.type]));
+  return (id) => m.get(id);
+}
+
 
 // ---------------------------------------------------------------------------
 // Zone grid in its true (top-down) orientation
@@ -130,12 +201,69 @@ export interface PlacementRules {
   /** unitId → cost, for the units allowed this round (the palette). */
   costs: ReadonlyMap<string, number>;
   budget: number;
+  /** Fighters (soldiers, towers, factories); every copy when `typeOf` is missing. */
   maxCopies: number;
+  /** M8.5: the palette's types; with it walls and factories get their own caps. */
+  typeOf?: TypeOf;
+  maxWallCopies?: number;
+  maxFactoryCopies?: number;
 }
 
 export type PlaceResult =
   | { ok: true; placements: PlacementDTO[]; removed?: boolean }
   | { ok: false; code: 'OVER_BUDGET' | 'TOO_MANY_COPIES' | 'NOT_SELECTED' | 'CELL_OUT_OF_ZONE'; message: string };
+
+/** Copies placed per group (§5.2 Copies): fighters (incl. factories), factories, walls. */
+export interface CopyCounts {
+  fighters: number;
+  factories: number;
+  walls: number;
+}
+
+export function copyCounts(placements: readonly PlacementDTO[], typeOf?: TypeOf): CopyCounts {
+  const out: CopyCounts = { fighters: 0, factories: 0, walls: 0 };
+  for (const p of placements) {
+    const t = typeOf?.(p.unitId);
+    if (t === 'wall') out.walls++;
+    else {
+      out.fighters++;
+      if (t === 'factory') out.factories++;
+    }
+  }
+  return out;
+}
+
+/** The fighter cap message, in the counter's and the server's words (§5.2 Copies). */
+export function fighterCapMessage(max: number): string {
+  return `That's the most fighters you can place (${max}): soldiers, towers and factories together.`;
+}
+
+/** Why one more copy of a `type` doesn't fit the copy caps, or null. */
+export function copyCapProblem(counts: CopyCounts, type: UnitType | undefined, rules: Pick<PlacementRules, 'maxCopies' | 'maxWallCopies' | 'maxFactoryCopies'>): string | null {
+  if (type === 'wall') {
+    const max = rules.maxWallCopies ?? DEFAULT_CONFIG.caps.maxWallCopies;
+    return counts.walls >= max ? `That's the most walls you can place (${max}).` : null;
+  }
+  if (counts.fighters >= rules.maxCopies) return fighterCapMessage(rules.maxCopies);
+  if (type === 'factory') {
+    const max = rules.maxFactoryCopies ?? DEFAULT_CONFIG.caps.maxFactoryCopies;
+    if (counts.factories >= max) return `That's the most factories you can place (${max}).`;
+  }
+  return null;
+}
+
+/** "Fighters 7/12 · Factories 1/2 · Walls 6/12" (factories and walls only when the palette has them). */
+export function copyCounterText(counts: CopyCounts, rules: Pick<PlacementRules, 'maxCopies' | 'maxWallCopies' | 'maxFactoryCopies'>, has: { walls: boolean; factories: boolean }): string {
+  const parts = [`Fighters ${counts.fighters}/${rules.maxCopies}`];
+  if (has.factories) parts.push(`Factories ${counts.factories}/${rules.maxFactoryCopies ?? DEFAULT_CONFIG.caps.maxFactoryCopies}`);
+  if (has.walls) parts.push(`Walls ${counts.walls}/${rules.maxWallCopies ?? DEFAULT_CONFIG.caps.maxWallCopies}`);
+  return parts.join(' · ');
+}
+
+/** Cells ("col,row") of the soldiers and factories boxed in by walls (W_TRAPPED, §9.3), for the red outline. */
+export function trappedKeys(zone: ZoneRef, placements: readonly PlacementDTO[], typeOf: TypeOf): Set<string> {
+  return new Set(trappedCells(zone, placements, typeOf).map((p) => `${p.col},${p.row}`));
+}
 
 export function spentOf(placements: readonly PlacementDTO[], costs: ReadonlyMap<string, number>): number {
   return placements.reduce((s, p) => s + (costs.get(p.unitId) ?? 0), 0);
@@ -170,8 +298,11 @@ export function tapCell(
   const cost = rules.costs.get(unitId);
   if (cost === undefined) return { ok: false, code: 'NOT_SELECTED', message: "That unit isn't in your army this round." };
   const without = placements.slice();
-  if (without.length >= rules.maxCopies) {
-    return { ok: false, code: 'TOO_MANY_COPIES', message: `That's the most units you can place (${rules.maxCopies}).` };
+  if (rules.typeOf) {
+    const problem = copyCapProblem(copyCounts(without, rules.typeOf), rules.typeOf(unitId), rules);
+    if (problem) return { ok: false, code: 'TOO_MANY_COPIES', message: problem };
+  } else if (without.length >= rules.maxCopies) {
+    return { ok: false, code: 'TOO_MANY_COPIES', message: fighterCapMessage(rules.maxCopies) };
   }
   const spent = spentOf(without, rules.costs) + cost;
   if (spent > rules.budget) {
@@ -201,7 +332,8 @@ export function copyLastLayout(
   for (const p of lastLayout ?? []) {
     const cost = rules.costs.get(p.unitId);
     const key = `${p.col},${p.row}`;
-    if (cost === undefined || !isValidCell(p.col, p.row) || cells.has(key) || out.length >= rules.maxCopies || spent + cost > rules.budget) {
+    const full = rules.typeOf ? copyCapProblem(copyCounts(out, rules.typeOf), rules.typeOf(p.unitId), rules) !== null : out.length >= rules.maxCopies;
+    if (cost === undefined || !isValidCell(p.col, p.row) || cells.has(key) || full || spent + cost > rules.budget) {
       dropped++;
       continue;
     }
@@ -232,6 +364,64 @@ export function budgetText(spent: number, budget: number): string {
 
 export type ToggleResult = { ok: true; selection: string[] } | { ok: false; reason: 'full' | 'invalid' };
 
+/** Picked types per group. */
+export function pickCounts(selection: readonly string[], typeOf: TypeOf): Record<UnitGroup, number> {
+  const out: Record<UnitGroup, number> = { unit: 0, building: 0 };
+  for (const id of selection) {
+    const t = typeOf(id);
+    if (t) out[groupOf(t)]++;
+  }
+  return out;
+}
+
+export type GroupedToggleResult = { ok: true; selection: string[] } | { ok: false; reason: 'full'; group: UnitGroup; max: number } | { ok: false; reason: 'invalid' };
+
+/**
+ * Tap a roster card (M8.5, §5.2): select/deselect with up to `limits.unit`
+ * soldier types and `limits.building` tower/wall/factory types; invalid
+ * units can't be picked.
+ */
+export function toggleGroupedSelection(
+  selection: readonly string[],
+  unit: Pick<UnitCardDTO, 'unitId' | 'status'> & { stats: { type: UnitType } },
+  typeOf: TypeOf,
+  limits: Record<UnitGroup, number>,
+): GroupedToggleResult {
+  if (selection.includes(unit.unitId)) return { ok: true, selection: selection.filter((id) => id !== unit.unitId) };
+  if (unit.status !== 'valid') return { ok: false, reason: 'invalid' };
+  const group = groupOf(unit.stats.type);
+  const counts = pickCounts(selection, typeOf);
+  if (counts[group] >= limits[group]) return { ok: false, reason: 'full', group, max: limits[group] };
+  return { ok: true, selection: [...selection, unit.unitId] };
+}
+
+/** "4 buildings max. Tap a picked one to swap it out." */
+export function groupFullText(group: UnitGroup, max: number): string {
+  return `${max} ${group === 'unit' ? (max === 1 ? 'unit' : 'units') : max === 1 ? 'building' : 'buildings'} max. Tap a picked one to swap it out.`;
+}
+
+/** "Units 2/4 · Buildings 1/4" */
+export function pickCounterText(counts: Record<UnitGroup, number>, limits: Record<UnitGroup, number>): string {
+  return `Units ${counts.unit}/${limits.unit} · Buildings ${counts.building}/${limits.building}`;
+}
+
+/**
+ * The over-cap warning (§5.2): a picked design revised into the other group
+ * can leave more picks in a group than its cap. Ready is refused until one is
+ * un-picked (the server's TOO_MANY_TYPES says the same). null when it fits.
+ */
+export function overCapText(counts: Record<UnitGroup, number>, limits: Record<UnitGroup, number>): string | null {
+  for (const g of ['unit', 'building'] as const) {
+    if (counts[g] > limits[g]) return `You picked ${counts[g]} ${g === 'unit' ? 'units' : 'buildings'}; ${limits[g]} max. Tap one to un-pick it.`;
+  }
+  return null;
+}
+
+/** Only walls picked: Ready is refused with NO_FIGHTERS (walls protect, they don't win, §5.2). */
+export function onlyWallsPicked(selection: readonly string[], typeOf: TypeOf): boolean {
+  return selection.length > 0 && selection.every((id) => typeOf(id) === 'wall');
+}
+
 /** Tap a roster card: select/deselect, at most `max` types; invalid units can't be picked. */
 export function toggleSelection(selection: readonly string[], unit: Pick<UnitCardDTO, 'unitId' | 'status'>, max: number): ToggleResult {
   if (selection.includes(unit.unitId)) return { ok: true, selection: selection.filter((id) => id !== unit.unitId) };
@@ -253,7 +443,17 @@ export interface PlanReadyView {
 }
 
 /** The PLAN "I'm ready!" toggle for a selection of `picked` types (`placementIn`: a countdown to placement runs). */
-export function planReadyView(picked: number, ready: boolean, max: number, placementIn?: number): PlanReadyView {
+export function planReadyView(
+  picked: number,
+  ready: boolean,
+  max: number,
+  placementIn?: number,
+  /** M8.5: only walls picked (NO_FIGHTERS), and the "Units 2/4 · Buildings 1/4" counter to show instead of "Picked 2 of 3". */
+  opts: { onlyWalls?: boolean; counter?: string } = {},
+): PlanReadyView {
+  if (opts.onlyWalls && !ready) {
+    return { enabled: false, label: "I'm ready!", hint: 'Pick a soldier, tower or factory too: walls alone can’t win!' };
+  }
   if (placementIn !== undefined) {
     // A countdown to placement runs (host or auto): say so whatever Ready is.
     return { enabled: ready || picked > 0, label: ready ? "✓ I'm ready!" : "I'm ready!", hint: `Placement starts in ${placementIn}…` };
@@ -261,8 +461,8 @@ export function planReadyView(picked: number, ready: boolean, max: number, place
   if (ready) {
     return { enabled: true, label: "✓ I'm ready!", hint: 'Waiting for the others. Change your picks any time (then press Ready again).' };
   }
-  if (picked === 0) return { enabled: false, label: "I'm ready!", hint: `Pick up to ${max} units first` };
-  return { enabled: true, label: "I'm ready!", hint: `Picked ${picked} of ${max}. Happy with your army? Press Ready!` };
+  if (picked === 0) return { enabled: false, label: "I'm ready!", hint: opts.counter ? 'Pick your units and buildings first' : `Pick up to ${max} units first` };
+  return { enabled: true, label: "I'm ready!", hint: `${opts.counter ?? `Picked ${picked} of ${max}`}. Happy with your army? Press Ready!` };
 }
 
 /**
@@ -291,8 +491,37 @@ const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v))
 const frac = (v: number, min: number, max: number) => (max > min ? clamp01((v - min) / (max - min)) : 0);
 const num = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
 
-/** Stat bars for a unit card. Attack speed is attacks per second (60 / cooldown). */
+/** "15 s" / "12.5 s" from ticks. */
+function seconds(ticks: number): string {
+  const s = ticks / 60;
+  return `${Number.isInteger(s) ? s : s.toFixed(1)} s`;
+}
+
+/** Factory card lines (§12.5): "1 minion every 15 s", "makes 5 minions". */
+export function factoryLines(stats: Pick<StatsSnapshot, 'type'> & { productionInterval?: number }, expected?: number): string[] {
+  if (stats.type !== 'factory' || !stats.productionInterval) return [];
+  const out = [`1 minion every ${seconds(stats.productionInterval)}`];
+  if (expected !== undefined) out.push(`makes ${expected} minion${expected === 1 ? '' : 's'}`);
+  return out;
+}
+
+/**
+ * Stat bars for a unit card. Attack speed is attacks per second (60 /
+ * cooldown). Walls show health only; factories health and build speed (§12.5).
+ */
 export function statBars(stats: StatsSnapshot, bounds: StatBounds = DEFAULT_CONFIG.stats.bounds): StatBar[] {
+  if (stats.type === 'wall') {
+    return [{ key: 'hp', label: 'Health', display: num(stats.maxHealth), frac: frac(stats.maxHealth, 0, bounds.wallHealth.max) }];
+  }
+  if (stats.type === 'factory') {
+    const iv = stats.productionInterval ?? bounds.productionInterval.max;
+    const { min, max } = bounds.productionInterval;
+    return [
+      { key: 'hp', label: 'Health', display: num(stats.maxHealth), frac: frac(stats.maxHealth, 0, bounds.factoryHealth.max) },
+      // Faster production fills the bar: the minimum interval is a full bar, the maximum still shows a sliver.
+      { key: 'rate', label: 'Builds', display: seconds(iv), frac: max > min ? 0.15 + 0.85 * clamp01((max - iv) / (max - min)) : 1 },
+    ];
+  }
   const perSec = 60 / stats.attackCooldown;
   const maxPerSec = 60 / bounds.attackCooldown.min;
   const size = sizeOf(stats);
@@ -323,9 +552,26 @@ export interface BreakdownRow {
 
 const money = (n: number) => (Math.abs(n - Math.round(n)) < 1e-9 ? String(Math.round(n)) : n.toFixed(2).replace(/0$/, ''));
 
-/** Rows of the "cost breakdown" pop-up: each term, the sum, the factor, the total. */
+/**
+ * Rows of the "cost breakdown" pop-up: each term, the sum, the factor, the
+ * total. Walls and factories (§6) only pay for health; a factory adds its
+ * production line ("5 minions × $28").
+ */
 export function breakdownRows(b: CostBreakdown): BreakdownRow[] {
   const t = b.terms;
+  if (b.formula === 'wall' || b.formula === 'factory') {
+    const rows: BreakdownRow[] = [
+      { label: 'Base', value: money(t.base) },
+      { label: 'Health', value: money(t.maxHealth) },
+    ];
+    const p = b.production;
+    if (b.formula === 'factory' && p) {
+      rows.push({ label: 'Body', value: `$${b.body ?? Math.ceil(b.sum)}` });
+      rows.push({ label: 'Minions', value: `${p.expected} × $${p.minionValue}` });
+    }
+    rows.push({ label: 'Cost', value: `$${b.cost}` });
+    return rows;
+  }
   const rows: BreakdownRow[] = [
     { label: 'Base', value: money(t.base) },
     { label: 'Health', value: money(t.maxHealth) },
@@ -383,6 +629,33 @@ export function unitPrompts(roster: readonly UnitCardDTO[], round: number, repor
     }
   }
   return out;
+}
+
+/** Factory lines of the battle report (§12.5): "🏭 Basic Factory made 5 minions (2 lost), 120 minion damage". */
+export function factoryReportLines(report: Pick<BattleReportDTO, 'types'> | null | undefined): string[] {
+  return (report?.types ?? [])
+    .filter((t) => t.type === 'factory')
+    .map((t) => {
+      const made = t.minionsMade ?? 0;
+      const lost = t.minionsLost ?? 0;
+      const dmg = Math.round(t.minionDamage ?? 0);
+      return `🏭 ${t.name} made ${made} minion${made === 1 ? '' : 's'}${lost > 0 ? ` (${lost} lost)` : ''}${dmg > 0 ? `, ${dmg} minion damage` : ''}`;
+    });
+}
+
+/**
+ * "Got stuck behind walls" prompts (§12.5): a soldier type blocked for more
+ * than 30% of the battle (or the report's own hints) becomes an Ask-Claude prompt.
+ */
+export function stuckPrompts(report: Pick<BattleReportDTO, 'types' | 'hints'> | null | undefined, battleTicks: number): string[] {
+  const out = new Set<string>(report?.hints ?? []);
+  for (const t of report?.types ?? []) {
+    if (t.type !== 'soldier' || !t.blockedTicksMax || battleTicks <= 0) continue;
+    if (t.blockedTicksMax / battleTicks > 0.3) {
+      out.add(`My ${t.name} got stuck behind walls a lot last battle. Please make them smash through enemy walls (self.blockedBy) or go round them.`);
+    }
+  }
+  return [...out];
 }
 
 // ---------------------------------------------------------------------------

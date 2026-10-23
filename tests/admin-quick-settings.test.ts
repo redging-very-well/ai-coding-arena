@@ -42,7 +42,7 @@ describe('quick settings field table', () => {
       expect(f.help.length).toBeGreaterThan(0);
     }
     expect(new Set(QUICK_FIELDS.map((f) => f.path)).size).toBe(QUICK_FIELDS.length);
-    expect(QUICK_GROUPS.map((g) => g.title)).toEqual(['Match', 'Economy', 'Timers', 'Costs', 'Scoring', 'Sudden death']);
+    expect(QUICK_GROUPS.map((g) => g.title)).toEqual(['Match', 'Economy', 'Timers', 'Costs', 'Walls & factories', 'Scoring', 'Sudden death']);
   });
 
   it('default values sit inside each field’s own bounds', () => {

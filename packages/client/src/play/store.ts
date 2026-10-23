@@ -28,6 +28,8 @@ import {
 import { ApiError, api, request } from '../common/api.js';
 import { SoundEngine } from '../common/audio.js';
 import { ArenaRenderer } from '../common/render/arena.js';
+import { minionFactoryId } from '../common/render/buildings.js';
+import { DEFAULT_PLAY_CAPS, capsFromRules, type PlayCaps } from './logic.js';
 import { MUTE_KEY_PLAY, countdownCue, revealCue } from '../common/sfx.js';
 import { GameSocket, type WsStatus } from '../common/ws.js';
 import { REVEAL_STEPS, REVEAL_STEP_MS } from '../screen/model.js';
@@ -83,6 +85,8 @@ export interface MyBattleUnit {
   hp: number;
   alive: boolean;
   napping: boolean;
+  /** Walls are listed after the fighters (M8.5). */
+  wall?: boolean;
 }
 
 /** What the code editor (plan §12.1) has open. */
@@ -91,11 +95,7 @@ export type EditorTarget =
   /** A copy of a starter template: saving makes a new design. */
   | { mode: 'copy'; templateId: string; templateName: string };
 
-export interface PlayCaps {
-  budget: number;
-  maxTypes: number;
-  maxCopies: number;
-}
+export type { PlayCaps };
 
 export interface PlayState {
   /** null until /api/me answered (or failed). */
@@ -111,6 +111,8 @@ export interface PlayState {
   reveal: BattleRevealDTO | null;
   battleEnd: BattleEndDTO | null;
   myBattle: MyBattleUnit[];
+  /** My factories' minions alive now (M8.5). */
+  myMinions: number;
   toasts: Toast[];
   /** Own Claude seat, its status and live holder (WS `terminal`); null until known. */
   terminal: TerminalDTO | null;
@@ -150,12 +152,13 @@ export class PlayStore {
     game: null,
     priv: null,
     rules: null,
-    caps: { budget: DEFAULT_CONFIG.caps.budget, maxTypes: DEFAULT_CONFIG.caps.maxTypes, maxCopies: DEFAULT_CONFIG.caps.maxCopies },
+    caps: DEFAULT_PLAY_CAPS,
     bounds: DEFAULT_CONFIG.stats.bounds,
     socket: 'connecting',
     reveal: null,
     battleEnd: null,
     myBattle: [],
+    myMinions: 0,
     toasts: [],
     terminal: null,
     claudeSeats: null,
@@ -201,7 +204,7 @@ export class PlayStore {
   constructor() {
     this.arenaCanvas = document.createElement('canvas');
     this.arenaCanvas.className = 'arena-canvas';
-    this.arena = new ArenaRenderer(this.arenaCanvas, { fit: { margin: 4, pad: 24 } });
+    this.arena = new ArenaRenderer(this.arenaCanvas, { fit: { margin: 4, pad: 24 }, rallyFlags: 'mine' });
     this.socket = new GameSocket('screen');
     this.sound.installUnlock();
     this.sound.subscribe(() => this.set({}));
@@ -279,11 +282,7 @@ export class PlayStore {
       this.set({
         rules,
         bounds,
-        caps: {
-          budget: caps.budget ?? rules.budget ?? this.state.caps.budget,
-          maxTypes: caps.maxTypes ?? this.state.caps.maxTypes,
-          maxCopies: caps.maxCopies ?? this.state.caps.maxCopies,
-        },
+        caps: capsFromRules(caps, rules.budget, this.state.caps),
       });
     } catch {
       // defaults are fine
@@ -604,11 +603,20 @@ export class PlayStore {
     const meId = this.state.player?.id;
     const mine = reveal?.players.find((p) => p.playerId === meId);
     if (!mine) {
-      if (this.state.myBattle.length) this.set({ myBattle: [] });
+      if (this.state.myBattle.length) this.set({ myBattle: [], myMinions: 0 });
       return;
     }
     const designs = new Map(mine.units.map((u) => [u.unitId, u]));
-    const frameUnits = new Map((this.lastFrame?.units ?? []).map((u) => [u[0], u]));
+    // The buffer's newest frame: walls (listed only when they change) are carried in it (§9.3 Frames).
+    const buf = this.arena.buffer;
+    const newest = buf.length > 0 ? buf.all[buf.length - 1]! : this.lastFrame;
+    const frameUnits = new Map((newest?.units ?? []).map((u) => [u[0], u]));
+    const myFactories = new Set(mine.instances.filter((i) => designs.get(i.unitId)?.stats.type === 'factory').map((i) => i.instanceId));
+    let minions = 0;
+    for (const id of frameUnits.keys()) {
+      const f = minionFactoryId(id);
+      if (f && myFactories.has(f)) minions++;
+    }
     const started = this.lastFrame !== null;
     const list: MyBattleUnit[] = mine.instances.map((inst) => {
       const d = designs.get(inst.unitId);
@@ -623,9 +631,11 @@ export class PlayStore {
         hp: fu ? Math.max(0, fu[3]) : started ? 0 : maxHp,
         alive,
         napping: alive && (this.disabled.has(inst.instanceId) || (fu !== undefined && (fu[4] & FRAME_FLAGS.DISABLED) !== 0)),
+        wall: d?.stats.type === 'wall',
       };
     });
-    this.set({ myBattle: list });
+    list.sort((a, b) => Number(!!a.wall) - Number(!!b.wall));
+    this.set({ myBattle: list, myMinions: minions });
   }
 }
 

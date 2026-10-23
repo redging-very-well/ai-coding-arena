@@ -88,31 +88,87 @@ export interface ArmyValue {
   seat: number;
   /** Team mode: the player's team. */
   teamId?: number;
-  /** Total cost of the units fielded at START. */
+  /** Living value at START (§9.3: walls count $0). */
   start: number;
-  /** Total cost of the units still alive. */
+  /** Living value now: soldiers/towers their cost, walls $0, factories body + unmade minions, minions minionValue (§9.3). */
   living: number;
+  /** Fighters (soldiers, towers, factories) still standing; walls aren't counted. */
   aliveCount: number;
   fieldedCount: number;
+  /** Minions alive (M8.5). */
+  minions: number;
+  /** Walls placed (M8.5): they protect but add nothing to the bar. */
+  walls: number;
 }
 
-/** Per-player living army value from the reveal and the ids alive in the current frame. */
-export function armyValues(reveal: BattleRevealDTO, aliveIds: ReadonlySet<string> | null): ArmyValue[] {
+/** What the bars need from the current frame besides the living ids (M8.5). */
+export interface ArmyLive {
+  /** canMake per living factory (`frame.fac`, minionsLeft in older frames). */
+  factoryLeft?: ReadonlyMap<string, number>;
+}
+
+/** The factory instanceId of a minion id ("2-0-3-m4" → "2-0-3"). */
+function factoryOfMinion(id: string): string | null {
+  const m = /^(.+)-m\d+$/.exec(id);
+  return m ? m[1]! : null;
+}
+
+/**
+ * Per-player living army value (§9.3) from the reveal and the ids alive in
+ * the current frame (null = START: everything fielded). Walls are worth $0,
+ * a factory its body cost plus minionValue per minion it can still make, a
+ * minion minionValue.
+ */
+export function armyValues(reveal: BattleRevealDTO, aliveIds: ReadonlySet<string> | null, live: ArmyLive = {}): ArmyValue[] {
+  const minionValue = reveal.minion?.value ?? 0;
+  // Living minions per factory.
+  const minionsOf = new Map<string, number>();
+  for (const id of aliveIds ?? []) {
+    const f = factoryOfMinion(id);
+    if (f) minionsOf.set(f, (minionsOf.get(f) ?? 0) + 1);
+  }
   return reveal.players.map((p) => {
-    const cost = new Map(p.units.map((u) => [u.unitId, u.cost]));
+    const designs = new Map(p.units.map((u) => [u.unitId, u]));
     let start = 0;
     let living = 0;
     let aliveCount = 0;
+    let fieldedCount = 0;
+    let minions = 0;
+    let walls = 0;
     for (const inst of p.instances) {
-      const c = cost.get(inst.unitId) ?? 0;
-      start += c;
-      if (!aliveIds || aliveIds.has(inst.instanceId)) {
-        living += c;
-        aliveCount++;
+      const d = designs.get(inst.unitId);
+      const c = d?.cost ?? 0;
+      const type = d?.stats.type ?? 'soldier';
+      minions += minionsOf.get(inst.instanceId) ?? 0;
+      if (type === 'wall') {
+        walls++;
+        continue;
       }
+      fieldedCount++;
+      start += c;
+      if (aliveIds && !aliveIds.has(inst.instanceId)) continue;
+      aliveCount++;
+      if (type === 'factory') {
+        // As the server counts it: body + minionValue × the minions it can still make.
+        const left = aliveIds ? live.factoryLeft?.get(inst.instanceId) : undefined;
+        living += left === undefined || d?.bodyCost === undefined ? c : d.bodyCost + minionValue * left;
+      } else living += c;
     }
+    living += minions * minionValue;
     const team = reveal.teams && reveal.teams.length > 0 && p.teamId !== undefined ? { teamId: p.teamId } : {};
-    return { playerId: p.playerId, name: p.name, seat: p.seat, ...team, start, living, aliveCount, fieldedCount: p.instances.length };
+    return { playerId: p.playerId, name: p.name, seat: p.seat, ...team, start, living, aliveCount, fieldedCount, minions, walls };
+  });
+}
+
+/** The /screen caption under the army bars in the first battle with walls (§12.5). */
+export const WALLS_CAPTION = 'Walls protect, but only fighters count!';
+
+/** Whether a reveal fields any wall. */
+export function revealHasWalls(reveal: BattleRevealDTO | null | undefined): boolean {
+  if (!reveal) return false;
+  return reveal.players.some((p) => {
+    const walls = new Set(p.units.filter((u) => u.stats.type === 'wall').map((u) => u.unitId));
+    return walls.size > 0 && p.instances.some((i) => walls.has(i.unitId));
   });
 }
 

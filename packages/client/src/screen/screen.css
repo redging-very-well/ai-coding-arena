@@ -1579,3 +1579,6 @@ canvas.arena {
     animation: none;
   }
 }
+
+/* M8.5 (§12.5): the first battle with walls explains why wall armies look short. */
+.walls-caption { margin: 0.4rem 0 0; font-size: 0.9rem; text-align: center; }

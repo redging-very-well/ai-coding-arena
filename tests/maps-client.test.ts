@@ -365,6 +365,8 @@ describe('projector team helpers (§12.2)', () => {
       living,
       aliveCount: living > 0 ? 1 : 0,
       fieldedCount: 1,
+      minions: 0,
+      walls: 0,
     });
     const out = teamArmyValues([v('a', 0, 0, 50), v('b', 1, 1, 100), v('c', 2, 1, 0), v('d', 3, 0, 30)], teams);
     expect(out.map((t) => [t.team.teamId, t.start, t.living, t.members.map((m) => m.playerId)])).toEqual([

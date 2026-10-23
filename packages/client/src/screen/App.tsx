@@ -4,7 +4,7 @@
 
 import { Fragment } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { BADGES, MAX_PLAYERS, teamModeLabel, type BadgeId, type GameStateDTO, type PlayerStatusDTO, type TeamDTO, type TeamTableRowDTO } from '@pixel-clash/shared';
+import { BADGES, MAX_PLAYERS, teamModeLabel, type BadgeId, type BattleRevealDTO, type GameStateDTO, type PlayerStatusDTO, type TeamDTO, type TeamTableRowDTO } from '@pixel-clash/shared';
 import { groupByTeam, mapName } from '../common/maps.js';
 import { seatStyle, teamLook } from '../common/seats.js';
 import { PHASE_TEXT, PLACE_MEDALS, cx, formatClock, formatMoney, ordinal } from '../common/ui.js';
@@ -16,7 +16,9 @@ import { SpriteView } from '../play/components/SpriteView.js';
 import { Confetti } from './Confetti.js';
 import { ScreenController, prefersReducedMotion, type ScreenSnapshot } from './controller.js';
 import {
+  WALLS_CAPTION,
   armyValues,
+  revealHasWalls,
   badgeCounts,
   badgePopDelayMs,
   countUpStartMs,
@@ -646,7 +648,9 @@ function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController
   let values: ArmyValue[] = [];
   if (reveal && started) {
     const sample = ctrl.arena.buffer.sample(ctrl.arena.tick);
-    values = armyValues(reveal, sample ? new Set(sample.units.map((u) => u.id)) : null);
+    values = armyValues(reveal, sample ? new Set(sample.units.map((u) => u.id)) : null, {
+      factoryLeft: new Map((sample?.fac ?? []).map((f) => [f[0], f[6] ?? f[2]])),
+    });
   } else if (reveal) {
     values = armyValues(reveal, null);
   }
@@ -662,7 +666,7 @@ function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController
       {!reveal && <p class="muted">Get ready…</p>}
       {sorted.map((v) => {
         const seat = seatStyle(v.seat);
-        const out = v.aliveCount === 0 && started;
+        const out = v.aliveCount === 0 && v.minions === 0 && started;
         return (
           <div key={v.playerId} class={cx('army', out && 'out')} style={{ '--seat': seat.color, '--seat-light': seat.light }}>
             <div class="army-head">
@@ -682,13 +686,24 @@ function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController
             {!dense && (
               <div class="army-foot">
                 {v.aliveCount}/{v.fieldedCount} units standing
+                {v.minions > 0 && ` · ${v.minions} minion${v.minions === 1 ? '' : 's'}`}
               </div>
             )}
           </div>
         );
       })}
+      {wallsCaption(reveal) && <p class="muted walls-caption">{WALLS_CAPTION}</p>}
     </div>
   );
+}
+
+/** The round of the first battle this screen showed with walls in it (the caption shows only then, §12.5). */
+let firstWallsRound: number | null = null;
+
+function wallsCaption(reveal: BattleRevealDTO | null | undefined): boolean {
+  if (!reveal || !revealHasWalls(reveal)) return false;
+  firstWallsRound ??= reveal.round;
+  return reveal.round === firstWallsRound;
 }
 
 /** Team mode (§12.2): one bar per team, split into its members' living value. */
