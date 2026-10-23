@@ -8,9 +8,25 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "6.20.3",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-javascript": "6.2.5",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/lint": "6.9.7",
+    "@codemirror/search": "6.7.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.14",
     "@fontsource/press-start-2p": "5.2.7",
+    "@lezer/common": "1.5.3",
+    "@lezer/highlight": "1.2.5",
+    "@lezer/javascript": "1.5.6",
+    "@lezer/lr": "1.4.11",
+    "@marijn/find-cluster-break": "1.0.4",
     "@pixel-clash/shared": "0.1.0",
-    "preact": "10.29.8"
+    "crelt": "1.0.7",
+    "preact": "10.29.8",
+    "style-mod": "4.1.4",
+    "w3c-keyname": "2.2.8"
   },
   "devDependencies": {
     "vite": "8.3.2"
