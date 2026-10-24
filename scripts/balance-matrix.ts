@@ -7,8 +7,8 @@
 // burst vs one-at-a-time runners, the kinds' minion output and a Ring 8
 // free-for-all with kind armies; M8.8: the 37-archetype matrix (specialist,
 // element and support archetypes), the stated outcomes, the element armies
-// against their normal twins, the effects and heal limits, the 9-soldier rush
-// against the field, and Lanes and a free-for-all with element armies. Same
+// against their normal twins, the effects and heal limits, the plain template
+// armies (the 9-soldier rush, 5 soldiers + 2 towers) against the field, and Lanes and a free-for-all with element armies. Same
 // harness as tests/balance.test.ts; the round robins run in worker processes.
 //
 //   npx tsx --conditions=source scripts/balance-matrix.ts            (16 battles per pair, both seeds)
@@ -26,6 +26,7 @@ import {
   OPEN_FORTRESS,
   RUSH,
   SEEDS,
+  TEMPLATE_MIX,
   allPairs,
   archetypeByKey,
   armyCost,
@@ -126,11 +127,16 @@ async function main(): Promise<void> {
   console.log(`\n- ${healed.reduce((n, r) => n + r.healBattles, 0)} battles with heals: the most any body got in one 60-tick window is ${(100 * Math.max(...healed.map((r) => r.worstHealWindow))).toFixed(2)}% of its max HP (cap ${c.support.healRoomPctPerSecond}%); the last heal lands in the frame at t = ${Math.max(...healed.map((r) => r.lastHealTick))} (sudden death from ${sd.startTick}).`);
   console.log(`- Battles won with only walls standing: ${results.reduce((n, r) => n + r.wallOnlyWins, 0)}.`);
 
-  console.log('\n## The 9-soldier rush against the field (watch item, not in the round robin)\n');
-  const rushRows = await playPairs(keys.map((k) => ['rush', k] as [string, string]), matrixSeeds);
-  const rr = matrixOf(rushRows, ['rush', ...keys]).get('rush')!;
-  const rrr = rowRate(rr);
-  console.log(`- rush (9 Basic Soldiers, $${armyCost(RUSH)}): ${pct(rrr.wins, rrr.battles)}; loses to ${[...rr].filter(([, cell]) => cell.losses > cell.wins).map(([b]) => b).join(', ')}`);
+  console.log('\n## The plain template armies against the field (watch item, not in the round robin)\n');
+  // The 9-soldier rush (the most Basic Soldiers $5,000 buys) and 5 soldiers + 2 towers.
+  const plain = [RUSH, TEMPLATE_MIX];
+  const plainRows = await playPairs(plain.flatMap((p) => [...keys, ...plain.filter((q) => q !== p).map((q) => q.key)].map((k) => [p.key, k] as [string, string])), matrixSeeds);
+  for (const p of plain) {
+    const row = matrixOf(plainRows, [p.key, ...keys, ...plain.filter((q) => q !== p).map((q) => q.key)]).get(p.key)!;
+    const r = rowRate(row);
+    const cells = [...row].map(([b, cell]) => `${b} ${cellText(cell)}`).join(', ');
+    console.log(`- ${p.key} (${p.label}, $${armyCost(p)}): ${pct(r.wins, r.battles)}; loses to ${[...row].filter(([, cell]) => cell.losses > cell.wins).map(([b]) => b).join(', ')}\n  ${cells}`);
+  }
 
   console.log('\n## Minion kinds, orders and burst (M8.6)\n');
   const output = async (a: Archetype, foes: Archetype[]) => {

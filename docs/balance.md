@@ -911,21 +911,60 @@ not as a blob of its own.
 
 ### Watch items
 
-- **Soldier spam.** The 9-soldier rush ($4,761, not in the round robin) wins **83%** against
-  the 37 (489/592; about 87% on the spec's config, one seed): it loses only to the sealed fortress, the
-  walled nests (snipers, fire splash, ice) and splash (mortars, bombard). The same shape shows
-  in the shatter squad made normal (5 fire soldiers + 2 archers + 1 soldier: 70%). The
-  counters exist and are cheap, but a meta of plain soldiers is the strongest single plan.
-  Fixing it needs the Basic Soldier above $556 (8 per army): `cost.speed` ≈ 82 with
-  `cost.range` ≈ 1.25 got the storm crowd to 62% but pushed the snipers and the longbow to
-  71-72% and the scouts to 23-37%. That is a design decision (template stats or budget), not a
-  knob within the spec, so it is open item 10 in the plan.
+- **Soldier spam (open item 10, analysed below in "The template rush").** The 9-soldier rush
+  ($4,761) wins **83%** (489/592) against the 37; 5 soldiers + 2 towers wins 39% (233/592).
+  Neither is in the round robin yet: the fix is a design decision (see below).
 - **Bricks** 71% (capped key). **Runners** 18%, **medic tent** 25%, **mixed** 29%: weak
   but each beats someone.
 - **Performance:** the M8.8 timing case (Ring 8, 8 players with lightning splash 80,
   fire, medics, a drummer, 2 Storm Runner factories, 12 maze walls each) runs at p99 5.7 ms
   per tick with 127 events/s (target p99 < 8 ms, ≤ 600 events/s); the M8.5 worst case 7.4 ms,
-  M8.6 kinds 5.7 ms, M8.7 maze 6.3 ms on the same (loaded) machine.
+  M8.6 kinds 5.7 ms, M8.7 maze 6.3 ms on the same (loaded) machine. See "Timing pass: what a
+  tick spends" below for the flaky runs.
+
+### The template rush (open item 10, measured 2026-10-24)
+
+**Why 9 Basic Soldiers win 83%.** Measured on the default config, both seeds unless noted
+(`scripts/balance-matrix.ts` prints the two plain template armies against the field):
+
+- **Value per dollar.** A melee army's strength is about (Σ HP) × (Σ DPS) (Lanchester), so a
+  unit is worth about √(HP × DPS) per dollar. The Basic Soldier is the best buy in the game:
+  0.327 (√(600 × 50) / $529), against 0.315 for the Half Tank, 0.273 for the brick (power
+  ×1.37), 0.262 for the Basic Tower (it pays ×1.33 on its whole body for attacking every 0.75 s)
+  and 0.19 for the Sniper Tower. Its stats sit low on every curve (+5% curve, power ×1.02), and
+  the only per-body charge is the $50 Base, under 10% of its price.
+- **Bodies.** $5,000 buys 9 of them, and strength grows with the square of the bodies: 7
+  lightning soldiers (the storm crowd) win 61%, 8 plain soldiers 67% (396/592), 9 win 83%.
+  The 9th soldier alone is worth 16 points.
+- **Only numbers-counters beat it.** It loses only to splash (mortars, bombard), walls (the
+  sealed fortress, the walled nests) and nothing else: 16-0 against the bricks, the tanks, the
+  storm crowd, the shatter squad.
+- **Not the causes:** the k = 1 curve (at k = 2 the soldier would cost $554, still 9 per
+  army); the tower's range (Basic Towers of range 150-180, priced to the same $920-960, leave
+  the rush at 83.6%, one seed).
+
+**Why config alone can't fix it without breaking a stated outcome.** Every price change that
+leaves 8 soldiers (the soldier at $556 or more) also drops a soldier from walls + rush, the
+factory swarm and the brute breakers, and the turtle-vs-rush stated outcome then fails: 5
+Basic Towers beat 8 plain soldiers 14-2. Tried, all on the routing engine with the archetypes
+refit by the M8.8 rules (one seed unless noted):
+
+| change | rush | what breaks |
+|---|---|---|
+| 8 soldiers, nothing else (forced) | 67% (2 seeds) | the turtle beats the rush 14-2 |
+| `cost.base` 76-80 (+ a cheaper Basic Tower so 4 + 3 fit) | 74-75% | bricks 80% (the per-body tax helps two big bodies), scouts drop to 10 |
+| `cost.speed` 80-82, `cost.hp` 0.343 | 71-74% | bricks 72-80%, the turtle wins or tanks pass 70% |
+| a weaker Basic Soldier, 9 still fit (500-550 HP, speed 2-2.2) | 61-77% | bricks 77-78% (their prey gets weaker), templates 22% |
+| Basic Soldier speed 1.8 ($556) + Basic Tower 565 HP ($921) | 75% | bricks 73% in the 17 |
+| soldier 600 / 52 dmg / range 41 / size 12 ($557), tower 565 HP, walls + rush keeps 8 soldiers (3 walls) | 67% (2 seeds) | the 39-matrix holds, but tanks 73% in the 17, Lanes rush vs turtle, two free-for-all caps, Huge Tank + friends vs longbow 8-8 |
+| `cost.powerFactor` 0.9 (bricks 1,600 / 255), soldier 575 / 52 / 42 / size 12 ($556), tower 540 HP ($922) | 68% (2 seeds) | every archetype ≤ 70% in the 39-matrix, but the six's shape (tanks beat the turtle), a 13-matrix shape check, tanks 74% in the 17, Lanes rush vs turtle, the building free-for-all cap |
+
+The common thread: for the rush to beat the turtle with 8 soldiers the Basic Tower has to get
+weaker, and then the tanks beat the turtle too and pass 70%; and every rush fix takes wins away
+from the soldier armies that keep the bricks under their cap. **Decision needed** (plan §17 item
+10): (a) re-record "the rush beats the turtle" as "5 towers hold 8 plain soldiers; speed, splash
+or walls break a turtle" and price the soldier to 8 per army, or (b) accept the 83% rush and
+teach the counters (splash, walls, "spread out"), or (c) a bigger template/budget redesign.
 
 ### Lanes and free-for-alls
 
@@ -939,6 +978,32 @@ not as a blob of its own.
   armies fortress 8, swarm 6, bunker 2; minion kinds home guard 8, brutes 7, swarm 1, quad 1.
 - Turtle vs rush: the rush wins 14 of 16 duels and every Lanes battle; the rush beats the
   open U fortress 16-0 and loses to the sealed one 0-16; brutes break the sealed fortress 14-2.
+
+### Timing pass: what a tick spends (2026-10-24)
+
+`tests/buildings-perf.test.ts` failed 4 of 9 full runs (p99 8.3-12.9 ms against the 8 ms
+target). Profiled per tick (engine work, the wait for the 8 sandbox processes, the time inside
+the slowest sandbox, GC), quiet 10-core box:
+
+| case | tick p50 / p99 / max | engine's own work p99 | sandbox wait p99 / max | inside the slowest sandbox p99 | main-process GC |
+|---|---|---|---|---|---|
+| M8.5 buildings worst case | 2.26 / 6.05 / 14.2 ms | 0.93 ms | 5.49 / 13.4 ms | 3.35 ms | 88 pauses, max 3.4 ms |
+| M8.8 elements and support | 2.21 / 6.28 / 16.5 ms | 0.81 ms | 5.57 / 9.2 ms | 3.05 ms | 86 pauses, max 2.5 ms |
+
+The engine is not the problem: its own work is p99 under 1 ms (only tick 0, with the first
+flow fields and a cold JIT, takes 7-9 ms). The worst ticks are all waits for the sandboxes:
+the tick waits for the slowest of 8 child processes, so the OS scheduling them (and IPC, and a
+sandbox's own GC) sets the tail, and any other load on the machine lands there. With 6 busy
+processes running beside it, the same case measures p99 15-18 ms while the engine's share stays
+1.1-1.4 ms.
+
+So the test now measures both, on the unchanged 8 ms target: the engine's own work
+(`BattleEngine.tickWaitMs` is recorded per tick; tick minus wait) must have p99 < 4 ms in the
+run, and the whole tick p99 < 8 ms as the best of up to 3 runs. Host noise only ever adds time,
+so one noisy run is retried, while a real regression (engine or sandbox side) fails all three.
+Quiet box: p99 6.2-6.5 ms in one run each, engine 0.6-1.0 ms. For the event Mac: run
+`npm run test:perf` with nothing else open; a sustained p99 over 8 ms there means the knobs of
+§15 (`caps.maxCopies`, `caps.maxWallCopies`, `factory.maxAlivePerBattle`).
 
 ### Bots (`npm run bots`, M8.8)
 

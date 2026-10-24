@@ -722,6 +722,8 @@ export const DORMANT: Archetype = {
 
 /** The "soldier rush" of the turtle-vs-rush check: 9 Basic Soldiers (M8.8: 10 cost $5,220). */
 export const RUSH: Archetype = { key: 'rush', label: 'soldier rush (9 Basic Soldiers)', army: [['soldier', 9]] };
+/** The other plain template army (watch item, measured by scripts/balance-matrix.ts, not in the round robin): 5 Basic Soldiers + 2 Basic Towers. */
+export const TEMPLATE_MIX: Archetype = { key: 'tmix', label: 'templates mixed (5 Basic Soldiers + 2 Basic Towers)', army: [['soldier', 5], ['tower', 2]] };
 
 /** M8.8: a side of damage-0 units only (pure support: not fighters, §9.4), for the elimination check. */
 export const SUPPORT_ONLY: Archetype = { key: 'supportonly', label: 'pure support (2 Field Medics, 2 War Drummers, 2 Wind Banners)', army: [['medic', 2], ['drummer', 2], ['banner', 2]] };
@@ -967,7 +969,7 @@ export function matrixMarkdown(m: Map<string, Map<string, MatchupCell>>, archety
 
 /** Every archetype a duel can name, by key: the round robin, the twins and the extra checks. */
 export function archetypeByKey(key: string): Archetype {
-  const pool = [...ALL_ARCHETYPES, ...Object.values(NORMAL_TWINS), RUSH, OPEN_FORTRESS, DORMANT, RUNNER_TRICKLE, SUPPORT_ONLY];
+  const pool = [...ALL_ARCHETYPES, ...Object.values(NORMAL_TWINS), RUSH, TEMPLATE_MIX, OPEN_FORTRESS, DORMANT, RUNNER_TRICKLE, SUPPORT_ONLY];
   const a = pool.find((x) => x.key === key);
   if (!a) throw new Error(`no archetype ${key}`);
   return a;
