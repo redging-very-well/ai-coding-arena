@@ -30,11 +30,7 @@
 // the nearest fighting ally; fire prefers frozen targets; splash picks the
 // enemy with the most other enemies round it.
 
-import { spawn } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { availableParallelism } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   ConfigSchema,
   DEFAULT_CONFIG,
@@ -65,6 +61,8 @@ import { frontCells } from '../../packages/server/src/sim/autoPlace.js';
 import { mulberry32 } from '../../packages/server/src/sim/prng.js';
 
 
+import { BattleCache, cacheEnabled, configKey, engineHash, sha } from './balanceCache.js';
+import { BalancePool } from './balancePool.js';
 import { sandboxRunner, type BalanceRunnerKind } from './brainUnits.js';
 import { actFor, type BrainOptions, type FactoryBrain, type Rng, type SoldierBrain } from './brains.js';
 
@@ -233,7 +231,12 @@ export interface Archetype {
   factoryBrain?: FactoryBrain | Partial<Record<UnitKey, FactoryBrain>>;
   /** M8.8: its fighting soldiers' brain (default 'chase', the template). */
   soldierBrain?: SoldierBrain;
+  /** Custom designs (exploit search, CLI armies): an army key found here is this design, not a UNITS one. */
+  designs?: Partial<Record<string, StatsSnapshot>>;
 }
+
+/** The design an army fields under `k` (its own custom design, else the UNITS one). */
+export const statsOf = (a: Archetype, k: UnitKey): StatsSnapshot => a.designs?.[k] ?? UNITS[k];
 
 /** Plan §14's wall fortress: walls on row 0 and on cols 0 and 5 of rows 1-2; fighters on rows 3-4 first. */
 export function uCells(facing: Facing, centred: boolean): { walls: Cell[]; fighters: Cell[] } {
@@ -451,13 +454,13 @@ export const BALANCE_CONFIG: GameConfig = DEFAULT_CONFIG;
 export const unitCost = (k: UnitKey, config: GameConfig = BALANCE_CONFIG): number => computeCost(UNITS[k], config.cost, pricingOf(config)).cost;
 
 export function armyCost(a: Archetype, config: GameConfig = BALANCE_CONFIG): number {
-  return a.army.reduce((sum, [k, n]) => sum + n * unitCost(k, config), 0);
+  return a.army.reduce((sum, [k, n]) => sum + n * computeCost(statsOf(a, k), config.cost, pricingOf(config)).cost, 0);
 }
 
 /** Copies placed (`group` 'fighters' = everything but walls, §5.2 Copies). */
 export function armyCopies(a: Archetype, group: 'all' | 'fighters' | 'walls' | 'factories' = 'all'): number {
   const counts = (k: UnitKey) => {
-    const t = UNITS[k].type;
+    const t = statsOf(a, k).type;
     return group === 'all' || (group === 'walls' ? t === 'wall' : group === 'factories' ? t === 'factory' : t !== 'wall');
   };
   return a.army.reduce((sum, [k, n]) => sum + (counts(k) ? n : 0), 0);
@@ -499,11 +502,12 @@ function deploy(a: Archetype, zone: MapZone, config: GameConfig): { units: Battl
   const units: BattleUnitDesign[] = [];
   const placements: PlacementDTO[] = [];
   // With a wall layout the walls go first, so the fighters fill the cells left inside.
-  const order = a.layout ? [...a.army].sort(([x], [y]) => Number(UNITS[y].type === 'wall') - Number(UNITS[x].type === 'wall')) : a.army;
+  const order = a.layout ? [...a.army].sort(([x], [y]) => Number(statsOf(a, y).type === 'wall') - Number(statsOf(a, x).type === 'wall')) : a.army;
   for (const [k, n] of order) {
-    units.push({ unitId: k, stats: UNITS[k], cost: unitCost(k, config) });
+    const stats = statsOf(a, k);
+    units.push({ unitId: k, stats, cost: computeCost(stats, config.cost, pricingOf(config)).cost });
     for (let i = 0; i < n; i++) {
-      const cell = take(UNITS[k].type === 'wall' ? wallCells : fighterCells);
+      const cell = take(stats.type === 'wall' ? wallCells : fighterCells);
       placements.push({ unitId: k, col: cell.col, row: cell.row });
     }
   }
@@ -550,8 +554,43 @@ export interface BalanceBattle {
   frameHash: number;
 }
 
-/** Run one battle with the given entrants on `style` with `players` zones. */
+/**
+ * Run one battle with the given entrants on `style` with `players` zones.
+ * Lean-runner battles without a frame hash are read from the result cache
+ * (helpers/balanceCache.ts) when they were played before with the same
+ * engine, config and armies; `ms` is then the time of that first run.
+ */
 export async function balanceBattle(
+  style: MapStyle,
+  players: number,
+  entrants: Entrant[],
+  seed: number,
+  config: GameConfig = BALANCE_CONFIG,
+  hashFrames = false,
+  runner: BalanceRunnerKind = 'lean',
+): Promise<BalanceBattle> {
+  if (hashFrames || runner !== 'lean' || !cacheEnabled()) return playBalanceBattle(style, players, entrants, seed, config, hashFrames, runner);
+  const ck = configKey(config);
+  const sides = entrants.map((e) => `${entrantDigest(e.archetype, style, players, e.zone, config, ck)}/${e.teamId ?? '-'}/${e.reversePlacements === true}`);
+  const key = sha(`battle ${engineHash()} ${ck} ${style} ${players} ${seed} ${sides.join(' ')}`);
+  const cache = battleCache(config);
+  const hit = cache.get(key);
+  if (hit) return { ...(structuredClone(hit) as Omit<BalanceBattle, 'maxHp'>), maxHp: new Map(hit.maxHp) };
+  const b = await playBalanceBattle(style, players, entrants, seed, config, false, 'lean');
+  cache.putAll([[key, { ...b, maxHp: [...b.maxHp] }]]);
+  return b;
+}
+
+type StoredBattle = Omit<BalanceBattle, 'maxHp'> & { maxHp: Array<[string, number]> };
+const battleCaches = new Map<GameConfig, BattleCache<StoredBattle>>();
+const battleCache = (config: GameConfig) => {
+  let c = battleCaches.get(config);
+  if (!c) battleCaches.set(config, (c = new BattleCache<StoredBattle>(config, undefined, 'battles')));
+  return c;
+};
+
+/** `balanceBattle` without the cache. */
+async function playBalanceBattle(
   style: MapStyle,
   players: number,
   entrants: Entrant[],
@@ -633,6 +672,8 @@ export async function balanceBattle(
   } finally {
     for (const r of runners) r.dispose();
   }
+  // Nobody reads the frames afterwards (the hash and the counters are taken as they come).
+  delete (result as { frames?: unknown }).frames;
   const ms = performance.now() - started;
   const placeOf = new Map(result.ranking.map((r) => [r.playerId, r.place]));
   const lost = entrants.map((_, i) => result.units.filter((u) => u.playerId === `p${i}` && u.type !== 'minion' && !u.survived).length);
@@ -773,31 +814,176 @@ export function healLimits(b: BalanceBattle, ticksPerWindow = 60): { worst: numb
   return { worst, last };
 }
 
-/** One pair over every site, zone pair, both orders and the seeds (the round-robin cell plus the M8.8 checks). */
-export async function playPair(a: Archetype, b: Archetype, seeds: number[] = SEEDS, config: GameConfig = BALANCE_CONFIG): Promise<PairResult> {
-  const r: PairResult = { a: a.key, b: b.key, cell: { wins: 0, draws: 0, losses: 0 }, wallOnlyWins: 0, healBattles: 0, worstHealWindow: 0, lastHealTick: 0, effects: [noEffects(), noEffects()], ms: 0, ticks: 0 };
+// ---------------------------------------------------------------------------
+// Battle jobs, records and the result cache (fast balance runs)
+// ---------------------------------------------------------------------------
+
+/**
+ * One duel of a round robin: A in zone `zones[0]`, B in `zones[1]`. The
+ * archetypes travel whole (custom armies included), so a worker needs no lookup.
+ */
+export interface BattleJob {
+  a: Archetype;
+  b: Archetype;
+  style: MapStyle;
+  players: number;
+  zones: [number, number];
+  seed: number;
+}
+
+/** What a balance run keeps of one duel (A's side; a cache line). */
+export interface BattleRecord {
+  outcome: 1 | 0 | -1;
+  /** Won by a side with only walls standing (§5.2: must never happen). */
+  wallOnlyWin: boolean;
+  /** Battles with heals: the worst 60-tick heal window and the last heal tick (healLimits). */
+  heal: { worst: number; last: number } | null;
+  effects: [EffectTotals, EffectTotals];
+  /** Engine wall-clock ms when it was played (a cached record keeps its first time). */
+  ms: number;
+  ticks: number;
+}
+
+/** A pair's battles in the round-robin order: every site, zone pair, both orders, every seed. */
+export function pairJobs(a: Archetype, b: Archetype, seeds: number[] = SEEDS): BattleJob[] {
+  const jobs: BattleJob[] = [];
   for (const site of DUEL_SITES)
     for (const [z1, z2] of site.pairs)
       for (const [za, zb] of [[z1, z2], [z2, z1]] as Array<[number, number]>)
-        for (const seed of seeds) {
-          const { outcome, battle } = await duel(site.style, site.players, a, b, [za, zb], seed, config);
-          if (outcome === 1) r.cell.wins++;
-          else if (outcome === -1) r.cell.losses++;
-          else r.cell.draws++;
-          if (outcome !== 0 && !hasFighter(battle.standing[outcome === 1 ? 0 : 1]!)) r.wallOnlyWins++;
-          if (battle.heals.length > 0) {
-            const { worst, last } = healLimits(battle, config.timers.ticksPerSecond);
-            r.healBattles++;
-            r.worstHealWindow = Math.max(r.worstHealWindow, worst);
-            r.lastHealTick = Math.max(r.lastHealTick, last);
-          }
-          battle.effects.forEach((e, i) => {
-            const t = r.effects[i]!;
-            for (const k of Object.keys(t) as Array<keyof EffectTotals>) t[k] += e[k];
-          });
-          r.ms += battle.ms;
-          r.ticks += battle.result.endTick;
-        }
+        for (const seed of seeds) jobs.push({ a, b, style: site.style, players: site.players, zones: [za, zb], seed });
+  return jobs;
+}
+
+/** Play one duel and keep its record. */
+export async function playJob(job: BattleJob, config: GameConfig = BALANCE_CONFIG, runner: BalanceRunnerKind = 'lean'): Promise<BattleRecord> {
+  const battle = await playBalanceBattle(job.style, job.players, [{ archetype: job.a, zone: job.zones[0] }, { archetype: job.b, zone: job.zones[1] }], job.seed, config, false, runner);
+  const [pa, pb] = battle.places as [number, number];
+  const outcome = pa < pb ? 1 : pa > pb ? -1 : 0;
+  return {
+    outcome,
+    wallOnlyWin: outcome !== 0 && !hasFighter(battle.standing[outcome === 1 ? 0 : 1]!),
+    heal: battle.heals.length > 0 ? healLimits(battle, config.timers.ticksPerSecond) : null,
+    effects: battle.effects as [EffectTotals, EffectTotals],
+    ms: battle.ms,
+    ticks: battle.result.endTick,
+  };
+}
+
+const emptyPair = (a: string, b: string): PairResult => ({
+  a,
+  b,
+  cell: { wins: 0, draws: 0, losses: 0 },
+  wallOnlyWins: 0,
+  healBattles: 0,
+  worstHealWindow: 0,
+  lastHealTick: 0,
+  effects: [noEffects(), noEffects()],
+  ms: 0,
+  ticks: 0,
+});
+
+/** Add one duel's record to a pair's result. */
+export function addRecord(r: PairResult, rec: BattleRecord): PairResult {
+  if (rec.outcome === 1) r.cell.wins++;
+  else if (rec.outcome === -1) r.cell.losses++;
+  else r.cell.draws++;
+  if (rec.wallOnlyWin) r.wallOnlyWins++;
+  if (rec.heal) {
+    r.healBattles++;
+    r.worstHealWindow = Math.max(r.worstHealWindow, rec.heal.worst);
+    r.lastHealTick = Math.max(r.lastHealTick, rec.heal.last);
+  }
+  rec.effects.forEach((e, i) => {
+    const t = r.effects[i]!;
+    for (const k of Object.keys(t) as Array<keyof EffectTotals>) t[k] += e[k];
+  });
+  r.ms += rec.ms;
+  r.ticks += rec.ticks;
+  return r;
+}
+
+/** A pair's result from its records (in `pairJobs` order). */
+export function pairResult(a: string, b: string, records: BattleRecord[]): PairResult {
+  const r = emptyPair(a, b);
+  for (const rec of records) addRecord(r, rec);
+  return r;
+}
+
+const entrantDigests = new Map<string, string>();
+
+/** Everything a battle sees of one army in one zone: priced designs (with the cost breakdown), placements, brains. */
+function entrantDigest(a: Archetype, style: MapStyle, players: number, zone: number, config: GameConfig, cfgKey: string): string {
+  const memo = `${cfgKey} ${style} ${players} ${zone} ${JSON.stringify(a)}`;
+  let d = entrantDigests.get(memo);
+  if (!d) {
+    const { units, placements } = deploy(a, mapFor(style, players).zones[zone]!, config);
+    const priced = units.map((u) => ({ ...u, breakdown: computeCost(u.stats, config.cost, pricingOf(config)).breakdown }));
+    d = sha(JSON.stringify({ units: priced, placements, brains: brainOptions(a) }));
+    entrantDigests.set(memo, d);
+  }
+  return d;
+}
+
+/** The cache key of a duel (helpers/balanceCache.ts): engine, config, both armies as deployed, map, zones, seed, runner. */
+export function jobKey(job: BattleJob, config: GameConfig, runner: BalanceRunnerKind = 'lean'): string {
+  const ck = configKey(config);
+  const da = entrantDigest(job.a, job.style, job.players, job.zones[0], config, ck);
+  const db = entrantDigest(job.b, job.style, job.players, job.zones[1], config, ck);
+  return sha(`${engineHash()} ${ck} ${job.style} ${job.players} ${job.zones.join(',')} ${job.seed} ${runner} ${da} ${db}`);
+}
+
+/** How `runJobs` plays: worker processes (BALANCE_WORKERS), the cache (BALANCE_CACHE), the runner. */
+export interface RunOptions {
+  workers?: number;
+  cache?: boolean;
+  runner?: BalanceRunnerKind;
+  /** A pool to reuse (several calls with the same config), else one for this call. */
+  pool?: BalancePool;
+  /** Called after each batch of played battles (progress). */
+  onProgress?: (done: number, total: number) => void;
+}
+
+/** Counters of the last runs in this process (the CLI reports them). */
+export const runStats = { cached: 0, played: 0 };
+
+/**
+ * Records of the jobs, in order: cached ones from disk, the rest played (in
+ * worker processes when there are enough of them) and then cached.
+ */
+export async function runJobs(jobs: BattleJob[], configPatch?: unknown, opts: RunOptions = {}): Promise<BattleRecord[]> {
+  const config = balanceConfig(configPatch);
+  const runner = opts.runner ?? 'lean';
+  const useCache = opts.cache ?? cacheEnabled();
+  const cache = useCache ? new BattleCache<BattleRecord>(config) : undefined;
+  const keys = useCache ? jobs.map((j) => jobKey(j, config, runner)) : [];
+  const out: Array<BattleRecord | undefined> = jobs.map((_, i) => (cache ? cache.get(keys[i]!) : undefined));
+  const missing = out.flatMap((r, i) => (r ? [] : [i]));
+  runStats.cached += jobs.length - missing.length;
+  runStats.played += missing.length;
+  if (missing.length === 0) return out as BattleRecord[];
+  const workers = opts.workers ?? balanceWorkers();
+  let played: BattleRecord[];
+  if (opts.pool) played = await opts.pool.run(missing.map((i) => jobs[i]!), opts.onProgress);
+  else if (workers <= 1 || missing.length < 16) {
+    played = [];
+    for (const i of missing) played.push(await playJob(jobs[i]!, config, runner));
+  } else {
+    const pool = new BalancePool(Math.min(workers, missing.length), configPatch, runner);
+    try {
+      played = await pool.run(missing.map((i) => jobs[i]!), opts.onProgress);
+    } finally {
+      pool.close();
+    }
+  }
+  missing.forEach((i, k) => (out[i] = played[k]));
+  cache?.putAll(missing.map((i, k) => [keys[i]!, played[k]!]));
+  return out as BattleRecord[];
+}
+
+/** One pair over every site, zone pair, both orders and the seeds (the round-robin cell plus the M8.8 checks). */
+export async function playPair(a: Archetype, b: Archetype, seeds: number[] = SEEDS, config: GameConfig = BALANCE_CONFIG): Promise<PairResult> {
+  const r = emptyPair(a.key, b.key);
+  for (const job of pairJobs(a, b, seeds)) addRecord(r, await playJob(job, config));
   return r;
 }
 
@@ -809,46 +995,23 @@ export function balanceWorkers(): number {
 }
 
 /**
- * Play the pairs (by archetype key), spread over worker processes
- * (tests/helpers/balanceWorker.ts under tsx): a full M8.8 round robin is
- * several thousand battles, so the test and scripts/balance-matrix.ts share
- * them out. Results come back in the order of `pairs`; the sim is
- * deterministic, so this is the same as playing them one by one.
+ * Play the pairs (by archetype key): a full M8.8 round robin is several
+ * thousand battles, so they are shared out over worker processes
+ * (helpers/balancePool.ts), and every battle already in the result cache
+ * (helpers/balanceCache.ts) is read instead of played. Results come back in
+ * the order of `pairs`; the sim is deterministic, so this is the same as
+ * playing them one by one.
  */
-export async function playPairs(pairs: Array<[string, string]>, seeds: number[] = SEEDS, configPatch?: unknown, workers = balanceWorkers()): Promise<PairResult[]> {
-  const config = balanceConfig(configPatch);
-  if (workers <= 1 || pairs.length < 2) {
-    const out: PairResult[] = [];
-    for (const [a, b] of pairs) out.push(await playPair(archetypeByKey(a), archetypeByKey(b), seeds, config));
-    return out;
-  }
-  const require = createRequire(import.meta.url);
-  const tsxCli = join(dirname(require.resolve('tsx/package.json')), 'dist', 'cli.mjs');
-  const worker = fileURLToPath(new URL('./balanceWorker.ts', import.meta.url));
-  const n = Math.min(workers, pairs.length);
-  const shards = Array.from({ length: n }, (_, w) => pairs.map((p, i) => [p, i] as const).filter(([, i]) => i % n === w));
-  const results = await Promise.all(
-    shards.map(
-      (shard) =>
-        new Promise<Array<[PairResult, number]>>((resolve, reject) => {
-          const child = spawn(process.execPath, [tsxCli, '--conditions=source', worker], { stdio: ['pipe', 'pipe', 'pipe'] });
-          let out = '';
-          let err = '';
-          child.stdout.on('data', (d: Buffer) => (out += d.toString()));
-          child.stderr.on('data', (d: Buffer) => (err += d.toString()));
-          child.on('error', reject);
-          child.on('exit', (code) => {
-            if (code !== 0) return reject(new Error(`balance worker exited ${code}: ${err.slice(-2000)}`));
-            const rows = JSON.parse(out) as PairResult[];
-            resolve(rows.map((row, k) => [row, shard[k]![1]]));
-          });
-          child.stdin.end(JSON.stringify({ pairs: shard.map(([p]) => p), seeds, configPatch }));
-        }),
-    ),
-  );
-  const ordered: PairResult[] = new Array(pairs.length);
-  for (const [row, i] of results.flat()) ordered[i] = row;
-  return ordered;
+export async function playPairs(pairs: Array<[string, string]>, seeds: number[] = SEEDS, configPatch?: unknown, workers = balanceWorkers(), opts: Omit<RunOptions, 'workers'> = {}): Promise<PairResult[]> {
+  const perPair = pairs.map(([a, b]) => pairJobs(archetypeByKey(a), archetypeByKey(b), seeds));
+  const records = await runJobs(perPair.flat(), configPatch, { ...opts, workers });
+  let at = 0;
+  return pairs.map(([a, b], i) => {
+    const n = perPair[i]!.length;
+    const r = pairResult(a, b, records.slice(at, at + n));
+    at += n;
+    return r;
+  });
 }
 
 /** Every pair of the keys (i < j), in round-robin order. */

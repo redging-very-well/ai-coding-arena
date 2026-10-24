@@ -7,3 +7,6 @@ coverage/
 
 # Claude box seat settings (contains the seat terminal passwords)
 sessions/.env
+
+# Balance tooling result cache (tests/helpers/balanceCache.ts)
+.balance-cache/

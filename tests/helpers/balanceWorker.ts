@@ -1,22 +1,34 @@
-// One worker of helpers/balance.ts `playPairs` (M8.8): reads
-// {pairs, seeds, configPatch} as JSON on stdin, plays every pair with
-// `playPair` and writes the PairResult[] as JSON on stdout. Started under tsx
-// with --conditions=source, so it runs the workspace sources like the tests.
+// One worker of helpers/balancePool.ts: reads JSON lines on stdin, the first
+// { configPatch, runner }, then { id, job } per duel; plays each duel with
+// `playJob` and answers { id, rec } (or { id, error }) on stdout. Started
+// under tsx with --conditions=source, so it runs the workspace sources like
+// the tests. It exits when stdin closes.
 
-import { archetypeByKey, balanceConfig, playPair, type PairResult } from './balance.js';
+import { createInterface } from 'node:readline';
+import type { GameConfig } from '@pixel-clash/shared';
+import { balanceConfig, playJob, type BattleJob } from './balance.js';
+import type { BalanceRunnerKind } from './brainUnits.js';
 
-let input = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (d: string) => (input += d));
-process.stdin.on('end', () => {
-  void (async () => {
-    const job = JSON.parse(input) as { pairs: Array<[string, string]>; seeds: number[]; configPatch?: unknown };
-    const config = balanceConfig(job.configPatch);
-    const out: PairResult[] = [];
-    for (const [a, b] of job.pairs) out.push(await playPair(archetypeByKey(a), archetypeByKey(b), job.seeds, config));
-    process.stdout.write(JSON.stringify(out));
-  })().catch((err: unknown) => {
-    console.error(err);
-    process.exit(1);
+let config: GameConfig | undefined;
+let runner: BalanceRunnerKind = 'lean';
+// One duel at a time, in arrival order.
+let chain = Promise.resolve();
+
+createInterface({ input: process.stdin }).on('line', (line) => {
+  if (!line) return;
+  const msg = JSON.parse(line) as { configPatch?: unknown; runner?: BalanceRunnerKind; id?: number; job?: BattleJob };
+  if (msg.id === undefined) {
+    config = balanceConfig(msg.configPatch);
+    runner = msg.runner ?? 'lean';
+    return;
+  }
+  const { id, job } = msg as { id: number; job: BattleJob };
+  chain = chain.then(async () => {
+    try {
+      const rec = await playJob(job, config, runner);
+      process.stdout.write(`${JSON.stringify({ id, rec })}\n`);
+    } catch (err) {
+      process.stdout.write(`${JSON.stringify({ id, error: err instanceof Error ? (err.stack ?? err.message) : String(err) })}\n`);
+    }
   });
 });
