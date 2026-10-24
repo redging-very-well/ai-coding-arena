@@ -187,7 +187,7 @@ export function unitTypeRules(config: GameConfig): Record<string, unknown> {
 export function copyRampText(config: GameConfig): string {
   const r = config.caps.copyRamp;
   if (r.pctPerCopy <= 0) return 'Copies of one design all cost the same (the copy ramp is off).';
-  return `${config.caps.maxCopies} fighters, make them count: your first ${r.freeCopies} copies of a design cost its price; from copy ${r.freeCopies + 1} on, each one costs ${r.pctPerCopy}% more than the one before (copy ${r.freeCopies + 1} +${r.pctPerCopy}%, copy ${r.freeCopies + 2} +${2 * r.pctPerCopy}%, ...). Walls never cost more. Mixing designs is cheaper.`;
+  return `${config.caps.maxCopies} fighters, make them count: your first ${r.freeCopies} copies of a design cost its price; from copy ${r.freeCopies + 1} on, each copy costs another ${r.pctPerCopy}% of the price on top (copy ${r.freeCopies + 1} +${r.pctPerCopy}%, copy ${r.freeCopies + 2} +${2 * r.pctPerCopy}%, ...). Walls never cost more. Mixing designs is cheaper.`;
 }
 
 export function buildRules(config: GameConfig, armoryEnabled = false, match?: MatchInfoDTO): RulesDTO {

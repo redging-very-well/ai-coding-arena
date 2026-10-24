@@ -503,46 +503,46 @@ const ARCHETYPES: ArchetypeSpec[] = [
     id: 'tank',
     name: 'Tank',
     note: 'lots of HP, little damage: soaks up hits',
-    stats: (c) => unitStats(c, { type: 'soldier', maxHealth: 1800, damage: 30, range: 20, speed: 1, attackCooldown: 60, size: 14 }),
+    stats: (c) => unitStats(c, { type: 'soldier', maxHealth: 2900, damage: 24, range: 20, speed: 1, attackCooldown: 60, size: 14 }),
   },
   {
     id: 'sniper',
     name: 'Sniper Tower',
     note: 'huge range and big hits, slow reload',
-    stats: (c) => unitStats(c, { type: 'tower', maxHealth: 400, damage: 150, range: 280, speed: 0, attackCooldown: 90, size: 12 }),
+    stats: (c) => unitStats(c, { type: 'tower', maxHealth: 640, damage: 120, range: 280, speed: 0, attackCooldown: 90, size: 12 }),
   },
   {
     id: 'fire-splash',
     name: 'Fire Splash Tower',
     note: 'fire + splash: burns groups',
-    stats: (c) => unitStats(c, { type: 'tower', maxHealth: 700, damage: 60, range: 150, speed: 0, attackCooldown: 60, size: 14, element: 'fire', splashRadius: 40 }),
+    stats: (c) => unitStats(c, { type: 'tower', maxHealth: 1120, damage: 48, range: 150, speed: 0, attackCooldown: 60, size: 14, element: 'fire', splashRadius: 40 }),
   },
   {
     id: 'cleric',
     name: 'Battle Cleric',
     note: 'a soldier that heals (or hits) on each cooldown',
     stats: (c) =>
-      unitStats(c, { type: 'soldier', maxHealth: 500, damage: 20, range: 30, speed: 1.5, attackCooldown: 60, size: 10, support: { kind: 'heal', power: 60, range: 120 } }),
+      unitStats(c, { type: 'soldier', maxHealth: 800, damage: 16, range: 30, speed: 1.5, attackCooldown: 60, size: 10, support: { kind: 'heal', power: 96, range: 120 } }),
   },
   {
     id: 'drummer',
     name: 'War Drummer',
     note: 'might aura: everyone near it hits harder',
     stats: (c) =>
-      unitStats(c, { type: 'soldier', maxHealth: 500, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, size: 10, support: { kind: 'might', power: 30, range: 100 } }),
+      unitStats(c, { type: 'soldier', maxHealth: 800, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, size: 10, support: { kind: 'might', power: 30, range: 100 } }),
   },
   {
     id: 'brute-factory',
     name: 'Brute Barracks',
     note: 'a factory of fire brutes (wall breakers)',
     stats: (c) =>
-      buildingStats(c, { type: 'factory', maxHealth: 1500, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900, produces: 'brute', minionElement: 'fire' }),
+      buildingStats(c, { type: 'factory', maxHealth: 2400, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900, produces: 'brute', minionElement: 'fire' }),
   },
   {
     id: 'big-wall',
     name: 'Fortress Wall',
     note: 'a very tough wall',
-    stats: (c) => buildingStats(c, { type: 'wall', maxHealth: 5000, damage: 0, range: 0, speed: 0, attackCooldown: 0 }),
+    stats: (c) => buildingStats(c, { type: 'wall', maxHealth: 8000, damage: 0, range: 0, speed: 0, attackCooldown: 0 }),
   },
   {
     id: 'maxed',
@@ -667,14 +667,21 @@ function elementsSection(c: GameConfig): GuideSectionDTO {
     id: 'elements',
     icon: '🔥',
     title: 'Elements, splash & combos',
-    summary: 'One element per unit, optional splash, and two combos.',
+    summary: 'One element per unit, optional splash, and combos that reward mixing elements.',
     blocks: [
       { kind: 'table', head: ['Element', 'What it does', 'Price'], rows: elementRows(c) },
       {
         kind: 'cards',
         cards: [
+          { icon: '🔥', title: 'Kindle', text: `A BURNING enemy takes +${e.kindlePct}% from every hit that isn't fire.` },
+          { icon: '🧊', title: 'Brittle', text: `A FROZEN enemy takes +${e.brittlePct}% from every hit that isn't ice or fire.` },
           { icon: '💥', title: 'Shatter', text: `Fire hits a FROZEN enemy: ${100 + e.shatterPct}% damage, and it thaws.` },
-          { icon: '🌩️', title: 'Overload', text: `Lightning hits a BURNING enemy: the zap hops ${e.lightning.burningExtraHops} more time.` },
+          { icon: '🌩️', title: 'Overload', text: `Lightning hits a BURNING enemy: the zap hops ${e.lightning.burningExtraHops} more time${e.lightning.burningExtraHops === 1 ? '' : 's'}.` },
+          {
+            icon: '🎯',
+            title: 'Fast units dodge',
+            text: `A ranged shot at a MOVING enemy misses up to ${c.accuracy.missMaxPct}% of the time (at full speed; never when it stands still, never in melee). A miss still splashes where it lands.`,
+          },
           {
             icon: '🌊',
             title: 'Splash',
@@ -732,7 +739,7 @@ function supportSection(c: GameConfig): GuideSectionDTO {
         title: 'For Claude / code: a healer',
         code: [
           "this.support = 'heal';     // 'heal' | 'haste' | 'might' | 'shield'",
-          'this.supportPower = 60;    // HP per heal (auras: %)',
+          'this.supportPower = 96;    // HP per heal (auras: %)',
           'this.supportRange = 120;   // px, edge to edge',
           '',
           '// in update(): heal the hurt ally with the most heal room',
@@ -966,8 +973,11 @@ function budgetSection(c: GameConfig): GuideSectionDTO {
         kind: 'list',
         items: [
           'You place copies of your picked units; every copy costs its price from the round budget.',
+          ...(cap.copyRamp.pctPerCopy > 0
+            ? [`**${cap.maxCopies} fighters, make them count:** your first ${cap.copyRamp.freeCopies} copies of a design cost its price; copy ${cap.copyRamp.freeCopies + 1} costs +${cap.copyRamp.pctPerCopy}%, the next +${2 * cap.copyRamp.pctPerCopy}%, and so on (walls never). Mixing designs is cheaper.`]
+            : []),
           'Ready needs at least one fighter: a soldier or tower with damage above 0, or a factory that builds attacking minions.',
-          `A good army is 4-8 units for ${money(cap.budget)}.`,
+          `A good army is 6-10 strong fighters from 3-4 designs for ${money(cap.budget)}.`,
         ],
       },
     ],
@@ -1018,7 +1028,7 @@ function tipsSection(c: GameConfig): GuideSectionDTO {
 // ---------------------------------------------------------------------------
 
 function stampOf(config: GameConfig, templates: readonly GuideTemplate[]): string {
-  const used = [config.cost, config.stats, config.caps, config.timers, config.factory, config.elements, config.support, config.suddenDeath, config.scoring, templates];
+  const used = [config.cost, config.stats, config.caps, config.timers, config.factory, config.elements, config.support, config.accuracy, config.suddenDeath, config.scoring, templates];
   return createHash('sha256').update(JSON.stringify(used)).digest('hex').slice(0, 16);
 }
 

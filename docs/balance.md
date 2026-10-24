@@ -1195,3 +1195,139 @@ towers** that almost nothing in the archetype pool beats. It is measured against
 "chase nearest" bots, so a real player's targeting may answer it better. It is
 still the first thing to check in the $10,000 retune: splash and ice prices, and
 the tower cooldown price.
+
+## The $10,000 redesign (2026-10-24)
+
+Plan §6 (economy), §9.3 (routing round buildings), §9.4 (accuracy, synergies),
+§14 "Redesign balance", §17 "Resolved in the $10,000 redesign request".
+**This section supersedes the M8.8 numbers above**: the $10,000 budget, 120 s
+battles, 12 fighters, two times the time-to-kill. The old sections stay as history.
+
+### What changed in the sim and the economy
+
+| Item | Value |
+|---|---|
+| Budget, unit cap | $10,000 per army, $3,000 per unit |
+| Fighters | ≤ 12 (≤ 5 factories) + ≤ 16 walls; copy ramp: copies 1-3 of a design at list price, then +15% each (the 12th +135%); walls exempt |
+| Bounds | soldier/tower HP 80-4,000, damage 0-240; soldier range 20-160, tower range 20-300; walls 400-12,000; factories 800-8,000, interval 300-1,200 (5-20 s) |
+| Prices | base 50, hp 0.1875, damage 1.875, range 1.38, speed 90, size 8, power factor 2; splash 1 + 0.8·ρ(2−ρ); fire and lightning ×1.3, ice ×1.75; heal 3.5; auras haste 9, might 8, shield 7; minion discount 0.5 |
+| Battle | 7,200 ticks (120 s); sudden death 75 s → 120 s, 570 → 60 px, 10%/s |
+| Synergies | kindle +25% (burning body, non-fire hits), brittle +25% (frozen body, non-ice non-fire hits), shatter ×1.4, overload +2 hops |
+| Accuracy | ranged shots miss 20% × min(1, moved / 5 px) of the time; a miss lands where the target was, splash still hits |
+| Factories | minions grunt 360/20, archer 240/20, runner 480/24, brute 1,100/32, medic 300 (heal 60); ≤ 12 per factory; alive per player min(12, floor(40 / players)), 40 per battle |
+| Routing | towers and factories are walked round like walls (§9.3) |
+| Templates | soldier 1,400 HP / 56 dmg $807; tower 1,200 / 72 $1,200; wall 3,200 $149; factory 2,400 @ 600 $2,194 |
+
+### The archetype pool (48)
+
+Every archetype was rebuilt for $10,000 (`tests/helpers/balance.ts`): new-scale
+reference units, ≥ 70% of the budget spent, every design legal under `checkStats`.
+`resolve()` drops copies of the dearest fixed part until the army fits the budget
+with the copy ramp, then fills with the filler; `pad` raises HP and damage in 2%
+steps while the army still fits. New archetypes: `soldiersFilled` (a padded
+full-12 one-design army), `factories5` (five factories incl. medics), `overload`,
+`icebreak`, `exploit` and `exploitIce` (the M8.8 exploit search's builds:
+an ice splash soldier + 2 glass sniper towers), `splashline`, `firebrawl`,
+`guardedcatapults`, `icemortars`, and the template armies `rush` and `tmix`.
+The 6/13/17 sub-matrices are gone: the full matrix is the one gate.
+
+### Tuning (fast CLI, `npm run balance -- --fast --config …`)
+
+Starting from the scaled M8.8 prices, the top archetypes sat at 75-85%
+(padded soldiers, shatter, bricks, buffed rush, the exploit builds). TTK ×2
+favours blobs: a fight lasts long enough for numbers to tell. In order:
+
+| Lever | Effect |
+|---|---|
+| unit cap $3,500 → $3,000 | bricks 82% → 79% |
+| copy ramp `{3, 15}` (the user's "final approach") | padded mono armies 78-84% → 70-72%; mixed armies +3-5 points. No price change alone got them under 75% without wrecking everything else, so it stays on |
+| ice ×1.5 → ×1.75, shatter 50 → 40% | shatter 81% → 64% |
+| power factor 1 → 2 | bricks and the padded armies pay for concentrated stats |
+| splash 0.7 → 0.8, heal 3.5, heal room 4%/s | splash lines and healer balls ≤ 68% |
+| auras 7/6/7 → 9/8/7 | buffed rush 70% → 55% |
+| runner minion 480/24, minion discount 0.5 | factories 45-56% (from 30-40%) |
+| `cost.speed` 66 → 90 | the exploit search's fast runner armies 94% → 87% |
+| soldier range ≤ 160 | mobile splash snipers (range 240-250 soldiers) were 86-94% at any range price |
+| sudden death 7 → 10%/s | the turtle won 16/16 Ring 8 free-for-alls; now 7/16 |
+
+### Full matrix (48 archetypes, 752 battles each, seeds 11 and 4242)
+
+`npm run balance -- --full --all --seeds 11,4242`: 18,048 battles in 386 s, **PASS, 237 rules**.
+
+| archetype | wins | archetype | wins | archetype | wins |
+|---|---|---|---|---|---|
+| bricks | 72.6% (cap) | tanks | 53.2% | archers | 43.2% |
+| soldiersFilled | 71.8% (watch) | tmix | 53.1% | blizzard | 41.5% |
+| rush | 68.9% | bigFriends | 52.8% | medictent | 38.0% |
+| healerball | 68.0% | factories5 | 52.1% | quad | 37.5% |
+| splashline | 67.0% | icemortars | 49.5% | bunker | 36.2% |
+| guardedcatapults | 67.0% | longbow | 47.5% | hugetanks | 34.8% |
+| shatter | 64.1% | icewall | 45.2% | runners | 33.9% |
+| brutes | 64.0% | exploitIce | 45.1% | glass | 33.2% |
+| exploit | 64.0% | fortress | 44.7% | swarm | 32.6% |
+| icebreak | 62.5% | firenest | 44.5% | firebrawl | 31.4% |
+| storm | 62.0% | snipewall | 44.0% | firesquad | 30.1% |
+| overload | 60.5% | frostnest | 44.0% | templates | 26.3% |
+| mortars | 57.8% | | | mixed | 18.4% |
+| shieldwall | 57.2% | | | scouts | 11.7% |
+| elemfactories | 56.5% | | | | |
+| stormrunners | 56.4% | | | | |
+| homeguard | 56.3% | | | | |
+| buffedrush | 54.5% | | | | |
+| snipers | 54.4% | | | | |
+| wallrush | 54.1% | | | | |
+| turtle | 54.0% | | | | |
+| bombard | 53.5% | | | | |
+
+- **Exceptions:** bricks (two max-cost soldiers) is the existing `FULL_DOMINANCE_EXCEPTIONS`
+  key, re-recorded at 546/752. `soldiersFilled` (the padded full-12 mono army)
+  is the one **watch item** (540/752), allowed slightly over 70% as the brief
+  permitted; splash lines, bombard and fire nests beat it 16-0, the overload combo 10-6.
+- **Mixed vs mono:** mixed armies win 43.6% of their mixed-vs-mono cells (mono
+  average 54.2%, mixed 48.4% overall), so parity is not reached by that number.
+  But seven of the top ten are mixed (rush, healerball, splashline,
+  guardedcatapults, shatter, exploit, icebreak), and the weak mixed armies are
+  the deliberately plain `mixed` and `templates`.
+- **Stated outcomes:** 27 hold (45 checks with the shape checks). New ones state
+  the redesign's intent: splash and combo armies beat the padded mono army,
+  kindle + overload beats the bricks, brittle beats the healer ball, ice mortars
+  stop a buffed rush, five factories flood a splash battery, all four templates
+  beat soldiers and towers alone. Dropped (the M8.8 meta): frost/blizzard/shatter
+  beat bricks, scouts beat snipers, snipers beat bricks, the fortress loses to the
+  swarm and the bunker, the swarm beats the turtle, buffed rush beats shatter,
+  medics beat mixed.
+- **Turtle vs rush** reversed to an even fight (25-75% either way); the Lanes
+  turtle team holds. **Ring 8 FFA:** turtle 7/16 (was 16/16 at 7%/s), snipers 9/16
+  (the re-keyed free-for-all exception).
+- Seed 11 alone: bricks 71.5%, soldiersFilled 71.8%; every other archetype ≤ 70%.
+- Scouts (11.7%): accuracy did not make scouts strong. A scout army dodges up to
+  20% of shots, but 12 cheap scouts still lose to splash and to any brawler.
+
+### Tests
+
+`npm test` (main pass): 64 files, 1,187 tests. Timing pass 54/54 (engine p99
+< 1 ms with routing round buildings; 8-player 120 s battle within budget).
+Balance pass 103/103 in ~25 s warm (`PIXEL_CLASH_PERF=balance`).
+
+### Exploit search (final)
+
+`npm run balance:exploit -- --generations 10 --population 24` on the committed config
+(seed 1, 196 armies, 40,512 battles, 558 s). The search now covers the 48 archetypes,
+the copy ramp and the soldier range cap. **Five builds above 70%**, all one family:
+
+| win rate | army | cost | best counters |
+|---|---|---|---|
+| **93.6%** | 1 ice splash-80 soldier (480 HP, 112 dmg, range 130, cd 75) + 2 fast heavy brawlers (1,760 HP, 40 dmg, speed 3.2) + 2 slow lightning brawlers (1,600 HP, 116 dmg, range 70) + 2 towers (1,040 HP, 52 dmg, range 150) | $9,950 | longbow 5-1-10 |
+| 92.4% | the same, one splash-20 tower (640 HP, 116 dmg) instead of the two towers | $9,677 | longbow 3-0-13 |
+| 91.0% | no towers, 3 fast brawlers | $9,743 | guarded catapults 0-0-16, bombard 2-0-14, fire nest 7-0-9 |
+
+Earlier searches during tuning found the other families, each answered by a lever above:
+mobile splash snipers (range 240-250 soldiers, 86-94%: the soldier range cap) and
+fast runner armies (94%: `cost.speed` 90). What is left is a **mixed elemental
+combo army**: the fast tanks pull fire, a glass ice-splash soldier freezes the
+clump, and the lightning brawlers hit frozen bodies (brittle +25%). That is the kind
+of army the redesign wants players to find, but it is too strong against the
+chase-nearest bots: they spread their fire over the fast tanks and never focus
+the 480 HP ice soldier. It is the first pre-event watch item; the levers to try
+are the ice price (×1.75 → ×2), the splash price at large radii on glass bodies,
+and a bot pool archetype that focuses the weakest enemy. Not changed here.
