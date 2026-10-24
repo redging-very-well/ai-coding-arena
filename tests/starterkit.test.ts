@@ -172,9 +172,9 @@ describe('starter-kit templates (§11)', () => {
   });
 
   it('only known placeholders are used', () => {
-    for (const rel of ['CLAUDE.md.tmpl', '.mcp.json.tmpl', '.claude/settings.json.tmpl', 'PROMPTS.md']) {
+    for (const rel of ['CLAUDE.md.tmpl', '.mcp.json.tmpl', '.claude/settings.json.tmpl', '.codex/config.toml.tmpl', 'PROMPTS.md']) {
       const names = [...kitFile(rel).matchAll(/\{\{([A-Z_]+)\}\}/g)].map((m) => m[1]);
-      for (const n of names) expect(['HOST', 'PLAYER_NAME', 'API_KEY']).toContain(n);
+      for (const n of names) expect(['HOST', 'PLAYER_NAME', 'API_KEY', 'AGENT_NAME']).toContain(n);
     }
   });
 });

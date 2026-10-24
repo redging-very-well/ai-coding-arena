@@ -1,6 +1,6 @@
-# Pixel Clash: things to ask Claude
+# Pixel Clash: things to ask your AI helper
 
-You don't write any code. Just tell Claude what you want, in your own words!
+You don't write any code. Just tell your AI helper (Claude or Codex) what you want, in your own words!
 
 ## First time
 
@@ -54,7 +54,7 @@ You don't write any code. Just tell Claude what you want, in your own words!
 ## Remember
 
 - Send units in the **Plan** phase. Then **pick** them and **place** them on the game page.
-- If Claude says it can't send your unit yet, tell it **"The Plan phase started!"** when the game page says Plan.
+- If your AI helper says it can't send your unit yet, tell it **"The Plan phase started!"** when the game page says Plan.
 - You have **$10,000** each round for up to **12 fighters**, up to **4** kinds of soldiers and **4** kinds of buildings (towers, walls, factories), and a unit can cost up to **$3,000**. The 4th copy of the same unit costs more, the 5th more again: **mix your army!**
 - Walls block your own units too: leave a gap! And walls (or helpers that do no damage) alone can't win: you always need a unit that attacks.
 - Battles last 2 minutes. After 75 seconds a safe circle shrinks. Units outside it get hurt!

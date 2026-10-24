@@ -1,0 +1,20 @@
+# Pixel Clash kit settings for OpenAI Codex CLI (plan §11.3).
+# Codex reads this file only once the kit folder is trusted (the seat image
+# trusts /kit in /etc/codex/config.toml; on a laptop, answer "trust" once).
+
+# AGENTS.md (the instructions) is ~56 KB; Codex's default limit is 32 KiB.
+project_doc_max_bytes = 131072
+
+# File edits inside this kit folder and the game's MCP tools never ask.
+# Anything else (commands that need the network, files outside the kit) asks.
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = false
+exclude_slash_tmp = true
+exclude_tmpdir_env_var = true
+
+[mcp_servers.pixel-clash]
+url = "http://{{HOST}}/mcp"
+default_tools_approval_mode = "approve"

@@ -1,10 +1,16 @@
-// Starter kit zips (plan §11). M3 stub: the full CLAUDE.md template arrives
-// with M4. The address is ALWAYS built from the download request's Host
-// header (the address the laptop actually reached), never a guessed LAN IP.
+// Starter kit zips (plan §11, §11.3). The address is ALWAYS built from the
+// download request's Host header (the address the laptop actually reached),
+// never a guessed LAN IP.
 //
 // Files in packages/starter-kit ending in `.tmpl` get their `{{HOST}}`,
-// `{{API_KEY}}` and `{{PLAYER_NAME}}` placeholders filled and the suffix
-// removed. Missing templates fall back to built-in minimal versions.
+// `{{API_KEY}}`, `{{PLAYER_NAME}}` and `{{AGENT_NAME}}` placeholders filled
+// and the suffix removed. Missing templates fall back to built-in minimal
+// versions.
+//
+// One kit source, two agents (§11.3): CLAUDE.md.tmpl is the instructions for
+// both. The Claude Code kit gets it as CLAUDE.md plus .mcp.json and
+// .claude/settings.json; the Codex kit gets the SAME text as AGENTS.md plus
+// .codex/config.toml. sessions/entrypoint.sh applies the same rule (kitFileAgent).
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -13,11 +19,36 @@ import { ZipArchive } from 'archiver';
 import { repoPath } from '../util/paths.js';
 import type { PlayerRecord } from './store.js';
 
+export type KitAgent = 'claude' | 'codex';
+
+/** Per agent: the name in the instructions' title and the instructions file. */
+export const KIT_AGENTS: Readonly<Record<KitAgent, { name: string; instructions: string }>> = {
+  claude: { name: 'Claude', instructions: 'CLAUDE.md' },
+  codex: { name: 'Codex', instructions: 'AGENTS.md' },
+};
+
+/** `?agent=codex` picks the Codex kit; anything else is the Claude Code kit. */
+export function parseKitAgent(v: unknown): KitAgent {
+  return v === 'codex' ? 'codex' : 'claude';
+}
+
+/**
+ * Which agent a kit file (name after `.tmpl` is removed) belongs to; null =
+ * both. CLAUDE.md is the shared source: the Codex kit renames it to AGENTS.md.
+ */
+export function kitFileAgent(rel: string): KitAgent | null {
+  if (rel === 'CLAUDE.md' || rel === '.mcp.json' || rel.startsWith('.claude/')) return 'claude';
+  if (rel.startsWith('.codex/')) return 'codex';
+  return null;
+}
+
 export interface KitOptions {
   /** host[:port] from the request's Host header. */
   host: string;
   /** Personal kit: the player (key pre-filled). Generic kit: undefined. */
   player?: PlayerRecord;
+  /** Which coding agent the kit is for (default: Claude Code). */
+  agent?: KitAgent;
 }
 
 /** Hosts we accept in a kit (no injection into JSON/markdown). */
@@ -54,11 +85,28 @@ function settingsJson(opts: KitOptions): string {
   return `${JSON.stringify(settings, null, 2)}\n`;
 }
 
+/**
+ * The Codex MCP config: the template, plus the key header in a personal kit
+ * (Codex sends `http_headers` on every /mcp request).
+ */
+export function codexConfigToml(template: string | undefined, opts: KitOptions): string {
+  const base =
+    template ??
+    `project_doc_max_bytes = 131072\napproval_policy = "on-request"\nsandbox_mode = "workspace-write"\n\n[mcp_servers.pixel-clash]\nurl = "http://{{HOST}}/mcp"\ndefault_tools_approval_mode = "approve"\n`;
+  let text = fill(base, opts);
+  if (opts.player) {
+    const header = `http_headers = { Authorization = "Bearer ${opts.player.apiKey}" }`;
+    text = text.replace(/^(url = "http:\/\/[^"\n]*\/mcp"\n)/m, `$1${header}\n`);
+    if (!text.includes(header)) throw new Error('kit: .codex/config.toml.tmpl has no pixel-clash url line');
+  }
+  return text;
+}
+
 function fallbackClaudeMd(opts: KitOptions): string {
   const who = opts.player
     ? `You are helping the player **${opts.player.name}**. The MCP server already sends their key.`
     : 'First read `.pixel-clash/player.json`. If it is missing, or a tool says AUTH_REQUIRED or KEY_INVALID, ask the player for their name and 4-digit PIN, call `login`, save `{name, apiKey}` to `.pixel-clash/player.json`, and pass `apiKey` on every pixel-clash tool call.';
-  return `# Pixel Clash
+  return `# Pixel Clash: instructions for ${KIT_AGENTS[opts.agent ?? 'claude'].name}
 
 A player (aged about 9-13) is playing Pixel Clash. They only talk to you: never ask them to type or edit code.
 
@@ -77,7 +125,8 @@ function fill(text: string, opts: KitOptions): string {
     .replaceAll('{{HOST}}', opts.host)
     .replaceAll('{{API_KEY}}', opts.player?.apiKey ?? '')
     // Same text as the seat entrypoint renders for a generic kit.
-    .replaceAll('{{PLAYER_NAME}}', opts.player?.name ?? '(not logged in yet: see below)');
+    .replaceAll('{{PLAYER_NAME}}', opts.player?.name ?? '(not logged in yet: see below)')
+    .replaceAll('{{AGENT_NAME}}', KIT_AGENTS[opts.agent ?? 'claude'].name);
 }
 
 function walk(dir: string): string[] {
@@ -90,36 +139,60 @@ function walk(dir: string): string[] {
   return out;
 }
 
-/** Stream the kit zip to `out` (an HTTP response). */
-export async function writeKitZip(out: Writable, opts: KitOptions): Promise<void> {
-  const zip = new ZipArchive({ zlib: { level: 9 } });
-  zip.pipe(out);
+/** The kit's files (path inside the kit → content), in zip order. */
+export function kitFiles(opts: KitOptions): Array<{ name: string; content: string | Buffer }> {
+  const agent = opts.agent ?? 'claude';
   const root = repoPath('packages', 'starter-kit');
-  const prefix = 'pixel-clash-kit/';
+  const files: Array<{ name: string; content: string | Buffer }> = [];
   const written = new Set<string>();
+  let codexTemplate: string | undefined;
   if (existsSync(root)) {
     for (const file of walk(root)) {
       let rel = relative(root, file).split('\\').join('/');
       let content: string | Buffer = readFileSync(file);
-      if (rel.endsWith('.tmpl')) {
-        rel = rel.slice(0, -'.tmpl'.length);
-        content = fill(content.toString('utf8'), opts);
-      }
-      // .mcp.json is always generated: only the personal kit has the key header.
+      const isTemplate = rel.endsWith('.tmpl');
+      if (isTemplate) rel = rel.slice(0, -'.tmpl'.length);
+      const owner = kitFileAgent(rel);
+      // CLAUDE.md is the instructions for both agents (renamed for Codex).
+      if (rel === 'CLAUDE.md') rel = KIT_AGENTS[agent].instructions;
+      else if (owner !== null && owner !== agent) continue;
+      // Always generated: only the personal kit has the key header.
       if (rel === '.mcp.json') continue;
+      if (rel === '.codex/config.toml') {
+        codexTemplate = content.toString('utf8');
+        continue;
+      }
+      if (isTemplate) content = fill(content.toString('utf8'), opts);
       written.add(rel);
-      zip.append(content, { name: prefix + rel });
+      files.push({ name: rel, content });
     }
   }
-  zip.append(mcpJson(opts), { name: `${prefix}.mcp.json` });
-  if (!written.has('.claude/settings.json')) {
-    zip.append(settingsJson(opts), { name: `${prefix}.claude/settings.json` });
+  if (agent === 'claude') {
+    files.push({ name: '.mcp.json', content: mcpJson(opts) });
+    if (!written.has('.claude/settings.json')) files.push({ name: '.claude/settings.json', content: settingsJson(opts) });
+  } else {
+    files.push({ name: '.codex/config.toml', content: codexConfigToml(codexTemplate, opts) });
   }
-  if (!written.has('CLAUDE.md')) zip.append(fallbackClaudeMd(opts), { name: `${prefix}CLAUDE.md` });
+  const instructions = KIT_AGENTS[agent].instructions;
+  if (!written.has(instructions)) files.push({ name: instructions, content: fallbackClaudeMd(opts) });
   if (opts.player) {
-    zip.append(`${JSON.stringify({ name: opts.player.name, apiKey: opts.player.apiKey }, null, 2)}\n`, {
-      name: `${prefix}.pixel-clash/player.json`,
+    files.push({
+      name: '.pixel-clash/player.json',
+      content: `${JSON.stringify({ name: opts.player.name, apiKey: opts.player.apiKey }, null, 2)}\n`,
     });
   }
+  return files;
+}
+
+/** Stream the kit zip to `out` (an HTTP response). */
+export async function writeKitZip(out: Writable, opts: KitOptions): Promise<void> {
+  const zip = new ZipArchive({ zlib: { level: 9 } });
+  zip.pipe(out);
+  for (const f of kitFiles(opts)) zip.append(f.content, { name: `pixel-clash-kit/${f.name}` });
   await zip.finalize();
+}
+
+/** The download's file name: pixel-clash-kit.zip or pixel-clash-codex-kit.zip. */
+export function kitZipName(agent: KitAgent): string {
+  return agent === 'codex' ? 'pixel-clash-codex-kit.zip' : 'pixel-clash-kit.zip';
 }
