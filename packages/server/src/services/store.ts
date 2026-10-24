@@ -39,8 +39,9 @@ import { log } from '../util/log.js';
 
 /**
  * The scale of units submitted now: 1 = the $1,000 game, 2 = the ×5 $5,000
- * game (M8.8), 3 = the $10,000 redesign (HP ×1.6, damage ×0.8). Older stored
- * units are wiped at boot (`wipeOldScaleUnits`).
+ * game (M8.8), 3 = the $10,000 redesign (HP ×1.6, damage ×0.8). Stored units
+ * are never deleted automatically: older ones stay and are priced and checked
+ * under the current rules like any unit (the facilitator wipes data by hand).
  */
 export const SCALE_VERSION = 3;
 import type { MatchStats } from './awards.js';
@@ -88,7 +89,7 @@ export interface UnitVersionRecord {
   orders?: MinionOrder[];
   /** M8.8 heal support: whether update() healed in the dry run (§7), for the card. */
   healUsed?: boolean;
-  /** The economy scale it was submitted for (SCALE_VERSION; absent = 1, the $1,000 game). Older ones are wiped at boot. */
+  /** The economy scale it was submitted for (SCALE_VERSION; absent = 1, the $1,000 game). Kept as-is on boot (never auto-deleted). */
   scaleVersion?: number;
   sha256: string;
   createdAt: number;
@@ -432,7 +433,6 @@ export class Store {
       log.warn(`config overrides from an older economy were dropped ($10,000 economy): ${migrated.dropped.join(', ')}`);
       this.dirty = true;
     }
-    this.wipeOldScaleUnits();
     if (data.setup) {
       this.setup = {
         claudeBoxHost: data.setup.claudeBoxHost ?? null,
@@ -588,44 +588,6 @@ export class Store {
   }
 
   /** Delete data/ and reset the in-memory state (admin wipe). Admin sessions survive. */
-  /**
-   * The $10,000 redesign (§6 migration, 2026-10-24, user decision "they can be
-   * wiped"): player-submitted designs and Open Armory entries made for an
-   * older economy (scaleVersion below SCALE_VERSION) are not re-priced: they
-   * are all removed at boot, with every selection and placement that named
-   * them. Templates are rebuilt from the starter kit; players, PINs and keys
-   * stay. Only a log line, no banner.
-   */
-  private wipeOldScaleUnits(): void {
-    const stale = [...this.designs.values()].some((m) => [...m.values()].some((d) => !d.isTemplate && d.versions.some((v) => (v.scaleVersion ?? 1) < SCALE_VERSION)));
-    const staleArmory = this.match.armory.entries.some((e) => (e.scaleVersion ?? 1) < SCALE_VERSION);
-    if (!stale && !staleArmory) return;
-    let removed = 0;
-    const gone = new Set<string>();
-    for (const m of this.designs.values()) {
-      for (const [id, d] of m) {
-        if (d.isTemplate) continue;
-        m.delete(id);
-        gone.add(id);
-        removed++;
-      }
-    }
-    const armory = this.match.armory.entries.length;
-    this.match.armory = { ...this.match.armory, entries: [] };
-    delete this.match.armory.pendingRemovals;
-    // Templates stay (server-owned); every own design and every borrowed (armory:) one is gone.
-    const known = (id: string) => !gone.has(id) && !id.startsWith('armory:');
-    for (const rs of Object.values(this.match.perPlayer)) {
-      rs.selection = rs.selection.filter(known);
-      rs.prevSelection = rs.prevSelection?.filter(known) ?? null;
-      rs.locked = rs.locked?.filter((l) => known(l.unitId)) ?? null;
-      rs.placements = rs.placements.filter((p) => known(p.unitId));
-      rs.lastLayout = rs.lastLayout?.filter((p) => known(p.unitId)) ?? null;
-    }
-    log.warn(`units from an older economy were cleared ($10,000 redesign): ${removed} designs, ${armory} armory entries`);
-    this.dirty = true;
-  }
-
   wipe(defaultRounds: number): void {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = undefined;

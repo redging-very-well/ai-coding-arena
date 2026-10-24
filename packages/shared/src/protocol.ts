@@ -207,7 +207,7 @@ export interface UnitCardDTO {
   orders?: MinionOrder[];
   /** M8.8 heal support: whether update() returned { action: 'heal' } in the dry run (§7). */
   healUsed?: boolean;
-  /** The economy scale the design was made for (3 = the $10,000 redesign). Older designs are wiped at boot. */
+  /** The economy scale the design was made for (3 = the $10,000 redesign). Older designs are kept (never auto-deleted). */
   scaleVersion?: number;
   cost: number;
   breakdown: CostBreakdown;

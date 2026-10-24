@@ -1,9 +1,9 @@
 // The $10,000 redesign migration (plan §6 migration, §14 migration.test.ts):
 // a stored config patch from an older economy loses its scale-sensitive
-// overrides at boot (the rest is kept; a log line, no banner), and player
-// units made for an older economy are WIPED at boot (user decision
-// 2026-10-24: "they can be wiped"): designs, armory entries and every
-// selection or placement naming them. Players, PINs and templates stay.
+// overrides at boot (the rest is kept; a log line, no banner). Player units
+// made for an older economy are NEVER deleted automatically (user, 2026-10-24:
+// "Don't silently wipe units on server restart … I'd wipe them myself"): they
+// stay, with their selections, and the facilitator wipes data by hand.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -69,7 +69,7 @@ describe('boot with stored data from an older economy', () => {
     removeDir(dir);
   });
 
-  it('wipes old player units (and what names them), keeps players and templates, and drops old config overrides', async () => {
+  it('keeps old player units (and what names them) and players, and drops old config overrides', async () => {
     srv = await bootServer({ dataDir: dir });
     const admin = await adminClient(srv.url);
     const ann = await newPlayer(srv.url, 'Ann');
@@ -99,10 +99,10 @@ describe('boot with stored data from an older economy', () => {
     expect(srv.game.store.configPatch).toEqual({ timers: { planLaterRoundsSec: 333 }, economyVersion: ECONOMY_VERSION });
 
     const cards = (await ra.get('/units')).body as UnitCardDTO[];
-    // Every player-made design is gone (not only the old one): the wipe is all or nothing.
-    expect(cards.filter((u) => !u.isTemplate)).toEqual([]);
+    // Nothing is deleted on boot: both player designs, the templates and the selection survive.
+    expect(cards.filter((u) => !u.isTemplate).map((u) => u.unitId).sort()).toEqual(['new-guy', 'old-guard']);
     expect(cards.filter((u) => u.isTemplate).length).toBeGreaterThan(0);
-    expect(srv.game.round.stateOf(ann.id).selection).toEqual([tpl]);
+    expect(srv.game.round.stateOf(ann.id).selection).toEqual(['old-guard', 'new-guy', tpl]);
     // No banner: nothing about it in the admin config or overview.
     const admin2 = await adminClient(srv.url);
     expect((await admin2.get('/admin/config')).body).not.toHaveProperty('economyReset');
