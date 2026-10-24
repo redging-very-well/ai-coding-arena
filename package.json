@@ -18,6 +18,7 @@
     "start": "node scripts/start.mjs",
     "test": "vitest run && npm run test:perf",
     "test:perf": "node scripts/test-perf.mjs",
+    "balance": "tsx --conditions=source scripts/balance.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p packages/client/tsconfig.json --noEmit",
     "loadtest": "tsx --conditions=source tests/load/loadtest.ts",
     "bots": "tsx --conditions=source scripts/bots.ts",

@@ -913,7 +913,8 @@ const entrantDigests = new Map<string, string>();
 
 /** Everything a battle sees of one army in one zone: priced designs (with the cost breakdown), placements, brains. */
 function entrantDigest(a: Archetype, style: MapStyle, players: number, zone: number, config: GameConfig, cfgKey: string): string {
-  const memo = `${cfgKey} ${style} ${players} ${zone} ${JSON.stringify(a)}`;
+  // The config key leaves the prices out (they are hashed through the priced designs), so the memo needs them.
+  const memo = `${cfgKey} ${JSON.stringify(config.cost)} ${style} ${players} ${zone} ${JSON.stringify(a)}`;
   let d = entrantDigests.get(memo);
   if (!d) {
     const { units, placements } = deploy(a, mapFor(style, players).zones[zone]!, config);
@@ -937,8 +938,8 @@ export interface RunOptions {
   workers?: number;
   cache?: boolean;
   runner?: BalanceRunnerKind;
-  /** A pool to reuse (several calls with the same config), else one for this call. */
-  pool?: BalancePool;
+  /** A pool to reuse (several calls with the same config; made on first need), else one for this call. */
+  pool?: () => BalancePool;
   /** Called after each batch of played battles (progress). */
   onProgress?: (done: number, total: number) => void;
 }
@@ -963,11 +964,11 @@ export async function runJobs(jobs: BattleJob[], configPatch?: unknown, opts: Ru
   if (missing.length === 0) return out as BattleRecord[];
   const workers = opts.workers ?? balanceWorkers();
   let played: BattleRecord[];
-  if (opts.pool) played = await opts.pool.run(missing.map((i) => jobs[i]!), opts.onProgress);
-  else if (workers <= 1 || missing.length < 16) {
+  if (workers <= 1 || missing.length < 16) {
     played = [];
     for (const i of missing) played.push(await playJob(jobs[i]!, config, runner));
-  } else {
+  } else if (opts.pool) played = await opts.pool().run(missing.map((i) => jobs[i]!), opts.onProgress);
+  else {
     const pool = new BalancePool(Math.min(workers, missing.length), configPatch, runner);
     try {
       played = await pool.run(missing.map((i) => jobs[i]!), opts.onProgress);

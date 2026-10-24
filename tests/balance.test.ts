@@ -98,13 +98,12 @@ import {
   type MatchupCell,
   type PairResult,
 } from './helpers/balance.js';
+import { FULL_DOMINANCE_EXCEPTIONS, KIND_DOMINANCE_EXCEPTIONS, ROUND_ROBIN_WIN_CAP, STATED } from './helpers/balanceRules.js';
 
 const T = 60_000;
 /** The big round robin (thousands of battles, in worker processes). */
 const MATRIX_T = 15 * T;
 const BATTLE_END = BALANCE_CONFIG.timers.battleTicks;
-/** §6 "no single archetype dominates": the most of its round-robin battles any archetype may win. */
-const ROUND_ROBIN_WIN_CAP = 0.7;
 /** The most of the free-for-all battles any one army may win (shared 1sts count). */
 const FFA_WIN_SHARE_CAP = 0.5;
 /**
@@ -120,14 +119,9 @@ const DOMINANCE_EXCEPTIONS: Record<string, { ffaWinShareCap?: number }> = {
   // (M8.8: 12 of 16, re-recorded; was 14 of 16).
   turtle: { ffaWinShareCap: 12 / 16 },
 };
-/** The 17×17 (M8.6) part: 188-0-68 (73%): loses to the walled nests, the sealed fortress and walls + rush. */
-const KIND_DOMINANCE_EXCEPTIONS: Record<string, { roundRobinWinCap: number }> = {
-  bricks: { roundRobinWinCap: 188 / 256 },
-};
-/** The full M8.8 matrix (37 archetypes): 410-0-166 (71%): loses to the walled nests, ice + fire and the shatter squad. */
-const FULL_DOMINANCE_EXCEPTIONS: Record<string, { roundRobinWinCap: number }> = {
-  bricks: { roundRobinWinCap: 410 / 576 },
-};
+// The 70% cap (ROUND_ROBIN_WIN_CAP) and the recorded bricks exceptions in the 17×17
+// (188/256, 73%) and full (410/576, 71%) matrices live in helpers/balanceRules.ts,
+// shared with the fast balance CLI (scripts/balance.ts).
 const ALL_KEYS = ALL_ARCHETYPES.map((a) => a.key);
 const SIX_KEYS = ARCHETYPES.map((a) => a.key);
 const M85_KEYS = [...ARCHETYPES, ...BUILDING_ARCHETYPES].map((a) => a.key);
@@ -311,27 +305,7 @@ describe('round robin: no archetype dominates (§6, §14)', () => {
 });
 
 describe('elements, splash and support: the designed counters (M8.8 stated outcomes)', () => {
-  /** [A, B]: A wins most of its battles against B (≥ 9 of 16; ≥ 5 of 8 on one seed). */
-  const STATED: Array<[string, string, string]> = [
-    ['shatter', 'bricks', 'fire on frozen bricks shatters them'],
-    ['shatter', 'bigFriends', 'and the Huge Tank'],
-    ['frostnest', 'bricks', 'ice is the anti-brick counter'],
-    ['blizzard', 'bricks', 'so is a freezing totem with fire soldiers round it'],
-    ['blizzard', 'buffedrush', 'a frozen rush is a slow rush'],
-    ['mortars', 'scoutsFilled', 'splash is the anti-swarm counter'],
-    ['firenest', 'storm', 'fire splash behind walls stops a soldier crowd'],
-    ['icewall', 'wallrush', 'ice behind walls stops a soldier rush'],
-    ['healerball', 'templates', 'healing wins a fair fight'],
-    ['shatter', 'healerball', 'but fire beats medics (a heal on a burning ally only cleanses)'],
-    ['firenest', 'healerball', 'fire splash too'],
-    ['buffedrush', 'templates', 'might and haste make 6 soldiers beat 7 templates'],
-    ['buffedrush', 'shatter', 'and the shatter squad'],
-    ['shieldwall', 'glass', 'a 25% shield blunts the Glass Cannons'],
-    ['bigFriends', 'bombard', 'a Huge Tank with a medic walks through the catapults'],
-    ['bigFriends', 'longbow', 'and the Max Snipers'],
-    ['elemfactories', 'runners', 'ice archers and fire brutes beat plain runners'],
-    ['medictent', 'mixed', 'medics on guard keep the tanks going'],
-  ];
+  // STATED (helpers/balanceRules.ts): [A, B, why], A wins most of its battles against B (≥ 9 of 16; ≥ 5 of 8 on one seed).
   it(
     'each stated outcome holds',
     async () => {
