@@ -35,6 +35,13 @@ import type {
   ValidationResult,
 } from '@pixel-clash/shared';
 
+/** How long a RATE_LIMITED error asks the caller to wait (0 for any other error). */
+export function retryAfterMs(err: unknown): number {
+  if (!(err instanceof ApiError) || err.code !== 'RATE_LIMITED') return 0;
+  const ms = err.details?.retryAfterMs;
+  return typeof ms === 'number' && Number.isFinite(ms) ? Math.max(0, ms) : 0;
+}
+
 /** A failed request. `validation` is set for HTTP 422 unit validation failures (§7). */
 export class ApiError extends Error {
   constructor(

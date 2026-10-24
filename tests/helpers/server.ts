@@ -35,6 +35,8 @@ export async function bootServer(opts: Partial<ServerOptions> = {}): Promise<Run
     playbackRate: 20,
     revealDelayMs: 0,
     saveDebounceMs: 5,
+    // Scripted tests toggle Ready faster than a player may; tests/ready-limit.test.ts turns it back on.
+    readyLimit: false,
     publicDir: join(tmpdir(), 'pixel-clash-no-client'),
     ...opts,
     // `config` is merged over FAST_CONFIG (not replaced).

@@ -12,9 +12,9 @@
 // paints walls along the cells passed over (stops at the copy cap or budget).
 
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { cornerZone, groupOf, sizeOf, type MapZone, type PlacementDTO, type UnitCardDTO } from '@pixel-clash/shared';
+import { READY_MIN_GAP_MS, cornerZone, groupOf, sizeOf, type MapZone, type PlacementDTO, type UnitCardDTO } from '@pixel-clash/shared';
 import { countdownText } from '../../common/advance.js';
-import { ApiError, api } from '../../common/api.js';
+import { ApiError, api, retryAfterMs } from '../../common/api.js';
 import { resolveSprite } from '../../common/render/sprites.js';
 import { arenaFor, toMapZone, zoneLabel } from '../../common/maps.js';
 import { seatStyle } from '../../common/seats.js';
@@ -255,13 +255,16 @@ export function Placement() {
   const toggleReady = async () => {
     setReadyBusy(true);
     save.flush();
+    let holdMs = READY_MIN_GAP_MS;
     try {
       await api.setReady(!ready);
       store.sound.play(ready ? 'remove' : 'ready', { force: true });
     } catch (err) {
+      holdMs = Math.max(holdMs, retryAfterMs(err));
       store.toast(err instanceof ApiError ? err.playerMessage : "Couldn't change READY. Try again!", 'error');
     } finally {
-      setReadyBusy(false);
+      // No spamming (§3): the button stays off for the server's minimum gap.
+      setTimeout(() => setReadyBusy(false), holdMs);
     }
   };
 

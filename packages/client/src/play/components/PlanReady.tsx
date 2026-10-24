@@ -6,7 +6,8 @@
 // With the host's auto-advance on, the countdown to placement shows here.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { ApiError, api } from '../../common/api.js';
+import { READY_MIN_GAP_MS } from '@pixel-clash/shared';
+import { ApiError, api, retryAfterMs } from '../../common/api.js';
 import { cx } from '../../common/ui.js';
 import { onlyWallsPicked, pickCounterText, pickCounts, planReadyView, readyWasCleared, typeLookup } from '../logic.js';
 import { getStore, useStore } from '../store.js';
@@ -44,15 +45,18 @@ export function PlanReady() {
   const toggle = async () => {
     setBusy(true);
     own.current = true;
+    let holdMs = READY_MIN_GAP_MS;
     try {
       await api.setReady(!ready);
       setChangedNote(false);
       store.sound.play(ready ? 'remove' : 'ready', { force: true });
     } catch (err) {
       own.current = false;
+      holdMs = Math.max(holdMs, retryAfterMs(err));
       store.toast(err instanceof ApiError ? err.playerMessage : "Couldn't change Ready. Try again!", 'error');
     } finally {
-      setBusy(false);
+      // No spamming (§3): the button stays off for the server's minimum gap.
+      setTimeout(() => setBusy(false), holdMs);
     }
   };
 

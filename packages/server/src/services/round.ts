@@ -4,6 +4,9 @@
 
 import {
   MAP_STYLE_INFO,
+  READY_MAX_PER_WINDOW,
+  READY_MIN_GAP_MS,
+  READY_WINDOW_MS,
   assignMapZones,
   assignTeamZones,
   fail,
@@ -26,6 +29,7 @@ import {
   type UnitType,
 } from '@pixel-clash/shared';
 import { autoPlace } from '../sim/autoPlace.js';
+import { RateLimiter } from '../util/ratelimit.js';
 import { ArmoryService } from './armory.js';
 import type { Game } from './game.js';
 import { newRoundState, type LockedUnit, type PlayerRoundState } from './store.js';
@@ -41,7 +45,15 @@ export interface LockedDesign extends LockedUnit {
 }
 
 export class RoundService {
-  constructor(private readonly game: Game) {}
+  /** Ready changes per player (READY_* in shared protocol, or GameOptions.readyLimit): no spamming. */
+  private readonly readyGap: RateLimiter | null;
+  private readonly readyWindow: RateLimiter | null;
+
+  constructor(private readonly game: Game) {
+    const limit = game.options.readyLimit ?? { minGapMs: READY_MIN_GAP_MS, maxPerWindow: READY_MAX_PER_WINDOW, windowMs: READY_WINDOW_MS };
+    this.readyGap = limit ? new RateLimiter(1, limit.minGapMs) : null;
+    this.readyWindow = limit ? new RateLimiter(limit.maxPerWindow, limit.windowMs) : null;
+  }
 
   stateOf(playerId: string): PlayerRoundState {
     const m = this.game.store.match;
@@ -394,6 +406,17 @@ export class RoundService {
       return fail('NO_FIGHTERS', "Walls, medics and banners can't win on their own. Place a unit that attacks.", {
         hint: 'Put a soldier or tower that does damage, or a factory that builds fighting minions, on your grid, then press Ready.',
       });
+    }
+    if (rs.ready !== ready && this.readyGap && this.readyWindow) {
+      // Only real changes count toward the limit; pressing the same state again is a no-op.
+      const wait = Math.max(this.readyGap.check(playerId), this.readyWindow.check(playerId));
+      if (wait > 0) {
+        return fail('RATE_LIMITED', `Easy there! Wait ${Math.ceil(wait / 100) / 10} s before changing Ready again.`, {
+          details: { retryAfterMs: wait },
+        });
+      }
+      this.readyGap.hit(playerId);
+      this.readyWindow.hit(playerId);
     }
     rs.ready = ready;
     this.game.store.save();

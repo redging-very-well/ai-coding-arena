@@ -89,6 +89,8 @@ export interface GameOptions {
   autoAdvanceDelayMs?: number;
   /** Debounce for state.json writes. */
   saveDebounceMs?: number;
+  /** Ready spam limit (§3). Default the READY_* constants; `false` turns it off (tests that toggle fast). */
+  readyLimit?: { minGapMs: number; maxPerWindow: number; windowMs: number } | false;
 }
 
 export class Game {

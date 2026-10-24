@@ -128,6 +128,16 @@ export type ViewerRole = 'player' | 'screen' | 'admin';
 export const SESSION_COOKIE = 'pc_session';
 export const ADMIN_COOKIE = 'pc_admin';
 
+/**
+ * Ready can't be spammed (§3): each change flickers every screen, can replay
+ * the all-ready chime and restarts the auto-advance countdown. The server
+ * allows one change per READY_MIN_GAP_MS and READY_MAX_PER_WINDOW changes per
+ * READY_WINDOW_MS per player; /play keeps the button disabled for the gap.
+ */
+export const READY_MIN_GAP_MS = 1500;
+export const READY_MAX_PER_WINDOW = 6;
+export const READY_WINDOW_MS = 30_000;
+
 // ---------------------------------------------------------------------------
 // Players
 // ---------------------------------------------------------------------------
