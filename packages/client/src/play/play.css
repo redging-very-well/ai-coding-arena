@@ -1017,3 +1017,21 @@ button.btn.bad { background: var(--bad); border-color: var(--bad); color: #1a0b0
 /* M8.5: my factories' minions during the battle. */
 .minion-count { margin: 0.2rem 0 0.4rem; color: var(--text-dim); }
 .factory-line { margin: 0.3rem 0 0; }
+
+/* Match awards (MATCH_RESULTS, §12.1) */
+.match-awards { margin: 1rem 0; }
+.player-badge.my-award strong { font-size: 1.05rem; }
+.award-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.award-row {
+  display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto auto; gap: 0.6rem; align-items: center;
+  padding: 4px 8px; border-left: 4px solid var(--seat); border-radius: 4px; background: var(--bg-2);
+}
+.award-row.me { background: color-mix(in srgb, var(--accent) 18%, var(--bg-2)); outline: 2px solid var(--accent); }
+.award-emoji { font-size: 1.5rem; text-align: center; }
+.award-text { display: flex; flex-direction: column; min-width: 0; }
+.award-who { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 600; }
+.award-stat { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-dim); }
+@media (max-width: 640px) {
+  .award-row { grid-template-columns: 2rem minmax(0, 1fr); }
+  .award-who, .award-stat { grid-column: 2; }
+}

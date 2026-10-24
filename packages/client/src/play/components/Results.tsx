@@ -14,6 +14,7 @@ import { BADGE_PLAYER_TEXT, effectReportLines, groupErrors, scoreLines, scorePar
 import { getStore, useStore } from '../store.js';
 import { ArenaView } from './Battle.js';
 import { CopyButton } from './CopyButton.js';
+import { MatchAwards } from './MatchAwards.js';
 import { TeamChip } from './TeamPanel.js';
 import { TopUnits } from './TopUnits.js';
 
@@ -155,6 +156,8 @@ export function Results() {
           </div>
         </div>
       )}
+
+      {final && <MatchAwards game={game} meId={meId} />}
 
       {!final && mine && (
         <>
