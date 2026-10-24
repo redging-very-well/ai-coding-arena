@@ -21,6 +21,7 @@ import { seatStyle } from '../../common/seats.js';
 import { cx, debounce, formatMoney } from '../../common/ui.js';
 import {
   GROUP_TITLES,
+  combatChips,
   factoryKindChip,
   typeTitle,
   budgetText,
@@ -394,6 +395,14 @@ export function Placement() {
                       <span class="pal-name">
                         {u.name}
                         {u.stats.type === 'factory' && <span class="pal-kind"> {factoryKindChip(u.stats).icon}</span>}
+                        {combatChips(u.stats).length > 0 && (
+                          <span class="pal-kind" title={combatChips(u.stats).map((c) => c.label).join(', ')}>
+                            {' '}
+                            {combatChips(u.stats)
+                              .map((c) => c.icon)
+                              .join('')}
+                          </span>
+                        )}
                       </span>
                       <span class="pal-cost">{formatMoney(u.cost)}</span>
                       <span class="pal-copies">×{copies.get(u.unitId) ?? 0}</span>

@@ -8,6 +8,10 @@
 // minions" and the minion's mini sprite in the factory's colour, and the
 // price breakdown its production line. M8.6 (§12.5): a minion-kind chip
 // (icon, name, that kind's mini sprite), its burst and the orders its code gives.
+// M8.8: element / splash / support chips (a factory: its minions' element), a
+// "support only" tag for damage-0 helpers, an "old $1,000 numbers" tag on
+// designs from before the ×5 economy, and the new price lines (tough + strong,
+// splash, element, heal, aura) under the breakdown.
 
 import { useState } from 'preact/hooks';
 import { isNonCombatBuilding, playerHintFor, playerHintForIssue, sizeOf, type StatBounds, type UnitCardDTO } from '@pixel-clash/shared';
@@ -15,7 +19,7 @@ import { minionLook } from '../../common/render/buildings.js';
 import { resolveSprite } from '../../common/render/sprites.js';
 import { seatStyle } from '../../common/seats.js';
 import { cx, formatMoney } from '../../common/ui.js';
-import { breakdownRows, typeTitle, burstText, factoryKindChip, factoryLines, ordersText, statBars } from '../logic.js';
+import { breakdownNotes, breakdownRows, combatChips, isSupportOnly, typeTitle, burstText, factoryKindChip, factoryLines, ordersText, statBars } from '../logic.js';
 import { CopyButton } from './CopyButton.js';
 import { SpriteView } from './SpriteView.js';
 
@@ -55,6 +59,8 @@ export function UnitCard(props: UnitCardProps) {
   const factory = u.stats.type === 'factory';
   const chip = factory ? factoryKindChip(u.stats) : null;
   const minion = chip ? minionLook(u.stats.color, chip.kind) : null;
+  const chips = combatChips(u.stats);
+  const oldScale = (u.scaleVersion ?? 2) < 2 || u.warnings.some((w) => w.code === 'W_OLD_SCALE');
   const seen = () => props.onSeen?.();
 
   const stop = (fn: () => void) => (e: Event) => {
@@ -110,6 +116,16 @@ export function UnitCard(props: UnitCardProps) {
               </span>
             )}
             {props.isNew && <span class="tag new">new!</span>}
+            {isSupportOnly(u.stats) && (
+              <span class="tag support-only" title="Damage 0: it helps, it can't win on its own">
+                support only
+              </span>
+            )}
+            {oldScale && (
+              <span class="tag old-scale" title="Made for the old $1,000 game: its numbers are 5× too small now">
+                old $1,000 numbers
+              </span>
+            )}
             {u.warnings.length > 0 && (
               <button class="tag warn" onClick={stop(() => setShowWarn((v) => !v))} aria-expanded={showWarn} title="Tips for this unit">
                 ⚠️ {u.warnings.length}
@@ -130,6 +146,16 @@ export function UnitCard(props: UnitCardProps) {
           </li>
         ))}
       </ul>
+
+      {chips.length > 0 && (
+        <ul class="combat-chips" aria-label="Element, splash and support">
+          {chips.map((c) => (
+            <li key={c.key} class={cx('combat-chip', c.tone)} title={c.title}>
+              <span aria-hidden="true">{c.icon}</span> {c.label}
+            </li>
+          ))}
+        </ul>
+      )}
 
       {factory && minion && chip && (
         <div class="factory-info">
@@ -177,7 +203,8 @@ export function UnitCard(props: UnitCardProps) {
         </button>
         {u.lastBattle && (
           <span class="last-battle dim" title={`Round ${u.lastBattle.round}`}>
-            last fight: {u.lastBattle.kills} KO · {Math.round(u.lastBattle.damageDealt)} dmg
+            last fight: {u.lastBattle.kills} KO · {Math.round(u.lastBattle.damageDealt).toLocaleString('en-US')} dmg
+            {(u.lastBattle.healing ?? 0) >= 1 ? ` · ${Math.round(u.lastBattle.healing!).toLocaleString('en-US')} healed` : ''}
           </span>
         )}
         {props.onRetire &&
@@ -225,13 +252,15 @@ export function UnitCard(props: UnitCardProps) {
               </tr>
             ))}
           </tbody>
-          {u.breakdown.production && (
+          {breakdownNotes(u.breakdown).length > 0 && (
             <tfoot>
-              <tr>
-                <td colSpan={2} class="dim small">
-                  {u.breakdown.production.text}
-                </td>
-              </tr>
+              {breakdownNotes(u.breakdown).map((line) => (
+                <tr key={line}>
+                  <td colSpan={2} class="dim small">
+                    {line}
+                  </td>
+                </tr>
+              ))}
             </tfoot>
           )}
         </table>

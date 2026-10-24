@@ -9,8 +9,8 @@ import { BADGES, BADGE_IDS, DEFAULT_CONFIG, type BattleReportDTO, type GameState
 import { ApiError, api } from '../../common/api.js';
 import { teamOfPlayer } from '../../common/maps.js';
 import { seatStyle } from '../../common/seats.js';
-import { PLACE_MEDALS, cx, ordinal } from '../../common/ui.js';
-import { BADGE_PLAYER_TEXT, groupErrors, scoreLines, scoreParts, factoryReportLines, stuckPrompts, unitPrompts } from '../logic.js';
+import { PLACE_MEDALS, cx, formatMoney, ordinal } from '../../common/ui.js';
+import { BADGE_PLAYER_TEXT, effectReportLines, groupErrors, scoreLines, scoreParts, factoryReportLines, stuckPrompts, unitPrompts } from '../logic.js';
 import { getStore, useStore } from '../store.js';
 import { ArenaView } from './Battle.js';
 import { CopyButton } from './CopyButton.js';
@@ -109,6 +109,7 @@ export function Results() {
   const groups = report ? groupErrors(report.errors) : [];
   const extra = last ? [...unitPrompts(roster, last.round, report), ...stuckPrompts(report, st.reveal?.totalTicks ?? DEFAULT_CONFIG.timers.battleTicks)] : [];
   const factoryLinesOfReport = factoryReportLines(report);
+  const effectLinesOfReport = effectReportLines(report);
   const myBoard = game.scoreboard.findIndex((s) => s.playerId === meId);
   const myEntry = myBoard >= 0 ? game.scoreboard[myBoard]! : undefined;
   const myPlace = myEntry?.place ?? myBoard + 1;
@@ -249,8 +250,8 @@ export function Results() {
                         {lb.survived}/{lb.fielded}
                       </td>
                       <td>{lb.kills}</td>
-                      <td>{Math.round(lb.damageDealt)}</td>
-                      <td>${Math.round(lb.valueDestroyed ?? 0)}</td>
+                      <td>{Math.round(lb.damageDealt).toLocaleString('en-US')}</td>
+                      <td>{formatMoney(lb.valueDestroyed ?? 0)}</td>
                       <td>{lb.disabled > 0 ? `💤 ${lb.disabled}` : lb.strikes > 0 ? `⚠️ ${lb.strikes}` : '✓'}</td>
                     </tr>
                   );
@@ -259,6 +260,11 @@ export function Results() {
             </table>
             {factoryLinesOfReport.map((l) => (
               <p key={l} class="small factory-line">
+                {l}
+              </p>
+            ))}
+            {effectLinesOfReport.map((l) => (
+              <p key={l} class="small factory-line effect-line">
                 {l}
               </p>
             ))}

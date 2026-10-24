@@ -279,7 +279,12 @@ export function toDiagnostics(result: ValidationResult, source: string): { diagn
 
 const STAT_LABEL: Record<PricedStat, string> = { maxHealth: 'Health', damage: 'Damage', range: 'Range', speed: 'Speed', size: 'Size' };
 
-const money = (n: number) => (Math.abs(n - Math.round(n)) < 1e-9 ? `$${Math.round(n)}` : `$${n.toFixed(2).replace(/0$/, '')}`);
+/** "$1,043" / "$382.64" (M8.8: thousands separators, prices are 5× bigger). */
+const money = (n: number) =>
+  Math.abs(n - Math.round(n)) < 1e-9
+    ? `$${Math.round(n).toLocaleString('en-US')}`
+    : `$${n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}`;
+const times = (f: number) => `×${Math.round(f * 100) / 100}`;
 
 export interface CostRow {
   label: string;
@@ -302,6 +307,13 @@ export interface CostPanel {
   factor: string | null;
   /** Near-max surcharge of the stats at ≥ 80 % of their max, before the attack factor. */
   surcharge: number;
+  /**
+   * M8.8: the whole-unit multipliers after the attack factor (tough + strong,
+   * splash, element) and the aura added after them, each with its sentence.
+   */
+  extras: Array<{ label: string; price: string; text: string }>;
+  /** What a maxed stat costs vs its plain price (1 + curveK: 2 at the ×5 defaults). */
+  maxMultiple: number;
 }
 
 /** The live cost panel: base, each stat (with its near-max surcharge), the attack factor, the total vs the cap. */
@@ -324,12 +336,24 @@ export function costPanel(b: CostBreakdown, cap: number): CostPanel {
       nearMax,
     });
   }
+  // M8.8: the heal term is part of the sum (a faster healer heals more, so the attack factor applies).
+  if (b.heal) rows.push({ label: 'Heal', value: b.heal.power, price: money(b.heal.total), surcharge: 0, nearMax: b.heal.ratio >= NEAR_MAX_RATIO });
   const prod = b.production;
   if (prod) {
-    rows.push({ label: kindPlural(prod.kind ?? 'grunt'), value: prod.expected, price: `${prod.expected} × ${money(prod.minionValue)} = ${money(prod.total)}`, surcharge: 0, nearMax: false });
+    const el = prod.element && prod.element !== 'normal' ? `${prod.element} ` : '';
+    rows.push({ label: `${el}${kindPlural(prod.kind ?? 'grunt')}`, value: prod.expected, price: `${prod.expected} × ${money(prod.minionValue)} = ${money(prod.total)}`, surcharge: 0, nearMax: false });
   }
-  const factor = b.factor > 1 + 1e-9 ? `×${b.factor.toFixed(2).replace(/\.?0+$/, '')} for fast attacks` : null;
-  return { cost: b.cost, cap, overCap: b.cost > cap, rows, factor, surcharge };
+  const factor = b.factor > 1 + 1e-9 ? `${times(b.factor)} for fast attacks` : null;
+  const extras: CostPanel['extras'] = [];
+  if (b.power && b.power.factor > 1 + 1e-9) extras.push({ label: 'Tough + strong', price: times(b.power.factor), text: b.power.text });
+  if (b.splash && b.splash.factor > 1 + 1e-9) extras.push({ label: `Splash ${fmtNum(b.splash.radius)}`, price: times(b.splash.factor), text: b.splash.text });
+  if (b.element && b.element.element !== 'normal') extras.push({ label: `Element ${b.element.element}`, price: times(b.element.factor), text: b.element.text });
+  if (b.aura) extras.push({ label: `Aura ${b.aura.kind} ${fmtNum(b.aura.power)}%`, price: `+${money(b.aura.total)}`, text: b.aura.text });
+  return { cost: b.cost, cap, overCap: b.cost > cap, rows, factor, surcharge, extras, maxMultiple: 1 + b.curveK };
+}
+
+function fmtNum(n: number): string {
+  return String(Math.round(n * 100) / 100);
 }
 
 /** The breakdown to show for a result: the success's, or UNIT_TOO_EXPENSIVE's. */
@@ -555,7 +579,7 @@ export function phaseGuard(next: Phase, dirty: boolean): 'stay' | 'close' | 'ask
   return dirty ? 'ask' : 'close';
 }
 
-/** "Saved v6 — $142" */
+/** "Saved v6 — $1,142" */
 export function savedToast(version: number, cost: number, isNew: boolean, name: string): string {
-  return isNew ? `Saved ${name} (v${version}) — $${cost}` : `Saved v${version} — $${cost}`;
+  return isNew ? `Saved ${name} (v${version}) — ${money(cost)}` : `Saved v${version} — ${money(cost)}`;
 }

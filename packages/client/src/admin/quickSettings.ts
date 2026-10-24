@@ -123,7 +123,35 @@ export const QUICK_GROUPS: QuickGroup[] = [
       { ...money, path: 'cost.range', label: '$ per px range', help: 'Price of each pixel of attack range.' },
       { ...money, path: 'cost.speed', label: '$ per speed', help: 'Price of each px/tick of movement speed (towers have 0).', step: 0.5 },
       { ...money, path: 'cost.size', label: '$ per px size (above 6)', help: 'Price of each pixel of body radius above 6.' },
-      { path: 'cost.curveK', label: 'Max-stat steepness k (maxed stat costs 1+k ×)', help: '0 = straight-line prices. With k = 2 a maxed stat costs 3× and a half-max stat 1.5×.', min: 0, max: 5, step: 0.25 },
+      { path: 'cost.curveK', label: 'Max-stat steepness k (maxed stat costs 1+k ×)', help: '0 = straight-line prices. With k = 1 (the default) a maxed stat costs 2× and a half-max stat 1.25×; k = 2 makes them 3× and 1.5×.', min: 0, max: 5, step: 0.25 },
+      // M8.8 (§6 M8.8 economy): the whole-unit factors and the support prices.
+      {
+        path: 'cost.powerFactor',
+        label: 'Tough-and-strong surcharge q',
+        help: 'Units that are tough AND hard-hitting pay × (1 + q × HP/2500 × damage/300): q = 0.6 makes a maxed brick ×1.6 and barely touches specialists. 0 turns it off.',
+        unit: '×',
+        min: 0,
+        max: 2,
+        step: 0.05,
+      },
+      { path: 'cost.splash', label: 'Splash surcharge s', help: 'Splash multiplies the whole price by 1 + s × ρ(2 − ρ), ρ = radius / 80: with s = 0.7 splash 40 is ×1.53 and splash 80 ×1.7.', unit: '×', min: 0, max: 2, step: 0.05 },
+      ...(['fire', 'ice', 'lightning'] as const).map((e) => ({
+        path: `cost.element.${e}`,
+        label: `${e[0]!.toUpperCase()}${e.slice(1)} price factor`,
+        help: `A ${e} unit (or a factory's ${e} minions) costs × this. 1 = free; the default 1.2 matches what the element is worth on average.`,
+        unit: '×',
+        min: 1,
+        max: 3,
+        step: 0.05,
+      })),
+      { ...money, path: 'cost.heal', label: 'Heal $ per HP per heal', help: 'Price of each HP a heal-support unit restores per heal (before the curve, the reach factor and the cooldown factor).', step: 0.1 },
+      ...(['haste', 'might', 'shield'] as const).map((k) => ({
+        ...money,
+        path: `cost.aura.${k}`,
+        label: `${k[0]!.toUpperCase()}${k.slice(1)} aura $ per %`,
+        help: `Price of each % of a ${k} aura (before the curve and the radius factor). Auras are always on, so they are added after the cooldown and other factors.`,
+        step: 0.5,
+      })),
     ],
   },
   {
@@ -166,6 +194,26 @@ export const QUICK_GROUPS: QuickGroup[] = [
         ];
       }),
       { path: 'factory.minions.brute.wallDamageMultiplier', label: 'Brute wall damage', help: 'Brute hits on walls deal damage × this (1-5).', unit: '×', min: 1, max: 5, step: 0.5 },
+      // M8.8 (§5.5): the medic minion (never attacks; its heal and reach must stay within the heal support bounds).
+      { path: 'factory.minions.medic.maxHealth', label: 'Medic health', help: "HP of a factory's medics (must stay within the soldier bounds).", min: 1, step: 5 },
+      { path: 'factory.minions.medic.speed', label: 'Medic speed', help: 'Pixels per tick (60 ticks = 1 s).', unit: 'px/tick', min: 0.1, step: 0.1 },
+      { path: 'factory.minions.medic.heal', label: 'Medic heal', help: 'HP one medic heal restores (within the heal support bounds; the 5%-per-second heal room still caps it).', unit: 'HP', min: 1, step: 5 },
+      { path: 'factory.minions.medic.reach', label: 'Medic reach', help: 'How far a medic heals, edge to edge (within the heal support bounds).', unit: 'px', min: 1, step: 5 },
+    ],
+  },
+  {
+    // M8.8 (§5.4, §5.5, §9.4): how strong the elements, combos, splash and heals are (prices are under Costs).
+    id: 'effects',
+    title: 'Elements & support',
+    fields: [
+      { path: 'elements.fire.burnPct', label: 'Fire burn', help: 'A fire hit adds this % of its damage again as a burn over the next few seconds.', unit: '%', min: 0, max: 200, step: 5 },
+      { path: 'elements.ice.slowPct', label: 'Ice slow', help: 'A frozen body moves, reloads and builds this % slower.', unit: '%', min: 0, max: 99, step: 5 },
+      { ...tickSeconds, path: 'elements.ice.ticks', label: 'Freeze lasts', help: 'How long an ice hit freezes (refreshes, never stacks).', min: 0.1, step: 0.5 },
+      { path: 'elements.lightning.chancePct', label: 'Lightning zap chance', help: 'Share of lightning hits that also zap the nearest other enemy for the same damage.', unit: '%', min: 0, max: 100, step: 5 },
+      { path: 'elements.lightning.hopRange', label: 'Zap reach', help: 'How far a zap jumps, edge to edge.', unit: 'px', min: 0, step: 10 },
+      { path: 'elements.shatterPct', label: 'Shatter bonus', help: 'A fire hit on a frozen body does this % extra and thaws it.', unit: '%', min: 0, max: 200, step: 5 },
+      { path: 'elements.splashPct', label: 'Splash damage', help: 'Enemies near the target of a splash unit take this % of the hit.', unit: '%', min: 0, max: 100, step: 5 },
+      { path: 'support.healRoomPctPerSecond', label: 'Heal limit (% max HP / s)', help: 'All healers together can restore at most this share of a body’s max HP per second. Heals stop when sudden death starts.', unit: '%/s', min: 0, max: 100, step: 0.5 },
     ],
   },
   {
@@ -426,9 +474,14 @@ const TEMPLATE_LOOKS: Partial<Record<PreviewUnit['key'], { name: string; color: 
 
 /** The stat fields a design of this type sets (walls and factories leave the attack stats out, §5.2). */
 function ownStats(stats: CostStats): Record<string, unknown> {
-  if (!isNonCombatBuilding(stats.type)) return { ...stats };
+  if (!isNonCombatBuilding(stats.type)) {
+    // M8.8: a support is three contract fields in a design.
+    const { support, ...rest } = stats;
+    return support ? { ...rest, support: support.kind, supportPower: support.power, supportRange: support.range } : rest;
+  }
   const out: Record<string, unknown> = { type: stats.type, maxHealth: stats.maxHealth };
   if (stats.type === 'factory') out.productionInterval = stats.productionInterval;
+  if (stats.type === 'factory' && stats.produces) out.produces = stats.produces;
   return out;
 }
 
@@ -458,20 +511,39 @@ function templateProblems(cfg: GameConfig): TemplateProblems {
 // --- live cost preview -------------------------------------------------------------
 
 export interface PreviewUnit {
-  key: 'basicSoldier' | 'basicTower' | 'bigTank' | 'allMax' | 'basicWall' | 'basicFactory' | 'swarmFactory' | 'archerFactory' | 'runnerFactory' | 'bruteFactory';
+  key:
+    | 'basicSoldier'
+    | 'basicTower'
+    | 'bigTank'
+    | 'allMax'
+    | 'basicWall'
+    | 'basicFactory'
+    | 'swarmFactory'
+    | 'archerFactory'
+    | 'runnerFactory'
+    | 'bruteFactory'
+    | 'fireSoldier'
+    | 'mortarTower'
+    | 'fieldMedic'
+    | 'warDrummer'
+    | 'medicFactory';
   label: string;
   stats: CostStats;
   /** A starter template: if it goes over the cap the server refuses the save. */
   template: boolean;
 }
 
-export const BASIC_SOLDIER: CostStats = { type: 'soldier', maxHealth: 120, damage: 10, range: 40, speed: 1.5, attackCooldown: 60, size: 10 };
-export const BASIC_TOWER: CostStats = { type: 'tower', maxHealth: 150, damage: 15, range: 180, speed: 0, attackCooldown: 45, size: 14 };
-export const BIG_TANK: CostStats = { type: 'soldier', maxHealth: 500, damage: 20, range: 40, speed: 0.8, attackCooldown: 60, size: 20 };
+// M8.8 (×5 economy): the starter templates and the plan's Huge Tank (§6 M8.8 reference units).
+export const BASIC_SOLDIER: CostStats = { type: 'soldier', maxHealth: 600, damage: 50, range: 40, speed: 1.5, attackCooldown: 60, size: 10 };
+export const BASIC_TOWER: CostStats = { type: 'tower', maxHealth: 625, damage: 75, range: 140, speed: 0, attackCooldown: 45, size: 14 };
+export const BIG_TANK: CostStats = { type: 'soldier', maxHealth: 2500, damage: 100, range: 40, speed: 0.8, attackCooldown: 60, size: 20 };
 /** M8.5 templates (§11) and the plan's Swarm Factory (§6). */
-export const BASIC_WALL: CostStats = { type: 'wall', maxHealth: 400, damage: 0, range: 0, speed: 0, attackCooldown: 60 };
-export const BASIC_FACTORY: CostStats = { type: 'factory', maxHealth: 300, damage: 0, range: 0, speed: 0, attackCooldown: 60, productionInterval: 900 };
+export const BASIC_WALL: CostStats = { type: 'wall', maxHealth: 2000, damage: 0, range: 0, speed: 0, attackCooldown: 60 };
+export const BASIC_FACTORY: CostStats = { type: 'factory', maxHealth: 1500, damage: 0, range: 0, speed: 0, attackCooldown: 60, productionInterval: 900 };
 export const SWARM_FACTORY: CostStats = { ...BASIC_FACTORY, productionInterval: 600 };
+/** M8.8 reference units (§6): the Mortar Tower and the damage-0 support body (Field Medic, War Drummer). */
+export const MORTAR_TOWER: CostStats = { type: 'tower', maxHealth: 625, damage: 100, range: 140, speed: 0, attackCooldown: 60, size: 14, splashRadius: 40 };
+export const SUPPORT_BODY: CostStats = { type: 'soldier', maxHealth: 500, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, size: 10 };
 
 /** The preview units; the all-max one uses the draft's stat bounds. */
 export function previewUnits(cfg: GameConfig): PreviewUnit[] {
@@ -488,15 +560,21 @@ export function previewUnits(cfg: GameConfig): PreviewUnit[] {
   return [
     { key: 'basicSoldier', label: 'Basic Soldier', stats: BASIC_SOLDIER, template: true },
     { key: 'basicTower', label: 'Basic Tower', stats: BASIC_TOWER, template: true },
-    { key: 'bigTank', label: 'Big Tank (500 HP soldier)', stats: BIG_TANK, template: false },
+    { key: 'bigTank', label: 'Huge Tank (2,500 HP soldier)', stats: BIG_TANK, template: false },
     { key: 'allMax', label: 'Everything maxed', stats: allMax, template: false },
-    { key: 'basicWall', label: 'Basic Wall (400 HP)', stats: BASIC_WALL, template: true },
+    { key: 'basicWall', label: 'Basic Wall (2,000 HP)', stats: BASIC_WALL, template: true },
     { key: 'basicFactory', label: 'Basic Factory (5 minions)', stats: BASIC_FACTORY, template: true },
     { key: 'swarmFactory', label: 'Swarm Factory (8 minions)', stats: SWARM_FACTORY, template: false },
     // M8.6 (§6 Minion kinds): the Basic Factory building each other kind.
     { key: 'archerFactory', label: 'Archer Factory (5 archers)', stats: { ...BASIC_FACTORY, produces: 'archer' }, template: false },
     { key: 'runnerFactory', label: 'Runner Factory (5 runners)', stats: { ...BASIC_FACTORY, produces: 'runner' }, template: false },
     { key: 'bruteFactory', label: 'Brute Factory (5 brutes)', stats: { ...BASIC_FACTORY, produces: 'brute' }, template: false },
+    // M8.8 (§6 M8.8 reference units): an element, splash and the support kinds.
+    { key: 'fireSoldier', label: 'Fire Soldier', stats: { ...BASIC_SOLDIER, element: 'fire' }, template: false },
+    { key: 'mortarTower', label: 'Mortar Tower (splash 40)', stats: MORTAR_TOWER, template: false },
+    { key: 'fieldMedic', label: 'Field Medic (heal 60)', stats: { ...SUPPORT_BODY, support: { kind: 'heal', power: 60, range: 120 } }, template: false },
+    { key: 'warDrummer', label: 'War Drummer (might 30%)', stats: { ...SUPPORT_BODY, support: { kind: 'might', power: 30, range: 100 } }, template: false },
+    { key: 'medicFactory', label: 'Medic Tent (5 medics)', stats: { ...BASIC_FACTORY, produces: 'medic' }, template: false },
   ];
 }
 

@@ -27,7 +27,11 @@ export type SfxName =
   | 'crumble'
   | 'spawn'
   /** M8.6 (§12.5): 2+ stored minions leave a factory together (a rising whoosh). */
-  | 'release';
+  | 'release'
+  /** M8.8: a lightning zap (crackle), a SHATTER (glass) and a heal (soft chime). */
+  | 'zap'
+  | 'shatter'
+  | 'heal';
 
 /** Oscillator wave shapes (the WebAudio OscillatorType values we use). */
 export type Wave = 'sine' | 'square' | 'sawtooth' | 'triangle';
@@ -106,6 +110,9 @@ export const SFX: Readonly<Record<SfxName, readonly SfxStep[]>> = {
   crumble: [noise('lowpass', 400, 0, 0.35, 0.3), note('sine', 90, 0, 0.3, 0.26, 40)],
   spawn: [note('sine', 600, 0, 0.07, 0.14, 1200)],
   release: [noise('bandpass', 900, 0, 0.18, 0.12), note('triangle', 300, 0, 0.2, 0.14, 900), note('sine', 900, 0.12, 0.1, 0.1, 1400)],
+  zap: [noise('highpass', 3200, 0, 0.09, 0.12), note('sawtooth', 1600, 0, 0.08, 0.05, 700)],
+  shatter: [noise('highpass', 4200, 0, 0.18, 0.16), note('triangle', 2400, 0, 0.12, 0.1, 3400), note('triangle', 1800, 0.06, 0.1, 0.08, 2600)],
+  heal: [note('sine', 880, 0, 0.12, 0.08, 1320)],
 };
 
 /** Length of a recipe in seconds (its last step's end). */
@@ -174,6 +181,9 @@ export const SFX_MIN_GAP_MS: Partial<Record<SfxName, number>> = {
   spawn: 60,
   release: 150,
   place: 30,
+  zap: 70,
+  shatter: 120,
+  heal: 90,
 };
 
 /** Sounds allowed per name within one second (crowd control). */
@@ -186,6 +196,9 @@ export const SFX_PER_SECOND: Partial<Record<SfxName, number>> = {
   wallHit: 10,
   crumble: 6,
   spawn: 8,
+  zap: 8,
+  shatter: 4,
+  heal: 6,
 };
 
 /** Decides whether a sound may play now (min gap + per-second budget per name). DOM-free. */

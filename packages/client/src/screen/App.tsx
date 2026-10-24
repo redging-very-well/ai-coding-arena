@@ -891,7 +891,7 @@ function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
                   <td class="num pixel">+{row.placePoints}</td>
                   <td class="num pixel">
                     +{row.damageBonus}
-                    <small>{Math.round(row.damage)} dmg</small>
+                    <small>{Math.round(row.damage).toLocaleString('en-US')} dmg</small>
                   </td>
                   <td class="num pixel">
                     +{row.valueBonus}
@@ -928,7 +928,7 @@ function Ranking({ snap, ctrl, now }: { snap: ScreenSnapshot; ctrl: ScreenContro
                       {s.name}
                     </td>
                     <td class="pixel">{s.points} pts</td>
-                    <td title="Total damage this match (breaks ties)">💥 {Math.round(s.damage ?? 0)}</td>
+                    <td title="Total damage this match (breaks ties)">💥 {Math.round(s.damage ?? 0).toLocaleString('en-US')}</td>
                     <td class="badge-counts">
                       {badgeCounts(s).map((b) => (
                         <span key={b.id} title={b.title}>
@@ -1031,7 +1031,7 @@ function Podium({ state }: { state: GameStateDTO }) {
               <div class="block pixel">
                 <span>{ordinal(s.place)}</span>
                 <small>{s.points} pts</small>
-                <small class="dmg">💥 {Math.round(s.damage ?? 0)}</small>
+                <small class="dmg">💥 {Math.round(s.damage ?? 0).toLocaleString('en-US')}</small>
               </div>
               <div class="step-badges">
                 {badgeCounts(s).map((b) => (
@@ -1065,7 +1065,7 @@ function FinalTable({ final }: { final: ReturnType<typeof standings> }) {
                 {s.teamId !== undefined && <TeamChip teamId={s.teamId} />}
               </td>
               <td class="pixel">{s.points} pts</td>
-              <td class="dmg">💥 {Math.round(s.damage ?? 0)}</td>
+              <td class="dmg">💥 {Math.round(s.damage ?? 0).toLocaleString('en-US')}</td>
               <td class="badge-counts">
                 {badgeCounts(s).map((b) => (
                   <span key={b.id} title={b.title}>

@@ -35,7 +35,7 @@ import { tags as t } from '@lezer/highlight';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { DEFAULT_CONFIG, type SubmitUnitResponse, type ValidationResult } from '@pixel-clash/shared';
 import { ApiError, api } from '../../common/api.js';
-import { cx } from '../../common/ui.js';
+import { cx, formatMoney } from '../../common/ui.js';
 import { getStore, useStore, type EditorTarget } from '../store.js';
 import {
   LiveValidator,
@@ -681,8 +681,8 @@ export function UnitEditor({ target }: { target: EditorTarget }) {
           {panel && (
             <div class={cx('cost-panel', panel.overCap && 'over')}>
               <div class="cost-total">
-                <span class="cost">${panel.cost}</span>
-                <span class="dim">{panel.overCap ? `Too expensive! The max is $${panel.cap}` : `of $${panel.cap} max`}</span>
+                <span class="cost">{formatMoney(panel.cost)}</span>
+                <span class="dim">{panel.overCap ? `Too expensive! The max is ${formatMoney(panel.cap)}` : `of ${formatMoney(panel.cap)} max`}</span>
               </div>
               <table class="breakdown">
                 <tbody>
@@ -702,15 +702,29 @@ export function UnitEditor({ target }: { target: EditorTarget }) {
                       <td>{panel.factor.split(' ')[0]}</td>
                     </tr>
                   )}
+                  {panel.extras.map((x) => (
+                    <tr key={x.label} title={x.text}>
+                      <th>{x.label}</th>
+                      <td>{x.price}</td>
+                    </tr>
+                  ))}
                   <tr class="total">
                     <th>Cost</th>
-                    <td>${panel.cost}</td>
+                    <td>{formatMoney(panel.cost)}</td>
                   </tr>
                 </tbody>
               </table>
+              {panel.extras.length > 0 && (
+                <ul class="dim small cost-notes">
+                  {panel.extras.map((x) => (
+                    <li key={x.label}>{x.text}</li>
+                  ))}
+                </ul>
+              )}
               {panel.surcharge > 0 && (
                 <p class="dim small">
-                  Stats near their max cost up to 3 times as much (+${Math.round(panel.surcharge)} here). Two medium units often beat one giant!
+                  Stats near their max cost up to {panel.maxMultiple.toLocaleString('en-US', { maximumFractionDigits: 2 })} times as much (+{formatMoney(panel.surcharge)} here).
+                  {panel.extras.some((x) => x.label === 'Tough + strong') ? ' Very tough AND very strong costs extra: one tank plus one hitter is cheaper.' : ' Two medium units often beat one giant!'}
                 </p>
               )}
             </div>

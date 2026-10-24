@@ -259,6 +259,14 @@ export class UnitAnimator {
   private walkSince = 0;
   /** Desynchronizes idle loops between copies of the same design. */
   private readonly phase: number;
+  /**
+   * M8.8: the walk/idle loops run on their own clock that advances at the
+   * body's tempo (a frozen body animates at 65%, `setTempo`). It equals the
+   * wall clock until a tempo other than 1 is set.
+   */
+  private tempo = 1;
+  private animBase = 0;
+  private animAt = 0;
 
   constructor(readonly instanceId: string) {
     let h = 0;
@@ -266,10 +274,24 @@ export class UnitAnimator {
     this.phase = (Math.abs(h) % 8) * ANIM_FRAME_MS;
   }
 
+  /** M8.8: the animation rate from now on (1 = normal; frozen 0.65). */
+  setTempo(tempo: number, now: number): void {
+    if (tempo === this.tempo) return;
+    this.animBase = this.animTime(now);
+    this.animAt = now;
+    this.tempo = tempo > 0 ? tempo : 1;
+  }
+
+  /** The animation clock at `now` (ms): the wall clock scaled by the tempo since it last changed. */
+  animTime(now: number): number {
+    if (this.tempo === 1 && this.animBase === this.animAt) return now;
+    return this.animBase + (now - this.animAt) * this.tempo;
+  }
+
   /** Apply the frame flags (FrameUnit[4]). */
   update(flags: number, now: number): void {
     const moving = (flags & (FRAME_FLAGS.MOVING | FRAME_FLAGS.BLOCKED)) !== 0;
-    if (moving && !this.moving) this.walkSince = now;
+    if (moving && !this.moving) this.walkSince = this.animTime(now);
     this.moving = moving;
     this.facingLeft = (flags & FRAME_FLAGS.FACING_LEFT) !== 0;
     this.disabled = (flags & FRAME_FLAGS.DISABLED) !== 0;
@@ -331,9 +353,10 @@ export class UnitAnimator {
       const frame = Math.min(frameCount('attack') - 1, Math.floor((now - this.attackAt) / ANIM_FRAME_MS));
       return { ...base, state: 'attack', frame };
     }
+    const t = this.animTime(now);
     if (this.moving) {
-      return { ...base, state: 'walk', frame: Math.floor((now - this.walkSince) / ANIM_FRAME_MS) % frameCount('walk') };
+      return { ...base, state: 'walk', frame: Math.floor(Math.max(0, t - this.walkSince) / ANIM_FRAME_MS) % frameCount('walk') };
     }
-    return { ...base, state: 'idle', frame: Math.floor((now + this.phase) / ANIM_FRAME_MS) % frameCount('idle') };
+    return { ...base, state: 'idle', frame: Math.floor(Math.max(0, t + this.phase) / ANIM_FRAME_MS) % frameCount('idle') };
   }
 }

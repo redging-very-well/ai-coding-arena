@@ -12,8 +12,10 @@ export function topRankLabel(rank: number): string {
 }
 
 /** "312 damage · 2 KOs" (KOs left out when 0). */
-export function topUnitLine(t: Pick<TopUnitDTO, 'damage' | 'kills'>, damage = t.damage): string {
-  return `${damage} damage${t.kills > 0 ? ` · ${t.kills} KO${t.kills === 1 ? '' : 's'}` : ''}`;
+export function topUnitLine(t: Pick<TopUnitDTO, 'damage' | 'kills'> & { healing?: number | undefined }, damage = t.damage): string {
+  // M8.8: thousands separators (5× bigger numbers) and the HP its heals restored.
+  const heal = (t.healing ?? 0) >= 1 ? ` · ${Math.round(t.healing!).toLocaleString('en-US')} healed` : '';
+  return `${Math.round(damage).toLocaleString('en-US')} damage${t.kills > 0 ? ` · ${t.kills} KO${t.kills === 1 ? '' : 's'}` : ''}${heal}`;
 }
 
 /** "by Sam" (+ "left the game" for a player kicked during the battle). */

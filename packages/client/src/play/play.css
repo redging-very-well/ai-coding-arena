@@ -256,6 +256,19 @@ main.join {
 .group-head { display: flex; align-items: baseline; gap: 0.75rem; margin: 0.25rem 0 0.5rem; font-size: 1rem; }
 .factory-info { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.4rem 0 0; font-size: 0.9rem; color: var(--text-dim); }
 .kind-chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.1rem 0.45rem 0.1rem 0.15rem; border-radius: 999px; background: var(--panel-2, rgba(255, 255, 255, 0.08)); color: var(--text, inherit); font-weight: 600; }
+/* M8.8: element, splash and support chips (icon + word, never colour only). */
+.combat-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; list-style: none; margin: 0.35rem 0 0; padding: 0; }
+.combat-chip { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.1rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); background: var(--panel-2, rgba(255, 255, 255, 0.08)); font-weight: 600; font-size: 0.9rem; }
+.combat-chip.el-fire { border-color: #ff8a2a; background: #3a1d0a; }
+.combat-chip.el-ice { border-color: #7fe3ff; background: #0c2a33; }
+.combat-chip.el-lightning { border-color: #ffe14a; background: #332c08; }
+.combat-chip.splash { border-color: #c9ced6; }
+.combat-chip.sup-heal { border-color: #5cf08a; background: #0d2e18; }
+.combat-chip.sup-haste { border-color: #4ade80; }
+.combat-chip.sup-might { border-color: #ff5a5a; background: #331010; }
+.combat-chip.sup-shield { border-color: #5aa8ff; background: #0e2036; }
+.tag.support-only { border-color: #5cf08a; }
+.tag.old-scale { background: #3a3110; border-color: var(--warn); color: var(--warn); }
 .tag.type-wall { border-color: #8a8f98; }
 .tag.type-factory { border-color: #c0a060; }
 .unit-card {

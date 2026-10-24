@@ -13,6 +13,12 @@ import {
   GRID_SIZE,
   burstOf,
   cellAt,
+  elementOf,
+  minionElementOf,
+  splashOf,
+  supportOf,
+  type Element,
+  type SupportKind,
   groupOf,
   producesOf,
   isValidCell,
@@ -37,6 +43,8 @@ import {
   type UnitCardDTO,
 } from '@pixel-clash/shared';
 import { KIND_ICON, kindPlural } from '../common/render/buildings.js';
+import { ELEMENT_ICON, SUPPORT_ICON } from '../common/render/effects.js';
+import { formatMoney } from '../common/ui.js';
 
 // ---------------------------------------------------------------------------
 // Caps and unit types (M8.5)
@@ -322,7 +330,7 @@ export function tapCell(
     return {
       ok: false,
       code: 'OVER_BUDGET',
-      message: `Not enough money! It costs $${cost} but you only have $${Math.max(0, left)} left.`,
+      message: `Not enough money! It costs ${formatMoney(cost)} but you only have ${formatMoney(Math.max(0, left))} left.`,
     };
   }
   return { ok: true, placements: [...without, { unitId, col, row }] };
@@ -501,7 +509,7 @@ export interface StatBar {
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
 const frac = (v: number, min: number, max: number) => (max > min ? clamp01((v - min) / (max - min)) : 0);
-const num = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+const num = (v: number) => (Number.isInteger(v) ? v.toLocaleString('en-US') : v.toFixed(1));
 
 /** "15 s" / "12.5 s" from ticks. */
 function seconds(ticks: number): string {
@@ -579,7 +587,11 @@ export interface BreakdownRow {
   value: string;
 }
 
-const money = (n: number) => (Math.abs(n - Math.round(n)) < 1e-9 ? String(Math.round(n)) : n.toFixed(2).replace(/0$/, ''));
+/** A breakdown amount: whole numbers plain, else 2 decimals; thousands separators (M8.8: prices are 5× bigger). */
+const money = (n: number) =>
+  Math.abs(n - Math.round(n)) < 1e-9 ? Math.round(n).toLocaleString('en-US') : n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+/** "×1.37" (no trailing zeros). */
+const times = (f: number) => `×${Math.round(f * 100) / 100}`;
 
 /**
  * Rows of the "cost breakdown" pop-up: each term, the sum, the factor, the
@@ -595,10 +607,11 @@ export function breakdownRows(b: CostBreakdown): BreakdownRow[] {
     ];
     const p = b.production;
     if (b.formula === 'factory' && p) {
-      rows.push({ label: 'Body', value: `$${b.body ?? Math.ceil(b.sum)}` });
-      rows.push({ label: kindPlural(p.kind ?? 'grunt'), value: `${p.expected} × $${p.minionValue}` });
+      rows.push({ label: 'Body', value: formatMoney(b.body ?? Math.ceil(b.sum)) });
+      const el = p.element && p.element !== 'normal' ? `${ELEMENT_ICON[p.element]} ` : '';
+      rows.push({ label: `${el}${kindPlural(p.kind ?? 'grunt')}`, value: `${p.expected} × ${formatMoney(p.minionValue)}` });
     }
-    rows.push({ label: 'Cost', value: `$${b.cost}` });
+    rows.push({ label: 'Cost', value: formatMoney(b.cost) });
     return rows;
   }
   const rows: BreakdownRow[] = [
@@ -608,11 +621,93 @@ export function breakdownRows(b: CostBreakdown): BreakdownRow[] {
     { label: 'Range', value: money(t.range) },
     { label: 'Speed', value: money(t.speed) },
     { label: 'Size', value: money(t.size) },
-    { label: 'Sum', value: money(b.sum) },
   ];
-  rows.push({ label: 'Fast-attack ×', value: b.factor === 1 ? '×1' : `×${b.factor.toFixed(2).replace(/\.?0+$/, '')}` });
-  rows.push({ label: 'Cost', value: `$${b.cost}` });
+  // M8.8 (§6): the heal term sits inside the sum; power, splash and element multiply; an aura adds on after.
+  if (b.heal) rows.push({ label: `${SUPPORT_ICON.heal} Heal`, value: money(b.heal.total) });
+  rows.push({ label: 'Sum', value: money(b.sum) });
+  rows.push({ label: 'Fast-attack ×', value: b.factor === 1 ? '×1' : times(b.factor) });
+  if (b.power && b.power.factor > 1 + 1e-9) rows.push({ label: 'Tough + strong ×', value: times(b.power.factor) });
+  if (b.splash && b.splash.factor > 1 + 1e-9) rows.push({ label: 'Splash ×', value: times(b.splash.factor) });
+  if (b.element && b.element.element !== 'normal') rows.push({ label: `${ELEMENT_ICON[b.element.element]} ${elementName(b.element.element)} ×`, value: times(b.element.factor) });
+  if (b.aura) rows.push({ label: `${SUPPORT_ICON[b.aura.kind]} Aura +`, value: money(b.aura.total) });
+  rows.push({ label: 'Cost', value: formatMoney(b.cost) });
   return rows;
+}
+
+/**
+ * M8.8: the sentences under the price table that explain the new parts
+ * ("Power ×1.37: tough AND strong…", "Splash ×1.53 (radius 40…)", the heal
+ * and aura lines), straight from the server's breakdown.
+ */
+export function breakdownNotes(b: CostBreakdown): string[] {
+  const out: string[] = [];
+  if (b.power && b.power.factor > 1 + 1e-9 && b.power.factor >= 1.1) out.push(b.power.text);
+  if (b.splash && b.splash.factor > 1 + 1e-9) out.push(b.splash.text);
+  if (b.element && b.element.element !== 'normal') out.push(b.element.text);
+  if (b.heal) out.push(b.heal.text);
+  if (b.aura) out.push(b.aura.text);
+  if (b.production?.text) out.push(b.production.text);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Elements, splash and support on cards (M8.8, §12.5)
+// ---------------------------------------------------------------------------
+
+const ELEMENT_NAME: Readonly<Record<Element, string>> = { normal: 'Normal', fire: 'Fire', ice: 'Ice', lightning: 'Lightning' };
+const ELEMENT_WHAT: Readonly<Record<Element, string>> = {
+  normal: 'plain hits',
+  fire: 'burns: half the hit again over 3 s',
+  ice: 'freezes for 2 s: 35% slower',
+  lightning: '35% chance to zap a nearby enemy',
+};
+const SUPPORT_NAME: Readonly<Record<SupportKind, string>> = { heal: 'Heal', haste: 'Haste', might: 'Might', shield: 'Shield' };
+
+export function elementName(e: Element): string {
+  return ELEMENT_NAME[e];
+}
+
+export interface CombatChip {
+  key: 'element' | 'splash' | 'support' | 'minionElement';
+  /** CSS modifier, e.g. "el-fire", "sup-heal", "splash". */
+  tone: string;
+  icon: string;
+  label: string;
+  /** What it does (the chip's title / tooltip). */
+  title: string;
+}
+
+/**
+ * M8.8: the element, splash and support chips of a unit card (none for a
+ * plain unit or a wall). A factory shows its minions' element instead.
+ */
+export function combatChips(stats: Pick<StatsSnapshot, 'type'> & Partial<Pick<StatsSnapshot, 'element' | 'splashRadius' | 'support' | 'minionElement' | 'produces'>>): CombatChip[] {
+  const out: CombatChip[] = [];
+  if (stats.type === 'wall') return out;
+  if (stats.type === 'factory') {
+    const el = minionElementOf(stats);
+    if (el !== 'normal') out.push({ key: 'minionElement', tone: `el-${el}`, icon: ELEMENT_ICON[el], label: `${ELEMENT_NAME[el]} minions`, title: `Its minions' hits: ${ELEMENT_WHAT[el]}` });
+    return out;
+  }
+  const el = elementOf(stats);
+  if (el !== 'normal') out.push({ key: 'element', tone: `el-${el}`, icon: ELEMENT_ICON[el], label: ELEMENT_NAME[el], title: `${ELEMENT_NAME[el]}: ${ELEMENT_WHAT[el]}` });
+  const splash = splashOf(stats);
+  if (splash > 0) out.push({ key: 'splash', tone: 'splash', icon: '💥', label: `Splash ${splash}`, title: `Every other enemy within ${splash} px of the target takes half the hit` });
+  const sup = supportOf(stats);
+  if (sup) {
+    const label = sup.kind === 'heal' ? `Heal ${sup.power}` : `${SUPPORT_NAME[sup.kind]} ${sup.power}%`;
+    const title =
+      sup.kind === 'heal'
+        ? `Heals an ally ${sup.power} HP within ${sup.range} px (puts out fire and thaws ice first)`
+        : `${SUPPORT_NAME[sup.kind]} aura: allies within ${sup.range} px get ${sup.kind === 'haste' ? `${sup.power}% faster` : sup.kind === 'might' ? `${sup.power}% more damage` : `${sup.power}% less damage taken`}`;
+    out.push({ key: 'support', tone: `sup-${sup.kind}`, icon: SUPPORT_ICON[sup.kind], label, title });
+  }
+  return out;
+}
+
+/** M8.8: a design with damage 0 that only supports ("support only" on the card). */
+export function isSupportOnly(stats: Pick<StatsSnapshot, 'type' | 'damage'> & Partial<Pick<StatsSnapshot, 'support'>>): boolean {
+  return (stats.type === 'soldier' || stats.type === 'tower') && stats.damage === 0 && supportOf(stats) !== null;
 }
 
 // ---------------------------------------------------------------------------
@@ -668,8 +763,37 @@ export function factoryReportLines(report: Pick<BattleReportDTO, 'types'> | null
       const made = t.minionsMade ?? 0;
       const lost = t.minionsLost ?? 0;
       const dmg = Math.round(t.minionDamage ?? 0);
-      return `🏭 ${t.name} made ${made} minion${made === 1 ? '' : 's'}${lost > 0 ? ` (${lost} lost)` : ''}${dmg > 0 ? `, ${dmg} minion damage` : ''}`;
+      return `🏭 ${t.name} made ${made} minion${made === 1 ? '' : 's'}${lost > 0 ? ` (${lost} lost)` : ''}${dmg > 0 ? `, ${dmg.toLocaleString('en-US')} minion damage` : ''}`;
     });
+}
+
+/**
+ * M8.8 report lines per unit type (§9.4 reports): how its damage was dealt
+ * (burn, splash, zaps, shatters), what it healed and cleansed, and what its
+ * auras added ("📯 War Drummer added 1,240 damage"). Plain hit-only types get none.
+ */
+export function effectReportLines(report: Pick<BattleReportDTO, 'types'> | null | undefined): string[] {
+  const out: string[] = [];
+  const n = (v: number) => Math.round(v).toLocaleString('en-US');
+  for (const t of report?.types ?? []) {
+    const sp = t.damageSplit;
+    if (sp) {
+      const parts: string[] = [];
+      if (sp.burn >= 1) parts.push(`🔥 ${n(sp.burn)} burn`);
+      if (sp.splash >= 1) parts.push(`💥 ${n(sp.splash)} splash`);
+      if (sp.zap >= 1) parts.push(`⚡ ${n(sp.zap)} zaps`);
+      if (sp.shatter >= 1) parts.push(`❄️ ${n(sp.shatter)} shatter`);
+      if (parts.length > 0) out.push(`${t.name}: ${parts.join(', ')} (of ${n(t.damageDealt)} damage)`);
+    }
+    const heal = t.healing ?? 0;
+    const cleanses = t.cleanses ?? 0;
+    if (heal >= 1 || cleanses > 0) {
+      const bits = [heal >= 1 ? `healed ${n(heal)} HP` : '', cleanses > 0 ? `put out ${cleanses} fire${cleanses === 1 ? '' : 's'} or freeze${cleanses === 1 ? '' : 's'}` : ''].filter(Boolean);
+      out.push(`💚 ${t.name} ${bits.join(' and ')}`);
+    }
+    if ((t.assist ?? 0) >= 1) out.push(`📯 ${t.name}'s aura added ${n(t.assist!)} damage (more hits and less taken)`);
+  }
+  return out;
 }
 
 /**
@@ -805,7 +929,7 @@ export function scoreLines(raw: Pick<RankingEntryDTO, 'place'> & Partial<ScorePa
       text:
         dmg === 0
           ? 'No damage this time: +0 points. Next battle!'
-          : `You dealt ${dmg} damage: ${pts(entry.damageBonus)}${entry.damageBonus > 0 ? '!' : '. Hit harder for a bonus!'}`,
+          : `You dealt ${dmg.toLocaleString('en-US')} damage: ${pts(entry.damageBonus)}${entry.damageBonus > 0 ? '!' : '. Hit harder for a bonus!'}`,
       points: entry.damageBonus,
     },
     {
@@ -826,6 +950,8 @@ export const BADGE_PLAYER_TEXT: Readonly<Record<BadgeId, string>> = {
   giantSlayer: 'Your knockouts were worth the most $!',
   ironWall: 'Your army had the most still standing at the end!',
   inventor: 'Another player borrowed your unit from the Open Armory!',
+  bestMedic: 'Your healers healed the most!',
+  comboMaster: 'You pulled off the most shatters and overload zaps!',
 };
 
 // ---------------------------------------------------------------------------

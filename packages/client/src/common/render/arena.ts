@@ -31,6 +31,15 @@
 // flag (option `rallyFlags`); minions are adopted from the frames by their id
 // (`${factoryId}-mN`) and drawn with the built-in sprite in the factory's
 // colour. The reveal drops buildings first (walls slam down), then units.
+//
+// Elements, splash and support (M8.8, effects.ts): frozen bodies are tinted
+// cyan with a frost outline and animate at 65%; burning ones flicker orange
+// and shed flames; status icons (snowflake, flame, haste/might/shield marks)
+// sit over the HP bar; support units draw their aura ring on the ground.
+// Events add lightning arcs, splash rings, heal/cleanse beams with "+N" and
+// sparkles, and SHATTER!/OVERLOAD! pop text; projectiles and damage numbers
+// take the attack's element colour. All of it is pooled (fixed caps); with
+// `fx` on, the first time an element or aura appears a 3 s legend explains it.
 
 import {
   ARENA,
@@ -54,10 +63,36 @@ import {
   MINION_KIND_NAMES,
   producesOf,
   type MinionKind,
+  elementOf,
+  isAuraKind,
+  minionElementOf,
+  splashOf,
+  supportOf,
+  type AuraKind,
+  type Element,
 } from '@pixel-clash/shared';
 import { WALL_HEIGHT, minionFactoryId, minionLook, productionRing, renderWallBlock, storedBadgeText, wallCrackLevel } from './buildings.js';
 import { fitCanvasToBox, pixelContext, pixelsToCanvas, type Bitmap } from './canvas.js';
 import { FxLayer, bobOffset, isBigHit } from './fx.js';
+import {
+  BIG_NUMBER_DAMAGE,
+  CLEANSE_COLOR,
+  ELEMENT_COLOR,
+  EffectLayer,
+  HEAL_COLOR,
+  STATUS_FLAGS,
+  animTempo,
+  burnFlickerOn,
+  damageColor,
+  drawAuraRing,
+  drawElementPip,
+  drawStatusIcons,
+  tintOf,
+  tintOutline,
+  tintSpec,
+  type BodyTint,
+  type LegendKey,
+} from './effects.js';
 import {
   FLOOR_K,
   PROP_SPRITES,
@@ -158,6 +193,36 @@ export interface ArenaInstance {
   /** Spawn position (reveal). */
   x0: number;
   y0: number;
+  /** M8.8: its attacks' element (a minion: its factory's minionElement). Default normal. */
+  element?: Element;
+  /** M8.8: splash radius of its attacks (0 = one target). */
+  splash?: number;
+  /** M8.8: its aura (haste / might / shield) and reach, or null. Heal support has no ring. */
+  aura?: { kind: AuraKind; range: number } | null;
+}
+
+/** M8.8: the element, splash and aura of a design (older stored units: normal, 0, none). */
+export function combatLook(stats: StatsSnapshot, body: BodyType, factory?: StatsSnapshot): Pick<ArenaInstance, 'element' | 'splash' | 'aura'> {
+  if (body === 'minion') return { element: factory ? minionElementOf(factory) : 'normal', splash: 0, aura: null };
+  if (body === 'wall' || body === 'factory') return { element: 'normal', splash: 0, aura: null };
+  const sup = supportOf(stats);
+  return { element: elementOf(stats), splash: splashOf(stats), aura: sup && isAuraKind(sup.kind) ? { kind: sup.kind, range: sup.range } : null };
+}
+
+/** M8.8: the legend lines a reveal's armies will need (elements, splash, auras, medics). */
+export function revealLegendKeys(reveal: BattleRevealDTO): LegendKey[] {
+  const keys = new Set<LegendKey>();
+  for (const p of reveal.players) {
+    for (const u of p.units) {
+      const el = u.stats.type === 'factory' ? minionElementOf(u.stats) : u.stats.type === 'wall' ? 'normal' : elementOf(u.stats);
+      if (el !== 'normal') keys.add(el);
+      if (u.stats.type !== 'factory' && u.stats.type !== 'wall' && splashOf(u.stats) > 0) keys.add('splash');
+      const sup = u.stats.type === 'factory' || u.stats.type === 'wall' ? null : supportOf(u.stats);
+      if (sup) keys.add(sup.kind);
+      if (u.stats.type === 'factory' && producesOf(u.stats) === 'medic') keys.add('heal');
+    }
+  }
+  return [...keys];
 }
 
 interface InstanceState {
@@ -175,6 +240,8 @@ interface InstanceState {
   dropIndex: number;
   /** Last dust puff of a blocked unit (ms). */
   dustAt: number;
+  /** M8.8: last flame / frost particle (ms). */
+  statusAt: number;
 }
 
 /** The body kind of an instance (walls, factories and minions draw differently). */
@@ -216,6 +283,9 @@ interface ProjectileState {
   /** Arena distance from start to the target when first seen. */
   dist: number;
   color: string;
+  /** M8.8: the shooter's element and whether it splashes (drawn bigger). */
+  element: Element;
+  big: boolean;
   trail: ScreenPoint[];
 }
 
@@ -258,6 +328,8 @@ const MINION_FALLBACK: Readonly<Record<MinionKind, MinionBodyStats>> = {
   archer: { maxHealth: 24, damage: 5, range: 110, speed: 1.2, attackCooldown: 60, size: 7 },
   runner: { maxHealth: 28, damage: 4, range: 20, speed: 2.6, attackCooldown: 60, size: 6 },
   brute: { maxHealth: 100, damage: 8, range: 20, speed: 0.9, attackCooldown: 60, size: 11 },
+  // M8.8: medics only exist in ×5 battles, whose reveals always carry their stats.
+  medic: { maxHealth: 150, damage: 0, range: 20, speed: 1.4, attackCooldown: 60, size: 7 },
 };
 
 function bodyStats(m: MinionBodyStats): MinionBodyStats {
@@ -320,7 +392,10 @@ export class ArenaRenderer {
   readonly buffer = new FrameBuffer();
   readonly clock = new PlaybackClock();
   private readonly ctx: CanvasRenderingContext2D;
-  private readonly sprites = new SpriteCache<Bitmap>(pixelsToCanvas);
+  // M8.8: room for the frozen and burning bakes of every design too.
+  private readonly sprites = new SpriteCache<Bitmap>(pixelsToCanvas, 640);
+  /** M8.8: tinted copies of each design's spec (frozen / burning), by spec key. */
+  private readonly tinted = new Map<string, SpriteSpec>();
   private props: EdgeProp[] = edgeProps();
   private view: IsoView;
   private cssSize = { width: 1, height: 1, dpr: 1 };
@@ -342,6 +417,10 @@ export class ArenaRenderer {
   private sample: FrameSample | null = null;
   /** Projector effects (used when options.fx is on). */
   readonly fx = new FxLayer();
+  /** M8.8 element / support effects (arcs, rings, beams, pop text, the legend). */
+  readonly effects = new EffectLayer();
+  /** M8.8: whether the reveal has any ice or fire (prewarm their tinted bakes). */
+  private tintsUsed = false;
   private readonly drawItems: DrawItem[] = [];
   private readonly seenIds = new Set<string>();
   private readonly liveProjectiles = new Set<number>();
@@ -363,6 +442,7 @@ export class ArenaRenderer {
   ) {
     this.ctx = pixelContext(canvas);
     this.fx.options = { reducedMotion: !!options.reducedMotion };
+    this.effects.reducedMotion = !!options.reducedMotion;
     this.view = fitIso(1, 1, this.fitOptions());
     this.resize(true);
   }
@@ -383,6 +463,7 @@ export class ArenaRenderer {
   setOptions(patch: Partial<ArenaOptions>): void {
     this.options = { ...this.options, ...patch };
     this.fx.options = { reducedMotion: !!this.options.reducedMotion };
+    this.effects.reducedMotion = !!this.options.reducedMotion;
     if (patch.fit) this.resize(true);
   }
 
@@ -416,6 +497,7 @@ export class ArenaRenderer {
     this.lastFireByTarget.clear();
     this.factories.clear();
     this.fx.clear();
+    this.effects.clear();
     this.sample = null;
     this.endT = null;
     this.totalTicks = 0;
@@ -437,6 +519,10 @@ export class ArenaRenderer {
     this.minionStats.clear();
     this.releasedAt.clear();
     this.releaseLabels = [];
+    // M8.8: the legend explains things once per match (round 1 starts a new one).
+    if (reveal.round <= 1) this.effects.legend.reset();
+    const legendKeys = revealLegendKeys(reveal);
+    this.tintsUsed = legendKeys.includes('ice') || legendKeys.includes('fire');
     if (reveal.minion?.stats) this.minionStats.set('grunt', bodyStats(reveal.minion.stats));
     for (const [kind, m] of Object.entries(reveal.minions ?? {}) as Array<[MinionKind, { stats: MinionBodyStats } | undefined]>) {
       if (m?.stats) this.minionStats.set(kind, bodyStats(m.stats));
@@ -462,6 +548,7 @@ export class ArenaRenderer {
           specKey: sprite.key,
           x0: inst.x,
           y0: inst.y,
+          ...combatLook(u.stats, u.stats.type),
         };
         this.instances.set(inst.instanceId, {
           info,
@@ -474,6 +561,7 @@ export class ArenaRenderer {
           bobPhase: phaseOf(inst.instanceId),
           dropIndex: 0,
           dustAt: 0,
+          statusAt: 0,
         });
       }
     }
@@ -495,6 +583,8 @@ export class ArenaRenderer {
    */
   prewarm(reveal: BattleRevealDTO): void {
     this.floorFor(revealZones(reveal), revealMap(reveal));
+    const keys = revealLegendKeys(reveal);
+    const tints = keys.includes('ice') || keys.includes('fire');
     for (const p of reveal.players) {
       const color = seatStyle(p.seat).color;
       const outline = teamLook(teamModeOf(reveal) ? p.teamId : null)?.color ?? color;
@@ -505,7 +595,12 @@ export class ArenaRenderer {
           continue;
         }
         const width = billboardWidth(u.stats.size, this.view);
-        this.sprites.get(key, spec, color, chooseBakeScale(spec.grid, width * this.cssSize.dpr));
+        const scale = chooseBakeScale(spec.grid, width * this.cssSize.dpr);
+        this.sprites.get(key, spec, color, scale);
+        // M8.8: an army with ice or fire in the battle will need the frozen / burning bakes.
+        if (tints) {
+          for (const tint of ['ice', 'fire'] as const) this.sprites.get(`${key}~${tint}`, this.tintedSpec(key, spec, tint), tintOutline(tint, color), scale);
+        }
       }
     }
   }
@@ -560,6 +655,7 @@ export class ArenaRenderer {
     this.lastTick = this.clock.tick;
     this.projectiles.clear();
     this.fx.clear();
+    this.effects.clear();
     this.resyncDeaths();
   }
 
@@ -642,6 +738,7 @@ export class ArenaRenderer {
 
   private step(dt: number, now: number): void {
     if (this.options.fx) this.fx.update(dt, now);
+    this.effects.update(now);
     if (this.buffer.length === 0) {
       this.sample = null;
       return;
@@ -654,6 +751,7 @@ export class ArenaRenderer {
       // replay many seconds of events at once (every flash, death and toast).
       this.projectiles.clear();
       this.fx.clear();
+      this.effects.clear();
       this.resyncDeaths();
     } else if (t > prev) {
       for (const { event } of this.buffer.eventsBetween(prev, t)) this.applyEvent(event, now);
@@ -673,7 +771,9 @@ export class ArenaRenderer {
       s.hp = u.hp;
       s.flags = u.flags;
       s.alive = true;
+      s.anim.setTempo(animTempo(u.flags), now);
       s.anim.update(u.flags, now);
+      if ((u.flags & STATUS_FLAGS) !== 0 && !s.info.ghost) this.statusStep(s, now);
       // Pushing on a wall: a tiny dust puff now and then (§12.5).
       if (this.options.fx && (u.flags & FRAME_FLAGS.BLOCKED) !== 0 && now - s.dustAt > 280 && !s.info.ghost) {
         s.dustAt = now;
@@ -698,10 +798,80 @@ export class ArenaRenderer {
           ? event.ids
           : event.type === 'release' || event.type === 'lost'
             ? [event.factoryId]
-            : [event.instanceId];
+            : // M8.8 effect events (drawn by the client builders; the sprites ignore them for now).
+              event.type === 'arc'
+              ? [event.from, ...event.to]
+              : event.type === 'heal' || event.type === 'cleanse'
+                ? [event.from, event.to]
+                : event.type === 'shatter'
+                  ? [event.id]
+                  : event.type === 'splash'
+                    ? []
+                    : [event.instanceId];
     for (const id of ids) this.instances.get(id)?.anim.onEvent(event, now);
     if (this.options.fx) this.eventFx(event, now);
+    if (!this.options.fx && (event.type === 'arc' || event.type === 'splash' || event.type === 'heal' || event.type === 'cleanse')) this.effectFx(event, now);
     this.options.onEvent?.(event, this);
+  }
+
+  /** M8.8: flames, frost glints and legend lines from a body's status flags. */
+  private statusStep(s: InstanceState, now: number): void {
+    const f = s.flags;
+    if (f & FRAME_FLAGS.BURNING) this.effects.legend.note('fire', now);
+    if (f & FRAME_FLAGS.FROZEN) this.effects.legend.note('ice', now);
+    if (f & FRAME_FLAGS.HASTED) this.effects.legend.note('haste', now);
+    if (f & FRAME_FLAGS.MIGHTY) this.effects.legend.note('might', now);
+    if (f & FRAME_FLAGS.SHIELDED) this.effects.legend.note('shield', now);
+    if (!this.options.fx || now - s.statusAt < 120) return;
+    if ((f & (FRAME_FLAGS.BURNING | FRAME_FLAGS.FROZEN)) === 0) return;
+    s.statusAt = now;
+    const { view } = this;
+    const p = toScreen(view, s.x, s.y);
+    const w = billboardWidth(s.info.stats.size, view);
+    if (f & FRAME_FLAGS.BURNING) this.fx.flame(p.sx, p.sy - w * 0.35, w, view.zoom);
+    if (f & FRAME_FLAGS.FROZEN) this.fx.frost(p.sx, p.sy - w * 0.4, w, view.zoom);
+  }
+
+  /** Chest height (canvas px) of an instance: where beams and arcs attach. */
+  private chestOf(s: InstanceState): ScreenPoint {
+    const p = toScreen(this.view, s.x, s.y);
+    const body = bodyOf(s.info);
+    const h = body === 'wall' ? WALL_HEIGHT * this.view.zoom : billboardWidth(s.info.stats.size, this.view);
+    return { sx: p.sx, sy: p.sy - h * 0.5 };
+  }
+
+  /**
+   * M8.8 effects drawn with or without `fx` (they carry information): the
+   * lightning arc, the splash ring and the heal / cleanse beam. With `fx`
+   * they also get their particles, numbers and pop text (eventFx).
+   */
+  private effectFx(ev: FrameEvent, now: number): void {
+    const { view } = this;
+    if (ev.type === 'arc') {
+      const from = this.instances.get(ev.from);
+      if (!from) return;
+      const pts: number[] = [];
+      const a = this.chestOf(from);
+      pts.push(a.sx, a.sy);
+      for (const id of ev.to) {
+        const t = this.instances.get(id);
+        if (!t) continue;
+        const c = this.chestOf(t);
+        pts.push(c.sx, c.sy);
+      }
+      this.effects.arc(pts, now);
+    } else if (ev.type === 'splash') {
+      const c = toScreen(view, ev.x, ev.y);
+      const { rx, ry } = isoEllipse(ev.r, view.k);
+      this.effects.ring(c.sx, c.sy, rx, ry, ELEMENT_COLOR[ev.element] ?? ELEMENT_COLOR.normal, now);
+    } else if (ev.type === 'heal' || ev.type === 'cleanse') {
+      const from = this.instances.get(ev.from);
+      const to = this.instances.get(ev.to);
+      if (!from || !to || to.info.ghost) return;
+      const a = this.chestOf(from);
+      const b = this.chestOf(to);
+      this.effects.beam(a.sx, a.sy, b.sx, b.sy, ev.type === 'heal' ? HEAL_COLOR : CLEANSE_COLOR, now);
+    }
   }
 
   /** Spawn the projector effects for a battle event (positions from the last drawn state). */
@@ -729,10 +899,54 @@ export class ArenaRenderer {
       const p = toScreen(view, t.x, t.y);
       const h = billboardWidth(t.info.stats.size, view);
       const max = t.info.stats.maxHealth;
-      const big = isBigHit(ev.damage, max);
-      this.fx.sparks(p.sx, p.sy - h * 0.5, view.zoom, big ? '#FFD447' : '#FFFFFF');
-      this.fx.damageNumber(p.sx, p.sy - h * 0.9, ev.damage, big, now);
-      if (big) this.fx.bigHit(ev.damage / max, now);
+      // M8.8: burn ticks, splash and zap hits are small and never shake; numbers ≥ 100 are drawn bigger.
+      const kind = ev.kind ?? 'hit';
+      const side = kind === 'burn' || kind === 'splash' || kind === 'zap';
+      const shake = !side && isBigHit(ev.damage, max);
+      const big = !side && (shake || ev.damage >= BIG_NUMBER_DAMAGE);
+      const el = ev.element ?? 'normal';
+      if (el !== 'normal') this.effects.legend.note(el, now);
+      if (kind === 'splash') this.effects.legend.note('splash', now);
+      if (kind !== 'burn') this.fx.sparks(p.sx, p.sy - h * 0.5, view.zoom, el !== 'normal' ? ELEMENT_COLOR[el] : shake ? '#FFD447' : '#FFFFFF');
+      this.fx.damageNumber(p.sx, p.sy - h * 0.9, ev.damage, big, now, el === 'normal' && kind !== 'burn' && kind !== 'shatter' ? null : damageColor(kind, el, big), side);
+      if (shake) this.fx.bigHit(ev.damage / max, now);
+    } else if (ev.type === 'arc' || ev.type === 'splash') {
+      this.effectFx(ev, now);
+      if (ev.type === 'arc') {
+        this.effects.legend.note('lightning', now);
+        for (const id of ev.to) {
+          const t = this.instances.get(id);
+          if (!t || t.info.ghost) continue;
+          const c = this.chestOf(t);
+          this.fx.muzzle(c.sx, c.sy, Math.max(4, 5 * view.zoom), '#FFFFFF', now);
+        }
+        // Overload: a burning target zapped two enemies.
+        const last = ev.to.length >= 2 ? this.instances.get(ev.to[ev.to.length - 1]!) : undefined;
+        if (last) {
+          const c = this.chestOf(last);
+          this.effects.pop(c.sx, c.sy - billboardWidth(last.info.stats.size, view) * 0.8, 'OVERLOAD!', ELEMENT_COLOR.lightning, now);
+        }
+      }
+    } else if (ev.type === 'shatter') {
+      const t = this.instances.get(ev.id);
+      if (!t || t.info.ghost) return;
+      this.effects.legend.note('shatter', now);
+      const c = this.chestOf(t);
+      this.fx.shards(c.sx, c.sy, view.zoom);
+      this.effects.pop(c.sx, c.sy - billboardWidth(t.info.stats.size, view) * 0.8, 'SHATTER!', ELEMENT_COLOR.ice, now);
+    } else if (ev.type === 'heal' || ev.type === 'cleanse') {
+      this.effectFx(ev, now);
+      const t = this.instances.get(ev.to);
+      if (!t || t.info.ghost) return;
+      this.effects.legend.note('heal', now);
+      const p = toScreen(view, t.x, t.y);
+      const w = billboardWidth(t.info.stats.size, view);
+      if (ev.type === 'heal') {
+        this.fx.sparkles(p.sx, p.sy - w * 0.3, w, view.zoom);
+        if (ev.amount >= 1) this.fx.label(p.sx, p.sy - w * 0.9, `+${Math.round(ev.amount).toLocaleString('en-US')}`, HEAL_COLOR, now);
+      } else {
+        this.fx.smoke(p.sx, p.sy - w * 0.3, w, view.zoom);
+      }
     } else if (ev.type === 'death') {
       const t = this.instances.get(ev.instanceId);
       if (!t || t.info.ghost) return;
@@ -856,6 +1070,7 @@ export class ArenaRenderer {
       bobPhase: phaseOf(u.id),
       dropIndex: -1,
       dustAt: 0,
+      statusAt: 0,
     };
     this.instances.set(u.id, st);
     return st;
@@ -895,6 +1110,7 @@ export class ArenaRenderer {
         specKey: look.key,
         x0: u.x,
         y0: u.y,
+        ...combatLook(stats, 'minion', f.stats),
       },
       anim: new UnitAnimator(u.id),
       x: u.x,
@@ -905,6 +1121,7 @@ export class ArenaRenderer {
       bobPhase: phaseOf(u.id),
       dropIndex: -1,
       dustAt: 0,
+      statusAt: 0,
     };
     this.instances.set(u.id, st);
     return st;
@@ -920,11 +1137,15 @@ export class ArenaRenderer {
       const shooterId = this.lastFireByTarget.get(p.targetId);
       const shooter = shooterId ? this.instances.get(shooterId) : undefined;
       const dist = target ? Math.hypot(target.x - p.x, target.y - p.y) : 0;
+      const element = shooter?.info.element ?? 'normal';
       this.projectiles.set(p.id, {
         startX: p.x,
         startY: p.y,
         dist: Math.max(1, dist),
-        color: shooter?.info.stats.color ?? '#FFFFFF',
+        // M8.8: elemental shots take the element's colour (fireball, ice shard, spark); splash shots are bigger.
+        color: element === 'normal' ? (shooter?.info.stats.color ?? '#FFFFFF') : ELEMENT_COLOR[element],
+        element,
+        big: (shooter?.info.splash ?? 0) > 0,
         trail: [],
       });
     }
@@ -952,11 +1173,15 @@ export class ArenaRenderer {
     if (this.options.badges !== false) this.drawZoneBadges();
     this.drawSafeZone(now);
     this.drawRings(now);
+    this.effects.drawGround(ctx, now, view.zoom);
     this.drawRallies();
     this.drawBillboards(now);
-    this.drawProjectiles();
+    this.drawProjectiles(now);
+    this.effects.drawOver(ctx, now, view.zoom);
+    this.font = '';
     if (this.options.fx) {
       this.fx.draw(ctx, now, Math.max(11, Math.round(9 * view.zoom)));
+      this.effects.drawLegend(ctx, now, height, view.zoom);
       this.font = '';
     }
     this.options.overlay?.(ctx, view, this, now);
@@ -1079,6 +1304,13 @@ export class ArenaRenderer {
       if (!s.alive) continue;
       const body = bodyOf(s.info);
       if (body === 'wall') continue; // the block covers its cell
+      // M8.8: an aura unit's ring at its reach (edge to edge: its radius + supportRange).
+      const aura = s.info.aura;
+      if (aura && !s.info.ghost) {
+        const ap = toScreen(view, s.x, s.y);
+        const e = isoEllipse(s.info.stats.size + aura.range, view.k);
+        drawAuraRing(ctx, aura.kind, ap.sx, ap.sy, e.rx, e.ry, view.zoom, now, s.bobPhase, !!this.options.reducedMotion);
+      }
       const seat = seatStyle(s.info.seat);
       const team = teamLook(s.info.teamId);
       const color = team?.color ?? seat.color;
@@ -1237,9 +1469,26 @@ export class ArenaRenderer {
     }
   }
 
-  private bakedFor(s: InstanceState, width: number): BakedSprite<Bitmap> {
+  private bakedFor(s: InstanceState, width: number, now = 0): BakedSprite<Bitmap> {
     const scale = chooseBakeScale(s.info.spec.grid, width * this.cssSize.dpr);
-    return this.sprites.get(s.info.specKey, s.info.spec, seatStyle(s.info.seat).color, scale);
+    const seat = seatStyle(s.info.seat).color;
+    // M8.8: frozen = cyan tint + frost outline; burning = orange glow whose outline flickers.
+    let tint: BodyTint = s.alive ? tintOf(s.flags) : 'none';
+    if (tint === 'fire' && !burnFlickerOn(now, s.bobPhase, !!this.options.reducedMotion)) tint = 'none';
+    if (tint === 'none') return this.sprites.get(s.info.specKey, s.info.spec, seat, scale);
+    return this.sprites.get(`${s.info.specKey}~${tint}`, this.tintedSpec(s.info.specKey, s.info.spec, tint), tintOutline(tint, seat), scale);
+  }
+
+  /** The frozen / burning copy of a spec (memoised by its bake key). */
+  private tintedSpec(specKey: string, spec: SpriteSpec, tint: Exclude<BodyTint, 'none'>): SpriteSpec {
+    const key = `${specKey}~${tint}`;
+    let t = this.tinted.get(key);
+    if (!t) {
+      t = tintSpec(spec, tint);
+      this.tinted.set(key, t);
+      if (this.tinted.size > 512) this.tinted.delete(this.tinted.keys().next().value!);
+    }
+    return t;
   }
 
   /** Reuse (or grow) the draw-list slot `i`. */
@@ -1383,7 +1632,7 @@ export class ArenaRenderer {
     }
     const { ctx, view } = this;
     const width = billboardWidth(s.info.stats.size, view);
-    const baked = this.bakedFor(s, width);
+    const baked = this.bakedFor(s, width, now);
     const pose = s.anim.pose(now, baked.frameCount, baked.fadeOnlyDeath);
     if (pose.gone) return;
     const feet = toScreen(view, s.x, s.y);
@@ -1395,7 +1644,18 @@ export class ArenaRenderer {
 
     // HP bar (minions: only while damaged).
     let y = top - Math.max(4, 3 * view.zoom);
-    if (this.options.hpBars !== false && showsHpBar(body, s.hp, s.info.stats.maxHealth)) y = this.drawHpBar(s, feet.sx, y, width);
+    if (this.options.hpBars !== false && showsHpBar(body, s.hp, s.info.stats.maxHealth)) {
+      const barTop = this.drawHpBar(s, feet.sx, y, width);
+      // M8.8: the element pip at the bar's right end (fire drop, ice diamond, bolt).
+      const el = s.info.element ?? 'normal';
+      if (el !== 'normal' && body !== 'minion') {
+        const ps = Math.max(4, 3.2 * view.zoom);
+        drawElementPip(ctx, el, feet.sx + Math.max(14, Math.round(width * 0.9)) / 2 + ps * 1.5, (barTop + y) / 2 + 1, ps);
+      }
+      y = barTop;
+    }
+    // M8.8: status icons (snowflake, flame, haste / might / shield).
+    if ((s.flags & STATUS_FLAGS) !== 0) y = drawStatusIcons(ctx, s.flags, feet.sx, y, view.zoom);
     // Own-unit marker: a small seat-coloured arrow (not over every minion).
     if (body !== 'minion' && this.options.highlightSeat !== undefined && this.options.highlightSeat !== null && s.info.seat === this.options.highlightSeat) {
       const a = Math.max(3, 2.5 * view.zoom);
@@ -1464,12 +1724,13 @@ export class ArenaRenderer {
     ctx.fillText('Zz', bx + w / 2, by + h / 2 + 1);
   }
 
-  private drawProjectiles(): void {
+  private drawProjectiles(now: number): void {
     const { ctx, view } = this;
-    const px = Math.max(2, Math.round(1.6 * view.zoom));
+    const px0 = Math.max(2, Math.round(1.6 * view.zoom));
     for (const p of this.sample?.projectiles ?? []) {
       const st = this.projectiles.get(p.id);
       if (!st) continue;
+      const px = st.big ? Math.round(px0 * 1.8) : st.element === 'normal' ? px0 : Math.round(px0 * 1.3);
       const target = this.instances.get(p.targetId);
       const remaining = target ? Math.hypot(target.x - p.x, target.y - p.y) : 0;
       const prog = Math.max(0, Math.min(1, 1 - remaining / st.dist));
@@ -1490,11 +1751,62 @@ export class ArenaRenderer {
         ctx.fillStyle = rgba(st.color, a * 0.6);
         ctx.fillRect(Math.round(t.sx - sz / 2), Math.round(t.sy - sz / 2), sz, sz);
       });
+      if (st.element !== 'normal') {
+        this.drawElementShot(st, pos, px, now);
+        continue;
+      }
       ctx.fillStyle = st.color;
       ctx.fillRect(Math.round(pos.sx - px / 2), Math.round(pos.sy - px / 2), px, px);
       ctx.fillStyle = '#FFFFFF';
       const core = Math.max(1, Math.round(px / 2));
       ctx.fillRect(Math.round(pos.sx - core / 2), Math.round(pos.sy - core / 2), core, core);
     }
+  }
+
+  /** M8.8 projectiles: a fireball with sparks, a cyan ice diamond, a yellow zig-zag spark. */
+  private drawElementShot(st: ProjectileState, pos: ScreenPoint, px: number, now: number): void {
+    const { ctx } = this;
+    const x = pos.sx;
+    const y = pos.sy;
+    const r = px * 0.9;
+    ctx.beginPath();
+    if (st.element === 'fire') {
+      ctx.ellipse(x, y, r, r, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#FF5A1F';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(x, y, r * 0.55, r * 0.55, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#FFE14A';
+      ctx.fill();
+      if (this.options.fx && !this.options.reducedMotion && Math.random() < 0.35) this.fx.sparks(x, y, this.view.zoom * 0.6, '#FFB347');
+      return;
+    }
+    if (st.element === 'ice') {
+      ctx.moveTo(x, y - r * 1.4);
+      ctx.lineTo(x + r * 0.8, y);
+      ctx.lineTo(x, y + r * 1.4);
+      ctx.lineTo(x - r * 0.8, y);
+      ctx.closePath();
+      ctx.fillStyle = ELEMENT_COLOR.ice;
+      ctx.fill();
+      ctx.lineWidth = Math.max(1, r * 0.3);
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.stroke();
+      return;
+    }
+    // Lightning: a short zig-zag that flips every 60 ms (steady with reduced motion).
+    const flip = this.options.reducedMotion || Math.floor(now / 60) % 2 === 0 ? 1 : -1;
+    ctx.moveTo(x - r * 1.4, y - r * 0.6 * flip);
+    ctx.lineTo(x - r * 0.3, y + r * 0.6 * flip);
+    ctx.lineTo(x + r * 0.3, y - r * 0.6 * flip);
+    ctx.lineTo(x + r * 1.4, y + r * 0.6 * flip);
+    ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(2, r * 0.9);
+    ctx.strokeStyle = ELEMENT_COLOR.lightning;
+    ctx.stroke();
+    ctx.lineWidth = Math.max(1, r * 0.35);
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.stroke();
+    ctx.lineCap = 'butt';
   }
 }

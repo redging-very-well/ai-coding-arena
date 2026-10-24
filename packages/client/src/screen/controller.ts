@@ -316,6 +316,8 @@ export class ScreenController {
         break;
       }
       case 'hit': {
+        // M8.8: burn ticks, splash and zap hits are silent (the zap and the main hit already sound).
+        if (ev.kind === 'burn' || ev.kind === 'splash' || ev.kind === 'zap') break;
         const target = arena.instance(ev.targetId);
         if (target && bodyOf(target) === 'wall') this.sound.play('wallHit');
         else this.sound.play(target && isBigHit(ev.damage, target.stats.maxHealth) ? 'bigHit' : 'hit');
@@ -334,6 +336,15 @@ export class ScreenController {
         break;
       case 'release':
         this.sound.play('release');
+        break;
+      case 'arc':
+        this.sound.play('zap');
+        break;
+      case 'shatter':
+        this.sound.play('shatter');
+        break;
+      case 'heal':
+        this.sound.play('heal');
         break;
       default:
         break;

@@ -51,7 +51,7 @@ export function minionLook(factoryColor: string, kind: MinionKind = 'grunt'): { 
 }
 
 /** One icon per minion kind (§12.5 M8.6 kind chip). */
-export const KIND_ICON: Readonly<Record<MinionKind, string>> = { grunt: '👊', archer: '🎯', runner: '💨', brute: '🔨' };
+export const KIND_ICON: Readonly<Record<MinionKind, string>> = { grunt: '👊', archer: '🎯', runner: '💨', brute: '🔨', medic: '💚' };
 
 /** "Grunts", "Archers", … for chips and breakdown rows. */
 export function kindPlural(kind: MinionKind): string {
