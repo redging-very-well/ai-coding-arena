@@ -258,7 +258,7 @@ The shape (asserted where marked):
 - **Walls stop melee.** The sealed fortress beats the tanks 16-0, the bricks 14-2 and the
   scouts 16-0 (asserted) and holds the rush (below): chase-nearest soldiers wait 2 s at
   the wall, then each hits the wall that blocked *it*, so 10 soldiers spread over 11 walls
-  while 3 towers shoot them. Focus fire on one wall is the counterplay (kids' code, not
+  while 3 towers shoot them. Focus fire on one wall is the counterplay (players' code, not
   the template).
 - **Range and minions break walls.** The fortress loses to the turtle, the sniper nest,
   the factory swarm and the bunker (asserted): projectiles fly over walls, and on Corners
@@ -1033,9 +1033,9 @@ same file into unit code: the validator's transpile plus a unit class whose
 isolated-vm in a child process, the server default, and node:vm (`inproc-unsafe`).
 `balanceBattle(..., runner)` takes `'lean' | 'vm' | 'ivm'`.
 
-`tests/balance-parity.test.ts` runs in the balance pass. It plays 10 matchups on
+`tests/balance-parity.test.ts` runs in the balance pass. It plays 12 matchups on
 all three runners, with every brain covered: chase, hold, towers, medics and
-auras, all six factory orders plus hold, walls, elements and splash, on both maps
+auras, focus fire (soldiers, hold soldiers, towers), all six factory orders plus hold, walls, elements and splash, on both maps
 and both seeds. Every frame must hash the same, and the result must be identical.
 It is. Per battle, the lean runner is about 10× faster than node:vm and about 14×
 faster than isolated-vm (5 battles: 0.22 s, 2.3 s and 3.1 s). Caveats:
