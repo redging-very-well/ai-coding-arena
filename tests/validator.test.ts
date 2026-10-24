@@ -116,7 +116,7 @@ describe('validator: good units', () => {
     expect(near.map((w) => w.field)).toEqual(['maxHealth', 'size']);
     expect(near[0]).toMatchObject({ value: 2500, allowed: { max: 2500, ratio: 1 } });
     expect(near[0]!.message).toBe('maxHealth is at 100% of max and costs 2× its normal price; two medium units usually beat one maxed one.');
-    expect(near[0]!.fix).toBe("If you don't need it this high, set this.maxHealth to 1500: that saves $1159 (cost $1303) to spend on another unit.");
+    expect(near[0]!.fix).toBe("If you don't need it this high, set this.maxHealth to 1500: that saves $1,159 (cost $1,303) to spend on another unit.");
     // Its power factor is ×1.2: below W_POWER_HIGH (×1.25).
     expect(r.warnings.map((w) => w.code)).not.toContain('W_POWER_HIGH');
     // Basic templates stay well below 80% of every max: no tip.
@@ -328,9 +328,9 @@ describe('validator: bad fixtures (one per error code)', () => {
     const r = expectFail(await run(fixture('bad/too_expensive.js')));
     const e = errorWith(r, 'UNIT_TOO_EXPENSIVE');
     expect(e.fix).toBe(
-      'Cost is $3998 but the max is $2500. The ×6 cooldown factor is the biggest cost: raising attackCooldown from 10 to 20 makes it ×3 ($1999). ' +
+      'Cost is $3,998 but the max is $2,500. The ×6 cooldown factor is the biggest cost: raising attackCooldown from 10 to 20 makes it ×3 ($1,999). ' +
         'The most expensive stat is speed: 4 costs $432.96 before the factors ($264 base + $168.96 for being 80% of the max). ' +
-        'Lowering speed from 4 to 2 saves $1691 ($2307).',
+        'Lowering speed from 4 to 2 saves $1,691 ($2,307).',
     );
     expect(e.breakdown).toMatchObject({ factor: 6, cost: 3998 });
     expect(e.breakdown!.sum).toBeCloseTo(661.52, 6);

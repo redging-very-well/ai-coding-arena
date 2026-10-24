@@ -243,7 +243,7 @@ describe('validator: fix texts for walls and factories (real-Claude dry run, M8.
 
   it('a too-expensive factory has no "before the factor" (buildings have no cooldown factor)', async () => {
     const e = errorWith(await run(factory("this.maxHealth = 5000; this.productionInterval = 600; this.produces = 'runner'; this.minionElement = 'lightning';")), 'UNIT_TOO_EXPENSIVE');
-    expect(e.fix).toContain('The most expensive stat is maxHealth: 5000 costs $1200 (');
+    expect(e.fix).toContain('The most expensive stat is maxHealth: 5000 costs $1,200 (');
     expect(e.fix).not.toContain('before the factor');
   });
 

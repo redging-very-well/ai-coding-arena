@@ -4,7 +4,7 @@
 // and the player second (`playerHint`). Every validation failure is a
 // `ValidationIssue`; every service failure is a `ServiceError` (§10.1).
 
-import type { CostBreakdown } from './cost.js';
+import { money, type CostBreakdown } from './cost.js';
 import type { MinionOrder, SpriteSpec, StatsSnapshot } from './contract.js';
 
 /** §7 validation pipeline failure codes, in pipeline order. */
@@ -395,7 +395,7 @@ export function playerHintForIssue(issue: ValidationIssue): string {
     if (min !== undefined && value < min) return `Your unit's ${name} is too small! (${n(value)}, the min is ${n(min)}) Ask Claude to raise it.`;
   }
   if (issue.code === 'UNIT_TOO_EXPENSIVE' && value !== undefined && max !== undefined) {
-    return `Your unit costs too much! ($${value}, the max is $${max}) Ask Claude to make it cheaper.`;
+    return `Your unit costs too much! (${money(value)}, the max is ${money(max)}) Ask Claude to make it cheaper.`;
   }
   return playerHintFor(issue.code, issue.field);
 }

@@ -160,7 +160,7 @@ describe('the dry run and step 10 (M8.8)', () => {
     const codes = r.warnings.map((w) => w.code);
     expect(codes).not.toContain('W_ZERO_DAMAGE');
     expect(codes).not.toContain('W_HEAL_NEVER_USED');
-    expect(r.unit.breakdown.heal!.text).toBe('Heal 60 HP, reach 120 px: $382.64 (before the cooldown factor)');
+    expect(r.unit.breakdown.heal!.text).toBe('Heal 60 HP up to 120 px away: $382.64 (faster healing costs more)');
   });
 
   it('W_HEAL_NEVER_USED when a heal-support unit never heals; views carry status, element, splash and support', async () => {

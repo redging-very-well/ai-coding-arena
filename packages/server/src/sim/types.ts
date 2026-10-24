@@ -309,6 +309,10 @@ export interface UnitCounters {
   /** M8.8: HP healed and combos (Best Medic, Combo Master); absent = 0. */
   healing?: number;
   combos?: number;
+  /** M8.8: report-only counters, trimmed by Skip like the rest; absent = 0. */
+  cleanses?: number;
+  assist?: number;
+  damageSplit?: DamageSplit;
 }
 
 /** Every unit's and player's counters as of one recorded frame. */

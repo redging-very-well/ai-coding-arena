@@ -179,7 +179,7 @@ export interface CostSupportPart {
   multiplier: number;
   /** linear × multiplier × reach. */
   total: number;
-  /** "Heal 60 HP, reach 120 px: $382.64 (before the cooldown factor)" / "Aura might 30% in 100 px: +$226.67 (always on: after the factors)". */
+  /** "Heal 60 HP up to 120 px away: $382.64 (faster healing costs more)" / "Might aura 30% within 100 px: +$226.67, added on top". */
   text: string;
 }
 
@@ -294,9 +294,20 @@ function statPart(stats: CostStats, stat: PricedStat, coeffs: CostCoefficients):
   const text =
     t.linear === 0
       ? `${stat} ${fmt(value)} costs $0`
-      : `${stat} ${fmt(value)} costs $${fmt(t.total)}: $${fmt(t.linear)} base + $${fmt(t.curve)} for being ${nearText(t.ratio)}`;
+      : `${stat} ${fmt(value)} costs ${money(t.total)}: ${money(t.linear)} base + ${money(t.curve)} for being ${nearText(t.ratio)}`;
   return { value, ratio: t.ratio, linear: t.linear, curve: t.curve, total: t.total, multiplier: t.linear === 0 ? 1 : t.total / t.linear, text };
 }
+
+/** The aura kinds as card words ("Might aura 30% within 100 px"). */
+const AURA_WORD: Readonly<Record<Exclude<SupportKind, 'heal'>, string>> = { haste: 'Haste', might: 'Might', shield: 'Shield' };
+
+/** The element note: what the element does, for the price breakdown ("Fire (hits burn) ×1.2"). */
+const ELEMENT_NOTE: Readonly<Record<Element, string>> = {
+  normal: 'No element',
+  fire: 'Fire (hits burn)',
+  ice: 'Ice (frozen enemies move, reload and build slower)',
+  lightning: 'Lightning (hits can zap a nearby enemy)',
+};
 
 /** The heal term or the aura term of a unit's support (§6 M8.8 formula); null without support. */
 export function supportPart(support: SupportSpec | null, coeffs: CostCoefficients): CostSupportPart | null {
@@ -312,8 +323,8 @@ export function supportPart(support: SupportSpec | null, coeffs: CostCoefficient
   const total = c * power * multiplier * reach;
   const text =
     kind === 'heal'
-      ? `Heal ${fmt(power)} HP, reach ${fmt(range)} px: $${fmt(total)} (before the cooldown factor)`
-      : `Aura ${kind} ${fmt(power)}% in ${fmt(range)} px: +$${fmt(total)} (always on: after the factors)`;
+      ? `Heal ${fmt(power)} HP up to ${fmt(range)} px away: ${money(total)} (faster healing costs more)`
+      : `${AURA_WORD[kind as Exclude<SupportKind, 'heal'>]} aura ${fmt(power)}% within ${fmt(range)} px: +${money(total)}, added on top`;
   return { kind, power, ratio, range, reach, linear: c * power, multiplier, total, text };
 }
 
@@ -415,7 +426,7 @@ function computeBuildingCost(stats: CostStats & { type: 'wall' | 'factory' }, co
     text:
       t.linear === 0
         ? `maxHealth ${fmt(hp)} costs $0`
-        : `maxHealth ${fmt(hp)} costs $${fmt(t.total)}: $${fmt(t.linear)} base + $${fmt(t.curve)} for being ${nearText(t.ratio)}`,
+        : `maxHealth ${fmt(hp)} costs ${money(t.total)}: ${money(t.linear)} base + ${money(t.curve)} for being ${nearText(t.ratio)}`,
   };
   const parts = { maxHealth: hpPart } as Record<PricedStat, CostStatPart>;
   for (const st of ZERO_STATS) parts[st] = freePart(st);
@@ -442,8 +453,8 @@ function computeBuildingCost(stats: CostStats & { type: 'wall' | 'factory' }, co
     expected,
     total: prodTotal,
     text:
-      `Production: ${expected} ${minionKindWord(kind, expected, element)} × $${minionValue} (${share} of a $${minionCost} ${minionKindWord(kind, 1, element)}, ` +
-      `because they arrive during the battle) = $${prodTotal}`,
+      `Production: ${expected} ${minionKindWord(kind, expected, element)} × ${money(minionValue)} (${share} of a ${money(minionCost)} ${minionKindWord(kind, 1, element)}, ` +
+      `because they arrive during the battle) = ${money(prodTotal)}`,
   };
   const raw = sum + prodTotal;
   const cost = body + prodTotal;
@@ -524,7 +535,7 @@ export function computeCost(stats: CostStats, coeffs: CostCoefficients, pricing:
         radius,
         text: radius > 0 ? `Splash ×${fmt(splash)} (radius ${fmt(radius)}: everyone within ${fmt(radius)} px of the target takes half)` : 'Splash ×1 (one target)',
       },
-      element: { factor: elem, element: el, text: `Element ${el} ×${fmt(elem)}` },
+      element: { factor: elem, element: el, text: `${ELEMENT_NOTE[el]} ×${fmt(elem)}` },
       ...(heal ? { heal } : {}),
       ...(aura ? { aura } : {}),
       raw,
@@ -542,6 +553,15 @@ export function biggestStatTerm(terms: CostTerms): { name: PricedStat; value: nu
 /** Human-friendly number: up to 2 decimals, no trailing zeros. */
 export function fmt(n: number): string {
   return String(Math.round(n * 100) / 100);
+}
+
+/** Money with thousands separators (§12): "$2,993", "$1,043.5" (up to 2 decimals). */
+export function money(n: number): string {
+  // By hand, not toLocaleString: every computeCost builds its breakdown texts, and Intl is slow.
+  const r = Math.round(n * 100) / 100;
+  if (!Number.isFinite(r)) return `$${r}`;
+  const [whole, cents] = String(Math.abs(r)).split('.');
+  return `${r < 0 ? '-' : ''}$${whole!.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${cents ? `.${cents}` : ''}`;
 }
 
 /** Step used when suggesting a lower value for a stat. */
@@ -639,11 +659,11 @@ function leverSentence(
   const part = breakdown.parts[big];
   let s =
     // Walls and factories have no cooldown factor (§6), so "before the factor" would only confuse.
-    `The most expensive stat is ${big}: ${fmt(part.value)} costs $${fmt(part.total)}${breakdown.formula === 'unit' ? ' before the factors' : ''} ` +
-    `($${fmt(part.linear)} base + $${fmt(part.curve)} for being ${Math.round(part.ratio * 100)}% of the max).`;
+    `The most expensive stat is ${big}: ${fmt(part.value)} costs ${money(part.total)}${breakdown.formula === 'unit' ? ' before the factors' : ''} ` +
+    `(${money(part.linear)} base + ${money(part.curve)} for being ${Math.round(part.ratio * 100)}% of the max).`;
   const sug = suggestLowerStat(stats, big, cap, coeffs, bounds, pricing);
   if (sug && sug.saves > 0) {
-    s += ` Lowering ${big} from ${fmt(sug.from)} to ${fmt(sug.to)} saves $${sug.saves} ($${sug.newCost})`;
+    s += ` Lowering ${big} from ${fmt(sug.from)} to ${fmt(sug.to)} saves ${money(sug.saves)} (${money(sug.newCost)})`;
     if (sug.fits) s += '.';
     else {
       const next = order[1];
@@ -683,19 +703,19 @@ function productionLever(
   if (kind !== 'grunt') {
     const grunts = computeCost({ ...stats, produces: 'grunt' }, coeffs, pricing);
     if (grunts.cost < result.cost) {
-      cheaper = ` Making grunts instead of ${minionKindWord(kind, 2)} (this.produces = 'grunt') saves $${result.cost - grunts.cost} ($${grunts.cost}).`;
+      cheaper = ` Making grunts instead of ${minionKindWord(kind, 2)} (this.produces = 'grunt') saves ${money(result.cost - grunts.cost)} (${money(grunts.cost)}).`;
     }
   }
   if (element !== 'normal') {
     const plain = computeCost({ ...stats, minionElement: 'normal' }, coeffs, pricing);
-    if (plain.cost < result.cost) cheaper += ` Normal minions instead of ${element} ones save $${result.cost - plain.cost} ($${plain.cost}).`;
+    if (plain.cost < result.cost) cheaper += ` Normal minions instead of ${element} ones save ${money(result.cost - plain.cost)} (${money(plain.cost)}).`;
   }
   if (to <= from) return `The production of ${fromE} ${minionKindWord(kind, fromE, element)} is the biggest cost; lower maxHealth instead.${cheaper}`;
   const next = computeCost({ ...stats, productionInterval: to }, coeffs, pricing);
   const toE = expectedMinions(to, pricing);
   return (
-    `The production (${fromE} ${minionKindWord(kind, fromE, element)} × $${result.breakdown.production?.minionValue ?? 0}) is the biggest cost: ` +
-    `raising productionInterval from ${fmt(from)} to ${to} makes ${toE} ${minionKindWord(kind, toE, element)} instead of ${fromE} and saves $${result.cost - next.cost} ($${next.cost}).` +
+    `The production (${fromE} ${minionKindWord(kind, fromE, element)} × ${money(result.breakdown.production?.minionValue ?? 0)}) is the biggest cost: ` +
+    `raising productionInterval from ${fmt(from)} to ${to} makes ${toE} ${minionKindWord(kind, toE, element)} instead of ${fromE} and saves ${money(result.cost - next.cost)} (${money(next.cost)}).` +
     cheaper
   );
 }
@@ -717,7 +737,7 @@ function powerLever(stats: CostStats, result: CostResult, coeffs: CostCoefficien
   const next = computeCost(withStat(stats, stat, to), coeffs, pricing);
   return (
     `Lowering ${stat} from ${fmt(from)} to ${fmt(to)} drops the power factor from ×${fmt(p.factor)} to ×${fmt(next.breakdown.power?.factor ?? 1)} ` +
-    `and saves $${result.cost - next.cost} ($${next.cost}): one tough unit plus one strong unit is cheaper than one unit that is both.`
+    `and saves ${money(result.cost - next.cost)} (${money(next.cost)}): one tough unit plus one strong unit is cheaper than one unit that is both.`
   );
 }
 
@@ -727,7 +747,7 @@ function splashLever(stats: CostStats, result: CostResult, coeffs: CostCoefficie
   if (r <= 0) return null;
   const to = r > 20 ? floorTo(r / 2, 10) : 0;
   const next = computeCost({ ...stats, splashRadius: to }, coeffs, pricing);
-  return `Splash ${fmt(r)} → ${fmt(to)} (this.splashRadius = ${fmt(to)}) saves $${result.cost - next.cost} ($${next.cost}).`;
+  return `Splash ${fmt(r)} → ${fmt(to)} (this.splashRadius = ${fmt(to)}) saves ${money(result.cost - next.cost)} (${money(next.cost)}).`;
 }
 
 /** The element lever: "normal instead of fire saves $X". */
@@ -735,7 +755,7 @@ function elementLever(stats: CostStats, result: CostResult, coeffs: CostCoeffici
   const el = elementOf(stats);
   if (el === 'normal') return null;
   const next = computeCost({ ...stats, element: 'normal' }, coeffs, pricing);
-  return `normal instead of ${el} (leave this.element out) saves $${result.cost - next.cost} ($${next.cost}).`;
+  return `normal instead of ${el} (leave this.element out) saves ${money(result.cost - next.cost)} (${money(next.cost)}).`;
 }
 
 /** The support lever: halve supportPower (kept inside its bounds). */
@@ -746,7 +766,56 @@ function supportLever(stats: CostStats, result: CostResult, coeffs: CostCoeffici
   const to = Math.max(min, floorTo(s.power / 2, 5));
   if (!(to < s.power)) return null;
   const next = computeCost({ ...stats, support: { ...s, power: to } }, coeffs, pricing);
-  return `Lowering supportPower (${s.kind}) from ${fmt(s.power)} to ${fmt(to)} saves $${result.cost - next.cost} ($${next.cost}).`;
+  return `Lowering supportPower (${s.kind}) from ${fmt(s.power)} to ${fmt(to)} saves ${money(result.cost - next.cost)} (${money(next.cost)}).`;
+}
+
+/**
+ * The levers of a too-expensive unit (the UNIT_TOO_EXPENSIVE `fix` after its
+ * "Cost is $X but the max is $Y." head; the M8.8 ×5 migration advice reuses it).
+ */
+export function tooExpensiveLevers(
+  stats: CostStats,
+  result: CostResult,
+  cap: number,
+  coeffs: CostCoefficients,
+  bounds: StatBounds = DEFAULT_CONFIG.stats.bounds,
+  pricing: PricingContext = DEFAULT_PRICING,
+): string {
+  const { breakdown } = result;
+  const statSentence = leverSentence(stats, result, cap, coeffs, bounds, pricing);
+  const prod = breakdown.production;
+  if (prod && prod.total >= breakdown.terms.maxHealth) {
+    // Factory whose production is the bigger lever: a slower interval buys fewer minions.
+    return `${productionLever(stats, result, cap, coeffs, bounds, pricing)} ${statSentence}`;
+  }
+  if (breakdown.factor > 1) {
+    // Try doubling the cooldown until it fits or the factor reaches 1.
+    let cd = stats.attackCooldown;
+    let next: CostResult | undefined;
+    while (cd < coeffs.referenceCooldown) {
+      cd = Math.min(coeffs.referenceCooldown, Math.ceil(cd * 2));
+      next = computeCost({ ...stats, attackCooldown: cd }, coeffs, pricing);
+      if (next.cost <= cap) break;
+    }
+    if (next && next.cost <= cap) {
+      return (
+        `The ×${fmt(breakdown.factor)} cooldown factor is the biggest cost: ` +
+        `raising attackCooldown from ${stats.attackCooldown} to ${cd} makes it ×${fmt(next.breakdown.factor)} (${money(next.cost)}). ` +
+        statSentence
+      );
+    }
+    return `Raise attackCooldown towards ${coeffs.referenceCooldown} (currently ×${fmt(breakdown.factor)}) and lower the stats. ${statSentence}`;
+  }
+  // Factor is 1: the M8.8 multipliers and the support, then the stats.
+  const lever =
+    powerLever(stats, result, coeffs, bounds, pricing) ??
+    splashLever(stats, result, coeffs, pricing) ??
+    elementLever(stats, result, coeffs, pricing) ??
+    supportLever(stats, result, coeffs, bounds, pricing);
+  let fix = `${lever ? `${lever} ` : ''}${statSentence}`;
+  // Only true when the curve is on (curveK = 0 is the old linear price).
+  if (coeffs.curveK > 0) fix += ` Maxed stats cost up to ${fmt(1 + coeffs.curveK)}× their normal price, so spread them over two units instead.`;
+  return fix;
 }
 
 /**
@@ -765,52 +834,14 @@ export function tooExpensiveError(
   pricing: PricingContext = DEFAULT_PRICING,
 ): ValidationError {
   const { breakdown } = result;
-  const statSentence = leverSentence(stats, result, cap, coeffs, bounds, pricing);
-  const head = `Cost is $${result.cost} but the max is $${cap}.`;
-  let fix: string;
-
-  const prod = breakdown.production;
-  if (prod && prod.total >= breakdown.terms.maxHealth) {
-    // Factory whose production is the bigger lever: a slower interval buys fewer minions.
-    fix = `${head} ${productionLever(stats, result, cap, coeffs, bounds, pricing)} ${statSentence}`;
-  } else if (breakdown.factor > 1) {
-    // Try doubling the cooldown until it fits or the factor reaches 1.
-    let cd = stats.attackCooldown;
-    let next: CostResult | undefined;
-    while (cd < coeffs.referenceCooldown) {
-      cd = Math.min(coeffs.referenceCooldown, Math.ceil(cd * 2));
-      next = computeCost({ ...stats, attackCooldown: cd }, coeffs, pricing);
-      if (next.cost <= cap) break;
-    }
-    if (next && next.cost <= cap) {
-      fix =
-        `${head} The ×${fmt(breakdown.factor)} cooldown factor is the biggest cost: ` +
-        `raising attackCooldown from ${stats.attackCooldown} to ${cd} makes it ×${fmt(next.breakdown.factor)} ($${next.cost}). ` +
-        statSentence;
-    } else {
-      fix =
-        `${head} Raise attackCooldown towards ${coeffs.referenceCooldown} ` +
-        `(currently ×${fmt(breakdown.factor)}) and lower the stats. ` +
-        statSentence;
-    }
-  } else {
-    // Factor is 1: the M8.8 multipliers and the support, then the stats.
-    const lever =
-      powerLever(stats, result, coeffs, bounds, pricing) ??
-      splashLever(stats, result, coeffs, pricing) ??
-      elementLever(stats, result, coeffs, pricing) ??
-      supportLever(stats, result, coeffs, bounds, pricing);
-    fix = `${head} ${lever ? `${lever} ` : ''}${statSentence}`;
-    // Only true when the curve is on (curveK = 0 is the old linear price).
-    if (coeffs.curveK > 0) fix += ` Maxed stats cost up to ${fmt(1 + coeffs.curveK)}× their normal price, so spread them over two units instead.`;
-  }
-
+  const head = `Cost is ${money(result.cost)} but the max is ${money(cap)}.`;
+  const fix = `${head} ${tooExpensiveLevers(stats, result, cap, coeffs, bounds, pricing)}`;
   return {
     code: 'UNIT_TOO_EXPENSIVE',
     field: 'cost',
     value: result.cost,
     allowed: { max: cap },
-    message: `This unit costs $${result.cost} but the most a unit may cost is $${cap}.`,
+    message: `This unit costs ${money(result.cost)} but the most a unit may cost is ${money(cap)}.`,
     fix,
     breakdown,
   };
@@ -848,7 +879,7 @@ export function nearMaxWarnings(
         `${stat} is at ${Math.round(part.ratio * 100)}% of max and costs ${fmt(part.multiplier)}× its normal price; ` +
         'two medium units usually beat one maxed one.',
       fix: lower
-        ? `If you don't need it this high, set this.${stat} to ${fmt(target)}: that saves $${saving} (cost $${lower.cost}) to spend on another unit.`
+        ? `If you don't need it this high, set this.${stat} to ${fmt(target)}: that saves ${money(saving)} (cost ${money(lower.cost)}) to spend on another unit.`
         : `Consider a lower ${stat} and spend the savings on a second unit.`,
     });
   }
@@ -865,7 +896,7 @@ export function nearMaxWarnings(
       allowed: { max, ratio: Math.round(sp.ratio * 100) / 100 },
       message: `supportPower is at ${Math.round(sp.ratio * 100)}% of max and costs ${fmt(sp.multiplier)}× its normal price; two medium supports usually beat one maxed one.`,
       fix: lower
-        ? `If you don't need it this high, set this.supportPower to ${fmt(target)}: that saves $${result.cost - lower.cost} (cost $${lower.cost}).`
+        ? `If you don't need it this high, set this.supportPower to ${fmt(target)}: that saves ${money(result.cost - lower.cost)} (cost ${money(lower.cost)}).`
         : 'Consider a lower supportPower and spend the savings on a second unit.',
     });
   }

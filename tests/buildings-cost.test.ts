@@ -109,7 +109,7 @@ describe('§6 reference walls, minions and factories (curve k = 1, M8.8)', () =>
     expect(r.cost).toBe(3026);
     // The production ($1,776) is bigger than the body's HP term ($1,200): raise the interval, or make cheaper minions.
     const fix = tooExpensiveError(st, r, C.caps.unitCost, C.cost, C.stats.bounds).fix;
-    expect(fix).toMatch(/^Cost is \$3026 but the max is \$2500\. The production \(8 lightning runners × \$222\) is the biggest cost: raising productionInterval from 600 to \d+/);
+    expect(fix).toMatch(/^Cost is \$3,026 but the max is \$2,500\. The production \(8 lightning runners × \$222\) is the biggest cost: raising productionInterval from 600 to \d+/);
     expect(fix).toContain("Making grunts instead of runners (this.produces = 'grunt') saves");
     expect(fix).toContain('Normal minions instead of lightning ones save $');
     // A fortress body is the bigger lever when the production is small.
@@ -126,7 +126,7 @@ describe('§6 reference walls, minions and factories (curve k = 1, M8.8)', () =>
     expect(b.production).toMatchObject({ interval: 900, minionCost: 296, minionValue: 148, expected: 5, total: 740, element: 'normal' });
     expect(b.production!.text).toBe('Production: 5 minions × $148 (half of a $296 minion, because they arrive during the battle) = $740');
     const fire = computeCost({ ...factory(1500, 900), produces: 'brute', minionElement: 'fire' }, C.cost).breakdown;
-    expect(fire.production!.text).toBe('Production: 5 fire brutes × $256 (half of a $511 fire brute, because they arrive during the battle) = $1280');
+    expect(fire.production!.text).toBe('Production: 5 fire brutes × $256 (half of a $511 fire brute, because they arrive during the battle) = $1,280');
   });
 
   it('E = min(8, floor((battleTicks − 1) / interval)) and follows the battle length', () => {
@@ -375,7 +375,7 @@ describe('§6 minion kinds and factory prices (M8.6)', () => {
     const r = computeCost(s, C.cost, pricingOf(C));
     expect(r.cost).toBeGreaterThan(C.caps.unitCost);
     const e = tooExpensiveError(s, r, C.caps.unitCost, C.cost, C.stats.bounds, pricingOf(C));
-    expect(e.fix).toMatch(/Making grunts instead of brutes \(this\.produces = 'grunt'\) saves \$520 \(\$\d+\)/);
+    expect(e.fix).toMatch(/Making grunts instead of brutes \(this\.produces = 'grunt'\) saves \$520 \(\$\d,\d{3}\)/);
   });
 
   it('config: an old factory.minion patch migrates to the grunt; kinds stay legal soldiers; burst.max <= maxAlivePerFactory', () => {

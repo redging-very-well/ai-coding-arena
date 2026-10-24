@@ -104,24 +104,27 @@ const HASH_CELL = 40;
 export class BodyIndex {
   private buckets: Map<number, SimUnit[]> | null = null;
   private cols = 0;
+  /** The largest body radius in the index (the size stat has no fixed cap, so it is measured). */
+  private maxRadius = 0;
 
   /** `bodies`: the living bodies, in instanceId order. */
   constructor(private readonly bodies: readonly SimUnit[], private readonly arena: number) {}
 
-  /** Bodies whose centre may lie within `r` (+ 20 px, the largest radius) of (x, y), in instanceId order. */
+  /** Bodies whose centre may lie within `r` (+ the largest body radius) of (x, y), in instanceId order. */
   near(x: number, y: number, r: number): readonly SimUnit[] {
     if (this.bodies.length <= EFFECT_HASH_MIN_BODIES) return this.bodies;
     if (!this.buckets) {
       this.cols = Math.ceil(this.arena / HASH_CELL) + 1;
       this.buckets = new Map();
       for (const u of this.bodies) {
+        if (u.radius > this.maxRadius) this.maxRadius = u.radius;
         const k = Math.floor(u.y / HASH_CELL) * this.cols + Math.floor(u.x / HASH_CELL);
         const b = this.buckets.get(k);
         if (b) b.push(u);
         else this.buckets.set(k, [u]);
       }
     }
-    const reach = r + 20;
+    const reach = r + this.maxRadius;
     const c0 = Math.floor((x - reach) / HASH_CELL);
     const c1 = Math.floor((x + reach) / HASH_CELL);
     const r0 = Math.floor((y - reach) / HASH_CELL);

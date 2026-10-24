@@ -131,5 +131,9 @@ describe('review regressions', () => {
     expect(playerHintForIssue({ code: 'UNIT_TOO_EXPENSIVE', field: 'cost', value: 612, allowed: { max: 500 }, message: '', fix: '' })).toBe(
       'Your unit costs too much! ($612, the max is $500) Ask Claude to make it cheaper.',
     );
+    // §12: thousands separators wherever money is shown.
+    expect(playerHintForIssue({ code: 'UNIT_TOO_EXPENSIVE', field: 'cost', value: 3998, allowed: { max: 2500 }, message: '', fix: '' })).toBe(
+      'Your unit costs too much! ($3,998, the max is $2,500) Ask Claude to make it cheaper.',
+    );
   });
 });

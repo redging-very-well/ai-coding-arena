@@ -205,19 +205,19 @@ describe('breakdown texts (§6 M8.8 breakdown)', () => {
     expect(b.parts.damage.text).toBe('damage 265 costs $707.66: $397.5 base + $310.16 for being near the max (88% of max)');
     expect(b.power!.text).toBe('Power ×1.37: tough (70% of max HP) AND strong (88% of max damage). One tough unit plus one strong unit is cheaper.');
     expect(b.splash!.text).toBe('Splash ×1 (one target)');
-    expect(b.element!.text).toBe('Element normal ×1');
+    expect(b.element!.text).toBe('No element ×1');
     const splashy = computeCost({ ...brick, splashRadius: 40, element: 'fire' }, coeffs).breakdown;
     expect(splashy.splash!.text).toBe('Splash ×1.53 (radius 40: everyone within 40 px of the target takes half)');
-    expect(splashy.element!.text).toBe('Element fire ×1.2');
+    expect(splashy.element!.text).toBe('Fire (hits burn) ×1.2');
   });
 
   it('the heal and aura lines', () => {
     const body: CostStats = { type: 'soldier', maxHealth: 500, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, size: 10 };
     expect(computeCost({ ...body, support: { kind: 'heal', power: 60, range: 120 } }, coeffs).breakdown.heal!.text).toBe(
-      'Heal 60 HP, reach 120 px: $382.64 (before the cooldown factor)',
+      'Heal 60 HP up to 120 px away: $382.64 (faster healing costs more)',
     );
     expect(computeCost({ ...body, support: { kind: 'might', power: 30, range: 100 } }, coeffs).breakdown.aura!.text).toBe(
-      'Aura might 30% in 100 px: +$226.67 (always on: after the factors)',
+      'Might aura 30% within 100 px: +$226.67, added on top',
     );
   });
 
@@ -286,7 +286,7 @@ describe('UNIT_TOO_EXPENSIVE levers (§6 M8.8 order: cooldown, power, splash, el
   it('Scout with cooldown 10 ($3,998) names the cooldown factor: CD 20 makes it $1,999 (§7)', () => {
     const err = tooExpensiveError(scout(10), computeCost(scout(10), coeffs), cap, coeffs);
     expect(err).toMatchObject({ code: 'UNIT_TOO_EXPENSIVE', value: 3998, allowed: { max: 2500 } });
-    expect(err.fix).toContain('Cost is $3998 but the max is $2500. The ×6 cooldown factor is the biggest cost: raising attackCooldown from 10 to 20 makes it ×3 ($1999).');
+    expect(err.fix).toContain('Cost is $3,998 but the max is $2,500. The ×6 cooldown factor is the biggest cost: raising attackCooldown from 10 to 20 makes it ×3 ($1,999).');
     expect(err.fix).toContain('The most expensive stat is speed');
   });
 
@@ -296,7 +296,7 @@ describe('UNIT_TOO_EXPENSIVE levers (§6 M8.8 order: cooldown, power, splash, el
     expect(priced.cost).toBe(2993);
     const err = tooExpensiveError(stats, priced, cap, coeffs);
     // The more maxed of HP (86%) and damage (83%) comes down until the power factor is ×1.25.
-    expect(err.fix).toMatch(/^Cost is \$2993 but the max is \$2500\. Lowering maxHealth from 2150 to \d+ drops the power factor from ×1\.43 to ×1\.25 and saves \$\d+/);
+    expect(err.fix).toMatch(/^Cost is \$2,993 but the max is \$2,500\. Lowering maxHealth from 2150 to \d+ drops the power factor from ×1\.43 to ×1\.25 and saves \$\d+/);
     expect(err.fix).toContain('Maxed stats cost up to 2× their normal price');
   });
 
@@ -317,7 +317,7 @@ describe('UNIT_TOO_EXPENSIVE levers (§6 M8.8 order: cooldown, power, splash, el
     const stats: CostStats = { type: 'soldier', maxHealth: 2500, damage: 300, range: 300, speed: 5, attackCooldown: 60, size: 20 };
     const err = tooExpensiveError(stats, computeCost(stats, coeffs), cap, coeffs);
     expect(err.value).toBe(6660);
-    expect(err.fix).toContain('The most expensive stat is maxHealth: 2500 costs $1500 before the factors ($750 base + $750 for being 100% of the max).');
+    expect(err.fix).toContain('The most expensive stat is maxHealth: 2500 costs $1,500 before the factors ($750 base + $750 for being 100% of the max).');
   });
 
   it('a unit one stat away from fitting gets the highest round value of that stat that fits', () => {
@@ -325,12 +325,12 @@ describe('UNIT_TOO_EXPENSIVE levers (§6 M8.8 order: cooldown, power, splash, el
     const priced = computeCost(stats, coeffs);
     expect(priced.cost).toBeGreaterThan(cap);
     const err = tooExpensiveError(stats, priced, cap, coeffs);
-    const m = /Lowering maxHealth from 2500 to (\d+) saves \$(\d+) \(\$(\d+)\)\./.exec(err.fix);
+    const m = /Lowering maxHealth from 2500 to (\d+) saves \$([\d,]+) \(\$([\d,]+)\)\./.exec(err.fix);
     expect(m, err.fix).not.toBeNull();
     const to = Number(m![1]);
     const lowered = computeCost({ ...stats, maxHealth: to }, coeffs).cost;
     expect(lowered).toBeLessThanOrEqual(cap);
-    expect(Number(m![3])).toBe(lowered);
+    expect(Number(m![3]!.replace(/,/g, ''))).toBe(lowered);
     expect(computeCost({ ...stats, maxHealth: to + 50 }, coeffs).cost).toBeGreaterThan(cap);
   });
 });

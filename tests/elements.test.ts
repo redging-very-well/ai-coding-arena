@@ -18,7 +18,7 @@ import {
   type PlacementDTO,
   type StatsSnapshot,
 } from '@pixel-clash/shared';
-import { BattleEngine, runBattle, type SimUnit } from '../packages/server/src/sim/engine.js';
+import { BattleEngine, buildBattleReport, resultAtTick, runBattle, type SimUnit } from '../packages/server/src/sim/engine.js';
 import { BodyIndex, HitPipeline, noAura, statusOf, tempoOf } from '../packages/server/src/sim/effects.js';
 import { FrameRecorder } from '../packages/server/src/sim/frames.js';
 import { mulberry32, type Rng } from '../packages/server/src/sim/prng.js';
@@ -480,5 +480,65 @@ describe('elements in battle: frames, events, credit and determinism', () => {
     expect(r.ranking.map((x) => `${x.playerId}:${x.place}`)).toEqual(['p1:1', 'p0:2']);
     expect(json.length).toBe(673973);
     expect(createHash('sha256').update(json).digest('hex')).toBe('febb2f8365fe0efd14a7cf6d457bb7f3a229507406869bc417342e4c27d532b5');
+  });
+});
+
+describe('review fixes: freeze window, big bodies in the hash, Skip trims the split', () => {
+  it('one ice hit slows exactly ice.ticks moves, and views show ice.ticks first', async () => {
+    const iceTower = stats({ type: 'tower', name: 'Frost', damage: 1, range: 300, attackCooldown: 5000, element: 'ice' });
+    const guard = stats({ type: 'tower', name: 'Guard', range: 20 });
+    const walker = scripted(() => ({ action: 'move', destination: { x: 790, y: 790 } }));
+    const inRange = scripted((self, en) => {
+      const t = en[0];
+      return t && self.cooldownRemaining === 0 && Math.hypot(t.x - self.x, t.y - self.y) - t.radius - self.radius <= 300 ? { action: 'attack', targetId: t.id } : { action: 'idle' };
+    });
+    const { setups, runners } = fakePlayers([
+      { playerId: 'a', seat: 0, zone: 'TL', units: [design('s', stats({ type: 'soldier', speed: 1 }))], placements: [at(0, 0, 's')], brains: { s: walker } },
+      { playerId: 'b', seat: 1, zone: 'BR', units: [design('f', iceTower), design('g', guard)], placements: [at(0, 0, 'f'), at(5, 5, 'g')], brains: { f: inRange, g: idleBrain } },
+    ]);
+    runners.get('a')!.recordInputs = true;
+    await new BattleEngine({ players: setups, config: cfg({}, 700), seed: 2 }).run();
+    const ins = runners.get('a')!.inputs.map((i) => i.selves[0]!);
+    let slowed = 0;
+    for (let i = 1; i < ins.length; i++) if (Math.abs(Math.hypot(ins[i]!.x - ins[i - 1]!.x, ins[i]!.y - ins[i - 1]!.y) - 0.65) < 1e-6) slowed++;
+    const frozenViews = ins.filter((v) => v.status.frozen > 0);
+    expect(slowed).toBe(C.elements.ice.ticks);
+    expect(frozenViews).toHaveLength(C.elements.ice.ticks);
+    expect(frozenViews[0]!.status.frozen).toBe(C.elements.ice.ticks);
+  });
+
+  it('splash finds a big body (size above 20) the same way with 3 or 73 bodies alive', () => {
+    const A = body('0-0-0', soldier({ damage: 100, splashRadius: 10 }));
+    const T = body('1-0-0', dummy(), { x: 401, y: 401 });
+    // Edge 9.5 px from T's centre: inside the splash radius.
+    const big = body('1-0-1', stats({ type: 'tower', maxHealth: 2500, size: 30 }), { x: 401 + 39.5, y: 401 });
+    const filler = Array.from({ length: 70 }, (_, i) => body(`2-0-${String(i).padStart(2, '0')}`, dummy(), { x: 50 + i, y: 50 }));
+    const hpAfter = (bodies: SimUnit[]) => {
+      big.hp = 2500;
+      T.hp = 2500;
+      pipeline(bodies).p.land(hit(A, T, { damage: 100, splash: 10 }));
+      return big.hp;
+    };
+    const few = hpAfter([A, T, big]);
+    expect(few).toBeLessThan(2500);
+    expect(hpAfter([A, T, big, ...filler])).toBe(few);
+  });
+
+  it('a Skip-trimmed report has the damage split, assist and cleanses of the shown frame', async () => {
+    const blaze = stats({ type: 'soldier', name: 'Blaze', damage: 80, element: 'fire' });
+    const { setups } = fakePlayers([
+      { playerId: 'a', seat: 0, zone: 'TL', units: [design('s', blaze)], placements: [at(0, 0, 's'), at(1, 0, 's')], brains: { s: soldierBrain } },
+      { playerId: 'b', seat: 1, zone: 'BR', units: [design('s', stats({ type: 'soldier', maxHealth: 2500 }))], placements: [at(0, 0, 's'), at(1, 0, 's')], brains: { s: soldierBrain } },
+    ]);
+    const engine = new BattleEngine({ players: setups, config: deepMerge(C, { timers: { battleTicks: 1500 } }), seed: 3 });
+    const full = await engine.run();
+    const hits = engine.frames.filter((f) => f.events.some((e) => e.type === 'hit'));
+    const mid = hits[Math.floor(hits.length / 3)]!;
+    const t = buildBattleReport(resultAtTick(full, engine.countersAt(mid.t), mid, mid.t), 'a', 1).types![0]!;
+    const fullType = buildBattleReport(full, 'a', 1).types![0]!;
+    expect(t.damageDealt).toBeLessThan(fullType.damageDealt);
+    const sp = t.damageSplit!;
+    expect(sp.burn).toBeGreaterThan(0);
+    expect(Math.abs(sp.hit + sp.splash + sp.burn + sp.zap + sp.shatter - t.damageDealt)).toBeLessThanOrEqual(2);
   });
 });

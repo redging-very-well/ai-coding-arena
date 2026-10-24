@@ -50,10 +50,10 @@
 //
 // Elements, splash and support (M8.8, §9.4): step 1 lowers cooldowns (a
 // float) and the factory timers by each body's tempo (×0.65 frozen, ×(1 +
-// haste%) hasted), counts the freeze down, resets the heal room every 60
-// ticks and computes the auras; step 3 accepts `heal`; step 4 moves at
-// speed × tempo (the router's re-plan and blocked checks use that step, so a
-// frozen unit is never "blocked"); step 6 bakes might into each shot and
+// haste%) hasted), resets the heal room every 60 ticks and computes the
+// auras; step 3 accepts `heal`; step 4 moves at speed × tempo (the router's
+// re-plan and blocked checks use that step, so a frozen unit is never
+// "blocked") and then counts the freeze down; step 6 bakes might into each shot and
 // queues heals; step 7 lands hits through the element and splash pipeline
 // (sim/effects.ts, lightning draws from its own `elementRng`), then 7b applies
 // the queued heals and 7c the due burn pulses; step 10 doesn't count
@@ -405,6 +405,9 @@ export class BattleEngine {
           disabled: e.disabled,
           ...(e.healing ? { healing: e.healing } : {}),
           ...(e.combos ? { combos: e.combos } : {}),
+          ...(e.cleanses ? { cleanses: e.cleanses } : {}),
+          ...(e.assist ? { assist: e.assist } : {}),
+          ...(e.damageSplit ? { damageSplit: { ...e.damageSplit } } : {}),
         });
       }
     }
@@ -629,10 +632,13 @@ export class BattleEngine {
         u.cooldownRemaining = cd > 1e-9 ? cd : 0;
       }
       if (u.factory) u.factory.holding = false;
-      if ((u.frozen ?? 0) > 0) u.frozen! -= 1;
     }
     resetHealRoom(living, tick, cfg);
     computeAuras(living);
+    // Factories build in step 9b at the tempo they had now, so a freeze landing
+    // in step 7 slows the same ticks for builds as for reloads and moves.
+    const factoryTempo = new Map<SimUnit, number>();
+    for (const u of living) if (u.factory) factoryTempo.set(u, tempoOf(u, cfg));
     const healsOff = tick >= cfg.suddenDeath.startTick;
     // M8.6: a swarm whose target died becomes attack, a guard whose ally
     // died defend, before anyone decides (dead factories too: their minions
@@ -713,6 +719,10 @@ export class BattleEngine {
       if (sx1 < sx0) unit.facingLeft = true;
       else if (sx1 > sx0) unit.facingLeft = false;
     }
+    // M8.8: the freeze counts down once this tick's reloads, views and moves
+    // have read it (and before step 7 can refresh it), so one ice hit slows
+    // exactly ice.ticks ticks of each, and views show ice.ticks first.
+    for (const u of living) if ((u.frozen ?? 0) > 0) u.frozen! -= 1;
 
     // 5) Separation (circle bodies), each pass ending with the wall push.
     separate(
@@ -808,7 +818,7 @@ export class BattleEngine {
     this.projectiles = this.projectiles.filter((p) => this.byId.get(p.targetId)?.alive);
 
     // 9b) Factory production (new minions act from the next tick).
-    this.produce(tick + 1);
+    this.produce(tick + 1, factoryTempo);
     // 10) Elimination is checked by the loop (it also decides the frame).
   }
 
@@ -860,7 +870,7 @@ export class BattleEngine {
    * Step 9b (§9.3 Factory production, M8.6 Store and release). `t` = the
    * time the new minions appear at. Caps count alive + stored minions.
    */
-  private produce(t: number): void {
+  private produce(t: number, tempos: ReadonlyMap<SimUnit, number>): void {
     const fc = this.config.factory;
     let factories: SimUnit[] | undefined;
     for (const u of this.units) if (u.alive && u.factory) (factories ??= []).push(u);
@@ -883,7 +893,7 @@ export class BattleEngine {
       const f = fac.factory!;
       // M8.8: the timer gains the tempo (0.65 per tick while frozen), which slows bursts too.
       if (!f.holding) {
-        const timer = f.timer + tempoOf(fac, this.config);
+        const timer = f.timer + (tempos.get(fac) ?? tempoOf(fac, this.config));
         f.timer = timer > f.productionInterval - 1e-9 ? f.productionInterval : timer;
       }
       const full = (perFactory.get(fac.id) ?? 0) >= fc.maxAlivePerFactory || (perPlayer.get(fac.playerId) ?? 0) >= this.minionCapPerPlayer;
@@ -1245,7 +1255,10 @@ export class BattleEngine {
         last.strikes === u.strikes &&
         last.disabled === u.disabled &&
         (last.healing ?? 0) === (u.healing ?? 0) &&
-        (last.combos ?? 0) === (u.combos ?? 0);
+        (last.combos ?? 0) === (u.combos ?? 0) &&
+        (last.cleanses ?? 0) === (u.cleanses ?? 0) &&
+        (last.assist ?? 0) === (u.assist ?? 0) &&
+        sameSplit(last.damageSplit, u.damageSplit);
       if (same) continue;
       const entry = {
         t,
@@ -1256,6 +1269,10 @@ export class BattleEngine {
         disabled: u.disabled,
         ...(u.healing ? { healing: u.healing } : {}),
         ...(u.combos ? { combos: u.combos } : {}),
+        ...(u.cleanses ? { cleanses: u.cleanses } : {}),
+        ...(u.assist ? { assist: u.assist } : {}),
+        // A copy: the body's split is mutated in place.
+        ...(u.damageSplit ? { damageSplit: { ...u.damageSplit } } : {}),
       };
       if (log) log.push(entry);
       else this.unitCounterLog.set(u.id, [entry]);
@@ -1361,6 +1378,14 @@ function screenX(p: { x: number; y: number }): number {
 }
 
 /** The last entry with `t` ≤ `tick` in a list sorted by `t`. */
+/** True when two damage splits hold the same numbers (absent = all zero). */
+function sameSplit(a: DamageSplitDTO | undefined, b: DamageSplitDTO | undefined): boolean {
+  const z = { hit: 0, splash: 0, burn: 0, zap: 0, shatter: 0 };
+  const x = a ?? z;
+  const y = b ?? z;
+  return x.hit === y.hit && x.splash === y.splash && x.burn === y.burn && x.zap === y.zap && x.shatter === y.shatter;
+}
+
 function lastAtOrBefore<T extends { t: number }>(list: readonly T[], tick: number): T | undefined {
   let lo = 0;
   let hi = list.length - 1;
@@ -1439,11 +1464,17 @@ export function resultAtTick(
         errors: u.errors.filter((e) => e.tick <= endTick),
       };
       if (!c.disabled) delete r.disabledReason;
-      // M8.8: healing and combos as of the shown frame (the split, cleanses and assist are display only).
+      // M8.8: healing, combos, cleanses, assist and the damage split as of the shown frame.
       if (c.healing) r.healing = c.healing;
       else delete r.healing;
       if (c.combos) r.combos = c.combos;
       else delete r.combos;
+      if (c.cleanses) r.cleanses = c.cleanses;
+      else delete r.cleanses;
+      if (c.assist) r.assist = c.assist;
+      else delete r.assist;
+      if (c.damageSplit) r.damageSplit = { ...c.damageSplit };
+      else delete r.damageSplit;
       return r;
     }),
   };

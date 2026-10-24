@@ -141,12 +141,17 @@ const REQUIRED: Readonly<Record<UnitType, readonly string[]>> = {
 };
 
 /** Type-specific `fix` for a missing field (§7 step 5). */
-function missingFix(type: UnitType | undefined, field: string): string {
+function missingFix(type: UnitType | undefined, field: string, bounds: StatBounds): string {
+  // The ranges come from the live bounds; the example is clamped into them.
+  const range = (r: { min: number; max: number }, eg: number) =>
+    `from ${r.min} to ${r.max}. Try ${Math.min(r.max, Math.max(r.min, eg))}`;
   if (type === 'factory' && field === 'productionInterval') {
-    return 'A factory needs this.productionInterval: ticks between two minions, 600-1800. Try 900 (one every 15 s).';
+    const p = bounds.productionInterval;
+    const eg = Math.min(p.max, Math.max(p.min, 900));
+    return `A factory needs this.productionInterval: ticks between two minions, ${p.min}-${p.max}. Try ${eg}${eg === 900 ? ' (one every 15 s)' : ''}.`;
   }
-  if (type === 'wall' && field === 'maxHealth') return 'A wall needs this.maxHealth, from 250 to 7500. Try 2000.';
-  if (type === 'factory' && field === 'maxHealth') return 'A factory needs this.maxHealth, from 500 to 5000. Try 1500.';
+  if (type === 'wall' && field === 'maxHealth') return `A wall needs this.maxHealth, ${range(bounds.wallHealth, 2000)}.`;
+  if (type === 'factory' && field === 'maxHealth') return `A factory needs this.maxHealth, ${range(bounds.factoryHealth, 1500)}.`;
   return `In the constructor add this.${field} = …; as a plain data property (see the contract).`;
 }
 
@@ -353,7 +358,7 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
         code: 'STAT_MISSING',
         field,
         message: `The unit does not set ${field}.`,
-        fix: missingFix(type, field),
+        fix: missingFix(type, field, bounds),
       });
     }
   }

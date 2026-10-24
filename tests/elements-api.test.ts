@@ -79,7 +79,7 @@ describe('elements and support over the API (M8.8)', () => {
     const card = (id: string) => cards.find((c) => c.unitId === id)!;
     expect(card('fire-tank')).toMatchObject({ cost: 1347, scaleVersion: 2, stats: { element: 'fire', splashRadius: 0, support: null } });
     expect(card('patch')).toMatchObject({ cost: 759, healUsed: true, stats: { damage: 0, support: { kind: 'heal', power: 60, range: 120 } } });
-    expect(card('patch').breakdown.heal?.text).toMatch(/^Heal 60 HP, reach 120 px/);
+    expect(card('patch').breakdown.heal?.text).toMatch(/^Heal 60 HP up to 120 px away/);
     expect(card('storm-bomber').breakdown.splash?.text).toMatch(/^Splash ×1\.43/);
     // A medic alone is no army (§5.2 Fighters).
     await a.client.put('/round/selection', { unitIds: ['patch'] });
