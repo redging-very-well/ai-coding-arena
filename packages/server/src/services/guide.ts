@@ -57,7 +57,7 @@ import {
   type UnitType,
   type WorldView,
 } from '@pixel-clash/shared';
-import { PRICE_PARAGRAPH, buildRules, contractTypescript, strategyTips } from './rules.js';
+import { PRICE_PARAGRAPH, buildRules, contractTypescript } from './rules.js';
 
 /** A starter template as the guide prices it: its name and frozen stats. */
 export interface GuideTemplate {
@@ -213,7 +213,7 @@ const FIELDS: Record<StatField, FieldDoc> = {
     cost: () => 'free',
   },
   size: {
-    what: 'Body radius in px: the hitbox AND the drawn size. Bigger reaches further (range is edge to edge) but is easier to hit.',
+    what: 'Body radius in px: the hitbox AND the drawn size. Range is edge to edge, so a bigger body also reaches further.',
     allowed: (c, t) =>
       fighter(t) ? `${span(c.stats.bounds.size, ' px')} (default ${DEFAULT_SIZE[t]})` : null,
     cost: (c) => `${money(c.cost.size)} per px above 6`,
@@ -302,7 +302,7 @@ const SELF_FIELDS: Record<keyof SelfView, string> = {
   status: 'burns, freezes and buffs on it now (see Status)',
   blockedBy: 'id of the wall that stopped its last move, else null',
   blockedTicks: 'ticks in a row a wall has stopped it',
-  pathing: "`'direct'` (straight there), `'detour'` (going round walls) or `'no-route'` (walled off: smash `self.blockedBy`)",
+  pathing: "`'direct'` (straight there), `'detour'` (going round walls) or `'no-route'` (walled off: it walks to the best wall to break and waits there)",
   factory: 'factories only: the factory details (see Factory view), else null',
 };
 
@@ -319,10 +319,10 @@ const OTHER_FIELDS: Record<keyof OtherView, string> = {
   maxHp: 'hit points when full',
   range: 'its range (walls and factories 0)',
   element: 'its element (walls and factories `normal`)',
-  splashRadius: 'spread out if this is above 0!',
-  support: 'its support or null: find the enemy medic',
+  splashRadius: 'its splash radius (0 = none)',
+  support: 'its support `{ kind, power, range }` or null',
   status: 'its burns, freezes and buffs',
-  moving: 'it moved last tick: your ranged shots can miss it (shoot slow targets first)',
+  moving: 'it moved last tick: ranged shots at a moving body can miss',
   currentSpeed: 'px it moved last tick (0 = standing still); the faster, the more ranged shots miss',
 };
 
@@ -407,11 +407,11 @@ function elementRows(c: GameConfig): string[][] {
   const burnS = fmt((e.fire.pulses * e.fire.pulseTicks) / c.timers.ticksPerSecond);
   const rows: Record<Element, [string, string, string]> = {
     normal: ['⚪', 'Just the hit.', '×1'],
-    fire: ['🔥', `Adds ${e.fire.burnPct}% of the hit again as a burn over ${burnS} s. Best on fast hitters.`, x(f.fire)],
-    ice: ['❄️', `Freezes the target for ${secs(e.ice.ticks, c)}: it moves, reloads and builds ${e.ice.slowPct}% slower. Works even at damage 0. Best against a few big units.`, x(f.ice)],
+    fire: ['🔥', `Adds ${e.fire.burnPct}% of the hit again as a burn over ${burnS} s.`, x(f.fire)],
+    ice: ['❄️', `Freezes the target for ${secs(e.ice.ticks, c)}: it moves, reloads and builds ${e.ice.slowPct}% slower. Works even at damage 0.`, x(f.ice)],
     lightning: [
       '⚡',
-      `${e.lightning.chancePct}% of hits also zap the nearest other enemy within ${e.lightning.hopRange} px for the same damage. Best against crowds.`,
+      `${e.lightning.chancePct}% of hits also zap the nearest other enemy within ${e.lightning.hopRange} px for the same damage.`,
       x(f.lightning),
     ],
   };
@@ -443,9 +443,9 @@ function supportRows(c: GameConfig): string[][] {
 }
 
 const MINION_ROLE: Record<MinionKind, string> = {
-  grunt: 'the default: cheap all-rounder, melee',
+  grunt: 'the default and cheapest kind, melee',
   archer: 'shoots from far (over walls), fragile',
-  runner: 'very fast and small: reaches far targets first',
+  runner: 'very fast and small',
   brute: 'slow and tough; hits walls extra hard',
   medic: 'never attacks: heals its side, cleanses burns and freezes first',
 };
@@ -502,7 +502,7 @@ const ARCHETYPES: ArchetypeSpec[] = [
   {
     id: 'tank',
     name: 'Tank',
-    note: 'lots of HP, little damage: soaks up hits',
+    note: 'lots of HP, little damage',
     stats: (c) => unitStats(c, { type: 'soldier', maxHealth: 2900, damage: 24, range: 20, speed: 1, attackCooldown: 60, size: 14 }),
   },
   {
@@ -514,7 +514,7 @@ const ARCHETYPES: ArchetypeSpec[] = [
   {
     id: 'fire-splash',
     name: 'Fire Splash Tower',
-    note: 'fire + splash: burns groups',
+    note: 'fire + splash',
     stats: (c) => unitStats(c, { type: 'tower', maxHealth: 1120, damage: 48, range: 150, speed: 0, attackCooldown: 60, size: 14, element: 'fire', splashRadius: 40 }),
   },
   {
@@ -534,7 +534,7 @@ const ARCHETYPES: ArchetypeSpec[] = [
   {
     id: 'brute-factory',
     name: 'Brute Barracks',
-    note: 'a factory of fire brutes (wall breakers)',
+    note: 'a factory of fire brutes',
     stats: (c) =>
       buildingStats(c, { type: 'factory', maxHealth: 2400, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900, produces: 'brute', minionElement: 'fire' }),
   },
@@ -667,7 +667,7 @@ function elementsSection(c: GameConfig): GuideSectionDTO {
     id: 'elements',
     icon: '🔥',
     title: 'Elements, splash & combos',
-    summary: 'One element per unit, optional splash, and combos that reward mixing elements.',
+    summary: 'One element per unit, optional splash, and combos between elements.',
     blocks: [
       { kind: 'table', head: ['Element', 'What it does', 'Price'], rows: elementRows(c) },
       {
@@ -679,7 +679,7 @@ function elementsSection(c: GameConfig): GuideSectionDTO {
           { icon: '🌩️', title: 'Overload', text: `Lightning hits a BURNING enemy: the zap hops ${e.lightning.burningExtraHops} more time${e.lightning.burningExtraHops === 1 ? '' : 's'}.` },
           {
             icon: '🎯',
-            title: 'Fast units dodge',
+            title: 'Moving targets',
             text: `A ranged shot at a MOVING enemy misses up to ${c.accuracy.missMaxPct}% of the time (at full speed; never when it stands still, never in melee). A miss still splashes where it lands.`,
           },
           {
@@ -695,7 +695,7 @@ function elementsSection(c: GameConfig): GuideSectionDTO {
           'Walls never burn, freeze, get zapped or take splash: a hit on a wall is plain damage.',
           'Factories burn, get zapped, take splash, and build slower when frozen.',
           "A factory's `minionElement` gives every minion it builds that element (minions never splash; medics ignore it).",
-          'If the enemy has splash (`enemy.splashRadius > 0`), spread your units out!',
+          'Every body shows its `element`, `splashRadius` and `status` (`burning`, `frozen`, …) in `update()`.',
         ],
       },
       {
@@ -705,7 +705,7 @@ function elementsSection(c: GameConfig): GuideSectionDTO {
           "this.element = 'fire';     // 'normal' | 'fire' | 'ice' | 'lightning'",
           `this.splashRadius = 40;    // ${span(sb)} px`,
           '',
-          '// in update(): shatter frozen enemies with fire',
+          '// in update(): read a status, e.g. find an enemy in range that is frozen',
           'const frozen = enemies.find((e) => e.status.frozen > 0 && inRange(self, e));',
           "if (frozen && self.cooldownRemaining === 0) return { action: 'attack', targetId: frozen.id };",
         ].join('\n'),
@@ -727,7 +727,7 @@ function supportSection(c: GameConfig): GuideSectionDTO {
         kind: 'list',
         items: [
           `Heal limit: an ally can get at most **${c.support.healRoomPctPerSecond}% of its max HP per second**, shared by all healers (\`status.healRoom\` shows what is left).`,
-          'A heal on a burning or frozen ally only cleanses it (puts out the fire, thaws the ice). So fire is how you beat medics!',
+          'A heal on a burning or frozen ally only cleanses it (puts out the fire, thaws the ice).',
           `No heals after ${sdS} (sudden death). Auras keep working.`,
           'Never healed: walls, factories, the healer itself.',
           'Auras reach allies within `supportRange`, edge to edge. Only the strongest aura of each kind counts; different kinds add up.',
@@ -776,6 +776,7 @@ function viewSection(c: GameConfig): GuideSectionDTO {
       {
         kind: 'list',
         items: [
+          '`enemies` holds every living enemy body on the map (soldiers, towers, walls, factories and minions), not just the closest; `allies` holds every other living friendly body.',
           'Range is EDGE to edge: `inRange(self, other)` is `Math.hypot(other.x - self.x, other.y - self.y) - self.radius - other.radius <= self.range`.',
           "Free-for-all: every player is their own team. Team mode: teammates' units are in `allies`.",
           'Stored minions (inside a factory) are invisible.',
@@ -867,9 +868,8 @@ function factoriesSection(c: GameConfig): GuideSectionDTO {
         title: 'For your AI helper / code: a factory update()',
         code: [
           'update(self, enemies, allies, world) {',
-          "  const wall = enemies.find((e) => e.type === 'wall');",
-          "  if (wall) return { action: 'command', order: 'swarm', targetId: wall.id };",
-          "  if (self.factory.stored > 0 && enemies.length > 3) return { action: 'release' };",
+          "  const target = enemies.find((e) => e.type !== 'wall');",
+          "  if (target) return { action: 'command', order: 'swarm', targetId: target.id };",
           "  return { action: 'rally', destination: world.center };",
           '}',
         ].join('\n'),
@@ -925,7 +925,7 @@ function costSection(c: GameConfig, examples: GuideExampleDTO[]): GuideSectionDT
           `**Walls** cost ${money(cc.wall.base)} + ${money(cc.wall.hp)} per HP. **Factories** cost ${money(cc.factory.base)} + ${money(cc.factory.hp)} per HP, plus their minions: each minion they can make in a battle costs ${fmt(cc.factory.minionDiscount * 100)}% of its price (they arrive during the battle).`,
         ],
       },
-      { kind: 'table', caption: 'Live example prices', head: ['Example', 'Type', 'Stats', 'Price', 'Why'], rows: exampleRows },
+      { kind: 'table', caption: 'Live example prices', head: ['Example', 'Type', 'Stats', 'Price', 'What it is'], rows: exampleRows },
       {
         kind: 'table',
         caption: 'Why maxing is pricier: a Basic Soldier with more and more HP',
@@ -933,8 +933,8 @@ function costSection(c: GameConfig, examples: GuideExampleDTO[]): GuideSectionDT
         rows: hpRows,
       },
       {
-        kind: 'tip',
-        text: `One soldier with ${num(bigHp)} HP and ${num(bigDmg)} damage costs **${money(big)}**. Two soldiers with half of that each cost **${money(medium * 2)}** together${medium * 2 < big ? ': two medium units are cheaper than one maxed one!' : '.'}`,
+        kind: 'text',
+        text: `One soldier with ${num(bigHp)} HP and ${num(bigDmg)} damage costs **${money(big)}**. One with half of each costs **${money(medium)}**.`,
       },
       {
         kind: 'code',
@@ -974,10 +974,9 @@ function budgetSection(c: GameConfig): GuideSectionDTO {
         items: [
           'You place copies of your picked units; every copy costs its price from the round budget.',
           ...(cap.copyRamp.pctPerCopy > 0
-            ? [`**${cap.maxCopies} fighters, make them count:** your first ${cap.copyRamp.freeCopies} copies of a design cost its price; copy ${cap.copyRamp.freeCopies + 1} costs +${cap.copyRamp.pctPerCopy}%, the next +${2 * cap.copyRamp.pctPerCopy}%, and so on (walls never). Mixing designs is cheaper.`]
+            ? [`**Copies:** your first ${cap.copyRamp.freeCopies} copies of a design cost its price; copy ${cap.copyRamp.freeCopies + 1} costs +${cap.copyRamp.pctPerCopy}%, the next +${2 * cap.copyRamp.pctPerCopy}%, and so on (walls never).`]
             : []),
           'Ready needs at least one fighter: a soldier or tower with damage above 0, or a factory that builds attacking minions.',
-          `A good army is 6-10 strong fighters from 3-4 designs for ${money(cap.budget)}.`,
         ],
       },
     ],
@@ -1010,16 +1009,6 @@ function battlesSection(c: GameConfig): GuideSectionDTO {
         ],
       },
     ],
-  };
-}
-
-function tipsSection(c: GameConfig): GuideSectionDTO {
-  return {
-    id: 'tips',
-    icon: '💡',
-    title: 'Tips',
-    summary: 'Tricks that win battles.',
-    blocks: [{ kind: 'list', items: strategyTips(c) }],
   };
 }
 
@@ -1063,7 +1052,6 @@ export function buildGuide(config: GameConfig, templates: readonly GuideTemplate
       costSection(config, examples),
       budgetSection(config),
       battlesSection(config),
-      tipsSection(config),
     ],
     examples,
   };

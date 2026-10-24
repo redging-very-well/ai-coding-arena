@@ -423,7 +423,7 @@ describe('cost curve: messages follow curveK', () => {
   });
 
   it('the contract sudden-death tip follows suddenDeath config, like get_rules', () => {
-    const sdTip = (cfg: ReturnType<typeof parseConfig>) => buildContract(cfg).notes.find((n) => /^Tip: .*safe circle/.test(n))!;
+    const sdTip = (cfg: ReturnType<typeof parseConfig>) => buildContract(cfg).notes.find((n) => /^Note: .*safe circle/.test(n))!;
     const def = parseConfig({});
     expect(sdTip(def)).toContain(`After ${def.suddenDeath.startTick / 60} s`);
     expect(sdTip(def)).toContain(`${def.suddenDeath.damagePctPerSecond}% of max health`);

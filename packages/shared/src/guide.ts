@@ -28,7 +28,7 @@ export interface GuideCardDTO {
 }
 
 export interface GuideSectionDTO {
-  /** Anchor id (stable): types, stats, elements, support, view, actions, factories, cost, budget, battles, tips. */
+  /** Anchor id (stable): types, stats, elements, support, view, actions, factories, cost, budget, battles. */
   id: string;
   icon: string;
   title: string;
@@ -71,6 +71,5 @@ export const GUIDE_SECTION_IDS = [
   'cost',
   'budget',
   'battles',
-  'tips',
 ] as const;
 export type GuideSectionId = (typeof GUIDE_SECTION_IDS)[number];

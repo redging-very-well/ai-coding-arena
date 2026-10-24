@@ -31,7 +31,7 @@ export const MCP_INSTRUCTIONS = [
   'Call get_unit_contract once to learn the unit format, and get_rules for costs and limits.',
   'Four unit types: soldier, tower, wall, factory (see get_unit_contract). Walls block everyone and never attack; factories build minions (grunt, archer, runner, brute or medic via this.produces) and their update() gives them orders (rally, or command attack/defend/swarm/guard) and can save them up for a burst (this.burst, release). A player needs at least one unit that attacks: walls and damage-0 support units alone never win.',
   'Units can have an element (fire, ice, lightning), splash (splashRadius) and one support (heal, haste, might, shield); factories can give minions an element (this.minionElement). See get_unit_contract.',
-  `The $10,000 game: by default $${DEFAULT_CONFIG.caps.budget.toLocaleString('en-US')} per army, at most ${DEFAULT_CONFIG.caps.maxCopies} fighters (12 fighters, make them count), up to $${DEFAULT_CONFIG.caps.unitCost.toLocaleString('en-US')} per unit, HP ${DEFAULT_CONFIG.stats.bounds.maxHealth.min}-${DEFAULT_CONFIG.stats.bounds.maxHealth.max.toLocaleString('en-US')}, damage 0-${DEFAULT_CONFIG.stats.bounds.damage.max}; get_rules has the exact numbers and the copy ramp (more copies of ONE design cost more each: mix designs). Never reuse numbers from older games.`,
+  `The $10,000 game: by default $${DEFAULT_CONFIG.caps.budget.toLocaleString('en-US')} per army, at most ${DEFAULT_CONFIG.caps.maxCopies} fighters, up to $${DEFAULT_CONFIG.caps.unitCost.toLocaleString('en-US')} per unit, HP ${DEFAULT_CONFIG.stats.bounds.maxHealth.min}-${DEFAULT_CONFIG.stats.bounds.maxHealth.max.toLocaleString('en-US')}, damage 0-${DEFAULT_CONFIG.stats.bounds.damage.max}; get_rules has the exact numbers and the copy ramp (from the 4th copy of ONE design each copy costs more). Never reuse numbers from older games.`,
   'Always validate_unit before submit_unit, and fix problems using each error\'s "fix" text. validate_unit checks everything (sprite rows included), so never run scripts or shell commands to check a unit file.',
   'submit_unit works only in the PLAN phase (get_game_state shows submissionsOpen). Otherwise keep the unit validated and say "we\'ll send it when Plan starts".',
   'Players can also edit their own units on the web page. So before changing an existing unit ALWAYS call get_unit_source for its latest source and version, change that code, and pass unitId plus baseVersion (that version) to validate_unit and submit_unit, even if you rename it.',
@@ -39,7 +39,8 @@ export const MCP_INSTRUCTIONS = [
   'After a battle, get_battle_report shows errors with unit names and line numbers: fix those units.',
   'Explain results to the player in short, simple, cheerful words (cost, what the unit does).',
   'Selecting and placing units happens on the player\'s Pixel Clash web page, not here.',
-  'With Open Armory on, list_armory shows other players\' units the player can borrow (they can\'t be changed): suggest counters or improved versions.',
+  'With Open Armory on, list_armory shows other players\' units the player can borrow (they can\'t be changed).',
+  'Players discover tactics themselves: build what the player asks for and explain rules and numbers when asked, but never volunteer strategy advice (what to build, what beats what, army mixes, counters).',
 ].join('\n');
 
 const OUTPUT = z.looseObject({ ok: z.boolean() });
@@ -192,12 +193,12 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Unit contract',
       description:
-        'The TypeScript unit contract for the four types (soldier, tower, wall, factory) with elements, splash and support, the four template sources (basic_soldier, basic_tower, basic_wall, basic_factory), the engine rules, the price in one paragraph and strategy tips. Read this before writing a unit.',
+        'The TypeScript unit contract for the four types (soldier, tower, wall, factory) with elements, splash and support, the four template sources (basic_soldier, basic_tower, basic_wall, basic_factory), the engine rules, the price in one paragraph and rule notes (facts, including every field update() can read). Read this before writing a unit.',
       inputSchema: {},
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },
     },
-    async () => toolResult({ ok: true, ...buildContract(game.config) }, 'The unit contract, templates and tips.'),
+    async () => toolResult({ ok: true, ...buildContract(game.config) }, 'The unit contract, templates and rule notes.'),
   );
 
   server.registerTool(
@@ -357,7 +358,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Open Armory',
       description:
-        "Open Armory (when the host switched it on): units other players fielded in earlier battles, which this player may borrow on the Pixel Clash page. Named \"Unit (Creator)\", with stats, cost and the round added. Their code is never shared and they can't be changed: use them to plan counters or improved designs of your own. Empty when Open Armory is off.",
+        "Open Armory (when the host switched it on): units other players fielded in earlier battles, which this player may borrow on the Pixel Clash page. Named \"Unit (Creator)\", with stats, cost and the round added. Their code is never shared and they can't be changed. Empty when Open Armory is off.",
       inputSchema: { apiKey: API_KEY },
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },

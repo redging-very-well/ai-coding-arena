@@ -65,10 +65,10 @@ describe('auth and public endpoints', () => {
     expect(rules.costFormula).toContain('powerFactor');
     const notes = (contract.notes as string[]).join('\n');
     expect(notes).toContain('Price: Each stat costs its normal price');
-    expect(notes).toContain('$10,000 per army, up to $3,000 per unit, HP 80-4,000, damage 0-240.');
+    expect(notes).toContain('$10,000 per army, up to $3,000 per unit, up to 12 fighters, HP 80-4,000, damage 0-240;');
     expect(notes).toMatch(/SHATTER/);
     expect(notes).toContain("{ action: 'heal', targetId: ally.id }");
-    expect(notes).toContain("this.minionElement = 'ice'");
+    expect(notes).toContain('this.minionElement gives every minion of a factory that element');
     expect(notes).not.toContain('weak (40 HP)');
     expect(contract.templates.basic_soldier).toContain('this.maxHealth = 1400');
   });

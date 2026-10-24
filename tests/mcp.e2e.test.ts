@@ -68,7 +68,8 @@ describe('MCP (stateless Streamable HTTP)', () => {
     expect(mcp.getInstructions()).toContain('login');
     // M8.8 (§10.6): one line on elements, splash and support; no new tools.
     expect(mcp.getInstructions()).toContain('element (fire, ice, lightning), splash (splashRadius) and one support (heal, haste, might, shield)');
-    expect(mcp.getInstructions()).toContain('12 fighters, make them count');
+    expect(mcp.getInstructions()).toContain('at most 12 fighters');
+    expect(mcp.getInstructions()).toContain('never volunteer strategy advice');
     const desc = (n: string) => tools.find((t) => t.name === n)!.description!;
     expect(desc('get_rules')).toMatch(/elements .*support/);
     expect(desc('get_unit_contract')).toContain('elements, splash and support');
