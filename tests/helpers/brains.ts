@@ -1,6 +1,7 @@
 // The archetype brains of the balance harness (plan §14): the CLAUDE.md
 // templates as plain functions ("chase nearest", "shoot nearest", the factory
-// orders, medics and banners, M8.8 hold-by-the-tower).
+// orders, medics and banners, M8.8 hold-by-the-tower, and focus fire: "kill
+// the healer first, then the casters, then the weakest").
 //
 // This file is SELF-CONTAINED on purpose (type imports only): it is the one
 // source of the brains for both runners of the balance tooling.
@@ -92,13 +93,58 @@ const chaseNearest: BrainFn = (self, enemies, world, rng) => {
 };
 
 /**
+ * Focus fire (2026-10-24, the exploit search's ice-splash combo army): what a
+ * player's "kill the healer first" unit does. Among the enemies it can reach
+ * (not walls): healers first, then the other support units and the ice or
+ * splash casters, then the one with the least HP; ties go to the nearer one.
+ * Null when nothing is in reach.
+ */
+const focusRank = (e: OtherView): number => (e.support?.kind === 'heal' ? 0 : e.support !== null || e.element === 'ice' || e.splashRadius > 0 ? 1 : 2);
+function focusPick(self: SelfView, enemies: OtherView[], reach: number): OtherView | null {
+  let best: OtherView | null = null;
+  let bestRank = Infinity;
+  let bestHp = Infinity;
+  let bestGap = Infinity;
+  for (const e of enemies) {
+    if (e.type === 'wall') continue;
+    const g = gap(self, e);
+    if (g > reach) continue;
+    const rank = focusRank(e);
+    if (rank < bestRank || (rank === bestRank && (e.hp < bestHp || (e.hp === bestHp && g < bestGap)))) {
+      best = e;
+      bestRank = rank;
+      bestHp = e.hp;
+      bestGap = g;
+    }
+  }
+  return best;
+}
+
+/** How far past its range a focus soldier looks for a better target (a short walk). */
+const FOCUS_LOOK = 80;
+
+/**
+ * Focus soldiers: like the template, but inside range + FOCUS_LOOK they go for
+ * the focus pick (healer, support, ice or splash caster, else the weakest)
+ * instead of the nearest; fire and splash soldiers still make their elemental
+ * pick first. Nothing in reach: chase the nearest like the template.
+ */
+const chaseFocus: BrainFn = (self, enemies, world, rng, allies) => {
+  if (enemies.length === 0 || self.blockedTicks >= 120 || elementalPick(self, enemies, self.range + 20)) return chaseNearest(self, enemies, world, rng, allies);
+  const pick = focusPick(self, enemies, self.range + FOCUS_LOOK);
+  if (!pick) return chaseNearest(self, enemies, world, rng, allies);
+  if (gap(self, pick) <= self.range) return self.cooldownRemaining === 0 ? { action: 'attack', targetId: pick.id } : { action: 'idle' };
+  return { action: 'move', destination: { x: pick.x, y: pick.y } };
+};
+
+/**
  * M8.8 "hold" soldiers (an army built round a tower, like Blizzard + fire):
  * stay by the nearest own tower and fight what comes within 160 px of it, so
  * the tower's freeze and the soldiers' fire land on the same enemies. With no
  * tower left they chase like the template.
  */
 const HOLD_RADIUS = 160;
-const holdNearTower: BrainFn = (self, enemies, world, rng, allies) => {
+const holdNearTower = (chase: BrainFn): BrainFn => (self, enemies, world, rng, allies) => {
   let anchor: OtherView | null = null;
   let best = Infinity;
   for (const a of allies) {
@@ -109,12 +155,15 @@ const holdNearTower: BrainFn = (self, enemies, world, rng, allies) => {
       anchor = a;
     }
   }
-  if (!anchor) return chaseNearest(self, enemies, world, rng, allies);
+  if (!anchor) return chase(self, enemies, world, rng, allies);
   const near = enemies.filter((e) => e.type !== 'wall' && Math.hypot(e.x - anchor.x, e.y - anchor.y) - e.radius <= HOLD_RADIUS);
-  if (near.length > 0) return chaseNearest(self, near, world, rng, allies);
+  if (near.length > 0) return chase(self, near, world, rng, allies);
   if (gap(self, anchor) > 30) return { action: 'move', destination: { x: anchor.x, y: anchor.y } };
   return { action: 'idle' };
 };
+
+const HOLD_NEAREST = holdNearTower(chaseNearest);
+const HOLD_FOCUS = holdNearTower(chaseFocus);
 
 /** A body a heal can land on (§5.5: never walls or factories). */
 const healable = (a: OtherView): boolean => a.type !== 'wall' && a.type !== 'factory';
@@ -215,6 +264,13 @@ const shootNearest: BrainFn = (self, enemies, _world, _rng, allies) => {
   return t ? { action: 'attack', targetId: t.id } : { action: 'idle' };
 };
 
+/** A focus tower: heal first, the elemental pick, else the focus pick in range, else shoot the nearest (walls last). */
+const shootFocus: BrainFn = (self, enemies, world, rng, allies) => {
+  if (self.cooldownRemaining > 0 || healPick(self, allies) || elementalPick(self, enemies, self.range)) return shootNearest(self, enemies, world, rng, allies);
+  const pick = focusPick(self, enemies, self.range);
+  return pick ? { action: 'attack', targetId: pick.id } : shootNearest(self, enemies, world, rng, allies);
+};
+
 /** basic_factory.js: rally the minions on the nearest enemy that isn't a wall (else the centre). */
 const rallyNearest: BrainFn = (self, enemies, world) => {
   let spot = world.center;
@@ -289,6 +345,9 @@ const defendHome: BrainFn = () => ({ action: 'command', order: 'defend' });
 /** M8.8: how an army's fighting soldiers play: chase nearest (the template) or hold by their towers. */
 export type SoldierBrain = 'chase' | 'hold';
 
+/** Who an army's fighters shoot: the nearest (the templates) or the focus pick. */
+export type Targeting = 'nearest' | 'focus';
+
 export type FactoryBrain = 'rally' | 'guard' | 'guardTank' | 'swarm' | 'breach' | 'defend';
 
 
@@ -309,6 +368,12 @@ export interface BrainOptions {
   factoryBrain?: FactoryBrain | Partial<Record<string, FactoryBrain>>;
   /** M8.8: the fighting soldiers' brain (default: chase nearest, the template). */
   soldierBrain?: SoldierBrain;
+  /**
+   * Who the fighting soldiers and towers shoot (2026-10-24): 'nearest' (default, the
+   * templates) or 'focus' (healers, then support and ice/splash casters, then the
+   * weakest in reach: focusPick).
+   */
+  targeting?: Targeting;
 }
 
 /** The action of one instance: the brain for its type (tower, factory, support soldier, fighting soldier). */
@@ -316,7 +381,9 @@ export function actFor(self: SelfView, enemies: OtherView[], allies: OtherView[]
   const fbs = opts.factoryBrain ?? 'rally';
   const fb: FactoryBrain = typeof fbs === 'string' ? fbs : (fbs[self.unitId] ?? 'rally');
   const factory = opts.holdFactories === true ? holdForever : FACTORY_BRAINS[fb];
-  const soldier = opts.soldierBrain === 'hold' ? holdNearTower : chaseNearest;
-  const brain = self.type === 'tower' ? shootNearest : self.type === 'factory' ? factory : self.support ? supportSoldier : soldier;
+  const focus = opts.targeting === 'focus';
+  const chase = focus ? chaseFocus : chaseNearest;
+  const soldier = opts.soldierBrain === 'hold' ? (focus ? HOLD_FOCUS : HOLD_NEAREST) : chase;
+  const brain = self.type === 'tower' ? (focus ? shootFocus : shootNearest) : self.type === 'factory' ? factory : self.support ? supportSoldier : soldier;
   return brain(self, enemies, world, rng, allies);
 }

@@ -65,9 +65,9 @@ import { mulberry32 } from '../../packages/server/src/sim/prng.js';
 import { BattleCache, cacheEnabled, configKey, engineHash, sha } from './balanceCache.js';
 import { BalancePool } from './balancePool.js';
 import { sandboxRunner, type BalanceRunnerKind } from './brainUnits.js';
-import { actFor, type BrainOptions, type FactoryBrain, type Rng, type SoldierBrain } from './brains.js';
+import { actFor, type BrainOptions, type FactoryBrain, type Rng, type SoldierBrain, type Targeting } from './brains.js';
 
-export type { FactoryBrain, SoldierBrain } from './brains.js';
+export type { FactoryBrain, SoldierBrain, Targeting } from './brains.js';
 export type { BalanceRunnerKind } from './brainUnits.js';
 
 /**
@@ -301,6 +301,8 @@ export interface Archetype {
   factoryBrain?: FactoryBrain | Partial<Record<UnitKey, FactoryBrain>>;
   /** M8.8: its fighting soldiers' brain (default 'chase', the template). */
   soldierBrain?: SoldierBrain;
+  /** Who its fighting soldiers and towers shoot (default 'nearest', the templates; 'focus': healers, support, ice/splash casters, then the weakest). */
+  targeting?: Targeting;
   /** Custom designs (exploit search, CLI armies): an army key found here is this design, not a UNITS one. */
   designs?: Partial<Record<string, StatsSnapshot>>;
 }
@@ -511,8 +513,8 @@ export const KIND_ARCHETYPES: Archetype[] = [
 
 /** Specialist archetypes: one stat pushed to the max, and the padded full-12 mono armies ("12 fighters, make them count"). */
 export const SPECIALIST_ARCHETYPES: Archetype[] = [
-  arch('hugetanks', 'Huge Tanks (max HP) + soldiers', [['hugeTank', 2], ['soldier', 'fill']]),
-  arch('glass', 'Glass Cannons (max damage)', [['glass', 6], ['soldier', 'fill']]),
+  arch('hugetanks', 'Huge Tanks (max HP) + soldiers', [['hugeTank', 2], ['soldier', 'fill']], { targeting: 'focus' }),
+  arch('glass', 'Glass Cannons (max damage)', [['glass', 6], ['soldier', 'fill']], { targeting: 'focus' }),
   arch('longbow', 'Max Snipers (max range)', [['soldier', 'fill'], ['maxSniper', 4]]),
   arch('soldiersFilled', 'padded soldiers (HP and damage)', [['soldierFilled', 'fill']]),
 ];
@@ -525,7 +527,7 @@ export const ELEMENT_ARCHETYPES: Archetype[] = [
   arch('storm', 'storm crowd', [['stormSoldier', 'fill']]),
   arch('mortars', 'mortar battery', [['mortar', 'fill']]),
   arch('firenest', 'fire splash nest', [['wall', 11], ['fireMortar', 4], ['tower', 'fill']], { layout: 'seal' }),
-  arch('icewall', 'ice wall + snipers', [['wall', 11], ['frostSniper', 2], ['iceTower', 2], ['tower', 'fill']], { layout: 'seal' }),
+  arch('icewall', 'ice wall + snipers', [['wall', 11], ['frostSniper', 2], ['iceTower', 2], ['tower', 'fill']], { layout: 'seal', targeting: 'focus' }),
   arch('bombard', 'fire-splash bombard', [['soldier', 'fill'], ['catapult', 4]]),
   arch('blizzard', 'blizzard + fire', [['fireSoldier', 'fill'], ['blizzardTotem', 2]], { soldierBrain: 'hold' }),
   arch('healerball', 'healer ball', [['tank', 4], ['shieldBearer', 2], ['soldier', 'fill'], ['medic', 2]]),
@@ -536,7 +538,7 @@ export const ELEMENT_ARCHETYPES: Archetype[] = [
   arch('stormrunners', 'storm runners', [['soldier', 'fill'], ['stormRunners', 2]]),
   arch('medictent', 'medic tent + tanks', [['tank', 4], ['soldier', 'fill'], ['medicTent', 2]], { factoryBrain: 'guardTank' }),
   // Redesign: the combo armies (kindle, brittle, overload) and five factories.
-  arch('overload', 'overload (lightning soldiers round fire towers)', [['stormSoldier', 'fill'], ['fireTower', 4]], { soldierBrain: 'hold' }),
+  arch('overload', 'overload (lightning soldiers round fire towers)', [['stormSoldier', 'fill'], ['fireTower', 4]], { soldierBrain: 'hold', targeting: 'focus' }),
   arch('icebreak', 'brittle (ice towers freeze, soldiers and snipers hit harder)', [['soldier', 'fill'], ['iceTower', 3], ['sniper', 2]], { soldierBrain: 'hold' }),
   arch('factories5', 'five factories (grunts, archers, brutes, medics) + soldiers', [['soldier', 'fill'], ['steadyFactory', 2], ['steadyArchers', 1], ['steadyBrutes', 1], ['steadyMedics', 1]], {
     factoryBrain: { steadyFactory: 'rally', steadyArchers: 'guardTank', steadyBrutes: 'rally', steadyMedics: 'guardTank' },
@@ -546,9 +548,9 @@ export const ELEMENT_ARCHETYPES: Archetype[] = [
   arch('exploitIce', 'exploit search: frost casters and fast runners', [['frostCaster', 2], ['fastRunner', 4]], { pad: false }),
   // Redesign: mixed armies with a splash answer to soldier blobs (what a $10,000 player builds against a rush).
   arch('splashline', 'splash line (soldiers in front of mortars behind walls)', [['soldier', 'fill'], ['mortar', 3], ['wall', 4]], { soldierBrain: 'hold' }),
-  arch('firebrawl', 'fire brawl (fire soldiers with fire mortars)', [['fireSoldier', 'fill'], ['fireMortar', 3]]),
-  arch('guardedcatapults', 'guarded catapults (shield bearers in front of catapults)', [['shieldBearer', 3], ['catapult', 3], ['soldier', 'fill']], { soldierBrain: 'hold' }),
-  arch('icemortars', 'ice and mortars (ice towers and mortars sealed in, soldiers holding)', [['wall', 11], ['iceTower', 2], ['mortar', 3], ['soldier', 'fill']], { layout: 'seal', soldierBrain: 'hold' }),
+  arch('firebrawl', 'fire brawl (fire soldiers with fire mortars)', [['fireSoldier', 'fill'], ['fireMortar', 3]], { targeting: 'focus' }),
+  arch('guardedcatapults', 'guarded catapults (shield bearers in front of catapults)', [['shieldBearer', 3], ['catapult', 3], ['soldier', 'fill']], { soldierBrain: 'hold', targeting: 'focus' }),
+  arch('icemortars', 'ice and mortars (ice towers and mortars sealed in, soldiers holding)', [['wall', 11], ['iceTower', 2], ['mortar', 3], ['soldier', 'fill']], { layout: 'seal', soldierBrain: 'hold', targeting: 'focus' }),
 ];
 
 /** The burst-1 twin of the runner swarm (not in the round robin): the burst comparison. */
@@ -607,6 +609,7 @@ export function brainOptions(a: Archetype): BrainOptions {
     ...(a.holdFactories === true ? { holdFactories: true } : {}),
     ...(a.factoryBrain !== undefined ? { factoryBrain: a.factoryBrain } : {}),
     ...(a.soldierBrain !== undefined ? { soldierBrain: a.soldierBrain } : {}),
+    ...(a.targeting === 'focus' ? { targeting: 'focus' as const } : {}),
   };
 }
 

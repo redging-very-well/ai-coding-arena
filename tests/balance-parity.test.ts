@@ -9,7 +9,7 @@
 // must hash the same, with the same result, as on the lean runner.
 //
 // The sample covers every brain: chase and hold soldiers, towers, medics and
-// auras, every factory order (rally, guard, guardTank, swarm, breach, defend,
+// auras, focus fire (soldiers, hold soldiers and towers), every factory order (rally, guard, guardTank, swarm, breach, defend,
 // hold), walls, elements and splash, on both duel maps and both seeds.
 // Runs in the balance pass (vitest.config.ts BALANCE_FILES), on its own.
 
@@ -28,6 +28,9 @@ const SAMPLE: Array<[string, string, MapStyle, number, [number, number], number]
   ['buffedrush', 'bigFriends', 'corners', 4, [0, 1], 4242],
   ['dormant', 'templates', 'ring', 8, [1, 0], 11],
   ['blizzard', 'mortars', 'corners', 4, [2, 0], 4242],
+  // Focus fire: chase-focus soldiers vs medics; hold-focus soldiers with focus fire towers.
+  ['hugetanks', 'healerball', 'corners', 4, [0, 1], 11],
+  ['overload', 'snipers', 'ring', 8, [0, 2], 4242],
 ];
 
 /** Everything a balance run reads from a battle, minus the wall-clock time. */
