@@ -218,3 +218,49 @@ Date: 2026-10-24. Claude Code 2.1.304, the same setup as M8.6:
 - **Changed:** CLAUDE.md §3 step 6 now says: when you keep a price tip (`W_POWER_HIGH`,
   `W_STAT_NEAR_MAX`) because the player asked for "the strongest", add one short line with the
   cheaper choice. This came from e5, and no run has checked it yet.
+
+## Codex support (2026-10-24)
+
+**Real Codex runs: not done.** The devcontainer has `codex-cli 0.163.0`, but it is not logged in
+(`codex login status` → "Not logged in", no `OPENAI_API_KEY`), so no headless Codex run could
+reach a model. What was checked instead, with the real Codex binary (0.162.1, the seat pin, and
+0.163.0):
+
+- **MCP end to end, offline:** `node scripts/codex-mcp-check.mjs --server <url> [--codex <bin>]`
+  points Codex at a fake Responses-API "model" that asks for `login → get_game_state →
+  validate_unit → get_rules`, while Codex itself talks to the game server's `/mcp` (through a
+  logging proxy) using the kit's `.codex/config.toml`. Both versions: **PASS**, every call
+  completed, no approval needed, no 401/403. The recorded requests are the basis of
+  `tests/mcp-codex-compat.test.ts`.
+- **Interactive TUI** (in a pty): with the kit's `on-request` / `workspace-write` and with the
+  seat's `--sandbox danger-full-access --ask-for-approval never`, the pixel-clash tool calls showed
+  no trust or approval question. AGENTS.md (56 KB) is read in full (`codex debug prompt-input`).
+- **Sandbox:** in this devcontainer (as in a `cap_drop: ALL` seat) Codex's bubblewrap sandbox
+  can't create user namespaces: in `workspace-write`, `apply_patch` and every command fail. With
+  `danger-full-access`, `apply_patch` wrote `units/` files. Hence the seat default (plan §11.3).
+- **Seat entrypoint:** `AGENT=codex pixel-clash-seat agent-loop` (local paths) rendered the Codex
+  kit and started Codex straight in it ("YOLO mode" status, no trust question).
+
+**To run the real Codex dry run** (bills the OpenAI account):
+
+```sh
+codex login --device-auth            # or: printenv OPENAI_API_KEY | codex login --with-api-key
+# server: PORT=18557 HOST=127.0.0.1 DATA_DIR=$(mktemp -d) ADMIN_PASSWORD=… node scripts/start.mjs
+# create players, start the match, pause the PLAN timer, then per run, in a fresh unzipped
+# GET /api/setup/kit.zip?agent=codex outside the repo (cd pixel-clash-kit):
+codex exec --skip-git-repo-check --json "I'm Hana, PIN 1234. Make me a fast ninja soldier"
+```
+
+The kit's `.codex/config.toml` loads only in a trusted folder (`-c` doesn't count): add `[projects."<kit path>"] trust_level =
+"trusted"` to `~/.codex/config.toml` (or answer the TUI's trust question once) first. Prompts:
+"Make me a fast ninja soldier", "Make a fire tower". Pass: a valid submit in ≤ 3 validates, no
+approval needed, and `--json` usage for the cost.
+
+**One real Claude run** (the Claude kit after the Codex changes): Claude Code 2.1.304, `claude -p
+"I'm Hana, PIN 1234. Make me a fast ninja soldier" --output-format stream-json --verbose
+--settings .claude/settings.json` in a fresh `GET /api/setup/kit.zip` (CLAUDE.md title "for
+Claude", unchanged otherwise), server in PLAN with the timer paused. Calls: Read player.json
+(miss) → ToolSearch → `login` → Write player.json → `get_game_state` → Write `units/ninja.js` →
+**1** `validate_unit` → `submit_unit`. Submitted "Ninja": soldier, 900 HP, 60 damage, range 25,
+speed 3.2, cooldown 45, size 8, **$1,193**, valid, no warnings, with a sprite. No permission
+denials. **$0.65**, 11 turns.
