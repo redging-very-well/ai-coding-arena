@@ -60,6 +60,9 @@ interface SetupPlayer {
   zone: MapZone;
   /** Team mode: the player's team. */
   teamId?: number;
+  /** The player's and (team mode) the team's name, for "Show enemy names to units" (§5). */
+  name: string;
+  teamName?: string;
   units: BattleUnitDesign[];
   runnerUnits: RunnerUnitDesign[];
   revealUnits: RevealedUnitDTO[];
@@ -77,6 +80,8 @@ interface ActiveBattle {
   seed: number;
   reveal: BattleRevealDTO;
   setup: SetupPlayer[];
+  /** "Show enemy names to units" (§5), as fixed for the match at Start. */
+  revealNames: boolean;
   /** Recorded frames (the engine's buffer once it exists). */
   frames: FrameDTO[];
   engine?: BattleEngine;
@@ -301,11 +306,14 @@ export class BattleService {
       const known = new Set(units.map((u) => u.unitId));
       const placements = rs.placements.filter((pl) => known.has(pl.unitId));
       const teamId = game.teams.active ? game.teams.teamIdOf(p.id) : undefined;
+      const teamName = teamId !== undefined ? game.teams.teamOf(p.id)?.name : undefined;
       setup.push({
         playerId: p.id,
         seat: p.seat,
         zone,
         ...(teamId !== undefined ? { teamId } : {}),
+        name: p.name,
+        ...(teamName !== undefined ? { teamName } : {}),
         units,
         runnerUnits,
         revealUnits,
@@ -344,6 +352,7 @@ export class BattleService {
       seed: randomInt(1, 2 ** 31 - 1),
       reveal,
       setup,
+      revealNames: game.teams.revealNames,
       frames: [],
       started: Promise.resolve(),
       simDone: false,
@@ -399,10 +408,13 @@ export class BattleService {
           seat: s.seat,
           zone: s.zone,
           ...(s.teamId !== undefined ? { teamId: s.teamId } : {}),
+          name: s.name,
+          ...(s.teamName !== undefined ? { teamName: s.teamName } : {}),
           units: s.units,
           placements: s.placements,
           runner: runners.get(s.playerId)!,
         })),
+        ...(a.revealNames ? { revealNames: true } : {}),
         ...(map ? { map: { style: map.style, width: mapFor(map.style, map.players).width } } : {}),
         config: game.config,
         seed: a.seed,

@@ -70,7 +70,7 @@ button.mini.bad { background: var(--bad); color: #1a0b0b; border-color: var(--ba
 .tag.warn { background: #3a3110; border-color: var(--warn); cursor: pointer; }
 .tag.armory { background: #10293a; border-color: #5ab0e0; }
 .roster .panel-head .tabs { margin-bottom: 0; flex: 1; max-width: 26rem; }
-.armory-chip { font-size: 0.8rem; white-space: nowrap; }
+.armory-chip, .names-chip { font-size: 0.8rem; white-space: nowrap; }
 
 .bar {
   position: relative;

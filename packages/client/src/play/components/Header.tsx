@@ -61,6 +61,11 @@ export function Header() {
               {' · '}💡 Open Armory
             </span>
           )}
+          {g?.match?.revealNames && g.phase !== 'LOBBY' && (
+            <span class="names-chip" title="Show enemy names to units: in battle, units also see each body's player name (and team name in team mode)">
+              {' · '}🏷️ Enemy names shown
+            </span>
+          )}
         </div>
       </div>
       <div class="clock-box">

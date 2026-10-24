@@ -199,9 +199,10 @@ export interface MatchState {
   /**
    * Match setup (§9.2). In LOBBY it is the host's draft (`PUT
    * /admin/match/setup`); from Start match on it is the match's own.
-   * `mapStyle` null = the default for the player count.
+   * `mapStyle` null = the default for the player count. `revealNames` =
+   * "Show enemy names to units" (§5); absent = off.
    */
-  setup: { mapStyle: MapStyle | null; teamMode: TeamMode };
+  setup: MatchSetupState;
   /**
    * Team mode (§9.2): the teams, members in join order. LOBBY: the draft
    * (auto-balanced, swaps kept until the roster or mode changes). From Start
@@ -229,6 +230,14 @@ export interface MatchState {
   stats: MatchStats;
   /** The match awards, computed when the match reaches MATCH_RESULTS; null before. */
   awards: MatchAwardDTO[] | null;
+}
+
+/** The match setup (§9.2): the LOBBY draft, fixed from Start match. */
+export interface MatchSetupState {
+  mapStyle: MapStyle | null;
+  teamMode: TeamMode;
+  /** "Show enemy names to units" (§5); stored only when on, so older state files stay the same. */
+  revealNames?: true;
 }
 
 /** MatchState as written to state.json (Armory code lives in data/armory). */
@@ -408,6 +417,7 @@ export class Store {
       this.match.setup = {
         mapStyle: isMapStyle(setup.mapStyle) ? setup.mapStyle : null,
         teamMode: isTeamMode(setup.teamMode) ? setup.teamMode : 'ffa',
+        ...(setup.revealNames === true ? { revealNames: true } : {}),
       };
       this.match.teams ??= null;
       this.match.map ??= null;

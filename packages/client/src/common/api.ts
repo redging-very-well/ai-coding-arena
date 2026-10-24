@@ -182,15 +182,15 @@ export const api = {
     logout: () => request<{ ok: true }>('POST', '/admin/logout'),
     session: () => request<{ admin: boolean }>('GET', '/admin/session'),
     /** Start match (§9.2): mapStyle/teamMode left out = the LOBBY draft's; mapStyle null = default for the player count. */
-    startMatch: (rounds?: number, armory?: boolean, setup: { mapStyle?: MapStyle | null; teamMode?: TeamMode } = {}) =>
+    startMatch: (rounds?: number, armory?: boolean, setup: { mapStyle?: MapStyle | null; teamMode?: TeamMode; revealNames?: boolean } = {}) =>
       request<GameStateDTO>('POST', '/admin/match', {
         ...(rounds === undefined ? {} : { rounds }),
         ...(armory === undefined ? {} : { armory }),
         ...setup,
       }),
     matchSetup: () => request<MatchSetupDTO>('GET', '/admin/match/setup'),
-    /** LOBBY draft: map style override (null = auto by player count) and team mode; re-balances the teams. */
-    setMatchSetup: (setup: { mapStyle?: MapStyle | null; teamMode?: TeamMode }) => request<MatchSetupDTO>('PUT', '/admin/match/setup', setup),
+    /** LOBBY draft: map style override (null = auto by player count), team mode (re-balances the teams) and "Show enemy names to units". */
+    setMatchSetup: (setup: { mapStyle?: MapStyle | null; teamMode?: TeamMode; revealNames?: boolean }) => request<MatchSetupDTO>('PUT', '/admin/match/setup', setup),
     /** Swap two players on different draft teams (LOBBY only). */
     swapTeams: (playerA: string, playerB: string) => request<{ teams: TeamDTO[] }>('POST', '/admin/teams/swap', { playerA, playerB }),
     newMatch: () => request<GameStateDTO>('POST', '/admin/match/new'),

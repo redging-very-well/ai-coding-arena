@@ -14,7 +14,8 @@
 //   each sandbox child < 100 MB.
 //
 // Options: --players 8  --copies 12  --clients 10  --strategy swarm
-//   --map ring|lanes|…  --team-mode ffa|teams2|…  --fresh (wipe data first!)
+//   --map ring|lanes|…  --team-mode ffa|teams2|…  --reveal-names (match setting
+//   "Show enemy names to units" on)  --fresh (wipe data first!)
 //   --json (print the result as JSON too). Exit code 1 when a target fails.
 // The server must be in LOBBY (or use --fresh on a throwaway server).
 
@@ -306,7 +307,7 @@ async function main(): Promise<void> {
   if (s.phase !== 'LOBBY') throw new Error(`the server is in ${s.phase}; the load test needs LOBBY (use --fresh on a throwaway server)`);
   // Fast rehearsal pacing: short reveal hold is server-side; rate limits stay as configured.
 
-  log(`Pixel Clash load test → ${url}: ${players} bots (${strategy}, ≤ ${copies} copies), ${clients} WS clients, ${teamMode}${args.map ? `, ${String(args.map)}` : ''}`);
+  log(`Pixel Clash load test → ${url}: ${players} bots (${strategy}, ≤ ${copies} copies), ${clients} WS clients, ${teamMode}${args.map ? `, ${String(args.map)}` : ''}${args['reveal-names'] ? ', enemy names shown to units' : ''}`);
   const bots = await joinBots({ url, players, strategy, prefix: 'Load', maxCopies: copies, pollMs: 250 });
   const observers = [new Observer(url, 'admin', admin.cookieHeader), ...Array.from({ length: Math.max(0, clients - 1) }, () => new Observer(url, 'screen'))];
   await sleep(500);
@@ -317,6 +318,7 @@ async function main(): Promise<void> {
     armory: false,
     teamMode,
     ...(typeof args.map === 'string' ? { mapStyle: args.map } : {}),
+    ...(args['reveal-names'] ? { revealNames: true } : {}),
   });
   log(`  match started: ${match.match?.map?.style ?? '?'} ${match.match?.map?.width ?? ''}`);
 

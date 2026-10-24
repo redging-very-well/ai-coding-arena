@@ -58,6 +58,22 @@ export function armoryRules(enabled: boolean): Record<string, unknown> {
   };
 }
 
+/** The "Show enemy names to units" paragraph of the rules (§5 views, a match setting). */
+export function revealNamesRules(enabled: boolean): Record<string, unknown> {
+  return {
+    enabled,
+    setting: 'Show enemy names to units',
+    text: enabled
+      ? "Show enemy names to units is ON this match: in battle every body in enemies and allies also has ownerName (its player's name) and, in team mode, teamName; world.players lists every player in the battle as { id, name, teamId, teamName }."
+      : 'Show enemy names to units is off this match: bodies carry ownerId and teamId only (no ownerName, teamName or world.players).',
+    rules: [
+      'The host picks it at Start match (off by default); it stays the same for the whole match.',
+      "A minion's ownerName is its factory's player; a borrowed Armory unit's is the player who fielded it.",
+      'The names are the player names on the scoreboard. Nothing about other armies is shown before START.',
+    ],
+  };
+}
+
 /** Map styles, arena sizes and zone rules (§9.2). */
 export function mapRules(): Record<string, unknown> {
   const counts = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, i) => i + MIN_PLAYERS);
@@ -269,6 +285,7 @@ export function buildRules(config: GameConfig, armoryEnabled = false, match?: Ma
     },
     submissions: 'submit_unit works only in the PLAN phase; validate_unit works any time.',
     armory: armoryRules(armoryEnabled),
+    revealNames: revealNamesRules(match?.revealNames === true),
     maps: mapRules(),
     teams: teamRules(),
     ...(match
@@ -276,6 +293,7 @@ export function buildRules(config: GameConfig, armoryEnabled = false, match?: Ma
           thisMatch: {
             mapStyle: match.mapStyle,
             teamMode: match.teamMode,
+            revealNames: match.revealNames,
             arena,
             teams: match.teams?.map((tm) => ({ teamId: tm.teamId, name: tm.name, members: tm.members.length })) ?? null,
           },

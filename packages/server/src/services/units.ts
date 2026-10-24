@@ -236,8 +236,10 @@ export class UnitsService {
     return { ...extra, ...(opener ? { openSession: opener } : {}) };
   }
 
-  private async runValidator(source: unknown, config: GameConfig) {
-    return this.sandboxes.run(() => validateDetailed(source, this.validateOptions({}), config));
+  private async runValidator(source: unknown, config: GameConfig, player?: PlayerRecord) {
+    // "Show enemy names to units" (§5): the practice worlds carry names too.
+    const names = player && this.game.teams.revealNames ? { names: { me: player.name, teams: this.game.store.match.setup.teamMode !== 'ffa' } } : {};
+    return this.sandboxes.run(() => validateDetailed(source, { ...this.validateOptions({}), ...names }, config));
   }
 
   /** Where a submission of `name` (with optional explicit unitId) goes. */
@@ -330,7 +332,7 @@ export class UnitsService {
       const rl = this.rateLimit(this.validateLimiter, player.id, this.game.config.rateLimits.validatePerSecond, 1000, 'validate');
       if (rl) return rl;
     }
-    const d = await this.runValidator(source, this.game.config);
+    const d = await this.runValidator(source, this.game.config, player);
     const result = d.result;
     if (result.ok) {
       // Predict the submit: TEMPLATE_PROTECTED / TOO_MANY_DESIGNS fail here too.
@@ -360,7 +362,7 @@ export class UnitsService {
       const rl = this.rateLimit(this.submitLimiter, player.id, 1, this.game.config.rateLimits.submitMinIntervalMs, 'submit');
       if (rl) return rl;
     }
-    const d = await this.runValidator(source, this.game.config);
+    const d = await this.runValidator(source, this.game.config, player);
     const result = d.result;
     if (!result.ok) return ok(result);
 

@@ -49,12 +49,13 @@
 //   POST /admin/login {password}      -> {ok:true}
 //   POST /admin/logout                -> {ok:true}
 //   GET  /admin/session               -> {admin: boolean}
-//   POST /admin/match {rounds?, armory?, mapStyle?, teamMode?} -> GameStateDTO (LOBBY -> PLAN, needs 2-8 players;
+//   POST /admin/match {rounds?, armory?, mapStyle?, teamMode?, revealNames?} -> GameStateDTO (LOBBY -> PLAN, needs 2-8 players;
 //                                        armory = Open Armory, §9.1; mapStyle null = default for the player count,
 //                                        omitted = the draft's; teamMode omitted = the draft's ('ffa' by default), §9.2;
+//                                        revealNames = "Show enemy names to units" (omitted = the draft's, off by default);
 //                                        BAD_MAP_STYLE / BAD_TEAM_MODE with details {players, valid})
 //   GET  /admin/match/setup           -> MatchSetupDTO (the LOBBY draft, or the running match's setup)
-//   PUT  /admin/match/setup {mapStyle?, teamMode?} -> MatchSetupDTO (LOBBY only; re-balances the draft teams)
+//   PUT  /admin/match/setup {mapStyle?, teamMode?, revealNames?} -> MatchSetupDTO (LOBBY only; re-balances the draft teams)
 //   POST /admin/teams/swap {playerA, playerB} -> {teams: TeamDTO[]} (LOBBY, team-mode draft only; SAME_TEAM, NO_TEAMS)
 //   POST /admin/match/new             -> GameStateDTO (MATCH_RESULTS -> LOBBY)
 //   POST /admin/phase/next            -> GameStateDTO
@@ -432,6 +433,8 @@ export interface MatchSetupDTO {
   /** The host's style override, or null for the default by player count. */
   mapStyle: MapStyle | null;
   teamMode: TeamMode;
+  /** "Show enemy names to units" (§5): views carry ownerName/teamName and world.players. Locked at Start match. */
+  revealNames: boolean;
   map: MapDTO;
   teams: TeamDTO[] | null;
   validStyles: MapStyle[];
@@ -442,6 +445,12 @@ export interface MatchSetupDTO {
 export interface MatchInfoDTO {
   mapStyle: MapStyle;
   teamMode: TeamMode;
+  /**
+   * The match setting "Show enemy names to units" (§5): in battle every body
+   * in a unit's view carries `ownerName` (and `teamName` in team mode) and
+   * `world.players` lists the players. LOBBY: the draft; fixed from Start match.
+   */
+  revealNames: boolean;
   /** The current map; no zone owners before START. */
   map: MapDTO | null;
   teams: TeamDTO[] | null;

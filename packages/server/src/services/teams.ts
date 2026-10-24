@@ -64,6 +64,20 @@ export interface ResolvedSetup {
   teamMode: TeamMode;
   teams: TeamDTO[] | null;
   players: number;
+  /** "Show enemy names to units" (§5). */
+  revealNames: boolean;
+}
+
+/** The stored form of the revealNames switch: present only when on. */
+function revealOf(on: boolean): { revealNames?: true } {
+  return on ? { revealNames: true } : {};
+}
+
+/** A requested revealNames: undefined/null = keep the draft's, else it must be a boolean. */
+function checkRevealNames(v: unknown): Result<boolean | undefined> {
+  if (v === undefined || v === null) return ok(undefined);
+  if (typeof v !== 'boolean') return fail('BAD_REQUEST', 'revealNames must be true or false.');
+  return ok(v);
 }
 
 export class TeamsService {
@@ -71,6 +85,11 @@ export class TeamsService {
 
   private get m() {
     return this.game.store.match;
+  }
+
+  /** "Show enemy names to units" (§5): the draft in LOBBY, fixed from Start match. */
+  get revealNames(): boolean {
+    return this.m.setup.revealNames === true;
   }
 
   /** A team match is running (teams fixed from Start match to New match). */
@@ -156,7 +175,7 @@ export class TeamsService {
     if (this.m.phase !== 'LOBBY') return;
     const ids = this.game.players.list().map((p) => p.id);
     const fixed = this.normalised(ids.length);
-    this.m.setup = { mapStyle: fixed.mapStyle, teamMode: fixed.teamMode };
+    this.m.setup = { mapStyle: fixed.mapStyle, teamMode: fixed.teamMode, ...revealOf(this.m.setup.revealNames === true) };
     const mode = fixed.teamMode;
     const before = JSON.stringify(this.m.teams);
     this.m.teams = mode !== 'ffa' && isValidTeamMode(mode, ids.length) ? autoBalance(ids, mode) : null;
@@ -216,10 +235,12 @@ export class TeamsService {
   }
 
   /** PUT /admin/match/setup (LOBBY only): store the draft and re-balance its teams. */
-  setDraft(body: { mapStyle?: unknown; teamMode?: unknown }): Result<MatchSetupDTO> {
+  setDraft(body: { mapStyle?: unknown; teamMode?: unknown; revealNames?: unknown }): Result<MatchSetupDTO> {
     if (this.m.phase !== 'LOBBY') {
       return fail('PHASE_CLOSED', 'The match setup can only change in the lobby.', { details: { phase: this.m.phase, opensIn: 'LOBBY' } });
     }
+    const reveal = checkRevealNames(body.revealNames);
+    if (!reveal.ok) return reveal;
     const checked = this.check(body.mapStyle, body.teamMode, this.game.players.list().length);
     if (!checked.ok) return checked;
     const before = this.m.setup;
@@ -233,7 +254,7 @@ export class TeamsService {
         `Map reset to auto (${auto}): ${MAP_STYLE_INFO[before.mapStyle].label} doesn't suit ${teamModeLabel(checked.data.teamMode, n)}`,
       );
     }
-    this.m.setup = checked.data;
+    this.m.setup = { ...checked.data, ...revealOf(reveal.data ?? before.revealNames === true) };
     if (modeChanged || this.m.teams === null) this.rebalance(true);
     this.changed();
     return ok(this.setupDTO());
@@ -266,8 +287,10 @@ export class TeamsService {
    * the players now. Team mode uses the draft teams (with swaps) when the draft matches,
    * otherwise it auto-balances. Nothing is stored here.
    */
-  resolveStart(mapStyleIn: unknown, teamModeIn: unknown): Result<ResolvedSetup> {
+  resolveStart(mapStyleIn: unknown, teamModeIn: unknown, revealNamesIn?: unknown): Result<ResolvedSetup> {
     const ids = this.game.players.list().map((p) => p.id);
+    const reveal = checkRevealNames(revealNamesIn);
+    if (!reveal.ok) return reveal;
     const checked = this.check(mapStyleIn, teamModeIn, ids.length);
     if (!checked.ok) return checked;
     const { mapStyle, teamMode } = checked.data;
@@ -277,12 +300,13 @@ export class TeamsService {
       const sameRoster = draft !== null && draft.flatMap((t) => t.members).sort().join() === [...ids].sort().join();
       teams = this.m.setup.teamMode === teamMode && sameRoster ? draft!.map((t) => ({ ...t, members: [...t.members] })) : autoBalance(ids, teamMode);
     }
-    return ok({ mapStyle, style: resolveMapStyle(mapStyle, ids.length, teamMode).style, teamMode, teams, players: ids.length });
+    const revealNames = reveal.data ?? this.m.setup.revealNames === true;
+    return ok({ mapStyle, style: resolveMapStyle(mapStyle, ids.length, teamMode).style, teamMode, teams, players: ids.length, revealNames });
   }
 
   /** Fix the resolved setup for the match (team mode: map and teams; free-for-all: per PLACEMENT). */
   applyStart(s: ResolvedSetup): void {
-    this.m.setup = { mapStyle: s.mapStyle, teamMode: s.teamMode };
+    this.m.setup = { mapStyle: s.mapStyle, teamMode: s.teamMode, ...revealOf(s.revealNames) };
     this.m.teams = s.teams;
     this.m.map = s.teams ? { style: s.style, players: s.players } : null;
     this.m.zones = {};
@@ -318,6 +342,7 @@ export class TeamsService {
     return {
       mapStyle: this.m.setup.mapStyle,
       teamMode: this.m.setup.teamMode,
+      revealNames: this.revealNames,
       map: this.previewMap(),
       teams: this.publicTeams(),
       validStyles: validMapStyles(n, this.m.setup.teamMode),
@@ -331,6 +356,7 @@ export class TeamsService {
     return {
       mapStyle: layout?.style ?? resolveMapStyle(this.m.setup.mapStyle, MIN_PLAYERS).style,
       teamMode: this.m.setup.teamMode,
+      revealNames: this.revealNames,
       map: layout ? mapDTO(layout) : null,
       teams: this.publicTeams(),
       teamTable: this.active ? this.teamTable(exclude) : null,

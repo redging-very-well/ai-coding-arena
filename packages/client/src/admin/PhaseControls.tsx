@@ -1,4 +1,5 @@
-// Phase controls (plan §12.3): Start match (rounds 1-10, Open Armory, map
+// Phase controls (plan §12.3): Start match (rounds 1-10, Open Armory, Show
+// enemy names to units (the draft's, saved as it is clicked), map
 // style and team mode with a map preview and team swaps), Next, Skip, START,
 // Force start, Pause/Resume (timer and battle), 1x/2x, timer ±1 min / set,
 // New match, and the projector remote (join poster, replay at 1x/2x). Buttons
@@ -33,10 +34,12 @@ const SKIP_TEXT: Partial<Record<Phase, string>> = {
 };
 
 export function PhaseControls() {
-  const { state, act, busy } = useAdmin();
+  const { state, overview, act, busy } = useAdmin();
   const s = state as GameStateDTO;
   const [rounds, setRounds] = useState(s.rounds);
   const [armory, setArmory] = useState(false);
+  // "Show enemy names to units" (§5) lives in the server's LOBBY draft, like the map and teams.
+  const revealNames = overview?.setup?.revealNames === true;
   const [setMin, setSetMin] = useState('5');
   const [confirmForce, setConfirmForce] = useState(false);
   const [confirmNew, setConfirmNew] = useState(false);
@@ -66,6 +69,7 @@ export function PhaseControls() {
           <div class="dim">
             {p === 'LOBBY' ? `${s.players.length} player(s) joined` : `Round ${s.round} of ${s.rounds}`}
             {p !== 'LOBBY' && s.armory?.enabled && ` · 💡 Open Armory on (${s.armory.entries} units)`}
+            {p !== 'LOBBY' && s.match?.revealNames && ' · 🏷️ Enemy names shown to units'}
             {p !== 'LOBBY' && s.match?.map && ` · 🗺️ ${mapName(s.match.map)}`}
             {p !== 'LOBBY' && s.match && s.match.teamMode !== 'ffa' && ` · ${teamModeLabel(s.match.teamMode, s.match.map?.players ?? s.players.length)}`}
           </div>
@@ -111,11 +115,20 @@ export function PhaseControls() {
               <input type="checkbox" checked={armory} onChange={(e) => setArmory(e.currentTarget.checked)} />
               Open Armory
             </label>
+            <label class="inline" title="In battle, units also see each body's player name (and team name in team mode). Off by default; locked for the match">
+              <input
+                type="checkbox"
+                checked={revealNames}
+                disabled={busy || !overview?.setup}
+                onChange={(e) => void act(() => api.admin.setMatchSetup({ revealNames: e.currentTarget.checked }))}
+              />
+              Show enemy names to units
+            </label>
             <button
               class="btn primary"
               disabled={busy || s.players.length < 2 || !(rounds >= 1 && rounds <= 10)}
               title={s.players.length < 2 ? 'Needs at least 2 players' : ''}
-              onClick={() => act(() => api.admin.startMatch(Math.round(rounds), armory), 'Match started!')}
+              onClick={() => act(() => api.admin.startMatch(Math.round(rounds), armory, { revealNames }), 'Match started!')}
             >
               Start match
             </button>
