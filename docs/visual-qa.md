@@ -636,3 +636,69 @@ Chromium pages.
 - With tabs, the Claude tab stays highlighted while the guide covers the panes. Picking either tab
   closes the guide, so this was left as is.
 - The cost steps are numbered inside a bulleted list ("• 1. Start price…"), which reads fine.
+
+## Match awards ceremony (/screen and /play at MATCH_RESULTS)
+
+### How it was run
+
+- A built server (`npm run build`) on port 18200 with a fresh data dir and shorter battles
+  (`PUT /admin/config {timers: {battleTicks: 1500}}`). Open Armory was on.
+- Three 2-round matches, driven by admin REST (`scratchpad/cer/match.cjs`, `match2.cjs`):
+  1. Four `npm run bots` players (mixed).
+  2. Five players in free-for-all: four bots (fortress, medics, elements, factory) and "Eli", who
+     borrowed three Armory units in round 2.
+  3. Eight players (seven bots and Eli) in 2 teams.
+- Playwright 1.63 Chromium, scripts outside the repo (`scratchpad/cer/shot.cjs`, `jump.cjs`,
+  `keys.cjs`). Screenshots were taken in these browsers:
+  - a facilitator browser with the admin cookie at 1920×1080;
+  - a projector browser without it at 1280×720;
+  - a 1920×1080 browser with `reducedMotion: 'reduce'`;
+  - /play at 1366×900 and 390×844.
+
+### Checked and working
+
+- **Drumroll intro:** "And the awards go to…" shows over the turning beams with a chip for every
+  player ("8 awards for 4 players"), at both sizes (`c1-intro-admin.png`, `c1-intro-720.png`).
+- **One award at a time:** each award shows its icon, name and rule, the winner chip (seat number,
+  colour and name, plus the team chip in team mode), the sprite of the winner's best unit, and the
+  stat counting up:
+  - Master Builder: Ava 1 with the Stone Wall, "12 walls" (`r2/c2-award1-admin.png`).
+  - Sharpshooter: "150 px KO" (`c3-award2-admin.png`).
+  - Armory Star: "borrowed 2 times", readable at 720p (`r2/c9-award-720.png`).
+- **Ties:** Inventor went to 4 players in match 2 (`r2/j1920-Inventor.png`) and to 7 in the team
+  match, which shows 4 winners with their team chips and "+3 more" (`r3/j1920-Inventor.png`).
+- **Facilitator keys:** with the admin session, → and Enter jump exactly one step
+  (`keys.cjs`: "Award 1" → "Award 2" at once, and later "Award 3"). Space shows "II PAUSED"
+  in the hint (`r3/j1920-Inventor.png`). R restarts at the intro. Without the admin session the
+  hint is not shown and → does nothing (the step stayed "Award 3 of 8").
+- **Podium:** the blocks rise 3rd, 2nd, 1st. Then the confetti starts and "Bot 1 wins!" shows
+  (`c6-podium-rising-admin.png`, `c7-podium-admin.png`). The team podium reads "Team 1 wins!"
+  (`r4/c7-podium-admin.png`).
+- **Final board:** every player's award icons sit next to their points. Below the table is a grid
+  of every award with its winners. It fits 5 players (`r2/j1280-board.png`) and 8 players in
+  teams (`r3/j1280-board.png`).
+- **Reduced motion:** no beams, shaking or confetti, and the steps are quicker: award 1 is up after
+  3.6 s (`r4/c10-reduced-award1.png`).
+- **/play:**
+  - Eli's page cheers "You won 🤝 Team Player — 3 units borrowed!" and then lists every award,
+    with his own row highlighted (`r2/c11-play.png`).
+  - On a phone, ties read "You share 🏭 Factory Boss — 4 minions!" (`r2/c12-play-phone.png`).
+- No page errors in any run.
+
+### Bugs found and fixed
+
+| # | Where | Bug | Fix | Evidence |
+|---|---|---|---|---|
+| 37 | /screen ceremony | The overlay was see-through: the "Game over!" header and the results showed faintly behind the awards. | The ceremony background is opaque (`.ceremony`). | `c2-award1-admin.png` (before), `r2/c2-award1-admin.png` (after) |
+| 38 | /screen ceremony | The facilitator hint sat bottom right, under the "Click anywhere to enable sound" hint. | The hint moved to the bottom left. | `r2/c2-award1-admin.png` |
+| 39 | /screen final board | The board was half empty, and with 5 players the compact table made the text small at 720p. | A grid of every award with its winners was added under the table. The compact sizes now start above 6 players. | `r2/j1280-board.png` |
+| 40 | /screen team podium | The team-mode podium height (440 px) cut off the taller ceremony blocks, so the 1st-place medal covered "Team 1 wins!". | `.cer-podium.team-mode .podium` is 640 px, and the team blocks rise 3rd → 1st too. | `r3/c7-podium-admin.png` (before), `r4/c7-podium-admin.png` (after) |
+| 41 | Sharpshooter detail | "round 2, Bot 3 Turret" repeated the unit name that already shows under the sprite. | It now reads "in round 2". | `r2/j1920-*.png` |
+
+### Notes (not fixed)
+
+- Bot designs all use the same round sprite, so the best-unit sprites look alike in these shots.
+  Players' own sprites show as drawn.
+- Each /screen runs its own ceremony clock from the moment it sees MATCH_RESULTS. A reload starts
+  the ceremony again.
+- The final board stays up until the host presses New match. → does nothing there.
