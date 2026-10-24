@@ -466,6 +466,6 @@ function winnerDTO(
     w.bestUnit = unit;
   }
   if (id === 'comeback' && sb && ps.places.length > 0) w.detail = `${ordinal(Math.max(...ps.places))} → ${ordinal(sb.place)}`;
-  if (id === 'sharpshooter' && ps.longestKo) w.detail = `round ${ps.longestKo.round}${u ? `, ${u.name}` : ''}`;
+  if (id === 'sharpshooter' && ps.longestKo) w.detail = `in round ${ps.longestKo.round}`;
   return w;
 }

@@ -31,7 +31,11 @@ export type SfxName =
   /** M8.8: a lightning zap (crackle), a SHATTER (glass) and a heal (soft chime). */
   | 'zap'
   | 'shatter'
-  | 'heal';
+  | 'heal'
+  /** The awards ceremony (§12.4): a snare roll crescendo ending in a cymbal, a per-award sting and the victory tune. */
+  | 'drumroll'
+  | 'sting'
+  | 'fanfare';
 
 /** Oscillator wave shapes (the WebAudio OscillatorType values we use). */
 export type Wave = 'sine' | 'square' | 'sawtooth' | 'triangle';
@@ -73,6 +77,72 @@ const E5 = 659.25;
 const G5 = 783.99;
 const C6 = 1046.5;
 
+// ---------------------------------------------------------------------------
+// Awards ceremony (§12.4): drumroll, sting and victory tune
+// ---------------------------------------------------------------------------
+
+export const DRUMROLL_SEC = 3.2;
+
+/**
+ * A snare roll: strokes of band-passed noise that speed up (90 → 38 ms apart)
+ * and get louder, a low tom rumble under it, then a cymbal crash (long
+ * high-passed noise) and a kick at DRUMROLL_SEC.
+ */
+export function drumrollSteps(seconds = DRUMROLL_SEC): SfxStep[] {
+  const out: SfxStep[] = [];
+  let t = 0;
+  while (t < seconds) {
+    const k = t / seconds;
+    out.push(noise('bandpass', 1700 + 900 * k, t, 0.05, 0.05 + 0.2 * k * k));
+    t += 0.09 - 0.052 * k;
+  }
+  out.push(note('sine', 70, 0, seconds, 0.08, 95));
+  out.push(noise('highpass', 5200, seconds, 1.6, 0.34));
+  out.push(noise('bandpass', 3000, seconds, 0.5, 0.18));
+  out.push(note('sine', 140, seconds, 0.35, 0.4, 45));
+  return out;
+}
+
+// G major-ish brass notes for the sting and tune (Hz).
+const G4 = 392;
+const A4 = 440;
+const B4 = 493.88;
+const D5 = 587.33;
+const F3 = 174.61;
+
+/** A short fanfare per award: a quick pickup into a bright held chord. */
+const STING: readonly SfxStep[] = [
+  note('square', G4, 0, 0.09, 0.1),
+  note('square', G4, 0.1, 0.09, 0.1),
+  note('square', C5, 0.2, 0.55, 0.13),
+  note('triangle', E5, 0.2, 0.55, 0.12),
+  note('triangle', G5, 0.2, 0.6, 0.1),
+  note('sine', C6, 0.32, 0.45, 0.06, 1567.98),
+  noise('highpass', 6000, 0.2, 0.35, 0.05),
+];
+
+/** The victory tune (~2.8 s): "ta-ta-ta TAA, ta-ta TAAA" with a bass line and a cymbal on the last chord. */
+function tuneSteps(): SfxStep[] {
+  const melody: Array<[number, number, number]> = [
+    [G4, 0, 0.14],
+    [G4, 0.16, 0.14],
+    [G4, 0.32, 0.14],
+    [C5, 0.48, 0.5],
+    [A4, 1.0, 0.14],
+    [B4, 1.16, 0.14],
+    [D5, 1.32, 0.14],
+    [C5, 1.5, 0.14],
+    [E5, 1.66, 0.14],
+    [G5, 1.84, 0.9],
+  ];
+  const out: SfxStep[] = melody.map(([f, at, dur]) => note('square', f, at, dur, 0.12));
+  // Harmony and bass.
+  out.push(note('triangle', E5, 0.48, 0.5, 0.08), note('triangle', C5 / 2, 0.48, 0.5, 0.16));
+  out.push(note('triangle', F3, 1.0, 0.45, 0.12), note('triangle', G4 / 2, 1.32, 0.3, 0.14));
+  out.push(note('triangle', C6, 1.84, 0.9, 0.08), note('triangle', E5, 1.84, 0.9, 0.08), note('triangle', C5 / 2, 1.84, 0.95, 0.18));
+  out.push(noise('highpass', 5200, 1.84, 1.0, 0.16));
+  return out;
+}
 export const SFX: Readonly<Record<SfxName, readonly SfxStep[]>> = {
   place: [note('square', 660, 0, 0.06, 0.16, 990)],
   remove: [note('square', 520, 0, 0.07, 0.14, 300)],
@@ -113,6 +183,9 @@ export const SFX: Readonly<Record<SfxName, readonly SfxStep[]>> = {
   zap: [noise('highpass', 3200, 0, 0.09, 0.12), note('sawtooth', 1600, 0, 0.08, 0.05, 700)],
   shatter: [noise('highpass', 4200, 0, 0.18, 0.16), note('triangle', 2400, 0, 0.12, 0.1, 3400), note('triangle', 1800, 0.06, 0.1, 0.08, 2600)],
   heal: [note('sine', 880, 0, 0.12, 0.08, 1320)],
+  drumroll: drumrollSteps(),
+  sting: STING,
+  fanfare: tuneSteps(),
 };
 
 /** Length of a recipe in seconds (its last step's end). */
@@ -184,6 +257,10 @@ export const SFX_MIN_GAP_MS: Partial<Record<SfxName, number>> = {
   zap: 70,
   shatter: 120,
   heal: 90,
+  // Ceremony: never two on top of each other (a re-render or a double mount).
+  drumroll: 2500,
+  sting: 400,
+  fanfare: 1500,
 };
 
 /** Sounds allowed per name within one second (crowd control). */

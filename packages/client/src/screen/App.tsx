@@ -3,8 +3,8 @@
 // ArenaRenderer draws into it); panels and overlays change by phase.
 
 import { Fragment } from 'preact';
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { BADGES, MAX_PLAYERS, teamModeLabel, type BadgeId, type BattleRevealDTO, type GameStateDTO, type PlayerStatusDTO, type TeamDTO, type TeamTableRowDTO } from '@pixel-clash/shared';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { BADGES, MAX_PLAYERS, awardStatText, teamModeLabel, type AwardWinnerDTO, type BadgeId, type BattleRevealDTO, type GameStateDTO, type PlayerStatusDTO, type TeamDTO, type TeamTableRowDTO } from '@pixel-clash/shared';
 import { groupByTeam, mapName } from '../common/maps.js';
 import { seatStyle, teamLook } from '../common/seats.js';
 import { PHASE_TEXT, PLACE_MEDALS, cx, formatClock, formatMoney, ordinal } from '../common/ui.js';
@@ -15,6 +15,17 @@ import { resolveSprite } from '../common/render/sprites.js';
 import { factoryWorth } from '../common/render/buildings.js';
 import { SpriteView } from '../play/components/SpriteView.js';
 import { Confetti } from './Confetti.js';
+import {
+  CEREMONY_HINT,
+  CeremonyClock,
+  awardsByPlayer,
+  ceremonyCues,
+  ceremonyKey,
+  ceremonySteps,
+  podiumRiseMs,
+  type CeremonyPosition,
+  type CeremonyStep,
+} from './ceremony.js';
 import { ScreenController, prefersReducedMotion, type ScreenSnapshot } from './controller.js';
 import {
   WALLS_CAPTION,
@@ -143,6 +154,30 @@ export function App() {
   const now = useNow(100);
   const scale = useStageScale();
   useEffect(() => ctrl?.syncReplay(), [ctrl, now]);
+  const isAdminRef = useRef(isAdmin);
+  isAdminRef.current = isAdmin;
+
+  // MATCH_RESULTS: the awards ceremony (§12.2) runs on its own clock from the
+  // moment this page sees the phase; the facilitator can skip, pause, replay.
+  const ceremony = useRef<CeremonyClock | null>(null);
+  const cued = useRef<number | null>(null);
+  const awardsList = snap?.state?.phase === 'MATCH_RESULTS' ? snap.state.matchAwards : undefined;
+  const steps = useMemo(() => ceremonySteps(awardsList, { reducedMotion: REDUCED_MOTION }), [JSON.stringify(awardsList ?? null)]);
+  if (snap?.state?.phase === 'MATCH_RESULTS') {
+    if (!ceremony.current) ceremony.current = new CeremonyClock(steps, performance.now());
+    else ceremony.current.setSteps(steps);
+  } else if (ceremony.current) {
+    ceremony.current = null;
+    cued.current = null;
+  }
+  const ceremonyPos = ceremony.current?.at(now) ?? null;
+  const ceremonyHidden = !!snap?.replay?.playing;
+  // Each step starts with its sound (drumroll, sting, victory tune); the projector mute applies.
+  useEffect(() => {
+    if (!ctrl || !ceremonyPos || ceremonyHidden) return;
+    for (const name of ceremonyCues(cued.current, ceremonyPos.index, steps)) ctrl.sound.play(name);
+    cued.current = ceremonyPos.index;
+  }, [ctrl, ceremonyPos?.index, ceremonyHidden]);
 
   // Keyboard for the facilitator at the projector: P join poster, M mute;
   // after a battle R replay, 1/2 speed, space pause.
@@ -162,7 +197,22 @@ export function App() {
       if (e.key === 'Escape') return ctrl.setPoster(false);
       if (e.key === 'm' || e.key === 'M') return ctrl.toggleMuted();
       const phase = ctrl.snapshot.state?.phase;
-      if (phase !== 'RESULTS' && phase !== 'MATCH_RESULTS') return;
+      if (phase === 'MATCH_RESULTS') {
+        // The ceremony: facilitator only (an /admin session in this browser).
+        const act = ceremonyKey(e.key, isAdminRef.current);
+        const clock = ceremony.current;
+        if (!act || !clock) return;
+        e.preventDefault();
+        const t = performance.now();
+        if (act === 'next') clock.next(t);
+        else if (act === 'pause') clock.togglePause(t);
+        else {
+          clock.replay(t);
+          cued.current = null;
+        }
+        return;
+      }
+      if (phase !== 'RESULTS') return;
       if (e.key === 'r' || e.key === 'R') ctrl.playReplay();
       else if (e.key === '1') ctrl.setReplaySpeed(1);
       else if (e.key === '2') ctrl.setReplaySpeed(2);
@@ -195,7 +245,9 @@ export function App() {
           </section>
           <aside class="side">{snap && ctrl && <Sidebar snap={snap} ctrl={ctrl} now={now} />}</aside>
         </main>
-        {snap && phase === 'MATCH_RESULTS' && state && !snap.replay?.playing && <Podium state={state} />}
+        {snap && phase === 'MATCH_RESULTS' && state && ceremonyPos && !ceremonyHidden && (
+          <Ceremony state={state} pos={ceremonyPos} steps={steps} isAdmin={isAdmin} />
+        )}
         {snap && ctrl && snap.poster && <JoinPoster snap={snap} onClose={() => ctrl.setPoster(false)} />}
         {snap && ctrl && <SoundControl snap={snap} ctrl={ctrl} />}
         {snap && snap.conn !== 'open' && (
@@ -983,7 +1035,11 @@ function TeamPodium({ table, teams, state }: { table: TeamTableRowDTO[]; teams: 
       {top.map((t) => {
         const members = t.members.length ? t.members : (teams?.find((x) => x.teamId === t.teamId)?.members ?? []);
         return (
-          <div key={t.teamId} class={cx('step', `step-${t.place}`)} style={{ '--seat': t.color, '--seat-light': t.color }}>
+          <div
+            key={t.teamId}
+            class={cx('step', `step-${t.place}`)}
+            style={{ '--seat': t.color, '--seat-light': t.color, animationDelay: `${podiumRiseMs(Math.min(3, t.place), REDUCED_MOTION)}ms` }}
+          >
             <div class="medal">{PLACE_MEDALS[t.place - 1] ?? ''}</div>
             <div class="who">
               <TeamChip teamId={t.teamId} name={t.name} />
@@ -1000,60 +1056,217 @@ function TeamPodium({ table, teams, state }: { table: TeamTableRowDTO[]; teams: 
   );
 }
 
-function Podium({ state }: { state: GameStateDTO }) {
-  const final = standings(state.scoreboard);
-  const top = podiumOrder(final.slice(0, 3));
-  const table = teamStandings(state.match?.teamTable ?? state.lastBattle?.teamTable);
-  if (table.length > 0) {
-    return (
-      <div class={cx('podium-overlay team-mode', final.length > 4 && 'many')}>
-        <Confetti />
-        <h1 class="pixel champion">{table[0] ? `${table[0].name} wins!` : 'Game over!'}</h1>
-        <TeamPodium table={table} teams={state.match?.teams ?? null} state={state} />
-        <FinalTable final={final} />
-        <p class="thanks pixel">Great teamwork, everyone!</p>
-      </div>
-    );
-  }
+/**
+ * The awards ceremony (§12.2): drumroll intro, each award with its winner(s)
+ * and their best unit, the podium 3-2-1 with confetti, then the final board
+ * with everyone's award icons. Facilitator keys show as a small hint.
+ */
+function Ceremony({ state, pos, steps, isAdmin }: { state: GameStateDTO; pos: CeremonyPosition; steps: readonly CeremonyStep[]; isAdmin: boolean }) {
+  const step = pos.step;
+  const many = state.scoreboard.length > 4;
   return (
-    <div class={cx('podium-overlay', final.length > 4 && 'many')}>
-      <Confetti />
-      <h1 class="pixel champion">{final[0] ? `${final[0].name} wins!` : 'Game over!'}</h1>
-      <div class="podium">
-        {top.map((s) => {
-          const seat = seatStyle(s.seat);
+    <div class={cx('ceremony', `cer-step-${step.kind}`, many && 'many')}>
+      {step.kind === 'intro' && <CeremonyIntro state={state} count={steps.filter((x) => x.kind === 'award').length} />}
+      {step.kind === 'award' && <AwardReveal key={step.award.id} step={step} elapsed={pos.elapsed} />}
+      {step.kind === 'podium' && <PodiumStep state={state} elapsed={pos.elapsed} />}
+      {step.kind === 'board' && <FinalBoard state={state} />}
+      <ol class="cer-progress" aria-hidden="true">
+        {steps.slice(0, -1).map((x, i) => (
+          <li key={i} class={cx(i < pos.index && 'done', i === pos.index && 'now', x.kind !== 'award' && 'big')} />
+        ))}
+      </ol>
+      {isAdmin && (
+        <div class="cer-hint">
+          {pos.paused && <b class="pixel">II PAUSED</b>}
+          <span>{CEREMONY_HINT}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Step 1: the drumroll ("And the awards go to…") over every player's chip. */
+function CeremonyIntro({ state, count }: { state: GameStateDTO; count: number }) {
+  const players = [...state.scoreboard].sort((a, b) => a.seat - b.seat);
+  return (
+    <div class="cer-intro">
+      <div class="cer-beams" aria-hidden="true" />
+      <div class="cer-drum" aria-hidden="true">
+        🥁
+      </div>
+      <h1 class="pixel cer-title">And the awards go to…</h1>
+      <p class="cer-sub">
+        {count} award{count === 1 ? '' : 's'} for {players.length} players
+      </p>
+      <div class="cer-players">
+        {players.map((p, i) => {
+          const seat = seatStyle(p.seat);
           return (
-            <div key={s.playerId} class={cx('step', `step-${s.place}`)} style={{ '--seat': seat.color, '--seat-light': seat.light }}>
-              <div class="medal">{PLACE_MEDALS[s.place - 1] ?? ''}</div>
-              <div class="who">
-                <span class="sym seat-num">{seat.symbol}</span> {s.name}
-              </div>
-              <div class="block pixel">
-                <span>{ordinal(s.place)}</span>
-                <small>{s.points} pts</small>
-                <small class="dmg">💥 {Math.round(s.damage ?? 0).toLocaleString('en-US')}</small>
-              </div>
-              <div class="step-badges">
-                {badgeCounts(s).map((b) => (
-                  <span key={b.id} class="badge" title={b.title}>
-                    {b.emoji} ×{b.count}
-                  </span>
-                ))}
-              </div>
-            </div>
+            <span key={p.playerId} class="cer-chip" style={{ '--seat': seat.color, animationDelay: REDUCED_MOTION ? undefined : `${400 + i * 120}ms` }}>
+              <span class="sym seat-num">{seat.symbol}</span>
+              {p.name}
+              {p.teamId !== undefined && <TeamChip teamId={p.teamId} />}
+            </span>
           );
         })}
       </div>
-      <FinalTable final={final} />
-      <p class="thanks pixel">Great battles, everyone!</p>
+    </div>
+  );
+}
+
+const AWARD_WINNERS_SHOWN = 4;
+/** When the winners and the stat appear in an award step (ms). */
+const WINNERS_AT_MS = REDUCED_MOTION ? 0 : 900;
+const STAT_AT_MS = REDUCED_MOTION ? 0 : 1300;
+
+/** Step 2: one award, its winner(s) with the sprite of their best unit, and the stat counting up. */
+function AwardReveal({ step, elapsed }: { step: Extract<CeremonyStep, { kind: 'award' }>; elapsed: number }) {
+  const a = step.award;
+  const shown = a.winners.slice(0, AWARD_WINNERS_SHOWN);
+  const more = a.winners.length - shown.length;
+  const width = shown.length === 1 ? 200 : shown.length === 2 ? 160 : 120;
+  const value = REDUCED_MOTION ? a.value : countUp(a.value, elapsed - STAT_AT_MS);
+  return (
+    <div class="cer-award">
+      <div class="cer-count pixel">
+        Award {step.index + 1} of {step.count}
+      </div>
+      <div class="cer-icon">{a.emoji}</div>
+      <h1 class="pixel cer-name">{a.title}</h1>
+      <p class="cer-rule">{a.rule}</p>
+      <div class={cx('cer-winners', `n-${shown.length}`)} style={{ visibility: elapsed >= WINNERS_AT_MS ? 'visible' : 'hidden' }}>
+        {shown.map((w, i) => (
+          <AwardWinner key={w.playerId} w={w} width={width} delayMs={WINNERS_AT_MS + i * 200} elapsed={elapsed} />
+        ))}
+        {more > 0 && <div class="cer-more pixel">+{more} more</div>}
+      </div>
+      <div class="cer-stat pixel" style={{ visibility: elapsed >= STAT_AT_MS ? 'visible' : 'hidden' }}>
+        {awardStatText(a.id, value)}
+      </div>
+    </div>
+  );
+}
+
+function AwardWinner({ w, width, delayMs, elapsed }: { w: AwardWinnerDTO; width: number; delayMs: number; elapsed: number }) {
+  const seat = seatStyle(w.seat);
+  const u = w.bestUnit;
+  // Show off: the unit swings at the crowd now and then.
+  const anim = Math.floor(Math.max(0, elapsed - delayMs) / 1400) % 2 === 1 ? 'attack' : 'walk';
+  return (
+    <div class="cer-winner" style={{ '--seat': seat.color, animationDelay: REDUCED_MOTION ? undefined : `${delayMs}ms` }}>
+      <div class="cer-sprite" style={{ width: `${width + 24}px`, height: `${width + 24}px` }}>
+        {u && (
+          <SpriteView
+            spec={resolveSprite(topUnitLook(u))}
+            specKey={`award-${w.playerId}-${u.unitId}/${u.spriteHidden || !u.sprite ? 'fallback' : 'own'}`}
+            outline={seat.color}
+            width={width}
+            state={anim}
+          />
+        )}
+      </div>
+      <div class="cer-who">
+        <span class="sym seat-num">{seat.symbol}</span>
+        <span class="cer-who-name">{w.name}</span>
+        {w.teamId !== undefined && <TeamChip teamId={w.teamId} />}
+      </div>
+      {u && (
+        <div class="cer-unit">
+          {u.name}
+          {u.borrowedFrom && !u.name.includes(`(${u.borrowedFrom})`) ? ` (from ${u.borrowedFrom})` : ''}
+        </div>
+      )}
+      {w.detail && <div class="cer-detail">{w.detail}</div>}
+    </div>
+  );
+}
+
+/** Step 3: the podium rises 3rd, 2nd, 1st; confetti and the winner's name with 1st. */
+function PodiumStep({ state, elapsed }: { state: GameStateDTO; elapsed: number }) {
+  const final = standings(state.scoreboard);
+  const table = teamStandings(state.match?.teamTable ?? state.lastBattle?.teamTable);
+  const firstUp = elapsed >= podiumRiseMs(1, REDUCED_MOTION) + 400;
+  const champion = table.length > 0 ? (table[0] ? `${table[0].name} wins!` : 'Game over!') : final[0] ? `${final.filter((s) => s.place === 1).map((s) => s.name).join(' & ')} win${final.filter((s) => s.place === 1).length > 1 ? '' : 's'}!` : 'Game over!';
+  return (
+    <div class={cx('podium-overlay cer-podium', table.length > 0 && 'team-mode')}>
+      {firstUp && !REDUCED_MOTION && <Confetti />}
+      <h1 class="pixel champion" style={{ visibility: firstUp ? 'visible' : 'hidden' }}>
+        {champion}
+      </h1>
+      {table.length > 0 ? (
+        <TeamPodium table={table} teams={state.match?.teams ?? null} state={state} />
+      ) : (
+        <div class="podium">
+          {podiumOrder(final.slice(0, 3)).map((s) => {
+            const seat = seatStyle(s.seat);
+            return (
+              <div
+                key={s.playerId}
+                class={cx('step', `step-${s.place}`)}
+                style={{ '--seat': seat.color, '--seat-light': seat.light, animationDelay: `${podiumRiseMs(Math.min(3, s.place), REDUCED_MOTION)}ms` }}
+              >
+                <div class="medal">{PLACE_MEDALS[s.place - 1] ?? ''}</div>
+                <div class="who">
+                  <span class="sym seat-num">{seat.symbol}</span> {s.name}
+                </div>
+                <div class="block pixel">
+                  <span>{ordinal(s.place)}</span>
+                  <small>{s.points} pts</small>
+                  <small class="dmg">💥 {Math.round(s.damage ?? 0).toLocaleString('en-US')}</small>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Step 4: the final standings with every player's award icons (stays up). */
+function FinalBoard({ state }: { state: GameStateDTO }) {
+  const final = standings(state.scoreboard);
+  const table = teamStandings(state.match?.teamTable ?? state.lastBattle?.teamTable);
+  const awards = awardsByPlayer(state.matchAwards);
+  return (
+    <div class={cx('podium-overlay cer-board', final.length > 6 && 'many')}>
+      {!REDUCED_MOTION && <Confetti count={60} />}
+      <h1 class="pixel champion">Final standings</h1>
+      {table.length > 0 && table[0] && (
+        <p class="cer-team-win pixel">
+          🏆 <TeamChip teamId={table[0].teamId} name={table[0].name} /> wins with {table[0].points} pts
+        </p>
+      )}
+      <FinalTable final={final} awards={awards} compactOver={6} />
+      {(state.matchAwards?.length ?? 0) > 0 && (
+        <ul class="cer-award-grid">
+          {state.matchAwards!.map((a) => (
+            <li key={a.id} style={{ '--seat': a.winners.length === 1 ? seatStyle(a.winners[0]!.seat).color : 'var(--accent)' }} title={`${a.title}: ${a.text}`}>
+              <span class="ag-emoji">{a.emoji}</span>
+              <span class="ag-title">{a.title}</span>
+              <span class="ag-who">{a.winners.map((w) => w.name).join(', ')}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p class="thanks pixel">{table.length > 0 ? 'Great teamwork, everyone!' : 'Great battles, everyone!'}</p>
     </div>
   );
 }
 
 /** The final individual standings (MATCH_RESULTS). */
-function FinalTable({ final }: { final: ReturnType<typeof standings> }) {
+function FinalTable({
+  final,
+  awards,
+  compactOver = 4,
+}: {
+  final: ReturnType<typeof standings>;
+  awards?: ReturnType<typeof awardsByPlayer>;
+  /** More players than this: the compact table. */
+  compactOver?: number;
+}) {
   return (
-    <table class={cx('final', final.length > 4 && 'compact')}>
+    <table class={cx('final', final.length > compactOver && 'compact')}>
       <tbody>
         {final.map((s) => {
           const seat = seatStyle(s.seat);
@@ -1066,14 +1279,24 @@ function FinalTable({ final }: { final: ReturnType<typeof standings> }) {
               </td>
               <td class="pixel">{s.points} pts</td>
               <td class="dmg">💥 {Math.round(s.damage ?? 0).toLocaleString('en-US')}</td>
-              <td class="badge-counts">
-                {badgeCounts(s).map((b) => (
-                  <span key={b.id} title={b.title}>
-                    {b.emoji}
-                    {b.count > 1 ? `×${b.count}` : ''}
-                  </span>
-                ))}
-              </td>
+              {awards ? (
+                <td class="award-icons">
+                  {(awards.get(s.playerId) ?? []).map((a) => (
+                    <span key={a.id} title={`${a.title}: ${a.text}`}>
+                      {a.emoji}
+                    </span>
+                  ))}
+                </td>
+              ) : (
+                <td class="badge-counts">
+                  {badgeCounts(s).map((b) => (
+                    <span key={b.id} title={b.title}>
+                      {b.emoji}
+                      {b.count > 1 ? `×${b.count}` : ''}
+                    </span>
+                  ))}
+                </td>
+              )}
             </tr>
           );
         })}

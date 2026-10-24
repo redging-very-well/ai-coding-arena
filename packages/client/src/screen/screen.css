@@ -1582,3 +1582,371 @@ canvas.arena {
 
 /* M8.5 (§12.5): the first battle with walls explains why wall armies look short. */
 .walls-caption { margin: 0.4rem 0 0; font-size: 0.9rem; text-align: center; }
+
+/* ------------------------------------- awards ceremony (MATCH_RESULTS, §12.2) */
+/* Drumroll intro → one award at a time → podium 3-2-1 → final board. Sized
+   for the back of the room on the 1920×1080 stage (scaled down at 1280×720). */
+
+.ceremony {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  overflow: hidden;
+  /* Opaque: nothing of the results page shows through. */
+  background: #07080f radial-gradient(ellipse at 50% 35%, #262c48, #07080f);
+}
+.ceremony .podium-overlay {
+  background: transparent;
+}
+.cer-intro,
+.cer-award {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.cer-beams {
+  position: absolute;
+  inset: -20%;
+  background: repeating-conic-gradient(from 0deg at 50% 60%, rgba(255, 212, 71, 0.07) 0 8deg, transparent 8deg 24deg);
+  animation: cer-spin 14s linear infinite;
+  pointer-events: none;
+}
+@keyframes cer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.cer-drum {
+  position: relative;
+  font-size: 180px;
+  line-height: 1;
+  animation: cer-drum 0.12s linear infinite alternate;
+}
+@keyframes cer-drum {
+  from {
+    transform: translateY(0) rotate(-4deg);
+  }
+  to {
+    transform: translateY(-8px) rotate(4deg);
+  }
+}
+.cer-title {
+  position: relative;
+  margin: 40px 0 16px;
+  font-size: 76px;
+  color: var(--accent);
+  text-shadow: 6px 6px 0 #8a5f00;
+  animation: pc-zoom 0.9s ease-out both;
+}
+.cer-sub {
+  position: relative;
+  margin: 0 0 48px;
+  font-size: 34px;
+  color: var(--text-dim);
+}
+.cer-players {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 18px 22px;
+  max-width: 1700px;
+}
+.cer-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 22px;
+  font-size: 34px;
+  font-weight: 800;
+  background: var(--panel);
+  border: 4px solid var(--seat);
+  box-shadow: 5px 5px 0 #05060c;
+  animation: pc-rise 0.5s ease-out both;
+}
+.cer-chip .seat-num,
+.cer-who .seat-num {
+  display: inline-grid;
+  place-items: center;
+  width: 1.3em;
+  height: 1.3em;
+  margin-right: 0.45em;
+  background: var(--seat);
+  font-size: 0.75em;
+}
+.cer-chip .team-chip,
+.cer-who .team-chip {
+  margin-left: 0.5em;
+  margin-right: 0;
+}
+
+.cer-count {
+  font-size: 22px;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+}
+.cer-icon {
+  margin-top: 10px;
+  font-size: 150px;
+  line-height: 1.1;
+  animation: pc-zoom 0.7s ease-out both;
+}
+.cer-name {
+  margin: 6px 0 10px;
+  font-size: 80px;
+  color: var(--accent);
+  text-shadow: 6px 6px 0 #8a5f00;
+  animation: pc-zoom 0.7s 0.15s ease-out both;
+}
+.cer-rule {
+  margin: 0 0 26px;
+  font-size: 30px;
+  color: var(--text-dim);
+}
+.cer-winners {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 48px;
+}
+.cer-winner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 420px;
+  animation: cer-pop 0.6s ease-out both;
+}
+.cer-winners.n-3 .cer-winner,
+.cer-winners.n-4 .cer-winner {
+  max-width: 360px;
+}
+@keyframes cer-pop {
+  0% {
+    transform: translateY(60px) scale(0.6);
+    opacity: 0;
+  }
+  70% {
+    transform: translateY(-10px) scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+.cer-sprite {
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle, color-mix(in srgb, var(--seat) 45%, transparent) 0 55%, transparent 70%);
+  animation: cer-bob 1.2s ease-in-out infinite alternate;
+}
+@keyframes cer-bob {
+  to {
+    transform: translateY(-10px);
+  }
+}
+.cer-who {
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+  margin-top: 12px;
+  padding: 8px 20px;
+  font-size: 44px;
+  font-weight: 800;
+  background: var(--panel);
+  border: 5px solid var(--seat);
+  box-shadow: 6px 6px 0 #05060c;
+}
+.cer-winners.n-3 .cer-who,
+.cer-winners.n-4 .cer-who {
+  font-size: 32px;
+}
+.cer-who-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cer-unit {
+  margin-top: 12px;
+  font-size: 26px;
+  color: var(--text-dim);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cer-detail {
+  margin-top: 6px;
+  font-size: 24px;
+  color: var(--accent);
+}
+.cer-more {
+  align-self: center;
+  font-size: 30px;
+  color: var(--text-dim);
+}
+.cer-stat {
+  margin-top: 30px;
+  padding: 14px 34px;
+  font-size: 50px;
+  color: #05060c;
+  background: var(--accent);
+  box-shadow: 8px 8px 0 #8a5f00;
+}
+
+.cer-podium {
+  padding-top: 90px;
+}
+.cer-podium .champion {
+  animation: pc-zoom 0.8s ease-out both;
+}
+.cer-podium .podium,
+.cer-podium.team-mode .podium {
+  height: 640px;
+}
+.cer-podium .step {
+  width: 400px;
+}
+.cer-podium .step .who {
+  font-size: 48px;
+}
+.cer-podium .step-1 .block {
+  min-height: 330px;
+}
+.cer-podium .step-2 .block {
+  min-height: 250px;
+}
+.cer-podium .step-3 .block {
+  min-height: 180px;
+}
+.cer-board .champion {
+  font-size: 64px;
+  margin-bottom: 20px;
+}
+.cer-team-win {
+  position: relative;
+  margin: 0 0 10px;
+  font-size: 28px;
+}
+.final td.award-icons {
+  font-size: 34px;
+  letter-spacing: 4px;
+  white-space: nowrap;
+}
+.cer-board .final {
+  font-size: 32px;
+}
+.cer-board.many .final {
+  font-size: 26px;
+}
+.cer-board.many .final td {
+  padding: 6px 20px;
+}
+.cer-board.many .final td.award-icons {
+  font-size: 28px;
+}
+
+.cer-progress {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  transform: translateX(-50%);
+}
+.cer-progress li {
+  width: 14px;
+  height: 14px;
+  background: var(--border);
+}
+.cer-progress li.big {
+  width: 22px;
+}
+.cer-progress li.done {
+  background: var(--text-dim);
+}
+.cer-progress li.now {
+  background: var(--accent);
+}
+.cer-hint {
+  position: absolute;
+  left: 28px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
+  font-size: 20px;
+  color: var(--text-dim);
+  background: rgba(13, 15, 26, 0.85);
+  border: 2px solid var(--border);
+}
+.cer-hint b {
+  color: var(--accent);
+  font-size: 18px;
+}
+.cer-step-board .cer-progress {
+  display: none;
+}
+.cer-award-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 520px));
+  gap: 10px 28px;
+  margin: 30px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 28px;
+}
+.cer-award-grid li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 12px;
+  background: var(--panel);
+  border-left: 6px solid var(--seat);
+}
+.cer-award-grid .ag-emoji {
+  font-size: 30px;
+}
+.cer-award-grid .ag-title {
+  font-weight: 800;
+  white-space: nowrap;
+}
+.cer-award-grid .ag-who {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+.cer-board.many .cer-award-grid {
+  margin-top: 14px;
+  font-size: 20px;
+}
+.cer-board.many .cer-award-grid li {
+  padding: 3px 10px;
+}
+.cer-board.many .cer-award-grid .ag-emoji {
+  font-size: 24px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cer-beams,
+  .cer-drum,
+  .cer-title,
+  .cer-chip,
+  .cer-icon,
+  .cer-name,
+  .cer-winner,
+  .cer-sprite,
+  .cer-podium .champion {
+    animation: none;
+  }
+}

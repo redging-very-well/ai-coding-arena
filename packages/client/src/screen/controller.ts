@@ -289,7 +289,7 @@ export class ScreenController {
       else if (done.ticks > 0) this.sound.play('place');
       return;
     }
-    if (state.phase === 'MATCH_RESULTS') this.sound.play('victory');
+    // MATCH_RESULTS: the awards ceremony plays its own drumroll, stings and tune (App.tsx, ceremony.ts).
     if (state.phase === 'RESULTS' && state.lastBattle) {
       this.sound.play('victory', { gain: 0.7 });
       const teamMode = (state.lastBattle.teams?.length ?? 0) > 0;

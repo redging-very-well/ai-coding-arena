@@ -218,7 +218,7 @@ describe('the 15 awards', () => {
     expect(win('inventor')).toEqual(['a']); // 2 designs vs 1
     expect(win('sharpshooter')).toEqual(['a']);
     expect(by.sharpshooter).toMatchObject({ value: 280, text: '280 px KO' });
-    expect(by.sharpshooter!.winners[0]!.detail).toBe('round 1, Zapper');
+    expect(by.sharpshooter!.winners[0]!.detail).toBe('in round 1');
     // Ties share: equal damage (100 each) and value destroyed.
     expect(win('biggestHitter')).toEqual(['a', 'b']);
     expect(win('giantSlayer')).toEqual(['a', 'b']);
