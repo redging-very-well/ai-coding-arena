@@ -84,7 +84,7 @@ describe('starter-kit templates (§11)', () => {
     expect(claudeMd).toContain("return { action: 'heal', targetId: need[0].id }");
     expect(claudeMd).not.toContain('There is no healing');
     // The redesign's teaching points: 12 fighters and the copy ramp, the synergies, accuracy, factories.
-    expect(claudeMd).toContain('12 fighters, make them count');
+    expect(claudeMd).toContain('at most **12 fighters**');
     expect(claudeMd).toContain(`copy ${DEFAULT_CONFIG.caps.copyRamp.freeCopies + 1} costs +${DEFAULT_CONFIG.caps.copyRamp.pctPerCopy}%`);
     expect(claudeMd).toContain(`**Kindle:** a burning enemy takes +${DEFAULT_CONFIG.elements.kindlePct}%`);
     expect(claudeMd).toContain(`**Brittle:** a frozen enemy takes +${DEFAULT_CONFIG.elements.brittlePct}%`);
@@ -160,14 +160,12 @@ describe('starter-kit templates (§11)', () => {
 
   it('PROMPTS.md has the M8.8 and redesign prompts and the $10,000 budget', () => {
     const prompts = kitFile('PROMPTS.md');
-    expect(prompts).toContain('Make an ice tower called Frost Spire');
     expect(prompts).toContain('Build a medic soldier called Patch');
-    expect(prompts).toContain('a mortar tower with splash 40');
     // The requester's own examples (2026-10-23).
     for (const p of ['Make an ice tower that slows everything near my base.', 'Make a medic that heals my tanks.', 'Fire archers from my factory.']) expect(prompts).toContain(p);
     expect(prompts).toContain('**$10,000**');
     expect(prompts).toContain('**$3,000**');
-    for (const p of ['Make a fast scout that dodges arrows.', 'Make a fire tower and an ice soldier that work together.', 'Make a factory that floods the map with minions.', 'Make the best army you can for $10,000.']) expect(prompts).toContain(p);
+    for (const p of ['Make a fast scout that dodges arrows.', 'Make a factory that floods the map with minions.', 'What can my units see during a battle?']) expect(prompts).toContain(p);
     expect(prompts).not.toContain('can units heal?');
   });
 

@@ -10,8 +10,8 @@
 // speed*90, (size - 6)*8) times 1 + (stat/max)^2: a maxed stat costs 2x.
 // power = 1 + 2 * (maxHealth/4000) * (damage/240): tough AND strong costs more (up to x3).
 //      = (50 + 294.66 + 110.72 + 56.18 + 147.15 + 34.61) * 1 * 1.163 = 693.32 * 1.163 = 806.56  ->  $807
-// 12 fighters, make them count: copy 4 of the SAME design costs 15% more, copy 5 30% more,
-// and so on, so 3 copies each of several designs go further than one design 12 times.
+// Up to 12 fighters per army: copy 4 of the SAME design costs 15% more, copy 5 30% more,
+// and so on (walls never cost more).
 //
 // Options (all optional; this template uses none of them):
 //   this.element = 'fire';      'normal' (default), 'fire' (burns +50% over 3 s; x1.3), 'ice' (slows

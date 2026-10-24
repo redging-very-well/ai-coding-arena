@@ -257,17 +257,17 @@ export interface SelfView {
   status: StatusView;
   blockedBy: string | null; // id of the wall that stopped my last move, else null
   blockedTicks: number;     // ticks in a row a wall has stopped me (no progress; 0 = free)
-  pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls and buildings by a route the game found, or walled off (smash self.blockedBy)
+  pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls and buildings by a route the game found, or walled off (it walks to the best wall to break and waits there)
   factory: FactoryView | null; // factories only
 }
 export interface OtherView {
   id: string; ownerId: string; teamId: number; type: BodyType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number; range: number;
   element: Element;      // a minion's is its factory's minionElement; walls and factories 'normal'
-  splashRadius: number;  // spread out against splash
-  support: SupportView | null; // find the enemy medic
+  splashRadius: number;  // its splash radius (0 = one target)
+  support: SupportView | null; // its support { kind, power, range }, or null
   status: StatusView;
-  moving: boolean;       // it moved last tick: ranged shots at a moving body can miss (shoot slow targets first)
+  moving: boolean;       // it moved last tick: ranged shots at a moving body can miss
   currentSpeed: number;  // px it moved last tick (0 standing, blocked or stopped); misses grow with it
 }
 // A wall has radius 20: for range it counts as a circle of radius 20 (so inRange works unchanged),
@@ -549,7 +549,7 @@ Factories felt limited: every factory made the same minion and could only move a
 
 **FactoryView (§5 block):** `stored`, `burst`, `produces`, `order`, `orderTargetId` join the M8.5 fields. `minionsAlive` counts only minions out on the field; `maxAlive` caps `minionsAlive + stored`.
 
-**Choosing well (CLAUDE.md tips, §11):** archers behind walls or towers (`defend`/`guard` a tower); runners with `swarm` on the weakest or most valuable far target (a burst of 4 runners arrives together); brutes with `swarm` on the wall that blocks your soldiers (or `attack`: they smash any wall that blocks them after 0.5 s); grunts for a cheap steady stream.
+**Choosing a kind:** player-facing text gives each kind's numbers and rules only, never which kind suits what (§17 "No strategy hints"). Players find out themselves.
 
 ### 5.4 Elements and splash (M8.8)
 
@@ -970,7 +970,7 @@ Steps 1-8 ship in M1. Steps 9-10 and the full malicious fixture set ship in M6 (
   - `heal` from a unit without `support: 'heal'`, or from a factory, gives `W_ACTION_NOT_FOR_TYPE`. The dry run records whether `heal` was returned.
 - **Step 10 (warnings):**
   - `W_HEAL_NEVER_USED`: the unit has heal support, but the dry run never returned `heal`. Fix: "Return { action: 'heal', targetId } for a hurt ally in supportRange".
-  - `W_POWER_HIGH`: the power factor is ≥ 1.25. Fix: "Very tough AND very strong costs ×1.37 here; one tough unit plus one strong unit is cheaper" (with the unit's own factor).
+  - `W_POWER_HIGH`: the power factor is ≥ 1.25. Message: "Very tough AND very strong costs ×1.37 here (…% of max HP and …% of max damage)" (with the unit's own factor); the fix names the lower stat that brings the factor under ×1.25 and the saving. No "build two units instead" advice (§17 "No strategy hints").
   - `W_ZERO_DAMAGE` gains a line: "fire, lightning and splash scale with damage, so they do nothing at damage 0 (ice still freezes)". It is not given to a unit that has support.
   - `W_OLD_SCALE` (re-price only, §6 M8.8 migration).
 - **Stored unit:** `stats` always has `element`, `splashRadius` and `support` (null, or `{kind, power, range}`), and factories have `minionElement`. Records gain `scaleVersion: 2`.
@@ -1452,7 +1452,7 @@ Errors use HTTP 400/401/403/404/409/422/429 with the body `{error:{code,message,
 | PUT `/me/claude-seat` | player | `{seat: 1-8 \| null}` | `{claudeSeat}`. Any phase, 1 per second. `BAD_CLAUDE_SEAT` (400), `CLAUDE_SEAT_TAKEN` (409, `details: {seat, takenBy}`). Changing seat closes the player's live terminal on the old seat |
 | GET `/rules` | none | | rules JSON (phases, timers, budget, caps, coefficients, bounds, points incl. the place formula and bonus scaling, map styles with valid player counts and arena sizes, team modes, §9.2) |
 | GET `/contract` | none | | `{typescript, templates:{basic_soldier, basic_tower}, notes}` (M8.5: also `basic_wall`, `basic_factory`) |
-| GET `/guide` | none | | `GuideDTO` (`shared/guide.ts`): the **unit guide**, the full rulebook for units shown by /play's "📖 Unit guide" overlay and the public `/guide` page (§12.1). `{stamp, title, intro, sections: [{id, icon, title, summary, blocks}], examples}`. Sections: `types`, `stats`, `elements`, `support`, `view`, `actions`, `factories`, `cost`, `budget`, `battles`, `tips`. Blocks are `text`, `list`, `table`, `cards`, `tip` or `code` (a collapsible "For Claude / code" box); texts carry only `` `code` `` and `**bold**`. Built by `services/guide.ts` from the **live** config (bounds per type, coefficients, multipliers, elements, support, factory, caps, timers, scoring) and the §5 contract. `examples` = the four templates and a few archetypes (clamped into the live bounds), each `{id, name, group, note, stats, cost, overCap}` with `cost` = `computeCost` under the current config. `stamp` changes whenever a number does. Memoized per config object; nothing secret in it |
+| GET `/guide` | none | | `GuideDTO` (`shared/guide.ts`): the **unit guide**, the full rulebook for units shown by /play's "📖 Unit guide" overlay and the public `/guide` page (§12.1). `{stamp, title, intro, sections: [{id, icon, title, summary, blocks}], examples}`. Sections: `types`, `stats`, `elements`, `support`, `view`, `actions`, `factories`, `cost`, `budget`, `battles` (the old `tips` section was removed: §17 "No strategy hints"). Blocks are `text`, `list`, `table`, `cards`, `tip` or `code` (a collapsible "For Claude / code" box); texts carry only `` `code` `` and `**bold**`. Built by `services/guide.ts` from the **live** config (bounds per type, coefficients, multipliers, elements, support, factory, caps, timers, scoring) and the §5 contract. `examples` = the four templates and a few archetypes (clamped into the live bounds), each `{id, name, group, note, stats, cost, overCap}` with `cost` = `computeCost` under the current config. `stamp` changes whenever a number does. Memoized per config object; nothing secret in it |
 | POST `/units/validate` | player | `{source, unitId?, baseVersion?}` | §7 result (dry-run). A stale `baseVersion` → `UNIT_CHANGED` (409, §7) |
 | POST `/units` | player | `{source, unitId?, baseVersion?}` | §7 result plus stored `{unitId, version}`. `PHASE_CLOSED`, `TOO_MANY_DESIGNS`, `NOT_FOUND`, `UNIT_CHANGED` (409, `details: {unitId, baseVersion, version}`; `baseVersion` without `unitId` is `BAD_REQUEST`) |
 | GET `/units` | player | | `[{unitId,name,version,stats,cost,breakdown,status,lastBattle}]` |
@@ -1828,21 +1828,21 @@ export default class BasicFactory {
   - **§5** gets the M8.8 formula, the "price in one paragraph", the worked examples (Basic Soldier, Fire Soldier, Field Medic, War Drummer) and the per-kind × element minion prices.
   - **§6** budget: "$5,000 per round, ≤ $2,500 per unit".
   - A new **§4d "Elements, splash and support"** has the teaching points below and the Field Medic example.
-- **Teaching points** (CLAUDE.md §4d; `get_unit_contract` tips):
+- **Teaching points** (CLAUDE.md §4d; `get_unit_contract` notes). Since 2026-10-24 these are facts only: the advice clauses ("best on…", "pair a tank with a hitter", "spread out", "fire is how you beat medics", minion element suggestions) were removed (§17 "No strategy hints"):
   1. **Numbers are 5× bigger now:** $5,000 per army, up to $2,500 per unit, HP 50-2,500, damage 0-300. Range, speed, size and cooldown work exactly as before. Don't copy old numbers: 120 HP is a weakling now.
-  2. **Extremes are OK now:** a maxed stat costs 2× (it was 3×). What costs extra is being tough **and** strong at once (up to ×1.6). So pair a tank with a hitter instead of building one brick.
+  2. **Extremes are OK now:** a maxed stat costs 2× (it was 3×). What costs extra is being tough **and** strong at once (up to ×1.6).
   3. **One element per unit, ×1.2 price:**
-     - `'fire'` adds half the hit again as a 3 s burn. It is best on fast hitters.
-     - `'ice'` freezes for 2 s, making the target 35% slower at moving, reloading and building. It works even at damage 0, and it is best against a few big units.
-     - `'lightning'` gives a 35% chance to zap the nearest other enemy for the same damage. It is best against crowds.
+     - `'fire'` adds half the hit again as a 3 s burn.
+     - `'ice'` freezes for 2 s, making the target 35% slower at moving, reloading and building. It works even at damage 0.
+     - `'lightning'` gives a 35% chance to zap the nearest other enemy for the same damage.
   4. **Combos:** fire on a frozen enemy = SHATTER (1.5× damage, and it thaws). Lightning on a burning enemy zaps one more. Read `enemy.status.frozen` and `enemy.status.burning`.
-  5. **Splash:** `this.splashRadius = 40` makes everyone within 40 px of the target take half, with your fire or ice (×1.53 price). If the enemy has splash, spread out (`enemy.splashRadius > 0`). Walls never burn, freeze, get zapped or take splash.
+  5. **Splash:** `this.splashRadius = 40` makes everyone within 40 px of the target take half, with your fire or ice (×1.53 price). `enemy.splashRadius` shows an enemy's splash. Walls never burn, freeze, get zapped or take splash.
   6. **Support (one per unit):**
      - `heal` is an action: `return { action: 'heal', targetId: ally.id }` on a hurt, burning or frozen ally in `supportRange`. It uses your attack cooldown.
-     - `haste`, `might` and `shield` are auras: keep allies inside `supportRange`, and there is nothing to code.
+     - `haste`, `might` and `shield` are auras that work by themselves on allies inside `supportRange`.
      - Two of the same aura don't add up; different ones do.
-  7. **Healing limits:** at most 5% of the ally's max HP per second, nothing after 50 s (sudden death), never walls or factories, never yourself. A heal on a burning or frozen ally only cleanses it, so fire is how you beat medics.
-  8. **Factories:** `this.minionElement = 'ice'` on archers, `'fire'` on brutes, `'lightning'` on burst runners; `this.produces = 'medic'` with the `guard` command on your tank.
+  7. **Healing limits:** at most 5% of the ally's max HP per second, nothing after 50 s (sudden death), never walls or factories, never yourself. A heal on a burning or frozen ally only cleanses it.
+  8. **Factories:** `this.minionElement` gives every minion of a factory that element; `this.produces = 'medic'` builds medics.
   9. **A unit with damage 0 can't win alone:** a side with only support units left is eliminated.
 - **Medic template** (CLAUDE.md §4d, also the bots' medic brain):
 
@@ -2611,7 +2611,7 @@ The request: "On the player screen, let's add a button top the top bar that lets
 
 | Question | Decision |
 |---|---|
-| What it shows | The **full rulebook for units**, not a per-unit view. It covers the four types and minions, every stat per type (range, meaning, price effect), elements, splash and combos, support, what `update()` sees, the actions, factories, how cost works with live example prices, budget and limits, battles and scoring, and tips (§12.1). |
+| What it shows | The **full rulebook for units**, not a per-unit view. It covers the four types and minions, every stat per type (range, meaning, price effect), elements, splash and combos, support, what `update()` sees, the actions, factories, how cost works with live example prices, budget and limits, battles and scoring (§12.1). No tips or tactics (§17 "No strategy hints"). |
 | Where the numbers come from | The server builds it from the **live** config and the §5 contract (`GET /guide`, §10.3), so an admin retune changes it at once. Example prices are `computeCost` results under the current config. Nothing is hard-coded in the client. |
 | Overlay vs page | A header button opens an overlay in the play shell (over the Game column, or both panes with tabs). It never unmounts the Claude iframe, and Esc or ✕ closes it. "Open in new tab ↗" opens the public standalone `/guide` page (no login; nothing secret in it), which can also be printed. |
 | Audience | Players aged 9-13 ("player", never "kid"), with the exact field names in `code` and collapsible "For Claude / code" boxes. Search filters and highlights, and the contents list is sticky. |
@@ -2683,7 +2683,13 @@ Balance bots and the exploit search (2026-10-24):
 | **No price change for the "tanks in front, fragile hitter behind" family** | Short re-searches under `cost.damage` 2.2, `cost.range` 2, `powerFactor` 2.5-4 and `curveK` 1.5 still found 84-93% builds (ice ×2 + splash 1.0: 80%), because budget refits cancel a global price change. User decision (verbatim option): **"Accept it as healthy + add backline divers"**. It is the mixed play CLAUDE.md teaches, and it has counters. |
 | **Backline divers added to the pool** | New `dive` and `flank` soldier brains and a factory `dive` order hunt healers, casters and ranged units anywhere on the map. Three $10,000 archetypes: `assassins` (4 soldiers + 4 flanking Assassins, 65.0%), `cavalry` (3 soldiers + 5 diving Cavalry, 67.5%) and `raiders` (sealed towers + 2 diving Runner Rushes, 51.9%). Their makeup was tuned (they are test bots) to keep every rule and cap; game numbers stayed the same. Parity covers 15 matchups. The family drops only 1-4 points, because most of its wins come from efficient brawlers. |
 | **Exploit search: watch list, not a failure** | The bar used to be "every build ≤ 70%, else exit 1". Now builds above 70% are listed with their counters as a pre-event review item (exit 0; `--strict` for the old exit code). The current list is in §14. |
-| **Teaching: countering a protected back line** | One line each in CLAUDE.md.tmpl §4d (both kits), the unit guide tips (`STRATEGY_TIPS`, also in `get_rules`) and PROMPTS.md: "focus their casters first and send fast units round the side to hunt their fragile shooters". No number changed. |
+| **Teaching: countering a protected back line** | Added, then removed the same day by "No strategy hints" below. No number changed. |
+
+No strategy hints (2026-10-24):
+
+| Topic | Decision |
+|---|---|
+| **No strategy hints for players or their AI helper** | User (verbatim): "I'd like to not have hints about this kind of thing in the player guide or agent prompts. I want players to discover strategies like this themselves. What is okay is for players to see the various runtime attributes their units can see." So CLAUDE.md / AGENTS.md, PROMPTS.md, the starter templates' comments, the unit guide, `get_unit_contract` / `get_rules`, the MCP instructions, validation warnings and player hints, battle-report hints and the /play copy state **facts only**: what each stat, element, combo, support, action, order and limit does, its numbers, prices with neutral worked examples, scoring, and how to make a unit legal. Removed: what to build, what beats what, counters, "pair a tank with a hitter", "two medium units usually beat one maxed one", "spread out against splash", "focus their casters", "aggressive units score damage points", army mixes and "12 fighters, make them count", the guide's `tips` section (`STRATEGY_TIPS` became the facts-only `RULE_NOTES`). The AI helper is told not to volunteer strategy advice. Kept and expanded: the full list of what `update()` can read (`self`, each enemy/ally, `status`, `support`, `self.factory`, `world`), in the guide's "What update() can see" section and a CLAUDE.md table; a test checks every contract field appears in both. Developer docs (`docs/balance.md`, the balance analysis here) are unchanged. |
 
 ### Open items
 1. **isolated-vm on the game server's host OS**: confirmed only by the M0 check. (It already works in the devcontainer on Node 24 / arm64 with isolated-vm 6.1.2.) Otherwise the process fallback is built and used, with its documented residual risk.

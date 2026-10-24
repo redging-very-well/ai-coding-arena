@@ -88,17 +88,17 @@ export interface SelfView {
   status: StatusView;
   blockedBy: string | null; // id of the wall that stopped my last move, else null
   blockedTicks: number;     // ticks in a row a wall has stopped me (no progress; 0 = free)
-  pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls and buildings by a route the game found, or walled off (smash self.blockedBy)
+  pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls and buildings by a route the game found, or walled off (it walks to the best wall to break and waits there)
   factory: FactoryView | null; // factories only
 }
 export interface OtherView {
   id: string; ownerId: string; teamId: number; type: BodyType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number; range: number;
   element: Element;      // a minion's is its factory's minionElement; walls and factories 'normal'
-  splashRadius: number;  // spread out against splash
-  support: SupportView | null; // find the enemy medic
+  splashRadius: number;  // its splash radius (0 = one target)
+  support: SupportView | null; // its support { kind, power, range }, or null
   status: StatusView;
-  moving: boolean;       // it moved last tick: ranged shots at a moving body can miss (shoot slow targets first)
+  moving: boolean;       // it moved last tick: ranged shots at a moving body can miss
   currentSpeed: number;  // px it moved last tick (0 standing, blocked or stopped); misses grow with it
 }
 // A wall has radius 20: for range it counts as a circle of radius 20 (so inRange works unchanged),

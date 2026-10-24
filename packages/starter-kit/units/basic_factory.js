@@ -49,17 +49,17 @@ export default class BasicFactory {
     let target = null;
     let best = Infinity;
     for (const enemy of enemies) {
-      if (enemy.type === 'wall') continue;   // walls can't hurt anyone: go for real fighters
+      if (enemy.type === 'wall') continue;   // skip walls (they never attack)
       const d = Math.hypot(enemy.x - self.x, enemy.y - self.y);
       if (d < best) { best = d; target = enemy; }
     }
     const spot = target ? { x: target.x, y: target.y } : world.center;
     return { action: 'rally', destination: spot };
-    // Other ideas:
+    // Other orders:
     // if (target) return { action: 'command', order: 'swarm', targetId: target.id };  // everyone at one enemy
     // return { action: 'command', order: 'defend' };                                  // stay home
     // const tower = allies.find((a) => a.type === 'tower');
-    // if (tower) return { action: 'command', order: 'guard', targetId: tower.id };    // protect a tower
+    // if (tower) return { action: 'command', order: 'guard', targetId: tower.id };    // stay next to a tower
   }
 
   // A little workshop: a chimney puffing smoke, two lit windows, a big door

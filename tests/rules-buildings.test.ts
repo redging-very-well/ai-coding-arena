@@ -115,12 +115,11 @@ describe('starter kit text (M8.5, §11)', () => {
     expect(claudeMd).toContain('## 4c. Unit types: soldier, tower, wall, factory');
     for (const tip of [
       'Walls block your own units too: leave a gap',
-      "Walls protect fighters, they don't win.",
-      "skip `enemy.type === 'wall'`",
+      '**Walls are worth $0 at the end**',
+      "**Enemy walls are in `enemies`** (`enemy.type === 'wall'`)",
       "`type: 'minion'`",
       'Shots fly over walls',
-      'funnelling enemies',
-      'Factories pay off over time',
+      'Factory minions arrive during the battle',
       '300-599 = 12 minions, 600 = 11, 720 = 9, 900 = 7, 1200 = 5',
       'Up to **5 factories** per army',
     ]) {

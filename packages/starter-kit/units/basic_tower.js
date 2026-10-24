@@ -13,7 +13,7 @@
 // Options (all optional): this.element ('fire' or 'lightning': x1.3, 'ice': x1.75), this.splashRadius
 // (0-80 px: x1.6 at 40), or a support: this.support = 'heal' with this.supportPower = 128 (HP per
 // heal) and this.supportRange = 160 (reach) makes a Healing Shrine (return { action: 'heal', targetId }).
-// Shots at a MOVING enemy can miss (up to 20% at full speed): standing and frozen enemies are easy.
+// Shots at a MOVING enemy can miss (up to 20% at full speed; never at a standing enemy).
 //
 // No imports, no timers, no network, no async.
 
@@ -43,7 +43,7 @@ export default class BasicTower {
 
     // Shoot the nearest enemy in range (gap between the bodies <= range).
     // Walls can't hurt anyone, so shoot one only when nothing else is in range.
-    // (Shots fly over walls, so a tower behind walls still hits.)
+    // (Shots fly over walls.)
     let target = null;
     let bestGap = Infinity;
     let wallTarget = null;
