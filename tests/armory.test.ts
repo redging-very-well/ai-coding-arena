@@ -37,8 +37,8 @@ export default class Unit {
   constructor() {
     this.name = ${JSON.stringify(opts.name ?? 'Ogre')};
     this.type = 'soldier';
-    this.maxHealth = 200;
-    this.damage = ${opts.damage ?? 25};
+    this.maxHealth = 1500;
+    this.damage = ${opts.damage ?? 125};
     this.range = 30;
     this.speed = 3;
     this.attackCooldown = 60;
@@ -257,10 +257,10 @@ describe('Open Armory: on', () => {
   it('round 2: frozen copy, ≤ 4 unit types incl. borrowed, creator excluded, Hide sprite propagates', async () => {
     await admin.post('/admin/phase/next'); // → PLAN round 2
     // Sam's later revision (more damage) doesn't change the entry.
-    expect((await sam.client.post('/units', { source: ogre({ damage: 35 }), unitId: 'ogre' })).status).toBe(200);
+    expect((await sam.client.post('/units', { source: ogre({ damage: 175 }), unitId: 'ogre' })).status).toBe(200);
     expect(srv.game.armory.entry(armoryId)).toMatchObject({ version: 1 });
-    expect(srv.game.armory.entry(armoryId)!.stats.damage).toBe(25);
-    expect(srv.game.visibility.privateState(bob.id)!.armory[0]!.stats.damage).toBe(25);
+    expect(srv.game.armory.entry(armoryId)!.stats.damage).toBe(125);
+    expect(srv.game.visibility.privateState(bob.id)!.armory[0]!.stats.damage).toBe(125);
 
     // The creator can't borrow their own entry.
     const own = await sam.client.put('/round/selection', { unitIds: [borrowId()] });
@@ -348,7 +348,7 @@ describe('Open Armory: on', () => {
     // Fielding v2 replaced the entry (same armoryId, one entry per design).
     expect(srv.game.armory.entries()).toHaveLength(1);
     expect(srv.game.armory.entry(armoryId)).toMatchObject({ version: 2, roundAdded: 2 });
-    expect(srv.game.armory.entry(armoryId)!.stats.damage).toBe(35);
+    expect(srv.game.armory.entry(armoryId)!.stats.damage).toBe(175);
   }, T);
 
   it('a retune re-prices entries and can make one invalid (not selectable)', async () => {
@@ -364,7 +364,7 @@ describe('Open Armory: on', () => {
     const r = await bob.client.put('/round/selection', { unitIds: [borrowId()] });
     expect(r.body.error.code).toBe('UNIT_INVALID');
     // Restore: valid and selectable again.
-    expect((await admin.put('/admin/config', { caps: { unitCost: 500 } })).status).toBe(200);
+    expect((await admin.put('/admin/config', { caps: { unitCost: 2500 } })).status).toBe(200);
     expect(srv.game.armory.entry(armoryId)!.status).toBe('valid');
     expect((await bob.client.put('/round/selection', { unitIds: [borrowId()] })).status).toBe(200);
   }, T);

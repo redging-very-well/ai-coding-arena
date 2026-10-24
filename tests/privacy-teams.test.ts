@@ -100,7 +100,7 @@ async function expectTeammatesSee(t: Setup, phase: 'PLAN' | 'PLACEMENT'): Promis
     const s = (await mate.client.get('/state')).body as GameStateDTO;
     const a = s.me!.team!.members.find((m) => m.playerId === t.alice.id)!;
     expect(a.selection.map((c) => c.name)).toEqual(['Secret Ninja']);
-    expect(a.selection[0]).toMatchObject({ unitId: 'secret-ninja', stats: { name: 'Secret Ninja', damage: 20 }, version: 0 });
+    expect(a.selection[0]).toMatchObject({ unitId: 'secret-ninja', stats: { name: 'Secret Ninja', damage: 100 }, version: 0 });
     expect(a.selection[0]).toHaveProperty('sprite');
     if (phase === 'PLACEMENT') {
       expect(a.zone).toEqual(aliceZone);

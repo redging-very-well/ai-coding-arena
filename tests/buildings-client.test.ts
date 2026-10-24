@@ -65,8 +65,8 @@ const frame = (t: number, units: FrameUnit[], extra: Partial<FrameDTO> = {}): Fr
 
 function snap(type: UnitType, extra: Partial<StatsSnapshot> = {}): StatsSnapshot {
   const base: StatsSnapshot = { name: type, type, maxHealth: 100, damage: 10, range: 40, speed: 1.5, attackCooldown: 60, color: '#8A8F98', size: 10, shape: 'circle' };
-  if (type === 'wall') return { ...base, maxHealth: 400, damage: 0, range: 0, speed: 0, attackCooldown: 0, size: 20, shape: 'square', ...extra };
-  if (type === 'factory') return { ...base, maxHealth: 300, damage: 0, range: 0, speed: 0, attackCooldown: 0, size: 18, productionInterval: 900, color: '#C0A060', ...extra };
+  if (type === 'wall') return { ...base, maxHealth: 2000, damage: 0, range: 0, speed: 0, attackCooldown: 0, size: 20, shape: 'square', ...extra };
+  if (type === 'factory') return { ...base, maxHealth: 1500, damage: 0, range: 0, speed: 0, attackCooldown: 0, size: 18, productionInterval: 900, color: '#C0A060', ...extra };
   if (type === 'tower') return { ...base, speed: 0, size: 14, ...extra };
   return { ...base, ...extra };
 }
@@ -403,7 +403,7 @@ describe('building cards and prices', () => {
   it('walls show health only; factories health and build speed', () => {
     const wall = statBars(snap('wall'));
     expect(wall.map((b) => b.key)).toEqual(['hp']);
-    expect(wall[0]!.frac).toBeCloseTo(400 / 1500);
+    expect(wall[0]!.frac).toBeCloseTo(2000 / 7500);
     const fac = statBars(snap('factory'));
     expect(fac.map((b) => b.key)).toEqual(['hp', 'rate']);
     expect(fac[1]!.display).toBe('15 s');
@@ -413,25 +413,25 @@ describe('building cards and prices', () => {
   });
 
   it('the price pop-up and the editor panel show the wall and factory formulas', () => {
-    const wall = computeCost({ type: 'wall', maxHealth: 400, damage: 0, range: 0, speed: 0, attackCooldown: 60 }, DEFAULT_CONFIG.cost, pricing);
+    const wall = computeCost({ type: 'wall', maxHealth: 2000, damage: 0, range: 0, speed: 0, attackCooldown: 60 }, DEFAULT_CONFIG.cost, pricing);
     expect(breakdownRows(wall.breakdown)).toEqual([
-      { label: 'Base', value: '4' },
+      { label: 'Base', value: '20' },
       { label: 'Health', value: expect.any(String) },
-      { label: 'Cost', value: '$32' },
+      { label: 'Cost', value: '$149' },
     ]);
-    const fac = computeCost({ type: 'factory', maxHealth: 300, damage: 0, range: 0, speed: 0, attackCooldown: 60, productionInterval: 900 }, DEFAULT_CONFIG.cost, pricing);
+    const fac = computeCost({ type: 'factory', maxHealth: 1500, damage: 0, range: 0, speed: 0, attackCooldown: 60, productionInterval: 900 }, DEFAULT_CONFIG.cost, pricing);
     const rows = breakdownRows(fac.breakdown);
     // M8.6: the production row names the minion kind (grunts by default).
     expect(rows.map((r) => r.label)).toEqual(['Base', 'Health', 'Body', 'Grunts', 'Cost']);
-    expect(rows.find((r) => r.label === 'Grunts')!.value).toBe('5 × $28');
-    expect(rows.at(-1)!.value).toBe('$193');
-    const panel = costPanel(fac.breakdown, 500);
+    expect(rows.find((r) => r.label === 'Grunts')!.value).toBe('5 × $148');
+    expect(rows.at(-1)!.value).toBe('$987');
+    const panel = costPanel(fac.breakdown, 2500);
     expect(panel.rows.map((r) => r.label)).toEqual(['Base', 'Health', 'Grunts']);
-    expect(panel.rows[2]!.price).toBe('5 × $28 = $140');
+    expect(panel.rows[2]!.price).toBe('5 × $148 = $740');
     expect(panel.factor).toBeNull();
-    expect(panel.cost).toBe(193);
-    const maxed = computeCost({ type: 'wall', maxHealth: 1500, damage: 0, range: 0, speed: 0, attackCooldown: 60 }, DEFAULT_CONFIG.cost, pricing);
-    expect(costPanel(maxed.breakdown, 500).rows[1]!.nearMax).toBe(true);
+    expect(panel.cost).toBe(987);
+    const maxed = computeCost({ type: 'wall', maxHealth: 7500, damage: 0, range: 0, speed: 0, attackCooldown: 60 }, DEFAULT_CONFIG.cost, pricing);
+    expect(costPanel(maxed.breakdown, 2500).rows[1]!.nearMax).toBe(true);
   });
 
   it('the report lists each factory’s minions and turns long wall time into an Ask-Claude prompt', () => {
@@ -534,11 +534,11 @@ describe('admin quick settings for walls and factories', () => {
     }
     const p = costPreview(DEFAULT_CONFIG);
     const by = Object.fromEntries(p.rows.map((r) => [r.key, r]));
-    expect(by.basicWall).toMatchObject({ cost: 32, overCap: false, outOfBounds: null, template: true });
-    expect(by.basicFactory).toMatchObject({ cost: 193, overCap: false, outOfBounds: null, template: true });
-    expect(by.swarmFactory!.cost).toBe(277);
-    // A wall HP bound below the Basic Wall's 400 makes it out of bounds.
-    const draft = { ...DEFAULT_CONFIG, stats: { bounds: { ...DEFAULT_CONFIG.stats.bounds, wallHealth: { min: 50, max: 300 } } } };
+    expect(by.basicWall).toMatchObject({ cost: 149, overCap: false, outOfBounds: null, template: true });
+    expect(by.basicFactory).toMatchObject({ cost: 987, overCap: false, outOfBounds: null, template: true });
+    expect(by.swarmFactory!.cost).toBe(1431);
+    // A wall HP bound below the Basic Wall's 2000 makes it out of bounds.
+    const draft = { ...DEFAULT_CONFIG, stats: { bounds: { ...DEFAULT_CONFIG.stats.bounds, wallHealth: { min: 250, max: 1500 } } } };
     expect(costPreview(draft).rows.find((r) => r.key === 'basicWall')!.outOfBounds).toMatch(/maxHealth/);
   });
 });

@@ -3,8 +3,8 @@ export default class Unit {
   constructor() {
     this.name = 'Laser Sniper';
     this.type = 'soldier';
-    this.maxHealth = 100;
-    this.damage = 20;
+    this.maxHealth = 500;
+    this.damage = 100;
     this.range = 150;
     this.speed = 2;
     this.attackCooldown = 30;

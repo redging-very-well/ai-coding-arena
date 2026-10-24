@@ -58,7 +58,7 @@ export function template(file: 'basic_soldier' | 'basic_tower'): string {
 export function namedUnit(name: string, extra: { damage?: number } = {}): string {
   return fixture('good/big_tank.js')
     .replace(/this\.name\s*=\s*['"][^'"]*['"]/, `this.name = ${JSON.stringify(name)}`)
-    .replace(/this\.damage\s*=\s*\d+/, `this.damage = ${extra.damage ?? 20}`);
+    .replace(/this\.damage\s*=\s*\d+/, `this.damage = ${extra.damage ?? 100}`);
 }
 
 export interface ApiResponse<T = any> {

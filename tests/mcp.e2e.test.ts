@@ -66,18 +66,30 @@ describe('MCP (stateless Streamable HTTP)', () => {
     const submit = tools.find((t) => t.name === 'submit_unit')!;
     expect(Object.keys(submit.inputSchema.properties ?? {})).toEqual(expect.arrayContaining(['source', 'unitId', 'apiKey']));
     expect(mcp.getInstructions()).toContain('login');
+    // M8.8 (§10.6): one line on elements, splash and support; no new tools.
+    expect(mcp.getInstructions()).toContain('element (fire, ice, lightning), splash (splashRadius) and one support (heal, haste, might, shield)');
+    expect(mcp.getInstructions()).toContain('W_OLD_SCALE');
+    const desc = (n: string) => tools.find((t) => t.name === n)!.description!;
+    expect(desc('get_rules')).toMatch(/elements .*support/);
+    expect(desc('get_unit_contract')).toContain('elements, splash and support');
+    expect(desc('get_battle_report')).toMatch(/damage split .*healing/);
   });
 
   it('get_rules and get_unit_contract work without a key; other tools say AUTH_REQUIRED', async () => {
     const rules = await call(mcp, 'get_rules');
     expect(rules.isError).toBe(false);
-    expect(rules.s).toMatchObject({ ok: true, budget: 1000, scoring: { placePoints: [3, 2, 1, 0], damageBonusMax: 2, valueBonusMax: 1 } });
-    expect(rules.s.scoring.badges).toHaveLength(5);
+    expect(rules.s).toMatchObject({ ok: true, budget: 5000, scoring: { placePoints: [3, 2, 1, 0], damageBonusMax: 2, valueBonusMax: 1 } });
+    expect(rules.s.scoring.badges).toHaveLength(7);
     expect(rules.s.armory).toMatchObject({ enabled: false });
     expect(JSON.stringify(rules.s.scoring)).toContain('no overkill');
     const contract = await call(mcp, 'get_unit_contract');
     expect(contract.s.typescript).toContain('interface WorldView');
     expect(contract.s.templates.basic_soldier).toContain('export default class');
+    // M8.8 (§10.6): the rules and contract teach elements, splash and support.
+    expect(rules.s).toMatchObject({ caps: { unitCost: 2500 }, coefficients: { curveK: 1, powerFactor: 0.6 } });
+    expect(rules.s.elements.lightning).toContain('35%');
+    expect(rules.s.support.text).toContain("{ action: 'heal', targetId: ally.id }");
+    expect(contract.s.notes.join('\n')).toContain('SHATTER');
     const state = await call(mcp, 'get_game_state');
     expect(state.isError).toBe(true);
     expect(state.s.errors[0]).toMatchObject({ code: 'AUTH_REQUIRED' });
@@ -116,7 +128,7 @@ describe('MCP (stateless Streamable HTTP)', () => {
     const units = await call(mcp, 'list_my_units', { apiKey });
     expect(units.s.units.map((u: { unitId: string }) => u.unitId)).toEqual(['basic-soldier', 'basic-tower', 'basic-wall', 'basic-factory']);
     const st = await call(mcp, 'get_game_state', { apiKey });
-    expect(st.s).toMatchObject({ phase: 'LOBBY', submissionsOpen: false, myBudget: 1000 });
+    expect(st.s).toMatchObject({ phase: 'LOBBY', submissionsOpen: false, myBudget: 5000 });
   });
 
   it('validate_unit: bad code gives structured errors with fixes; good code a cost', async () => {
@@ -131,7 +143,7 @@ describe('MCP (stateless Streamable HTTP)', () => {
     expect(syntax.s.errors[0].line).toBeGreaterThan(0);
     const good = await call(mcp, 'validate_unit', { source: fixture('good/sniper_tower.js'), apiKey });
     expect(good.isError).toBe(false);
-    expect(good.s).toMatchObject({ ok: true, unit: { cost: 305 } });
+    expect(good.s).toMatchObject({ ok: true, unit: { cost: 1505 } });
   });
 
   it('submit_unit in LOBBY → PHASE_CLOSED', async () => {
@@ -156,12 +168,12 @@ describe('MCP (stateless Streamable HTTP)', () => {
       const r = await call(mcp, 'submit_unit', { source: fixture('good/sniper_tower.js'), apiKey });
       const submittedAt = Date.now();
       expect(r.isError).toBe(false);
-      expect(r.s).toMatchObject({ ok: true, unitId: 'sniper-tower', version: 1, unit: { cost: 305 } });
+      expect(r.s).toMatchObject({ ok: true, unitId: 'sniper-tower', version: 1, unit: { cost: 1505 } });
       const msg = (await pushed) as { data: PrivateStateDTO };
       // Pushed within 1 s of the submit (in practice before the tool result even arrives).
       expect(arrivedAt - submittedAt).toBeLessThan(1000);
       const card = msg.data.roster.find((u) => u.unitId === 'sniper-tower')!;
-      expect(card).toMatchObject({ name: 'Sniper Tower', cost: 305, version: 1, status: 'valid', isTemplate: false });
+      expect(card).toMatchObject({ name: 'Sniper Tower', cost: 1505, version: 1, status: 'valid', isTemplate: false });
     } finally {
       ws.close();
     }

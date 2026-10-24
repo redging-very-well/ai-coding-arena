@@ -3,8 +3,8 @@ export default class Unit {
   constructor() {
     this.name = 'Sniper Tower';
     this.type = 'tower';
-    this.maxHealth = 80;
-    this.damage = 40;
+    this.maxHealth = 400;
+    this.damage = 200;
     this.range = 280;
     this.speed = 0;
     this.attackCooldown = 60;

@@ -289,7 +289,7 @@ function engineOf(specs: FakePlayerSpec[], config: GameConfig, seed = 5) {
 // TL): col 17 rows 14-16 and row 16 cols 14-16. The tower sits behind it at
 // arena cell (18, 17).
 const L_WALLS = [at(3, 0, 'w'), at(3, 1, 'w'), at(3, 2, 'w'), at(0, 2, 'w'), at(1, 2, 'w'), at(2, 2, 'w')];
-const TARGET = stats({ type: 'tower', damage: 0, maxHealth: 200 });
+const TARGET = stats({ type: 'tower', damage: 5, maxHealth: 1000 });
 
 describe('routing in battle (§9.3)', () => {
   it('corner trap: soldiers route round an L, kill the tower behind it and never smash a wall', async () => {
@@ -317,7 +317,7 @@ describe('routing in battle (§9.3)', () => {
     const ring: PlacementDTO[] = [];
     for (const [c, r] of [[1, 1], [2, 1], [3, 1], [1, 2], [3, 2], [1, 3], [2, 3], [3, 3]] as const) ring.push(at(c, r, 'w'));
     const seen: Array<{ t: number; pathing: SelfView['pathing'] }> = [];
-    const strong = stats({ type: 'soldier', damage: 60, attackCooldown: 10, speed: 3, maxHealth: 500 });
+    const strong = stats({ type: 'soldier', damage: 300, attackCooldown: 10, speed: 3, maxHealth: 2500 });
     const engine = engineOf(
       [
         { playerId: 'a', seat: 0, zone: 'TL', units: [design('s', strong)], placements: [at(0, 0, 's')], brains: { s: templateSoldier(seen) } },
@@ -344,7 +344,7 @@ describe('routing in battle (§9.3)', () => {
     const engine = engineOf(
       [
         { playerId: 'a', seat: 0, zone: 'TL', units: [design('s', SOLDIER)], placements: twelve, brains: { s: templateSoldier() } },
-        { playerId: 'b', seat: 1, zone: 'BR', units: [design('w', WALL), design('t', stats({ type: 'tower', damage: 0, maxHealth: 500 }))], placements: [...L_WALLS, at(4, 3, 't')], brains: { t: idleBrain } },
+        { playerId: 'b', seat: 1, zone: 'BR', units: [design('w', WALL), design('t', stats({ type: 'tower', damage: 5, maxHealth: 2500 }))], placements: [...L_WALLS, at(4, 3, 't')], brains: { t: idleBrain } },
       ],
       cfg(noSD, 600),
     );
@@ -376,7 +376,7 @@ describe('routing in battle (§9.3)', () => {
         [
           { playerId: 'a', seat: 0, zone: 'TL', units: [design('f', stats({ type: 'factory', productionInterval: 600 }), undefined, config), design('w', WALL)], placements: [at(1, 1, 'f'), ...ownL], brains: { f: factory } },
           {
-            playerId: 'b', seat: 1, zone: 'BR', units: [design('s', stats({ type: 'soldier', maxHealth: 500 })), design('t', stats({ type: 'tower', damage: 0 }))], placements: [at(0, 0, 's'), at(5, 5, 't')],
+            playerId: 'b', seat: 1, zone: 'BR', units: [design('s', stats({ type: 'soldier', maxHealth: 2500 })), design('t', stats({ type: 'tower', damage: 5 }))], placements: [at(0, 0, 's'), at(5, 5, 't')],
             brains: { s: scripted(() => ({ action: 'move', destination: hide })), t: idleBrain },
           },
         ],

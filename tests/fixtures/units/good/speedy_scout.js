@@ -3,8 +3,8 @@ export default class Unit {
   constructor() {
     this.name = 'Speedy Scout';
     this.type = 'soldier';
-    this.maxHealth = 60;
-    this.damage = 6;
+    this.maxHealth = 300;
+    this.damage = 30;
     this.range = 30;
     this.speed = 4;
     this.attackCooldown = 20;

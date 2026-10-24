@@ -42,7 +42,39 @@ describe('quick settings field table', () => {
       expect(f.help.length).toBeGreaterThan(0);
     }
     expect(new Set(QUICK_FIELDS.map((f) => f.path)).size).toBe(QUICK_FIELDS.length);
-    expect(QUICK_GROUPS.map((g) => g.title)).toEqual(['Match', 'Economy', 'Timers', 'Costs', 'Walls & factories', 'Scoring', 'Sudden death']);
+    expect(QUICK_GROUPS.map((g) => g.title)).toEqual(['Match', 'Economy', 'Timers', 'Costs', 'Walls & factories', 'Elements & support', 'Scoring', 'Sudden death']);
+  });
+
+  it('has the M8.8 economy, element and support knobs (§10.6)', () => {
+    for (const path of [
+      'caps.budget',
+      'caps.unitCost',
+      'cost.curveK',
+      'cost.powerFactor',
+      'cost.splash',
+      'cost.element.fire',
+      'cost.element.ice',
+      'cost.element.lightning',
+      'cost.heal',
+      'cost.aura.haste',
+      'cost.aura.might',
+      'cost.aura.shield',
+      'elements.fire.burnPct',
+      'elements.ice.slowPct',
+      'elements.ice.ticks',
+      'elements.lightning.chancePct',
+      'elements.shatterPct',
+      'elements.splashPct',
+      'support.healRoomPctPerSecond',
+      'factory.minions.medic.heal',
+    ]) {
+      expect(field(path).label.length, path).toBeGreaterThan(0);
+    }
+    expect(field('cost.curveK').help).toContain('k = 1');
+    expect(toDisplay(field('elements.ice.ticks'), 120, DEFAULT_CONFIG)).toBe(2);
+    // The schema's own rules show inline: ice slow must stay below 100%, element factors at least 1.
+    expect(parseFieldInput(field('elements.ice.slowPct'), '100', DEFAULT_CONFIG).ok).toBe(false);
+    expect(parseFieldInput(field('cost.element.fire'), '0.9', DEFAULT_CONFIG).ok).toBe(false);
   });
 
   it('default values sit inside each field’s own bounds', () => {
@@ -255,20 +287,27 @@ describe('quick settings cost preview', () => {
     expect(by.basicTower!.cost).toBe(computeCost(BASIC_TOWER, DEFAULT_CONFIG.cost).cost);
     expect(by.bigTank!.cost).toBe(computeCost(BIG_TANK, DEFAULT_CONFIG.cost).cost);
     // The worked examples in the starter kit's CLAUDE.md.
-    expect(by.basicSoldier!.cost).toBe(92);
-    expect(by.basicTower!.cost).toBe(198);
-    expect(by.bigTank!.cost).toBe(462);
+    expect(by.basicSoldier!.cost).toBe(529);
+    expect(by.basicTower!.cost).toBe(954);
+    expect(by.bigTank!.cost).toBe(2462);
     expect(by.basicSoldier!.overCap || by.basicTower!.overCap || by.bigTank!.overCap).toBe(false);
     // All maxed with the fastest cooldown is far over the cap.
     expect(by.allMax!.overCap).toBe(true);
-    expect(by.allMax!.stats).toMatchObject({ maxHealth: 500, damage: 60, range: 300, speed: 5, size: 20, attackCooldown: 10 });
-    expect(p.army).toEqual({ soldiers: 4, towers: 3, total: 4 * 92 + 3 * 198, overBudget: false });
-    expect(p.cap).toBe(500);
-    expect(p.budget).toBe(1000);
+    expect(by.allMax!.stats).toMatchObject({ maxHealth: 2500, damage: 300, range: 300, speed: 5, size: 20, attackCooldown: 10 });
+    expect(p.army).toEqual({ soldiers: 4, towers: 3, total: 4 * 529 + 3 * 954, overBudget: false });
+    // M8.8 reference units (§6): element, splash and support prices.
+    expect(by.fireSoldier!.cost).toBe(635);
+    expect(by.mortarTower!.cost).toBe(1179);
+    expect(by.fieldMedic!.cost).toBe(759);
+    expect(by.warDrummer!.cost).toBe(603);
+    expect(by.medicFactory!.cost).toBe(1292);
+    expect(p.rows.every((r) => r.outOfBounds === null)).toBe(true);
+    expect(p.cap).toBe(2500);
+    expect(p.budget).toBe(5000);
   });
 
   it('follows the draft coefficients and caps', () => {
-    const draft = applyField(applyField(cfg(), 'cost.hp', 1), 'caps.unitCost', 300);
+    const draft = applyField(applyField(cfg(), 'cost.hp', 1), 'caps.unitCost', 1500);
     const p = costPreview(draft);
     const by = Object.fromEntries(p.rows.map((r) => [r.key, r]));
     expect(by.basicSoldier!.cost).toBe(computeCost(BASIC_SOLDIER, draft.cost).cost);
@@ -276,7 +315,7 @@ describe('quick settings cost preview', () => {
     expect(by.bigTank!.overCap).toBe(true);
     expect(by.basicTower!.template).toBe(true);
     expect(p.army.total).toBe(4 * by.basicSoldier!.cost + 3 * by.basicTower!.cost);
-    expect(p.army.overBudget).toBe(p.army.total > 1000);
+    expect(p.army.overBudget).toBe(p.army.total > 5000);
     expect(costPreview(applyField(cfg(), 'caps.budget', 900)).army.overBudget).toBe(true);
   });
 

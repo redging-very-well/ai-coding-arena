@@ -117,7 +117,7 @@ describe('battles', () => {
   });
 
   it('first-strike timing: fires the first tick it is in range, then every attackCooldown ticks', async () => {
-    const wall = stats({ type: 'tower', name: 'Wall', maxHealth: 500, damage: 0 });
+    const wall = stats({ type: 'tower', name: 'Wall', maxHealth: 2500, damage: 5 });
     const { setups, runners } = fakePlayers([
       { playerId: 'a', seat: 0, zone: 'TL', units: [design('s', SOLDIER)], placements: [at(0, 0, 's')], brains: { s: soldierBrain } },
       { playerId: 'b', seat: 1, zone: 'BR', units: [design('w', wall)], placements: [at(0, 0, 'w')], brains: { w: idleBrain } },
@@ -136,19 +136,19 @@ describe('battles', () => {
     expect(k).toBeGreaterThan(0);
     expect(ins[k]!.selves[0]!.cooldownRemaining).toBe(0);
     const enemyHp = (t: number) => ins[t]!.enemies[0]!.hp;
-    expect(enemyHp(k)).toBe(500);
+    expect(enemyHp(k)).toBe(2500);
     // Melee hits instantly on tick k; cooldown set to 60, already 59 at the next tick start.
-    expect(enemyHp(k + 1)).toBe(490);
+    expect(enemyHp(k + 1)).toBe(2450);
     expect(ins[k + 1]!.selves[0]!.cooldownRemaining).toBe(59);
     expect(ins[k + 60]!.selves[0]!.cooldownRemaining).toBe(0);
-    expect(enemyHp(k + 60)).toBe(490);
-    expect(enemyHp(k + 61)).toBe(480);
-    expect(enemyHp(k + 121)).toBe(470);
+    expect(enemyHp(k + 60)).toBe(2450);
+    expect(enemyHp(k + 61)).toBe(2400);
+    expect(enemyHp(k + 121)).toBe(2350);
   });
 
   it('a range-20 soldier damages a tower (edge-to-edge range, bodies never touch)', async () => {
     const shorty = stats({ type: 'soldier', name: 'Shorty', range: 20 });
-    const wall = stats({ type: 'tower', name: 'Wall', maxHealth: 500, damage: 0 });
+    const wall = stats({ type: 'tower', name: 'Wall', maxHealth: 2500, damage: 5 });
     const { result } = await battle(
       [
         { playerId: 'a', seat: 0, zone: 'TL', units: [design('s', shorty)], placements: [at(0, 0, 's')], brains: { s: soldierBrain } },
@@ -157,12 +157,12 @@ describe('battles', () => {
       cfg({}, 900),
     );
     expect(unit(result, '0-0-0').damageDealt).toBeGreaterThan(0);
-    expect(unit(result, '1-0-0').hp).toBeLessThan(500);
+    expect(unit(result, '1-0-0').hp).toBeLessThan(2500);
   });
 
   it('timeout: survivors are ranked by the full cost of their living units', async () => {
-    const t = design('t', TOWER); // $198
-    const s = design('s', SOLDIER); // $92
+    const t = design('t', TOWER); // $1,167
+    const s = design('s', SOLDIER); // $529
     const { result } = await battle(
       [
         { playerId: 'a', seat: 0, zone: 'TL', units: [s], placements: [at(0, 0, 's'), at(1, 0, 's'), at(2, 0, 's')], brains: { s: idleBrain } },
@@ -174,9 +174,9 @@ describe('battles', () => {
     expect(result.endReason).toBe('timeout');
     expect(result.endTick).toBe(120);
     expect(result.ranking.map((r) => [r.playerId, r.place, r.pointsGained, r.livingCost])).toEqual([
-      ['b', 1, 2, 396], // 3 players: place points 2/1/0
-      ['a', 2, 1, 276],
-      ['c', 3, 0, 198],
+      ['b', 1, 2, 2334], // 3 players: place points 2/1/0
+      ['a', 2, 1, 1587],
+      ['c', 3, 0, 1167],
     ]);
   });
 
@@ -188,7 +188,7 @@ describe('battles', () => {
     ]);
     runners.get('a')!.recordInputs = true;
     const result = await runBattle({ players: setups, config: cfg({}, 60), seed: 1 });
-    expect(unit(result, '1-5-5').hp).toBe(150);
+    expect(unit(result, '1-5-5').hp).toBe(750);
     expect(unit(result, '0-0-0').damageDealt).toBe(0);
     expect(runners.get('a')!.inputs.every((i) => i.selves[0]!.cooldownRemaining === 0)).toBe(true);
     expect(result.frames.flatMap((f) => f.events).some((e) => e.type === 'fire')).toBe(false);
@@ -223,8 +223,8 @@ describe('battles', () => {
       ],
       cfg({}, 120),
     );
-    expect(unit(result, '0-0-0').hp).toBe(120);
-    expect(unit(result, '0-0-1').hp).toBe(120);
+    expect(unit(result, '0-0-0').hp).toBe(600);
+    expect(unit(result, '0-0-1').hp).toBe(600);
     expect(result.units.every((u) => u.damageDealt === 0)).toBe(true);
   });
 
@@ -265,8 +265,8 @@ describe('battles', () => {
     let outside = 0;
     for (let k = 0; k < 120; k++) if (d > safeZoneRadius(k, config.suddenDeath)) outside++;
     expect(outside).toBeGreaterThan(0);
-    expect(unit(result, '0-0-0').hp).toBeCloseTo(150 - (outside * 150 * 0.04) / 60, 9);
-    expect(unit(result, '1-0-0').hp).toBe(120); // walked into the middle in time
+    expect(unit(result, '0-0-0').hp).toBeCloseTo(750 - (outside * 750 * 0.04) / 60, 9);
+    expect(unit(result, '1-0-0').hp).toBe(600); // walked into the middle in time
     const last = result.frames.at(-1)!;
     expect(frameUnit(last, '0-0-0')![4] & FRAME_FLAGS.OUTSIDE_SAFE_ZONE).toBeTruthy();
     expect(last.safeZoneRadius).toBe(60);
@@ -457,24 +457,24 @@ describe('zones, auto-place and skip', () => {
   });
 
   it('skip ranks from the frame at the playback tick, not the sim lead', async () => {
-    const reaper = stats({ type: 'soldier', name: 'Reaper', maxHealth: 500, damage: 60, speed: 5, attackCooldown: 10 });
+    const reaper = stats({ type: 'soldier', name: 'Reaper', maxHealth: 2500, damage: 300, speed: 5, attackCooldown: 10 });
     const { result } = await battle(
       [
         { playerId: 'a', seat: 0, zone: 'TL', units: [design('s', SOLDIER)], placements: [at(0, 0, 's'), at(1, 0, 's'), at(0, 1, 's')], brains: { s: idleBrain } },
-        { playerId: 'b', seat: 1, zone: 'BR', units: [design('r', reaper, 250)], placements: [at(0, 0, 'r')], brains: { r: soldierBrain } },
+        { playerId: 'b', seat: 1, zone: 'BR', units: [design('r', reaper, 1250)], placements: [at(0, 0, 'r')], brains: { r: soldierBrain } },
       ],
       cfg({}, 5400),
     );
     // At the end the reaper has won.
     expect(result.endReason).toBe('elimination');
     expect(result.ranking[0]!.playerId).toBe('b');
-    // Early on, a still has $276 on the field vs b's $250: a leads.
+    // Early on, a still has $1,587 on the field vs b's $1,250: a leads.
     const early = rankAtPlaybackTick(result.frames, 11, result);
-    expect(early.map((r) => [r.playerId, r.place, r.livingCost])).toEqual([['a', 1, 276], ['b', 2, 250]]);
-    // After the first kill a is down to $184: b leads.
+    expect(early.map((r) => [r.playerId, r.place, r.livingCost])).toEqual([['a', 1, 1587], ['b', 2, 1250]]);
+    // After the first kill a is down to $1,058: b leads.
     const firstDeath = result.units.filter((u) => u.playerId === 'a').map((u) => u.diedAtTick!).sort((x, y) => x - y)[0]!;
     const mid = rankFromFrame(frameAt(result.frames, firstDeath + 2)!, result);
-    expect(mid.map((r) => [r.playerId, r.livingCost])).toEqual([['b', 250], ['a', 184]]);
+    expect(mid.map((r) => [r.playerId, r.livingCost])).toEqual([['b', 1250], ['a', 1058]]);
   });
 
   it('stop() ends the sim early on a frame of the final state', async () => {
@@ -500,7 +500,7 @@ describe('zones, auto-place and skip', () => {
 describe('sandbox policy (runner envelope → strikes, disable, report)', () => {
   const twoPlayers = (aBrains: FakePlayerSpec['brains'], hook?: FakePlayerSpec['hook'], aPlacements = [at(0, 0, 's'), at(1, 0, 's')]): FakePlayerSpec[] => [
     { playerId: 'a', seat: 0, zone: 'TL', units: [design('s', SOLDIER)], placements: aPlacements, brains: aBrains, ...(hook ? { hook } : {}) },
-    { playerId: 'b', seat: 1, zone: 'BR', units: [design('t', stats({ type: 'tower', maxHealth: 500, damage: 0 }))], placements: [at(0, 0, 't')], brains: { t: idleBrain } },
+    { playerId: 'b', seat: 1, zone: 'BR', units: [design('t', stats({ type: 'tower', maxHealth: 2500, damage: 5 }))], placements: [at(0, 0, 't')], brains: { t: idleBrain } },
   ];
   const ok = (outputs: TickResult['outputs'] = []): TickResult => ({ status: 'ok', outputs, elapsedMs: 1, slow: false, forged: 0 });
 
@@ -800,25 +800,25 @@ describe('size, facing and frame flags (§5 size, §9 Radii/Frames)', () => {
 });
 
 describe('scoring metrics (§9 Damage metric, Value destroyed, Skip)', () => {
-  const REAPER = stats({ type: 'soldier', name: 'Reaper', maxHealth: 500, damage: 60, speed: 5, attackCooldown: 10 });
+  const REAPER = stats({ type: 'soldier', name: 'Reaper', maxHealth: 2500, damage: 300, speed: 5, attackCooldown: 10 });
 
-  it('effective damage: a 60-damage hit on a 10-hp unit counts 10 (no overkill), plus the kill and its full cost', async () => {
-    const twig = stats({ type: 'soldier', name: 'Twig', maxHealth: 10 });
+  it('effective damage: a 300-damage hit on a 50-hp unit counts 50 (no overkill), plus the kill and its full cost', async () => {
+    const twig = stats({ type: 'soldier', name: 'Twig', maxHealth: 50 });
     const twigCost = design('t', twig).cost;
     const { result } = await battle(
       [
-        { playerId: 'a', seat: 0, zone: 'TL', units: [design('r', REAPER, 250)], placements: [at(0, 0, 'r')], brains: { r: soldierBrain } },
+        { playerId: 'a', seat: 0, zone: 'TL', units: [design('r', REAPER, 1250)], placements: [at(0, 0, 'r')], brains: { r: soldierBrain } },
         { playerId: 'b', seat: 1, zone: 'BR', units: [design('t', twig)], placements: [at(0, 0, 't')], brains: { t: idleBrain } },
       ],
       cfg({}, 900),
     );
     expect(result.endReason).toBe('elimination');
     const reaper = unit(result, '0-0-0');
-    expect(reaper).toMatchObject({ damageDealt: 10, kills: 1, valueDestroyed: twigCost });
+    expect(reaper).toMatchObject({ damageDealt: 50, kills: 1, valueDestroyed: twigCost });
     const hits = result.frames.flatMap((f) => f.events).filter((e) => e.type === 'hit');
-    expect(hits).toEqual([{ type: 'hit', instanceId: '0-0-0', targetId: '1-0-0', damage: 10 }]);
+    expect(hits).toEqual([{ type: 'hit', instanceId: '0-0-0', targetId: '1-0-0', damage: 50 }]);
     expect(playerMetrics(result)).toEqual([
-      { playerId: 'a', damage: 10, valueDestroyed: twigCost, kills: 1, livingValue: 250 },
+      { playerId: 'a', damage: 50, valueDestroyed: twigCost, kills: 1, livingValue: 1250 },
       { playerId: 'b', damage: 0, valueDestroyed: 0, kills: 0, livingValue: 0 },
     ]);
     // 2 players: a gets 1 place + 1 damage + 1 value; b nothing.
@@ -827,13 +827,13 @@ describe('scoring metrics (§9 Damage metric, Value destroyed, Skip)', () => {
       ['b', 0, 0, 0, 0],
     ]);
     expect(result.ranking[0]!.badges).toEqual(['lastStanding', 'biggestHitter', 'giantSlayer', 'ironWall']);
-    expect(buildBattleReport(result, 'a', 1)).toMatchObject({ damageDealt: 10, kills: 1, valueDestroyed: twigCost, livingValue: 250 });
+    expect(buildBattleReport(result, 'a', 1)).toMatchObject({ damageDealt: 50, kills: 1, valueDestroyed: twigCost, livingValue: 1250 });
     expect(buildBattleReport(result, 'a', 1).score).toMatchObject({ place: 1, total: 3 });
   });
 
   it('a projectile is credited on impact, not when fired', async () => {
     const archer = stats({ type: 'soldier', name: 'Archer', range: 150 });
-    const wall = stats({ type: 'tower', name: 'Wall', maxHealth: 500, damage: 0 });
+    const wall = stats({ type: 'tower', name: 'Wall', maxHealth: 2500, damage: 5 });
     const { setups } = fakePlayers([
       { playerId: 'a', seat: 0, zone: 'TL', units: [design('s', archer)], placements: [at(0, 0, 's')], brains: { s: soldierBrain } },
       { playerId: 'b', seat: 1, zone: 'BR', units: [design('w', wall)], placements: [at(0, 0, 'w')], brains: { w: idleBrain } },
@@ -847,8 +847,8 @@ describe('scoring metrics (§9 Damage metric, Value destroyed, Skip)', () => {
     expect(engine.frames.find((f) => f.t === fired)!.projectiles).toHaveLength(1);
     expect(engine.countersAt(fired).units.get('0-0-0')?.damageDealt ?? 0).toBe(0);
     expect(engine.metricsAt(landed - 2)[0]!.damage).toBe(0);
-    expect(engine.countersAt(landed).units.get('0-0-0')!.damageDealt).toBe(10);
-    expect(engine.metricsAt(landed)[0]!.damage).toBe(10);
+    expect(engine.countersAt(landed).units.get('0-0-0')!.damageDealt).toBe(50);
+    expect(engine.metricsAt(landed)[0]!.damage).toBe(50);
   });
 
   it('a same-tick double kill goes to the lower seat (seat, then instanceId order), not the projectile order', () => {
@@ -917,8 +917,8 @@ describe('scoring metrics (§9 Damage metric, Value destroyed, Skip)', () => {
     const r1 = await run();
     const r2 = await run();
     expect(r1.units.map((u) => [u.instanceId, u.damageDealt, u.kills, u.valueDestroyed])).toEqual([
-      ['0-0-0', 120, 1, 92],
-      ['1-0-0', 120, 1, 92],
+      ['0-0-0', 600, 1, 529],
+      ['1-0-0', 600, 1, 529],
     ]);
     expect(r2.ranking).toEqual(r1.ranking);
   });
@@ -945,27 +945,27 @@ describe('scoring metrics (§9 Damage metric, Value destroyed, Skip)', () => {
   it('Skip scores with the metrics at the playback tick, not the sim lead', async () => {
     const { setups } = fakePlayers([
       { playerId: 'a', seat: 0, zone: 'TL', units: [design('s', SOLDIER)], placements: [at(0, 0, 's'), at(1, 0, 's'), at(0, 1, 's')], brains: { s: idleBrain } },
-      { playerId: 'b', seat: 1, zone: 'BR', units: [design('r', REAPER, 250)], placements: [at(0, 0, 'r')], brains: { r: soldierBrain } },
+      { playerId: 'b', seat: 1, zone: 'BR', units: [design('r', REAPER, 1250)], placements: [at(0, 0, 'r')], brains: { r: soldierBrain } },
     ]);
     const engine = new BattleEngine({ players: setups, config: cfg({}, 5400), seed: 7 });
     const result = await engine.run();
     expect(result.endReason).toBe('elimination');
     const finalB = playerMetrics(result)[1]!;
-    expect(finalB).toMatchObject({ kills: 3, valueDestroyed: 276 });
+    expect(finalB).toMatchObject({ kills: 3, valueDestroyed: 1587 });
 
     // At the start nothing has happened yet.
     expect(engine.metricsAt(0)).toEqual([
-      { playerId: 'a', damage: 0, valueDestroyed: 0, kills: 0, livingValue: 276 },
-      { playerId: 'b', damage: 0, valueDestroyed: 0, kills: 0, livingValue: 250 },
+      { playerId: 'a', damage: 0, valueDestroyed: 0, kills: 0, livingValue: 1587 },
+      { playerId: 'b', damage: 0, valueDestroyed: 0, kills: 0, livingValue: 1250 },
     ]);
 
-    // Just after the first kill: one kill, $92, and less damage than at the end.
+    // Just after the first kill: one kill, $529, and less damage than at the end.
     const firstDeath = result.units.filter((u) => u.playerId === 'a').map((u) => u.diedAtTick!).sort((x, y) => x - y)[0]!;
     const frame = frameAt(engine.frames, firstDeath + 2)!;
     const mid = engine.metricsAt(frame.t);
-    expect(mid[1]).toMatchObject({ kills: 1, valueDestroyed: 92, livingValue: 250 });
+    expect(mid[1]).toMatchObject({ kills: 1, valueDestroyed: 529, livingValue: 1250 });
     expect(mid[1]!.damage).toBeLessThan(finalB.damage);
-    expect(mid[0]!.livingValue).toBe(184);
+    expect(mid[0]!.livingValue).toBe(1058);
     // The same as trimming the result to that tick (what the battle service does on Skip).
     const trimmed = resultAtTick(result, engine.countersAt(frame.t), new Set(frame.units.map((u) => u[0])), frame.t);
     expect(playerMetrics(trimmed)).toEqual(mid);
@@ -973,12 +973,12 @@ describe('scoring metrics (§9 Damage metric, Value destroyed, Skip)', () => {
     // Scored at the playback tick: b leads on living value and gets every bonus.
     const ranking = scoreRanking(rankFromFrame(frame, result), mid, DEFAULT_CONFIG.scoring);
     expect(ranking.map((r) => [r.playerId, r.place, r.placePoints, r.damageBonus, r.valueBonus, r.pointsGained, r.valueDestroyed])).toEqual([
-      ['b', 1, 1, 1, 1, 3, 92],
+      ['b', 1, 1, 1, 1, 3, 529],
       ['a', 2, 0, 0, 0, 0, 0],
     ]);
     expect(ranking[0]!.badges).toEqual(['lastStanding', 'biggestHitter', 'giantSlayer', 'ironWall']);
     // The report of the trimmed result carries the score at that tick.
-    expect(buildBattleReport(trimmed, 'b', 1, ranking)).toMatchObject({ kills: 1, valueDestroyed: 92, score: { total: 3 } });
+    expect(buildBattleReport(trimmed, 'b', 1, ranking)).toMatchObject({ kills: 1, valueDestroyed: 529, score: { total: 3 } });
   });
 });
 
@@ -1037,9 +1037,9 @@ describe('maps: variable arena (§9.2)', () => {
 });
 
 describe('teams (§9.2)', () => {
-  const REAPER = stats({ type: 'soldier', name: 'Reaper', maxHealth: 500, damage: 60, speed: 5, attackCooldown: 10 });
-  const twig = stats({ type: 'soldier', name: 'Twig', maxHealth: 10 });
-  const wall = stats({ type: 'tower', name: 'Wall', maxHealth: 500, damage: 0 });
+  const REAPER = stats({ type: 'soldier', name: 'Reaper', maxHealth: 2500, damage: 300, speed: 5, attackCooldown: 10 });
+  const twig = stats({ type: 'soldier', name: 'Twig', maxHealth: 50 });
+  const wall = stats({ type: 'tower', name: 'Wall', maxHealth: 2500, damage: 5 });
   const corners = mapFor('corners', 4);
   /** 2v2 on Corners: team 0 = a (TL) + d (TR), team 1 = b (BR) + c (BL). */
   const twoVsTwo = (brains: Record<string, FakePlayerSpec['brains']>, units: Record<string, ReturnType<typeof design>>): FakePlayerSpec[] => [
@@ -1091,7 +1091,7 @@ describe('teams (§9.2)', () => {
     });
     const idle = { w: idleBrain };
     const { result } = await battle(twoVsTwo({ a: idle, b: idle, c: idle, d: { s: traitor } }, { a: w, b: w, c: w, d: sniper }), cfg({}, 120));
-    expect(unit(result, '0-0-0').hp).toBe(500);
+    expect(unit(result, '0-0-0').hp).toBe(2500);
     expect(unit(result, '3-0-0').damageDealt).toBe(0);
     expect(result.frames.flatMap((f) => f.events).some((e) => e.type === 'fire')).toBe(false);
   });
@@ -1145,25 +1145,25 @@ describe('teams (§9.2)', () => {
   });
 
   it('timeout: teams are ranked by team living cost (the sum over members)', async () => {
-    const tower = design('t', TOWER); // $198
-    const soldier = design('s', SOLDIER); // $92
+    const tower = design('t', TOWER); // $1,167
+    const soldier = design('s', SOLDIER); // $529
     const idle = { t: idleBrain, s: idleBrain };
-    // Team 0: a tower + d soldier = $290. Team 1: two towers = $396.
+    // Team 0: a tower + d soldier = $1,696. Team 1: two towers = $2,334.
     const { result } = await battle(twoVsTwo({ a: idle, b: idle, c: idle, d: idle }, { a: tower, b: tower, c: tower, d: soldier }), cfg({}, 60));
     expect(result.endReason).toBe('timeout');
     expect(result.teams!.map((x) => [x.teamId, x.place, x.livingCost, x.placePoints])).toEqual([
-      [1, 1, 396, 3],
-      [0, 2, 290, 0],
+      [1, 1, 2334, 3],
+      [0, 2, 1696, 0],
     ]);
-    // Individually a ($198) out-values d ($92) and b, c ($198) but team 0 still comes 2nd.
+    // Individually a ($1,167) out-values d ($529) and b, c ($1,167) but team 0 still comes 2nd.
     expect(result.ranking.map((x) => [x.playerId, x.place])).toEqual([['b', 1], ['c', 1], ['a', 2], ['d', 2]]);
   });
 
   it('kicked members do not count towards the team living cost', async () => {
     const tower = design('t', TOWER);
-    const big = design('b', stats({ type: 'tower', name: 'Big', maxHealth: 500 }));
+    const big = design('b', stats({ type: 'tower', name: 'Big', maxHealth: 2500 }));
     const idle = { t: idleBrain, b: idleBrain };
-    // d's big tower would put team 0 ahead, but d was kicked: team 0 = a's $198 vs team 1's $396.
+    // d's big tower would put team 0 ahead, but d was kicked: team 0 = a's $1,167 vs team 1's $2,334.
     const { result } = await battle(twoVsTwo({ a: idle, b: idle, c: idle, d: idle }, { a: tower, b: tower, c: tower, d: big }), cfg({}, 30), 7, new Set(['d']));
     expect(result.ranking.map((x) => [x.playerId, x.place, x.placePoints])).toEqual([['b', 1, 2], ['c', 1, 2], ['a', 2, 0]]);
   });

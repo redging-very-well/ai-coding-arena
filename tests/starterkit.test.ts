@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG, computeCost, type CostStats } from '@pixel-clash/shared';
+import { validate } from '../packages/server/src/validator/validate.js';
 
 // The player-facing kit templates (plan §11). sessions/entrypoint.sh and (later)
 // services/kit.ts fill {{HOST}} and rename *.tmpl.
@@ -41,17 +42,28 @@ describe('starter-kit templates (§11)', () => {
   });
 
   it('CLAUDE.md worked cost examples match computeCost', () => {
+    // M8.8 (×5 economy, §6 M8.8 worked examples).
+    const soldier: CostStats = { type: 'soldier', maxHealth: 600, damage: 50, range: 40, speed: 1.5, attackCooldown: 60, size: 10 };
+    const body: CostStats = { type: 'soldier', maxHealth: 500, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, size: 10 };
     const cases: Array<[CostStats, number]> = [
-      [{ type: 'soldier', maxHealth: 120, damage: 10, range: 40, speed: 1.5, attackCooldown: 60, size: 10 }, 92],
-      [{ type: 'soldier', maxHealth: 500, damage: 20, range: 40, speed: 0.8, attackCooldown: 60, size: 20 }, 462],
-      [{ type: 'soldier', maxHealth: 250, damage: 20, range: 40, speed: 0.8, attackCooldown: 60, size: 20 }, 180],
-      [{ type: 'tower', maxHealth: 150, damage: 15, range: 180, speed: 0, attackCooldown: 45, size: 14 }, 198],
-      [{ type: 'soldier', maxHealth: 60, damage: 6, range: 30, speed: 4, attackCooldown: 20, size: 6 }, 451],
-      [{ type: 'soldier', maxHealth: 60, damage: 6, range: 30, speed: 4, attackCooldown: 10, size: 6 }, 902],
+      [soldier, 529],
+      [{ ...soldier, element: 'fire' }, 635],
+      [{ type: 'soldier', maxHealth: 1250, damage: 100, range: 40, speed: 0.8, attackCooldown: 60, size: 20 }, 1122],
+      [{ type: 'soldier', maxHealth: 2500, damage: 100, range: 40, speed: 0.8, attackCooldown: 60, size: 20 }, 2462],
+      [{ type: 'tower', maxHealth: 625, damage: 75, range: 140, speed: 0, attackCooldown: 45, size: 14 }, 954],
+      [{ type: 'soldier', maxHealth: 300, damage: 30, range: 30, speed: 4, attackCooldown: 20, size: 6 }, 1999],
+      [{ type: 'soldier', maxHealth: 300, damage: 30, range: 30, speed: 4, attackCooldown: 10, size: 6 }, 3998],
+      [{ ...body, support: { kind: 'heal', power: 60, range: 120 } }, 759],
+      [{ ...body, support: { kind: 'might', power: 30, range: 100 } }, 603],
+      [{ type: 'wall', maxHealth: 2000, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 149],
+      [{ type: 'factory', maxHealth: 1500, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900 }, 987],
+      // §4d examples: the Frost Spire (ice + splash 40 at CD 60) and the fire archer factory.
+      [{ type: 'tower', maxHealth: 625, damage: 75, range: 140, speed: 0, attackCooldown: 60, size: 14, element: 'ice', splashRadius: 40 }, 1309],
+      [{ type: 'factory', maxHealth: 1500, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900, produces: 'archer', minionElement: 'fire' }, 1417],
     ];
     for (const [stats, cost] of cases) {
       expect(computeCost(stats, DEFAULT_CONFIG.cost).cost).toBe(cost);
-      expect(claudeMd).toContain(`$${cost}`);
+      expect(claudeMd).toContain(`$${cost.toLocaleString('en-US')}`);
     }
     const c = DEFAULT_CONFIG.cost;
     expect(claudeMd).toContain(`stat price = normal price × (1 + ${c.curveK} × (stat / max)²)`);
@@ -60,9 +72,48 @@ describe('starter-kit templates (§11)', () => {
     expect(claudeMd).toContain(`range × ${c.range} `);
     expect(claudeMd).toContain(`speed × ${c.speed} `);
     expect(claudeMd).toContain(`(size − 6) × ${c.size} `);
-    expect(claudeMd).toContain(`cost = (${c.base} + the five stat prices) × max(1, ${c.referenceCooldown} / attackCooldown)`);
-    expect(claudeMd).toContain(`Maxing a stat costs ${1 + c.curveK}×: spread your stats.`);
+    expect(claudeMd).toContain(`cost = (${c.base} + the five stat prices + heal) × max(1, ${c.referenceCooldown} / attackCooldown) × power × splash × element + aura`);
+    expect(claudeMd).toContain(`power   = 1 + ${c.powerFactor} × (maxHealth / 2500) × (damage / 300)`);
+    expect(claudeMd).toContain(`Maxing a stat costs ${1 + c.curveK}×, being tough AND strong costs up to ×${1 + c.powerFactor} more.`);
+    // §6 budget and caps, and the §4d teaching points.
+    expect(claudeMd).toContain(`**$${DEFAULT_CONFIG.caps.budget.toLocaleString('en-US')} per round**`);
+    expect(claudeMd).toContain(`at most **$${DEFAULT_CONFIG.caps.unitCost.toLocaleString('en-US')}** per unit`);
+    expect(claudeMd).toContain('## 4d. Elements, splash and support');
+    for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9]) expect(claudeMd).toMatch(new RegExp(`^${n}\\. \\*\\*`, 'm'));
+    expect(claudeMd).toContain("return { action: 'heal', targetId: need[0].id }");
+    expect(claudeMd).not.toContain('There is no healing');
   });
+
+  it('the §4d Field Medic and Frost Spire examples validate at their stated prices', async () => {
+    const blocks = [...claudeMd.matchAll(/```js\n([\s\S]*?)```/g)].map((m) => m[1]!);
+    const medic = blocks.find((b) => b.startsWith('// Field Medic'))!;
+    const spire = blocks.find((b) => b.startsWith('// Frost Spire'))!;
+    const unit = (ctor: string, update: string) => `export default class U {\n  constructor() {\n${ctor}\n  }\n${update}\n}\n`;
+    const cases: Array<[string, number]> = [
+      [
+        unit(
+          "this.name = 'Patch'; this.type = 'soldier'; this.maxHealth = 500; this.damage = 0; this.range = 20; this.speed = 1.5; this.attackCooldown = 60; this.color = '#33CC66'; this.size = 10; this.support = 'heal'; this.supportPower = 60; this.supportRange = 120;",
+          medic.split('\n').slice(1).join('\n'),
+        ),
+        759,
+      ],
+      [
+        unit(
+          "this.name = 'Frost Spire'; this.type = 'tower'; this.maxHealth = 625; this.damage = 75; this.range = 140; this.speed = 0; this.attackCooldown = 60; this.color = '#66CCFF'; this.size = 14; this.element = 'ice'; this.splashRadius = 40;",
+          spire.split('\n').slice(2).join('\n'),
+        ),
+        1309,
+      ],
+    ];
+    for (const [source, cost] of cases) {
+      const r = await validate(source, {}, DEFAULT_CONFIG);
+      expect(r.ok, JSON.stringify(r.ok ? r.warnings : r.errors)).toBe(true);
+      if (r.ok) {
+        expect(r.unit.cost).toBe(cost);
+        expect(r.warnings.map((w) => w.code).filter((c) => c !== 'W_NO_SPRITE')).toEqual([]);
+      }
+    }
+  }, 60_000);
 
   it('the CLAUDE.md sprite example has valid 16×16 frames', () => {
     const js = claudeMd.slice(claudeMd.indexOf('const PALETTE'), claudeMd.indexOf('export default class Knight'));
@@ -96,6 +147,18 @@ describe('starter-kit templates (§11)', () => {
     expect(md).toMatch(/not pre-approved, so each one asks for permission/);
     // §3's "tools only" rule must not forbid the §9 fallback.
     expect(md).toContain('(or the §9 `curl` commands if the tools are missing)');
+  });
+
+  it('PROMPTS.md has the three M8.8 prompts and the ×5 budget', () => {
+    const prompts = kitFile('PROMPTS.md');
+    expect(prompts).toContain('Make an ice tower called Frost Spire');
+    expect(prompts).toContain('Build a medic soldier called Patch');
+    expect(prompts).toContain('a mortar tower with splash 40');
+    // The requester's own examples (2026-10-23).
+    for (const p of ['Make an ice tower that slows everything near my base.', 'Make a medic that heals my tanks.', 'Fire archers from my factory.']) expect(prompts).toContain(p);
+    expect(prompts).toContain('**$5,000**');
+    expect(prompts).toContain('**$2,500**');
+    expect(prompts).not.toContain('can units heal?');
   });
 
   it('only known placeholders are used', () => {

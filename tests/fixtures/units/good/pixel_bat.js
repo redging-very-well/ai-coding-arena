@@ -3,8 +3,8 @@ export default class PixelBat {
   constructor() {
     this.name = 'Pixel Bat';
     this.type = 'soldier';
-    this.maxHealth = 100;
-    this.damage = 10;
+    this.maxHealth = 500;
+    this.damage = 50;
     this.range = 40;
     this.speed = 1.5;
     this.attackCooldown = 60;

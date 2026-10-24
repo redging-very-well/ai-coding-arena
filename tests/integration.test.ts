@@ -163,13 +163,13 @@ describe('integration: validator → ivm runner → engine (M2 acceptance)', () 
   });
 
   it('validates both templates into snapshots the engine accepts', () => {
-    expect(soldier.battle).toMatchObject({ unitId: 'basic-soldier', cost: 92 });
-    expect(tower.battle).toMatchObject({ unitId: 'basic-tower', cost: 198 });
-    expect(soldier.battle.stats).toMatchObject({ type: 'soldier', maxHealth: 120, damage: 10, range: 40, speed: 1.5, attackCooldown: 60 });
-    expect(tower.battle.stats).toMatchObject({ type: 'tower', maxHealth: 150, damage: 15, range: 180, speed: 0, attackCooldown: 45 });
+    expect(soldier.battle).toMatchObject({ unitId: 'basic-soldier', cost: 529 });
+    expect(tower.battle).toMatchObject({ unitId: 'basic-tower', cost: 954 });
+    expect(soldier.battle.stats).toMatchObject({ type: 'soldier', maxHealth: 600, damage: 50, range: 40, speed: 1.5, attackCooldown: 60 });
+    expect(tower.battle.stats).toMatchObject({ type: 'tower', maxHealth: 625, damage: 75, range: 140, speed: 0, attackCooldown: 45 });
   });
 
-  // 4 soldiers in the front cells, 3 towers just behind: $962 per side.
+  // 4 soldiers in the front cells, 3 towers just behind: $4,998 per side.
   const S = () => soldier.battle.unitId;
   const T = () => tower.battle.unitId;
   const army = (): PlacementDTO[] => [

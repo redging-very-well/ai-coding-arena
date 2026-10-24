@@ -5,8 +5,8 @@ const bounds = DEFAULT_CONFIG.stats.bounds;
 const soldier = {
   name: ' Basic Soldier ',
   type: 'soldier',
-  maxHealth: 120,
-  damage: 10,
+  maxHealth: 600,
+  damage: 50,
   range: 40,
   speed: 1.5,
   attackCooldown: 60,
@@ -37,9 +37,9 @@ describe('checkStats (§7 step 6)', () => {
         code: 'STAT_OUT_OF_RANGE',
         field: 'damage',
         value: 999,
-        allowed: { min: 0, max: 60 },
-        message: 'damage is 999 but must be between 0 and 60.',
-        fix: 'In the constructor set this.damage to a number from 0 to 60, e.g. this.damage = 10.',
+        allowed: { min: 0, max: 300 },
+        message: 'damage is 999 but must be between 0 and 300.',
+        fix: 'In the constructor set this.damage to a number from 0 to 300, e.g. this.damage = 50.',
       },
     ]);
   });

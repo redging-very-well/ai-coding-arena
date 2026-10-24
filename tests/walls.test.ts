@@ -230,7 +230,7 @@ describe('walls in battle (§9.3)', () => {
     );
     const result = await engine.run();
     const w = result.units.find((u) => u.instanceId === '0-0-0')!;
-    expect(w).toMatchObject({ type: 'wall', disabled: false, errors: [], survived: true, livingValue: 0, cost: 32 });
+    expect(w).toMatchObject({ type: 'wall', disabled: false, errors: [], survived: true, livingValue: 0, cost: 149 });
     // Walls are listed in the first frame, then only when their hp changes.
     expect(engine.frames[0]!.units.some((u) => u[0] === '0-0-0')).toBe(true);
     expect(engine.frames.slice(1).some((f) => f.units.some((u) => u[0] === '0-0-0'))).toBe(false);
@@ -280,11 +280,11 @@ describe('walls in battle (§9.3)', () => {
       if (gap <= self.range) return { action: 'attack', targetId: tower.id };
       return { action: 'move', destination: { x: tower.x, y: tower.y } };
     });
-    const strong = stats({ type: 'soldier', damage: 60, attackCooldown: 10, speed: 3, maxHealth: 500 });
+    const strong = stats({ type: 'soldier', damage: 300, attackCooldown: 10, speed: 3, maxHealth: 2500 });
     const { engine } = engineOf(
       [
         { playerId: 'a', seat: 0, zone: 'TL', units: [design('s', strong)], placements: [at(0, 0, 's')], brains: { s: smasher } },
-        { playerId: 'b', seat: 1, zone: 'BR', units: [design('w', WALL), design('t', stats({ type: 'tower', damage: 0 }))], placements: [...box, at(4, 4, 't')], brains: { t: idleBrain } },
+        { playerId: 'b', seat: 1, zone: 'BR', units: [design('w', WALL), design('t', stats({ type: 'tower', damage: 5 }))], placements: [...box, at(4, 4, 't')], brains: { t: idleBrain } },
       ],
       cfg({ suddenDeath: { damagePctPerSecond: 0 } }),
     );
@@ -293,11 +293,11 @@ describe('walls in battle (§9.3)', () => {
     const broken = walls.filter((w) => !w.survived);
     expect(broken.length).toBeGreaterThanOrEqual(1);
     const a = result.units.find((u) => u.instanceId === '0-0-0')!;
-    // The tower died too (elimination), and every wall killed credited its full price ($32).
+    // The tower died too (elimination), and every wall killed credited its full price ($149).
     expect(result.endReason).toBe('elimination');
     expect(a.kills).toBeGreaterThanOrEqual(2);
     const towerCost = result.units.find((u) => u.type === 'tower')!.cost;
-    expect(a.valueDestroyed).toBe(towerCost + 32 * (a.kills - 1));
+    expect(a.valueDestroyed).toBe(towerCost + 149 * (a.kills - 1));
     // B's leftover walls crumbled at the elimination, credited to nobody.
     const crumble = allEvents(engine.frames).find((x) => x.e.type === 'crumble');
     expect(crumble).toBeDefined();
@@ -306,7 +306,7 @@ describe('walls in battle (§9.3)', () => {
 
   it('ranged attackers shoot walls, and projectiles fly over walls to targets behind them', async () => {
     // B's soldier stands behind B's own walls; A's ranged soldier walks up and shoots either.
-    const ranged = stats({ type: 'soldier', range: 200, damage: 30, attackCooldown: 30, speed: 3 });
+    const ranged = stats({ type: 'soldier', range: 200, damage: 150, attackCooldown: 30, speed: 3 });
     const approachThen = (pick: 'wall' | 'soldier') =>
       scripted((self, enemies) => {
         const target = enemies.find((e) => e.type === pick);
@@ -340,22 +340,22 @@ describe('walls in battle (§9.3)', () => {
   it('walls take sudden-death damage (7% of max HP per second outside the circle)', async () => {
     const { engine } = engineOf(
       [
-        { playerId: 'a', seat: 0, zone: 'TL', units: [design('w', stats({ type: 'wall', maxHealth: 1500 })), design('s', SOLDIER)], placements: [at(5, 5, 'w'), at(0, 0, 's')], brains: { s: idleBrain } },
+        { playerId: 'a', seat: 0, zone: 'TL', units: [design('w', stats({ type: 'wall', maxHealth: 7500 })), design('s', SOLDIER)], placements: [at(5, 5, 'w'), at(0, 0, 's')], brains: { s: idleBrain } },
         { playerId: 'b', seat: 1, zone: 'BR', units: [design('s', SOLDIER)], placements: [at(0, 0, 's')], brains: { s: idleBrain } },
       ],
       cfg({ suddenDeath: { startTick: 10, endTick: 20, endRadius: 10 } }, 200),
     );
     const result = await engine.run();
     const w = result.units.find((u) => u.instanceId === '0-5-5')!;
-    expect(w.hp).toBeLessThan(1500);
+    expect(w.hp).toBeLessThan(7500);
     // Its hp changes, so it is listed in the frames again.
     expect(engine.frames.slice(1).some((f) => f.units.some((u) => u[0] === '0-5-5'))).toBe(true);
   });
 
   it('a side with only walls left is eliminated on that tick and its walls crumble (credited to nobody)', async () => {
     // B: a weak soldier and 3 walls; A's strong soldier kills the soldier.
-    const strong = stats({ type: 'soldier', damage: 60, attackCooldown: 10, speed: 4, maxHealth: 500 });
-    const weak = stats({ type: 'soldier', maxHealth: 10 });
+    const strong = stats({ type: 'soldier', damage: 300, attackCooldown: 10, speed: 4, maxHealth: 2500 });
+    const weak = stats({ type: 'soldier', maxHealth: 50 });
     const killer = scripted((self, enemies) => {
       const s = enemies.find((e) => e.type === 'soldier');
       if (!s) return { action: 'idle' };
@@ -413,8 +413,8 @@ describe('walls in battle (§9.3)', () => {
     const result = await engine.run();
     expect(result.endReason).toBe('timeout');
     const a = result.players.find((p) => p.playerId === 'a')!;
-    expect(a.livingCost).toBe(92);
-    // The tower ($198) beats a soldier + 5 walls ($92 + $0).
+    expect(a.livingCost).toBe(529);
+    // The tower ($1,191) beats a soldier + 5 walls ($522 + $0).
     expect(result.ranking[0]!.playerId).toBe('b');
   });
 
@@ -431,7 +431,7 @@ describe('walls in battle (§9.3)', () => {
     expect(frame.units.some((u) => u[0] === '0-0-1')).toBe(false);
     const trimmed = resultAtTick(result, engine.countersAt(100), frame, 100);
     expect(trimmed.units.find((u) => u.instanceId === '0-0-1')).toMatchObject({ survived: true, livingValue: 0 });
-    expect(trimmed.players.find((p) => p.playerId === 'a')!.livingCost).toBe(92);
+    expect(trimmed.players.find((p) => p.playerId === 'a')!.livingCost).toBe(529);
     expect(trimmed.players.find((p) => p.playerId === 'a')!.livingUnits).toBe(3);
   });
 

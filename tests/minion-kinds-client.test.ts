@@ -16,7 +16,7 @@ import { armyValues } from '../packages/client/src/screen/model.js';
 const factory = (extra: Partial<StatsSnapshot> = {}): StatsSnapshot => ({
   name: 'Fac',
   type: 'factory',
-  maxHealth: 300,
+  maxHealth: 1500,
   damage: 0,
   range: 0,
   speed: 0,
@@ -54,7 +54,7 @@ describe('minion kind looks (§5.3)', () => {
     expect(new Set(looks.map((l) => JSON.stringify(l.spec.frames.idle))).size).toBe(4);
     for (const l of looks) expect(l.spec.palette.b).toBe('#33AA55');
     expect(minionLook('#33AA55').key).toBe('minion:#33AA55');
-    expect(KIND_ICON).toEqual({ grunt: '👊', archer: '🎯', runner: '💨', brute: '🔨' });
+    expect(KIND_ICON).toEqual({ grunt: '👊', archer: '🎯', runner: '💨', brute: '🔨', medic: '💚' });
     expect(kindPlural('brute')).toBe('Brutes');
   });
 });
@@ -75,9 +75,9 @@ describe('/play factory card (§12.5 M8.6)', () => {
   it('the price pop-up and the editor panel name the kind', () => {
     const b = computeCost({ ...factory({ produces: 'archer' }) }, DEFAULT_CONFIG.cost, pricingOf(DEFAULT_CONFIG)).breakdown;
     const rows = breakdownRows(b);
-    expect(rows.find((r) => r.label === 'Archers')!.value).toBe('5 × $35');
-    expect(rows.at(-1)!.value).toBe('$228');
-    expect(costPanel(b, 500).rows.map((r) => r.label)).toEqual(['Base', 'Health', 'Archers']);
+    expect(rows.find((r) => r.label === 'Archers')!.value).toBe('5 × $195');
+    expect(rows.at(-1)!.value).toBe('$1,222');
+    expect(costPanel(b, 2500).rows.map((r) => r.label)).toEqual(['Base', 'Health', 'Archers']);
   });
 });
 
@@ -125,6 +125,6 @@ describe('release sound and admin preview (M8.6)', () => {
 
   it("previews each kind's factory price from the draft config", () => {
     const by = Object.fromEntries(costPreview(DEFAULT_CONFIG).rows.map((r) => [r.key, r.cost]));
-    expect(by).toMatchObject({ basicFactory: 193, archerFactory: 228, runnerFactory: 243, bruteFactory: 228 });
+    expect(by).toMatchObject({ basicFactory: 987, archerFactory: 1222, runnerFactory: 1172, bruteFactory: 1312 });
   });
 });

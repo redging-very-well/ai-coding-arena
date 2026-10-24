@@ -25,7 +25,7 @@ export default class SwarmFactory {
   constructor() {
     this.name = 'Swarm Factory';
     this.type = 'factory';
-    this.maxHealth = 300;
+    this.maxHealth = 1500;
     this.productionInterval = 600;
     this.color = '#C0A060';
   }
@@ -45,7 +45,7 @@ export default class BasicWall {
   constructor() {
     this.name = 'Basic Wall';
     this.type = 'wall';
-    this.maxHealth = 400;
+    this.maxHealth = 2000;
     this.color = '#8A8F98';
   }
 }`;
@@ -72,7 +72,7 @@ describe('buildings worst case (M8.5 timing)', () => {
       submit(FACTORY_SRC, config, 'f'),
       submit(WALL_SRC, config, 'w'),
     ]);
-    expect(factory!.battle.cost).toBe(53 + 3 * 28); // E = floor(1899 / 600) = 3: priced for this battle length
+    expect(factory!.battle.cost).toBe(247 + 3 * 148); // E = floor(1899 / 600) = 3: priced for this battle length
     const { layout, specs } = worstCaseSpecs();
     const designs = [soldier!, factory!, wall!];
     const runners = await createBattleRunners(
@@ -127,7 +127,7 @@ export default class KindFactory {
   constructor() {
     this.name = '${name}';
     this.type = 'factory';
-    this.maxHealth = 300;
+    this.maxHealth = 1500;
     this.productionInterval = 600;
     this.produces = '${kind}';
     this.burst = ${burst};
@@ -297,6 +297,113 @@ describe('maze worst case: routing round walls (M8.7 timing)', () => {
     expect(hits).toBeGreaterThan(built);
     for (const p of result.players) expect(p.disabled, `${p.playerId} ${p.disabledReason}`).toBe(false);
     // §9.3 Performance: target unchanged, sim p99 < 8 ms/tick.
+    expect(p99).toBeLessThan(8);
+  }, 180_000);
+});
+
+/**
+ * M8.8 (plan §9.4 Performance, §14 test:perf): elements, splash and support
+ * at their heaviest. Every player fields, in the M8.7 maze, 6 Storm Bombers
+ * (lightning, splash 80), 1 Fire Raider (fire: burns, so lightning overloads),
+ * 2 Field Medics (heal 60 / 120 px, cleansing first), 1 War Drummer (might
+ * aura) and 2 Storm Runners factories (lightning runners), every update()
+ * looping over all enemies and allies. Target unchanged: sim p99 < 8 ms/tick,
+ * and at most 600 events per second of battle.
+ */
+const withStats = (fields: string, name: string) =>
+  SOLDIER_SRC.replace("this.name = 'Basic Soldier';", `this.name = '${name}';`).replace("this.color = '#3399FF';", `this.color = '#3399FF'; ${fields}`);
+const MEDIC_SRC = withStats("this.damage = 0; this.support = 'heal'; this.supportPower = 60; this.supportRange = 120;", 'Field Medic').replace(
+  '  update(self, enemies, allies, world) {\n',
+  `  update(self, enemies, allies, world) {
+    const gapTo = (a) => Math.hypot(a.x - self.x, a.y - self.y) - self.radius - a.radius;
+    let patient = null;
+    let worst = 2;
+    for (const a of allies) {
+      if (a.type === 'wall' || a.type === 'factory' || gapTo(a) > self.support.range) continue;
+      const need = a.status.burning > 0 || a.status.frozen > 0 ? 0 : a.hp < a.maxHp && a.status.healRoom > 0 ? a.hp / a.maxHp : 2;
+      if (need < worst) { worst = need; patient = a; }
+    }
+    if (patient && self.cooldownRemaining === 0) return { action: 'heal', targetId: patient.id };
+`,
+);
+const STORM_RUNNERS_SRC = `
+export default class StormRunners {
+  constructor() {
+    this.name = 'Storm Runners';
+    this.type = 'factory';
+    this.maxHealth = 1500;
+    this.productionInterval = 600;
+    this.produces = 'runner';
+    this.minionElement = 'lightning';
+    this.burst = 2;
+    this.color = '#55AAFF';
+  }
+  update(self, enemies, allies, world) {
+    let weakest = null;
+    for (const e of enemies) if (e.type !== 'wall' && (!weakest || e.hp < weakest.hp)) weakest = e;
+    return weakest ? { action: 'command', order: 'swarm', targetId: weakest.id } : { action: 'rally', destination: world.center };
+  }
+}`;
+
+describe('elements and support worst case (M8.8 timing)', () => {
+  it('8p × (storm bombers, fire, medics, drummer, 2 Storm Runners + 12 maze walls) on Ring 8: sim p99 < 8 ms/tick, ≤ 600 events/s', async () => {
+    const config: GameConfig = deepMerge(DEFAULT_CONFIG, { timers: { battleTicks: TICKS } });
+    const designs = await Promise.all([
+      submit(withStats("this.element = 'lightning'; this.splashRadius = 80;", 'Storm Bomber'), config, 's'),
+      submit(withStats("this.element = 'fire';", 'Fire Raider'), config, 'b'),
+      submit(MEDIC_SRC, config, 'm'),
+      submit(withStats("this.damage = 0; this.support = 'might'; this.supportPower = 30; this.supportRange = 100;", 'War Drummer'), config, 'd'),
+      submit(STORM_RUNNERS_SRC, config, 'f'),
+      submit(WALL_SRC, config, 'w'),
+    ]);
+    const { layout, specs } = worstCaseSpecs();
+    const runners = await createBattleRunners(
+      ivm,
+      specs.map((s) => ({ playerId: s.playerId, seat: s.seat, units: designs.map((d) => d.runner) })),
+      config,
+      45,
+    );
+    for (const r of runners.values()) expect([...r.loadErrors]).toEqual([]);
+    // The maze's 10 soldier cells: 6 storm bombers, 1 fire raider, 2 medics, 1 drummer.
+    const roles = ['s', 's', 's', 'b', 's', 's', 'm', 'm', 'd', 's'];
+    const placements = () => {
+      let i = 0;
+      return mazePlacements().map((p) => (p.unitId === 's' ? { ...p, unitId: roles[i++]! } : p));
+    };
+    const engine = new BattleEngine({
+      players: specs.map((s) => ({
+        playerId: s.playerId,
+        seat: s.seat,
+        zone: s.zone,
+        units: designs.map((d) => d.battle),
+        placements: placements(),
+        runner: runners.get(s.playerId)!,
+      })),
+      config,
+      seed: 45,
+      map: { style: layout.style, width: layout.width },
+    });
+    const t0 = performance.now();
+    const result = await engine.run();
+    const wallMs = performance.now() - t0;
+    const tickMs = engine.tickMs;
+    const p50 = percentile(tickMs, 50);
+    const p99 = percentile(tickMs, 99);
+    const events = engine.frames.flatMap((f) => f.events);
+    const perSecond = events.length / (result.endTick / config.timers.ticksPerSecond);
+    const count = (pred: (e: (typeof events)[number]) => boolean) => events.filter(pred).length;
+    console.log(
+      `[buildings-perf m88] ${result.units.length} bodies, ${result.endTick} ticks (${result.endReason}) in ${wallMs.toFixed(0)} ms; ` +
+        `tick p50 ${p50.toFixed(3)} ms, p99 ${p99.toFixed(3)} ms, max ${Math.max(...tickMs).toFixed(2)} ms; ${events.length} events (${perSecond.toFixed(0)}/s): ` +
+        `${count((e) => e.type === 'arc')} arcs, ${count((e) => e.type === 'splash')} splashes, ${count((e) => e.type === 'hit' && e.kind === 'burn')} burn pulses, ` +
+        `${count((e) => e.type === 'heal')} heals, ${count((e) => e.type === 'cleanse')} cleanses`,
+    );
+    expect(count((e) => e.type === 'arc')).toBeGreaterThan(0);
+    expect(count((e) => e.type === 'splash')).toBeGreaterThan(0);
+    expect(count((e) => e.type === 'heal') + count((e) => e.type === 'cleanse')).toBeGreaterThan(0);
+    for (const p of result.players) expect(p.disabled, `${p.playerId} ${p.disabledReason}`).toBe(false);
+    expect(perSecond).toBeLessThanOrEqual(600);
+    // §9.4 Performance: target unchanged, sim p99 < 8 ms/tick.
     expect(p99).toBeLessThan(8);
   }, 180_000);
 });

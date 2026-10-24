@@ -18,7 +18,7 @@ import {
 import { BattleEngine } from '../../packages/server/src/sim/engine.js';
 import { design, fakePlayers, scripted, soldierBrain, stats } from './fakeRunner.js';
 
-export const SWARM_FACTORY = stats({ type: 'factory', name: 'Swarm Factory', maxHealth: 300, productionInterval: 600 });
+export const SWARM_FACTORY = stats({ type: 'factory', name: 'Swarm Factory', maxHealth: 1500, productionInterval: 600 });
 export const BASIC_WALL = stats({ type: 'wall' });
 
 const at = (col: number, row: number, unitId: string): PlacementDTO => ({ unitId, col, row });

@@ -35,15 +35,37 @@ describe('auth and public endpoints', () => {
     const c = new Client(srv.url);
     expect((await c.get('/health')).body).toMatchObject({ ok: true, phase: 'LOBBY' });
     const rules = (await c.get('/rules')).body;
-    expect(rules.budget).toBe(1000);
-    expect(rules.coefficients.base).toBe(10);
-    expect(rules.coefficients.curveK).toBe(2);
+    expect(rules.budget).toBe(5000);
+    expect(rules.coefficients.base).toBe(50);
+    expect(rules.coefficients.curveK).toBe(1);
+    expect(rules.coefficients.powerFactor).toBe(0.6);
+    expect(rules.elements.fire).toContain('50%');
+    expect(rules.support.heal).toContain('5% of max HP per second');
     expect(rules.costFormula).toContain('curveK');
     const contract = (await c.get('/contract')).body;
     expect(contract.typescript).toContain('export interface UnitStats');
     expect(contract.typescript).not.toContain('BEGIN CONTRACT');
     expect(contract.templates.basic_soldier).toContain('Basic Soldier');
     expect(contract.templates.basic_tower).toContain('Basic Tower');
+    // M8.8 (§10.6): ×5 caps and bounds, the new coefficients, one line per effect, the medic and per-element minion prices.
+    expect(rules.caps).toMatchObject({ budget: 5000, unitCost: 2500 });
+    expect(rules.bounds.maxHealth).toEqual({ min: 50, max: 2500 });
+    expect(rules.bounds.splashRadius).toEqual({ min: 0, max: 80 });
+    expect(rules.bounds.support.shield.power).toEqual({ min: 5, max: 40 });
+    expect(rules.coefficients).toMatchObject({ splash: 0.7, element: { fire: 1.2 }, heal: 4.5, aura: { might: 4 } });
+    for (const k of ['ice', 'lightning', 'shatter', 'overload', 'splash', 'walls']) expect(typeof rules.elements[k], k).toBe('string');
+    for (const k of ['haste', 'might', 'shield', 'fighters']) expect(typeof rules.support[k], k).toBe('string');
+    expect(rules.unitTypes.factories.minionKinds.medic).toMatchObject({ heal: 40, reach: 60, minionValue: 209 });
+    expect(rules.unitTypes.fighters).toMatch(/damage-0 support/);
+    expect(rules.costFormula).toContain('powerFactor');
+    const notes = (contract.notes as string[]).join('\n');
+    expect(notes).toContain('Price: Each stat costs its normal price');
+    expect(notes).toContain('Numbers are 5x bigger now: $5,000 per army, up to $2,500 per unit, HP 50-2,500, damage 0-300.');
+    expect(notes).toMatch(/SHATTER/);
+    expect(notes).toContain("{ action: 'heal', targetId: ally.id }");
+    expect(notes).toContain("this.minionElement = 'ice'");
+    expect(notes).not.toContain('weak (40 HP)');
+    expect(contract.templates.basic_soldier).toContain('this.maxHealth = 600');
   });
 
   it('creates players, checks formats and name uniqueness', async () => {
@@ -100,12 +122,12 @@ describe('auth and public endpoints', () => {
     const p = await newPlayer(srv.url, 'Max');
     const units = (await p.client.get('/units')).body as Array<{ unitId: string; isTemplate: boolean; cost: number; group: string }>;
     expect(units.map((u) => [u.unitId, u.isTemplate, u.cost, u.group])).toEqual([
-      ['basic-soldier', true, 92, 'unit'],
-      ['basic-tower', true, 198, 'building'],
-      ['basic-wall', true, 32, 'building'],
+      ['basic-soldier', true, 529, 'unit'],
+      ['basic-tower', true, 954, 'building'],
+      ['basic-wall', true, 149, 'building'],
       // The test server's battles last 240 ticks, too short for a minion
-      // (E = 0), so the factory costs only its body here ($193 at 5400 ticks).
-      ['basic-factory', true, 53, 'building'],
+      // (E = 0), so the factory costs only its body here ($987 at 5400 ticks).
+      ['basic-factory', true, 247, 'building'],
     ]);
     // Templates can't be deleted (and DELETE is PLAN-only anyway).
     expect((await p.client.del('/units/basic-soldier')).body.error.code).toBe('PHASE_CLOSED');
@@ -156,7 +178,7 @@ describe('phase gates (§10.2)', () => {
   it('LOBBY: validate works, submit/selection/placement/ready are closed', async () => {
     const v = await a.client.post('/units/validate', { source: namedUnit('Gate Tank') });
     expect(v.status).toBe(200);
-    expect(v.body).toMatchObject({ ok: true, unit: { unitId: 'gate-tank', version: 1, cost: 462 } });
+    expect(v.body).toMatchObject({ ok: true, unit: { unitId: 'gate-tank', version: 1, cost: 2462 } });
     const bad = await a.client.post('/units/validate', { source: fixture('bad/stat_out_of_range.js') });
     expect(bad.status).toBe(422);
     expect(bad.body.ok).toBe(false);
@@ -232,20 +254,20 @@ describe('phase gates (§10.2)', () => {
       ])).body.error.code,
     ).toBe('CELL_TAKEN');
     const five = [0, 1, 2, 3, 4].map((i) => ({ unitId: 'gate-tank', col: i, row: 0 }));
-    expect((await put(five)).body.error).toMatchObject({ code: 'OVER_BUDGET', details: { spent: 2310 } });
-    // Two maxed-HP tanks + a soldier ($1016) no longer fit: the curve makes the tank pricey.
+    expect((await put(five)).body.error).toMatchObject({ code: 'OVER_BUDGET', details: { spent: 12310 } });
+    // Two maxed-HP tanks + a soldier ($5,453) no longer fit: the curve makes the tank pricey.
     const twoTanks = [
       { unitId: 'gate-tank', col: 0, row: 0 },
       { unitId: 'gate-tank', col: 1, row: 0 },
       { unitId: 'basic-soldier', col: 0, row: 1 },
     ];
-    expect((await put(twoTanks)).body.error).toMatchObject({ code: 'OVER_BUDGET', details: { spent: 1016 } });
+    expect((await put(twoTanks)).body.error).toMatchObject({ code: 'OVER_BUDGET', details: { spent: 5453 } });
     const ok = await put([
       { unitId: 'gate-tank', col: 0, row: 0 },
       { unitId: 'basic-soldier', col: 1, row: 0 },
       { unitId: 'basic-soldier', col: 0, row: 1 },
     ]);
-    expect(ok.body).toMatchObject({ spent: 646, remaining: 354 });
+    expect(ok.body).toMatchObject({ spent: 3520, remaining: 1480 });
     expect((await a.client.post('/round/ready', { ready: true })).body).toEqual({ ready: true });
     const notReady = await admin.post('/admin/start', {});
     expect(notReady.body.error).toMatchObject({ code: 'NOT_ALL_READY', details: { notReady: ['Ben'] } });
@@ -456,14 +478,22 @@ describe('kick, PIN reset, config and restart recovery', () => {
       expect((await new Client(srv.url).post('/login', { name: 'Lou', pin: '7777' })).status).toBe(200);
 
       // Config: a retune that breaks a template is refused; a cheaper base re-prices.
-      const breaking = await admin.put('/admin/config', { stats: { bounds: { maxHealth: { min: 10, max: 100 } } } });
+      const breaking = await admin.put('/admin/config', { stats: { bounds: { maxHealth: { min: 50, max: 550 } } } });
       expect(breaking.body.error.code).toBe('TEMPLATE_WOULD_BREAK');
       const cheaper = await admin.put('/admin/config', { cost: { base: 0 } });
       expect(cheaper.status).toBe(200);
       expect(cheaper.body.repriced.length).toBeGreaterThan(0);
       const units = (await kb.get('/units')).body as Array<{ unitId: string; cost: number }>;
-      expect(units.find((u) => u.unitId === 'basic-soldier')?.cost).toBe(82);
-      await admin.put('/admin/config', { cost: { base: 10 } });
+      expect(units.find((u) => u.unitId === 'basic-soldier')?.cost).toBe(478);
+      await admin.put('/admin/config', { cost: { base: 50 } });
+      // M8.8: element and effect knobs (the quick settings) retune live; the tips follow them.
+      const fire = await admin.put('/admin/config', { cost: { element: { fire: 1.5 } }, elements: { ice: { slowPct: 50 } } });
+      expect(fire.status).toBe(200);
+      expect(fire.body.economyReset).toEqual([]);
+      expect((await new Client(srv.url).get('/rules')).body.elements.ice).toContain('50% slower');
+      expect((await new Client(srv.url).get('/contract')).body.notes.join('\n')).toContain('price x1.5 fire, x1.2 ice, x1.2 lightning');
+      expect((await admin.put('/admin/config', { elements: { ice: { slowPct: 100 } } })).body.error.code).toBe('BAD_REQUEST');
+      await admin.put('/admin/config', { cost: { element: { fire: 1.2 } }, elements: { ice: { slowPct: 35 } } });
 
       // Kick during BATTLE takes effect after the battle.
       await admin.post('/admin/match', { rounds: 1 });
@@ -491,7 +521,7 @@ describe('private pushes', () => {
     try {
       const a = await newPlayer(srv.url, 'Pia');
       const st = (await a.client.get('/state')).body as GameStateDTO;
-      expect(st.me).toMatchObject({ budget: 1000, submissionsOpen: false, active: true });
+      expect(st.me).toMatchObject({ budget: 5000, submissionsOpen: false, active: true });
       const { WsRecorder } = await import('./helpers/server.js');
       const ws = await WsRecorder.open(srv.url, 'player', a.client.cookieHeader());
       const priv = (await ws.find((m) => m.type === 'private')) as { data: PrivateStateDTO };

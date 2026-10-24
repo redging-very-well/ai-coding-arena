@@ -51,6 +51,12 @@ describe('topUnits (pure)', () => {
     expect(out.find((t) => t.unitId === 'tower')).toBeUndefined(); // 0 damage
   });
 
+  it('M8.8: entries carry the healing their type did (ranked by damage still; healing never counts as damage)', () => {
+    const r = reveal([{ id: 'a', name: 'Ann', seat: 0, units: [unit('cleric', 'Cleric'), unit('medic', 'Medic')] }]);
+    const out = topUnits({ reveal: r, summaries: { a: { cleric: sum(90, { healing: 240.6 }), medic: sum(0, { healing: 900 }) } }, shown: 3 });
+    expect(out.map((t) => [t.displayName, t.damage, t.healing])).toEqual([['Cleric', 90, 241]]);
+  });
+
   it('shares places on equal damage and shows every tie within the places', () => {
     const r = reveal([
       { id: 'a', name: 'Ann', seat: 0, units: [unit('x', 'X'), unit('y', 'Y')] },

@@ -41,7 +41,7 @@ const ofType = <T extends FrameEvent['type']>(frames: FrameDTO[], type: T) =>
 const frameAtT = (frames: FrameDTO[], t: number) => frames.find((f) => f.t === t)!;
 
 /** A far-away enemy tower that never shoots and stays alive (no sudden death), so the battle runs on. */
-const farEnemy = (): FakePlayerSpec => ({ playerId: 'b', seat: 1, zone: 'BR', units: [design('t', stats({ type: 'tower', damage: 0 }))], placements: [at(5, 5, 't')], brains: { t: idleBrain } });
+const farEnemy = (): FakePlayerSpec => ({ playerId: 'b', seat: 1, zone: 'BR', units: [design('t', stats({ type: 'tower', damage: 5 }))], placements: [at(5, 5, 't')], brains: { t: idleBrain } });
 const rallyHome = scripted((self) => ({ action: 'rally', destination: { x: self.x - 60, y: self.y - 60 } }));
 const factoryOf = (engine: BattleEngine, id: string): SimUnit => (engine as unknown as { byId: Map<string, SimUnit> }).byId.get(id)!;
 
@@ -63,8 +63,8 @@ describe('minion kinds (§5.3)', () => {
       const body = factoryOf(engine, m.instanceId);
       expect(body.radius).toBe(k.size);
       expect(body.stats).toMatchObject({ maxHealth: k.maxHealth, damage: k.damage, range: k.range, speed: k.speed, attackCooldown: k.attackCooldown });
-      // Its cost (value) is its kind's minionValue: grunt 28, archer 35, runner 38, brute 35.
-      expect(m.cost).toBe({ grunt: 28, archer: 35, runner: 38, brute: 35 }[kind]);
+      // Its cost (value) is its kind's minionValue: grunt 148, archer 195, runner 185, brute 213 (M8.8 ×5).
+      expect(m.cost).toBe({ grunt: 148, archer: 195, runner: 185, brute: 213, medic: 209 }[kind]);
       const f = result.units.find((u) => u.type === 'factory')!;
       expect(f.factory!.minionValue).toBe(m.cost);
     }
@@ -73,14 +73,14 @@ describe('minion kinds (§5.3)', () => {
   it('the reveal lists every kind fielded', () => {
     const r = minionsReveal([FACTORY(600, { produces: 'archer' }), FACTORY(900), SOLDIER], DEFAULT_CONFIG);
     expect(Object.keys(r.minions!)).toEqual(['archer', 'grunt']);
-    expect(r.minions!.archer!.value).toBe(35);
+    expect(r.minions!.archer!.value).toBe(195);
     expect(r.minions!.archer!.stats.name).toBe('Archer');
     expect(minionsReveal([SOLDIER])).toEqual({});
   });
 
   it('archers shoot homing projectiles from about 110 px and never melee', async () => {
     const config = cfg(noSD, 1500);
-    const target = stats({ type: 'tower', damage: 0, maxHealth: 500 });
+    const target = stats({ type: 'tower', damage: 5, maxHealth: 2500 });
     const { engine, done } = run(
       [
         { playerId: 'a', seat: 0, zone: 'TL', units: [design('f', FACTORY(600, { produces: 'archer' }), undefined, config)], placements: [at(0, 0, 'f')], brains: { f: scripted(() => ({ action: 'command', order: 'attack', destination: { x: 580, y: 580 } })) } },
@@ -121,7 +121,7 @@ describe('minion kinds (§5.3)', () => {
 
   it('brutes deal ×3 on walls only, and one brute breaks a Basic Wall in about 16 s', async () => {
     const config = cfg(noSD, 4000);
-    const target = stats({ type: 'tower', damage: 0, maxHealth: 500 });
+    const target = stats({ type: 'tower', damage: 5, maxHealth: 2500 });
     // Swarm the wall first, then (when it is gone) the order falls back to attack the tower.
     const brain = scripted((_s, enemies) => {
       const w = enemies.find((e) => e.type === 'wall');
@@ -138,14 +138,14 @@ describe('minion kinds (§5.3)', () => {
     const hits = ofType(engine.frames, 'hit').filter((x) => x.e.instanceId === '0-0-0-m1');
     const onWall = hits.filter((x) => x.e.targetId === '1-0-0');
     expect(onWall.length).toBe(17);
-    expect(onWall.slice(0, -1).every((x) => x.e.damage === 24)).toBe(true);
+    expect(onWall.slice(0, -1).every((x) => x.e.damage === 120)).toBe(true);
     const span = onWall.at(-1)!.t - onWall[0]!.t;
     expect(span).toBe(16 * 60);
     const wall = result.units.find((u) => u.instanceId === '1-0-0')!;
     expect(wall.survived).toBe(false);
     const onTower = hits.filter((x) => x.e.targetId === '1-0-2');
     expect(onTower.length).toBeGreaterThan(0);
-    expect(onTower.every((x) => x.e.damage === 8)).toBe(true);
+    expect(onTower.every((x) => x.e.damage === 40)).toBe(true);
   });
 });
 
@@ -280,7 +280,7 @@ describe('squad orders in battle (§5.3, §9.3)', () => {
       return { action: 'idle' };
     });
     // The enemy soldier dies at tick 900 by a scripted friendly-fire-free trick: our tower kills it.
-    const killer = stats({ type: 'tower', range: 300, damage: 60, attackCooldown: 10 });
+    const killer = stats({ type: 'tower', range: 300, damage: 300, attackCooldown: 10 });
     const shoot = scripted((self, enemies, _a, world) => {
       const s = enemies.find((e) => e.type === 'soldier');
       if (!s || world.tick < 900 || self.cooldownRemaining > 0) return { action: 'idle' };
@@ -289,7 +289,7 @@ describe('squad orders in battle (§5.3, §9.3)', () => {
     const { engine, done } = run(
       [
         { playerId: 'a', seat: 0, zone: 'TL', units: [design('f', FACTORY(600), undefined, config), design('k', killer)], placements: [at(2, 2, 'f'), at(0, 0, 'k')], brains: { f: brain, k: shoot } },
-        { playerId: 'b', seat: 1, zone: 'BR', units: [design('s', stats({ type: 'soldier', maxHealth: 100 })), design('t', stats({ type: 'tower', damage: 0 }))], placements: [at(0, 0, 's'), at(5, 5, 't')], brains: { s: scripted(() => ({ action: 'move', destination: { x: 420, y: 420 } })), t: idleBrain } },
+        { playerId: 'b', seat: 1, zone: 'BR', units: [design('s', stats({ type: 'soldier', maxHealth: 500 })), design('t', stats({ type: 'tower', damage: 5 }))], placements: [at(0, 0, 's'), at(5, 5, 't')], brains: { s: scripted(() => ({ action: 'move', destination: { x: 420, y: 420 } })), t: idleBrain } },
       ],
       config,
     );
@@ -319,7 +319,7 @@ describe('squad orders in battle (§5.3, §9.3)', () => {
       if (world.tick === 4) return { action: 'command', order: 'guard', targetId: self.id };
       return { action: 'idle' };
     });
-    const own = stats({ type: 'tower', damage: 0 });
+    const own = stats({ type: 'tower', damage: 5 });
     const { done } = run(
       [{ playerId: 'a', seat: 0, zone: 'TL', units: [design('f', FACTORY(600), undefined, config), design('k', own)], placements: [at(2, 2, 'f'), at(5, 5, 'k')], brains: { f: brain, k: idleBrain } }, farEnemy()],
       config,
@@ -347,13 +347,13 @@ describe('squad orders in battle (§5.3, §9.3)', () => {
 
   it('guard follows a moving ally; when the ally dies the order becomes defend', async () => {
     const config = cfg(noSD, 2400);
-    const runnerSoldier = stats({ type: 'soldier', maxHealth: 60, speed: 1 });
+    const runnerSoldier = stats({ type: 'soldier', maxHealth: 300, speed: 1 });
     const walker = scripted((_s, _e, _a, world) => ({ action: 'move', destination: world.tick < 1500 ? { x: 400, y: 150 } : { x: 400, y: 150 } }));
     const brain = scripted((self, _e, allies) => {
       const s = allies.find((a) => a.type === 'soldier');
       return s ? { action: 'command', order: 'guard', targetId: s.id } : { action: 'idle' };
     });
-    const killer = stats({ type: 'tower', range: 300, damage: 60, attackCooldown: 10 });
+    const killer = stats({ type: 'tower', range: 300, damage: 300, attackCooldown: 10 });
     const shoot = scripted((self, enemies, _a, world) => {
       const s = enemies.find((e) => e.type === 'soldier');
       if (!s || world.tick < 1700 || self.cooldownRemaining > 0) return { action: 'idle' };
@@ -400,7 +400,7 @@ describe('burst: store and release (§5.3, §9.3)', () => {
     const { engine, done } = run(
       [
         { playerId: 'a', seat: 0, zone: 'TL', units: [design('f', FACTORY(600, { burst: 3 }), undefined, config)], placements: [at(2, 2, 'f')], brains: { f: brain } },
-        { playerId: 'b', seat: 1, zone: 'BR', units: [design('t', stats({ type: 'tower', damage: 0 }))], placements: [at(5, 5, 't')], brains: { t: watcher } },
+        { playerId: 'b', seat: 1, zone: 'BR', units: [design('t', stats({ type: 'tower', damage: 5 }))], placements: [at(5, 5, 't')], brains: { t: watcher } },
       ],
       config,
     );
@@ -472,7 +472,7 @@ describe('burst: store and release (§5.3, §9.3)', () => {
 
   it("the factory's death loses its stored minions (credited to the killer as value)", async () => {
     const config = cfg(noSD, 2400);
-    const strong = stats({ type: 'soldier', maxHealth: 500, damage: 60, attackCooldown: 10, speed: 4 });
+    const strong = stats({ type: 'soldier', maxHealth: 2500, damage: 300, attackCooldown: 10, speed: 4 });
     const hunter = scripted((self, enemies, _a, world) => {
       if (world.tick < 1300) return { action: 'idle' };
       const f = enemies.find((e) => e.type === 'factory');
@@ -482,7 +482,7 @@ describe('burst: store and release (§5.3, §9.3)', () => {
     });
     const { engine, done } = run(
       [
-        { playerId: 'a', seat: 0, zone: 'TL', units: [design('f', FACTORY(600, { burst: 4 }), undefined, config), design('k', stats({ type: 'tower', damage: 0 }))], placements: [at(0, 0, 'f'), at(5, 5, 'k')], brains: { f: rallyHome, k: idleBrain } },
+        { playerId: 'a', seat: 0, zone: 'TL', units: [design('f', FACTORY(600, { burst: 4 }), undefined, config), design('k', stats({ type: 'tower', damage: 5 }))], placements: [at(0, 0, 'f'), at(5, 5, 'k')], brains: { f: rallyHome, k: idleBrain } },
         { playerId: 'b', seat: 1, zone: 'BR', units: [design('s', strong)], placements: [at(0, 0, 's')], brains: { s: hunter } },
       ],
       config,
@@ -493,8 +493,8 @@ describe('burst: store and release (§5.3, §9.3)', () => {
     expect(spawns(engine.frames)).toEqual([]);
     expect(f.factory).toMatchObject({ minionsMade: 2, minionsLost: 2, storedLost: 2, stored: 0 });
     expect(ofType(engine.frames, 'lost').map((x) => [x.e.factoryId, x.e.count])).toEqual([['0-0-0', 2]]);
-    // Value destroyed: body $53 + $28 × (canMake 1 + stored 2) in this 2400-tick battle (E = 3).
-    expect(result.units.find((u) => u.instanceId === '1-0-0')!.valueDestroyed).toBe(53 + 28 * 3);
+    // Value destroyed: body $247 + $148 × (canMake 1 + stored 2) in this 2400-tick battle (E = 3).
+    expect(result.units.find((u) => u.instanceId === '1-0-0')!.valueDestroyed).toBe(247 + 148 * 3);
   });
 
   it('stored minions keep a factory a fighter and count in its living value', () => {

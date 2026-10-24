@@ -10,20 +10,22 @@ const load = async (file: string) => {
 };
 
 describe('starter-kit templates (§6 stats)', () => {
-  it('basic_soldier: 120/10/40/1.5/60, size 10 → $92', async () => {
+  it('basic_soldier: 600/50/40/1.5/60, size 10 → $529 (M8.8 ×5)', async () => {
     const u = await load('basic_soldier.js');
     const r = checkStats(u, DEFAULT_CONFIG.stats.bounds);
     expect(r.ok).toBe(true);
-    expect(u).toMatchObject({ type: 'soldier', maxHealth: 120, damage: 10, range: 40, speed: 1.5, attackCooldown: 60, size: 10 });
-    expect(computeCost(u as never, DEFAULT_CONFIG.cost).cost).toBe(92);
+    expect(r.ok && r.warnings).toEqual([]);
+    expect(u).toMatchObject({ type: 'soldier', maxHealth: 600, damage: 50, range: 40, speed: 1.5, attackCooldown: 60, size: 10 });
+    expect(computeCost(u as never, DEFAULT_CONFIG.cost).cost).toBe(529);
   });
 
-  it('basic_tower: 150/15/180/0/45, size 14 → $198', async () => {
+  it('basic_tower: 625/75/140/0/45, size 14 → $954 (M8.8 ×5, range 140)', async () => {
     const u = await load('basic_tower.js');
     const r = checkStats(u, DEFAULT_CONFIG.stats.bounds);
     expect(r.ok).toBe(true);
-    expect(u).toMatchObject({ type: 'tower', maxHealth: 150, damage: 15, range: 180, speed: 0, attackCooldown: 45, size: 14 });
-    expect(computeCost(u as never, DEFAULT_CONFIG.cost).cost).toBe(198);
+    expect(r.ok && r.warnings).toEqual([]);
+    expect(u).toMatchObject({ type: 'tower', maxHealth: 625, damage: 75, range: 140, speed: 0, attackCooldown: 45, size: 14 });
+    expect(computeCost(u as never, DEFAULT_CONFIG.cost).cost).toBe(954);
   });
 
   it('soldier chases, then attacks in edge-to-edge range; tower attacks nearest in range', async () => {
@@ -35,7 +37,7 @@ describe('starter-kit templates (§6 stats)', () => {
     const near = { id: '1-0-1', x: 160, y: 100, radius: 14 }; // gap 36
     expect(soldier.update(self, [far], [], world)).toEqual({ action: 'move', destination: { x: 300, y: 100 } });
     expect(soldier.update(self, [far, near], [], world)).toEqual({ action: 'attack', targetId: '1-0-1' });
-    const tSelf = { ...self, radius: 14, range: 180 };
+    const tSelf = { ...self, radius: 14, range: 140 };
     expect(tower.update(tSelf, [far, near], [], world)).toEqual({ action: 'attack', targetId: '1-0-1' });
     expect(tower.update(tSelf, [{ ...far, x: 700 }], [], world)).toEqual({ action: 'idle' });
   });
@@ -91,23 +93,24 @@ describe('starter-kit templates (M8.5 walls and factories)', () => {
   const world = { width: 800, height: 800, tick: 0, ticksLeft: 5400, mapStyle: 'corners', myCorner: { x: 120, y: 120 }, center: { x: 400, y: 400 }, safeZone: { x: 400, y: 400, radius: 570 } };
   type Updater = { update: (...a: unknown[]) => unknown };
 
-  it('basic_wall: 400 HP, no update(), → $32', async () => {
+  it('basic_wall: 2000 HP, no update(), → $149 (M8.8 ×5)', async () => {
     const u = await load('basic_wall.js');
     const r = checkStats(u, DEFAULT_CONFIG.stats.bounds);
     expect(r.ok && r.warnings).toEqual([]);
-    expect(u).toMatchObject({ type: 'wall', maxHealth: 400 });
+    expect(u).toMatchObject({ type: 'wall', maxHealth: 2000 });
     expect('update' in u).toBe(false);
-    expect(computeCost(u as never, DEFAULT_CONFIG.cost).cost).toBe(32);
+    expect(computeCost(u as never, DEFAULT_CONFIG.cost).cost).toBe(149);
   });
 
-  it('basic_factory: 300 HP, interval 900 → $193 ($53 body + 5 × $28)', async () => {
+  it('basic_factory: 1500 HP, interval 900 → $987 ($247 body + 5 × $148) (M8.8 ×5)', async () => {
     const u = await load('basic_factory.js');
     const r = checkStats(u, DEFAULT_CONFIG.stats.bounds);
     expect(r.ok && r.warnings).toEqual([]);
-    expect(u).toMatchObject({ type: 'factory', maxHealth: 300, productionInterval: 900 });
+    expect(u).toMatchObject({ type: 'factory', maxHealth: 1500, productionInterval: 900 });
     const priced = computeCost(u as never, DEFAULT_CONFIG.cost);
-    expect(priced.cost).toBe(193);
-    expect(priced.breakdown.production).toMatchObject({ expected: 5, minionValue: 28 });
+    expect(priced.cost).toBe(987);
+    expect(priced.breakdown.body).toBe(247);
+    expect(priced.breakdown.production).toMatchObject({ expected: 5, minionValue: 148 });
   });
 
   it.each(['basic_wall.js', 'basic_factory.js'])('%s has a valid, deterministic 16x16 sprite', async (file) => {

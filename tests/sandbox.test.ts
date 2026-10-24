@@ -84,11 +84,16 @@ function selfView(id: string, unitId: string, x = 100, y = 100): SelfView {
   return {
     id, unitId, ownerId: 'p0', teamId: 0, type: 'soldier', name: unitId, x, y, radius: 10, hp: 120, maxHp: 120,
     damage: 10, range: 40, speed: 1.5, attackCooldown: 60, cooldownRemaining: 0, blockedBy: null, blockedTicks: 0, pathing: 'direct', factory: null,
+    element: 'normal', splashRadius: 0, support: null, status: NO_STATUS,
   };
 }
 function otherView(id: string, ownerId: string, x: number, y: number): OtherView {
-  return { id, ownerId, teamId: ownerId === 'p0' ? 0 : 1, type: 'soldier', name: 'x', x, y, radius: 10, hp: 120, maxHp: 120, range: 40 };
+  return {
+    id, ownerId, teamId: ownerId === 'p0' ? 0 : 1, type: 'soldier', name: 'x', x, y, radius: 10, hp: 120, maxHp: 120, range: 40,
+    element: 'normal', splashRadius: 0, support: null, status: NO_STATUS,
+  };
 }
+const NO_STATUS = { burning: 0, burnLeft: 0, frozen: 0, haste: 0, might: 0, shield: 0, healRoom: 0 };
 const WORLD: WorldView = {
   width: 800, height: 800, tick: 0, ticksLeft: 5400, mapStyle: 'corners', myCorner: { x: 120, y: 120 },
   center: { x: 400, y: 400 }, safeZone: { x: 400, y: 400, radius: 570 },

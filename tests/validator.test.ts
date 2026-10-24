@@ -57,34 +57,34 @@ const soldierWithUpdate = (body: string) =>
   template('basic_soldier.js').replace('  update(self, enemies, allies, world) {\n', `  update(self, enemies, allies, world) {\n    ${body}\n`);
 
 describe('validator: good units', () => {
-  it('Basic Soldier template: $92, success shape', async () => {
+  it('Basic Soldier template: $529, success shape', async () => {
     const r = expectOk(await run(template('basic_soldier.js')));
-    expect(r.unit).toMatchObject({ unitId: 'basic-soldier', version: 1, cost: 92 });
+    expect(r.unit).toMatchObject({ unitId: 'basic-soldier', version: 1, cost: 529 });
     expect(r.unit.stats).toEqual({
-      name: 'Basic Soldier', type: 'soldier', maxHealth: 120, damage: 10, range: 40,
-      speed: 1.5, attackCooldown: 60, color: '#3399FF', size: 10, shape: 'circle',
+      name: 'Basic Soldier', type: 'soldier', maxHealth: 600, damage: 50, range: 40,
+      speed: 1.5, attackCooldown: 60, element: 'normal', splashRadius: 0, support: null, color: '#3399FF', size: 10, shape: 'circle',
     });
     expect(Object.isFrozen(r.unit.stats)).toBe(true);
-    expect(r.unit.breakdown).toMatchObject({ factor: 1, cost: 92 });
-    expect(r.unit.breakdown.sum).toBeCloseTo(91.1403084, 6);
-    expect(r.unit.breakdown.parts.maxHealth.text).toBe('maxHealth 120 costs $33.46: $30 base + $3.46 for being at 24% of the max');
+    expect(r.unit.breakdown).toMatchObject({ factor: 1, cost: 529 });
+    expect(r.unit.breakdown.sum).toBeCloseTo(516.1549116, 6);
+    expect(r.unit.breakdown.parts.maxHealth.text).toBe('maxHealth 600 costs $190.37: $180 base + $10.37 for being at 24% of the max');
     expect(r.warnings).toEqual([]);
     expect(r.playerHint).toMatch(/ready/);
   });
 
-  it('Basic Tower template: $198', async () => {
+  it('Basic Tower template: $954', async () => {
     const r = expectOk(await run(template('basic_tower.js')));
-    expect(r.unit.cost).toBe(198);
+    expect(r.unit.cost).toBe(954);
     expect(r.unit.stats.size).toBe(14);
     expect(r.unit.stats.shape).toBe('square');
   });
 
   it.each([
-    ['big_tank.js', 462],
-    ['sniper_tower.js', 305],
-    ['speedy_scout.js', 451],
-    ['laser_sniper.js', 306],
-    ['cheapest_tower.js', 17],
+    ['big_tank.js', 2462],
+    ['sniper_tower.js', 1505],
+    ['speedy_scout.js', 1999],
+    ['laser_sniper.js', 1704],
+    ['cheapest_tower.js', 93],
   ])('reference unit %s costs $%i', async (file, cost) => {
     const r = expectOk(await run(fixture(`good/${file}`)));
     expect(r.unit.cost).toBe(cost);
@@ -93,38 +93,40 @@ describe('validator: good units', () => {
   it('size: read from the unit, priced, and bounded to 6-20', async () => {
     const big = expectOk(await run(template('basic_soldier.js').replace('this.size = 10;', 'this.size = 20;')));
     expect(big.unit.stats.size).toBe(20);
-    expect(big.unit.cost).toBe(110);
+    expect(big.unit.cost).toBe(723);
     const tooBig = await run(template('basic_soldier.js').replace('this.size = 10;', 'this.size = 21;'));
     const e = errorWith(tooBig, 'STAT_OUT_OF_RANGE', { field: 'size', fix: 'this.size' });
     expect(e.allowed).toEqual({ min: 6, max: 20 });
     const omitted = expectOk(await run(template('basic_tower.js').replace(/\n.*this\.size = 14;.*/, '')));
     expect(omitted.unit.stats.size).toBe(14);
-    expect(omitted.unit.cost).toBe(198);
+    expect(omitted.unit.cost).toBe(954);
   });
 
-  it('Slow Sniper (CD 90): valid, same $305 price, W_SLOW_NO_DISCOUNT', async () => {
+  it('Slow Sniper (CD 90): valid, same $1,505 price, W_SLOW_NO_DISCOUNT', async () => {
     const r = expectOk(await run(fixture('good/slow_sniper.js')));
-    expect(r.unit.cost).toBe(305);
+    expect(r.unit.cost).toBe(1505);
     const w = r.warnings.find((x) => x.code === 'W_SLOW_NO_DISCOUNT');
     expect(w?.fix).toBe('Set attackCooldown to 60 for free extra damage.');
     expect(w?.message).toContain("Attacking slower than once per second doesn't make it cheaper.");
   });
 
-  it('Big Tank (maxHealth 500, size 20): valid, with a W_STAT_NEAR_MAX tip per near-max stat', async () => {
+  it('Huge Tank (maxHealth 2500, size 20): valid, with a W_STAT_NEAR_MAX tip per near-max stat', async () => {
     const r = expectOk(await run(fixture('good/big_tank.js')));
     const near = r.warnings.filter((w) => w.code === 'W_STAT_NEAR_MAX');
     expect(near.map((w) => w.field)).toEqual(['maxHealth', 'size']);
-    expect(near[0]).toMatchObject({ value: 500, allowed: { max: 500, ratio: 1 } });
-    expect(near[0]!.message).toBe('maxHealth is at 100% of max and costs 3× its normal price; two medium units usually beat one maxed one.');
-    expect(near[0]!.fix).toBe("If you don't need it this high, set this.maxHealth to 300: that saves $246 (cost $216) to spend on another unit.");
+    expect(near[0]).toMatchObject({ value: 2500, allowed: { max: 2500, ratio: 1 } });
+    expect(near[0]!.message).toBe('maxHealth is at 100% of max and costs 2× its normal price; two medium units usually beat one maxed one.');
+    expect(near[0]!.fix).toBe("If you don't need it this high, set this.maxHealth to 1500: that saves $1159 (cost $1303) to spend on another unit.");
+    // Its power factor is ×1.2: below W_POWER_HIGH (×1.25).
+    expect(r.warnings.map((w) => w.code)).not.toContain('W_POWER_HIGH');
     // Basic templates stay well below 80% of every max: no tip.
     expect(expectOk(await run(template('basic_tower.js'))).warnings).toEqual([]);
   });
 
   it('a stat at 96% of max: the tip says how much more it costs', async () => {
-    const r = expectOk(await run(template('basic_soldier.js').replace('this.maxHealth = 120;', 'this.maxHealth = 480;')));
+    const r = expectOk(await run(template('basic_soldier.js').replace('this.maxHealth = 600;', 'this.maxHealth = 2400;')));
     const w = r.warnings.find((x) => x.code === 'W_STAT_NEAR_MAX');
-    expect(w?.message).toBe('maxHealth is at 96% of max and costs 2.84× its normal price; two medium units usually beat one maxed one.');
+    expect(w?.message).toBe('maxHealth is at 96% of max and costs 1.92× its normal price; two medium units usually beat one maxed one.');
     expect(r.playerHint).toContain('Two medium units usually beat one giant one!');
   });
 
@@ -136,7 +138,7 @@ describe('validator: good units', () => {
   it('accepts TypeScript syntax', async () => {
     const r = expectOk(await run(fixture('good/typescript_unit.js')));
     expect(r.unit.stats.name).toBe('Typed Trooper');
-    expect(r.unit.cost).toBe(92); // size omitted: priced at the soldier default 10
+    expect(r.unit.cost).toBe(529); // size omitted: priced at the soldier default 10
   });
 
   it('accepts a unit wrapped in markdown fences with prose around it (CRLF too)', async () => {
@@ -150,7 +152,7 @@ describe('validator: good units', () => {
       'Paste it into units/charger.js and submit it.',
     ].join('\r\n');
     const r = expectOk(await run(md));
-    expect(r.unit.cost).toBe(92);
+    expect(r.unit.cost).toBe(529);
   });
 
   it('uses the given unitId for a revision, even after a rename', async () => {
@@ -185,7 +187,7 @@ describe('validator: step 1 normalize', () => {
 
   it('a 30 KB unit (sprites take room) passes step 1', async () => {
     const r = expectOk(await run(`// ${'x'.repeat(30 * 1024)}\n${template('basic_soldier.js')}`));
-    expect(r.unit.cost).toBe(92);
+    expect(r.unit.cost).toBe(529);
   });
 
   it('EMPTY_SOURCE for blank text and for an empty fence', async () => {
@@ -266,9 +268,9 @@ describe('validator: bad fixtures (one per error code)', () => {
         code: 'STAT_OUT_OF_RANGE',
         field: 'damage',
         value: 999,
-        allowed: { min: 0, max: 60 },
-        message: 'damage is 999 but must be between 0 and 60.',
-        fix: 'In the constructor set this.damage to a number from 0 to 60, e.g. this.damage = 10.',
+        allowed: { min: 0, max: 300 },
+        message: 'damage is 999 but must be between 0 and 300.',
+        fix: 'In the constructor set this.damage to a number from 0 to 300, e.g. this.damage = 50.',
       },
     ]);
     expect(r.cost).toBeNull();
@@ -326,18 +328,19 @@ describe('validator: bad fixtures (one per error code)', () => {
     const r = expectFail(await run(fixture('bad/too_expensive.js')));
     const e = errorWith(r, 'UNIT_TOO_EXPENSIVE');
     expect(e.fix).toBe(
-      'Cost is $902 but the max is $500. The ×6 cooldown factor is the biggest cost: raising attackCooldown from 10 to 20 makes it ×3 ($451). ' +
-        'The most expensive stat is speed: 4 costs $109.44 before the factor ($48 base + $61.44 for being 80% of the max). ' +
-        'Lowering speed from 4 to 2 saves $467 ($435).',
+      'Cost is $3998 but the max is $2500. The ×6 cooldown factor is the biggest cost: raising attackCooldown from 10 to 20 makes it ×3 ($1999). ' +
+        'The most expensive stat is speed: 4 costs $432.96 before the factors ($264 base + $168.96 for being 80% of the max). ' +
+        'Lowering speed from 4 to 2 saves $1691 ($2307).',
     );
-    expect(e.breakdown).toMatchObject({ sum: 150.172, factor: 6, cost: 902 });
-    expect(r.cost).toBe(902);
+    expect(e.breakdown).toMatchObject({ factor: 6, cost: 3998 });
+    expect(e.breakdown!.sum).toBeCloseTo(661.52, 6);
+    expect(r.cost).toBe(3998);
   });
 
-  it('UNIT_TOO_EXPENSIVE: everything maxed ($6216)', async () => {
+  it('UNIT_TOO_EXPENSIVE: everything maxed ($39,956)', async () => {
     const r = expectFail(await run(fixture('bad/everything_maxed.js')));
     errorWith(r, 'UNIT_TOO_EXPENSIVE');
-    expect(r.cost).toBe(6216);
+    expect(r.cost).toBe(39956);
   });
 
   it('UPDATE_MISSING', async () => {
@@ -547,11 +550,11 @@ describe('validator: malicious fixtures', () => {
 
   it('harness tampering at load time does not break validation', async () => {
     const r = expectOk(await run(fixture('malicious/tick_hijack.js')));
-    expect(r.unit.cost).toBe(92);
+    expect(r.unit.cost).toBe(301); // 120 HP / 10 damage: a legal (old-scale) soldier
   });
 
   it('the validator honours config (bounds/caps)', async () => {
-    const tight = parseConfig({ caps: { unitCost: 91 } });
+    const tight = parseConfig({ caps: { unitCost: 521 } });
     const r = expectFail(await validate(template('basic_soldier.js'), {}, tight));
     expect(r.errors[0]?.code).toBe('UNIT_TOO_EXPENSIVE');
   });

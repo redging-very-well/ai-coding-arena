@@ -42,8 +42,8 @@ import {
 const soldier: StatsSnapshot = {
   name: 'Basic Soldier',
   type: 'soldier',
-  maxHealth: 120,
-  damage: 10,
+  maxHealth: 600,
+  damage: 50,
   range: 40,
   speed: 1.5,
   attackCooldown: 60,
@@ -196,7 +196,7 @@ describe('stat bars and cost breakdown', () => {
     const bars = statBars(soldier);
     expect(bars.map((b) => b.key)).toEqual(['hp', 'damage', 'range', 'speed', 'rate', 'size']);
     const by = Object.fromEntries(bars.map((b) => [b.key, b]));
-    expect(by.hp!.frac).toBeCloseTo(120 / 500);
+    expect(by.hp!.frac).toBeCloseTo(600 / 2500);
     expect(by.size!.display).toBe('10');
     expect(by.size!.frac).toBeCloseTo(10 / 20);
     expect(by.rate!.display).toBe('1/s');
@@ -207,10 +207,11 @@ describe('stat bars and cost breakdown', () => {
   it('lists every term, the sum, the factor and the cost', () => {
     const { breakdown } = computeCost({ ...soldier, attackCooldown: 30 }, DEFAULT_CONFIG.cost);
     const rows = breakdownRows(breakdown);
-    expect(rows.map((r) => r.label)).toEqual(['Base', 'Health', 'Damage', 'Range', 'Speed', 'Size', 'Sum', 'Fast-attack ×', 'Cost']);
-    expect(rows.find((r) => r.label === 'Sum')!.value).toBe('91.14');
+    // M8.8: the power factor (tough AND strong) is a row of its own whenever it isn't ×1.
+    expect(rows.map((r) => r.label)).toEqual(['Base', 'Health', 'Damage', 'Range', 'Speed', 'Size', 'Sum', 'Fast-attack ×', 'Tough + strong ×', 'Cost']);
+    expect(rows.find((r) => r.label === 'Sum')!.value).toBe('516.15');
     expect(rows.find((r) => r.label === 'Fast-attack ×')!.value).toBe('×2');
-    expect(rows.at(-1)!.value).toBe('$183');
+    expect(rows.at(-1)!.value).toBe('$1,058');
   });
 });
 

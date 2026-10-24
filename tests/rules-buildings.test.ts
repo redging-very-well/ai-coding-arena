@@ -37,11 +37,11 @@ describe('get_rules (M8.5)', () => {
 
   it('has the per-type bounds, the new caps and coefficients', () => {
     const bounds = rules.bounds as { byType: Record<string, Record<string, unknown>> };
-    expect(bounds.byType.wall).toEqual({ maxHealth: { min: 50, max: 1500 } });
-    expect(bounds.byType.factory).toEqual({ maxHealth: { min: 100, max: 1000 }, productionInterval: { min: 600, max: 1800 } });
+    expect(bounds.byType.wall).toEqual({ maxHealth: { min: 250, max: 7500 } });
+    expect(bounds.byType.factory).toEqual({ maxHealth: { min: 500, max: 5000 }, productionInterval: { min: 600, max: 1800 } });
     expect(rules.caps).toMatchObject({ maxUnitTypes: 4, maxBuildingTypes: 4, maxCopies: 12, maxFactoryCopies: 2, maxWallCopies: 12 });
     expect(rules.caps).not.toHaveProperty('maxTypes');
-    expect(rules.coefficients).toMatchObject({ wall: { base: 4, hp: 0.06 }, factory: { base: 10, hp: 0.12, minionDiscount: 0.5 } });
+    expect(rules.coefficients).toMatchObject({ wall: { base: 20, hp: 0.06 }, factory: { base: 50, hp: 0.12, minionDiscount: 0.5 } });
     expect(rules.costFormula).toMatch(/Walls: cost = /);
     expect(rules.costFormula).toMatch(/Factories: cost = /);
   });
@@ -54,7 +54,7 @@ describe('get_rules (M8.5)', () => {
     expect(Object.keys(t.types)).toEqual(['soldier', 'tower', 'wall', 'factory']);
     expect(Object.values(t.types).map((x) => x.group)).toEqual(['unit', 'building', 'building', 'building']);
     expect(t.factories.minionsPerBattle).toEqual({ 600: 8, 900: 5, 1200: 4, 1800: 2 });
-    expect(t.factories).toMatchObject({ minionCost: 55, minionValue: 28, minion: { maxHealth: 40 } });
+    expect(t.factories).toMatchObject({ minionCost: 296, minionValue: 148, minion: { maxHealth: 180 } });
     expect(String(t.fighters)).toContain('NO_FIGHTERS');
     expect(String(t.livingValue)).toContain('walls are worth $0');
     expect(rules.factory).toMatchObject({ maxAlivePerFactory: 4, maxMinionsPerFactory: 8 });
@@ -69,24 +69,29 @@ describe('get_rules (M8.5)', () => {
         burst: { min: number; max: number; default: number; text: string };
       };
     };
-    expect(Object.keys(t.factories.minionKinds)).toEqual(['grunt', 'archer', 'runner', 'brute']);
-    expect(t.factories.minionKinds.archer).toMatchObject({ name: 'Archer', minionCost: 69, minionValue: 35, range: 110 });
-    expect(t.factories.minionKinds.runner).toMatchObject({ minionCost: 76, minionValue: 38 });
-    expect(t.factories.minionKinds.brute).toMatchObject({ minionValue: 35, wallDamageMultiplier: 3 });
+    expect(Object.keys(t.factories.minionKinds)).toEqual(['grunt', 'archer', 'runner', 'brute', 'medic']);
+    expect(t.factories.minionKinds.archer).toMatchObject({ name: 'Archer', minionCost: 389, minionValue: 195, range: 110 });
+    expect(t.factories.minionKinds.runner).toMatchObject({ minionCost: 369, minionValue: 185 });
+    expect(t.factories.minionKinds.brute).toMatchObject({ minionValue: 213, wallDamageMultiplier: 3 });
+    // M8.8: the medic and the per-element prices (medics ignore the element).
+    expect(t.factories.minionKinds.medic).toMatchObject({ name: 'Medic', minionCost: 418, minionValue: 209, damage: 0, heal: 40, reach: 60 });
+    const byElement = (t.factories.minionKinds.brute as unknown as { byElement: Record<string, { minionValue: number }> }).byElement;
+    expect(byElement.fire!.minionValue).toBe(256);
+    expect((t.factories.minionKinds.medic as unknown as { byElement: Record<string, { minionValue: number }> }).byElement.ice!.minionValue).toBe(209);
     expect(Object.keys(t.factories.orders)).toEqual(['text', 'attack', 'defend', 'swarm', 'guard']);
     expect(t.factories.burst).toMatchObject({ min: 1, max: 4, default: 1 });
     expect(t.factories.burst.text).toMatch(/LOST if the factory is destroyed/);
     expect(t.types.factory.optional).toHaveProperty('produces');
     expect(t.types.factory.update).toContain("action: 'command'");
     const contract = buildContract(DEFAULT_CONFIG);
-    expect(contract.typescript).toContain("export type MinionKind = 'grunt' | 'archer' | 'runner' | 'brute';");
+    expect(contract.typescript).toContain("export type MinionKind = 'grunt' | 'archer' | 'runner' | 'brute' | 'medic';");
     expect(contract.notes.some((n) => n.includes("order: 'swarm'"))).toBe(true);
   });
 
   it('follows a config retune (minion price and E per interval)', () => {
     const cfg = deepMerge(DEFAULT_CONFIG, { cost: { factory: { minionDiscount: 1 } }, timers: { battleTicks: 3600 } });
     const t = unitTypeRules(cfg) as { factories: { minionValue: number; minionsPerBattle: Record<string, number> } };
-    expect(t.factories.minionValue).toBe(55);
+    expect(t.factories.minionValue).toBe(296);
     expect(t.factories.minionsPerBattle[600]).toBe(5);
   });
 });
@@ -119,15 +124,15 @@ describe('starter kit text (M8.5, §11)', () => {
 
   it('CLAUDE.md wall and factory cost examples match computeCost', () => {
     const cases: Array<[CostStats, number]> = [
-      [{ type: 'wall', maxHealth: 400, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 32],
-      [{ type: 'wall', maxHealth: 1000, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 118],
-      [{ type: 'wall', maxHealth: 1500, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 274],
-      [{ type: 'factory', maxHealth: 300, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900 }, 193],
-      [{ type: 'factory', maxHealth: 300, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 600 }, 277],
+      [{ type: 'wall', maxHealth: 2000, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 149],
+      [{ type: 'wall', maxHealth: 4000, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 329],
+      [{ type: 'wall', maxHealth: 7500, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 920],
+      [{ type: 'factory', maxHealth: 1500, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900 }, 987],
+      [{ type: 'factory', maxHealth: 1500, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 600 }, 1431],
     ];
     for (const [stats, cost] of cases) {
       expect(computeCost(stats, DEFAULT_CONFIG.cost).cost).toBe(cost);
-      expect(claudeMd).toContain(`$${cost}`);
+      expect(claudeMd).toContain(`$${cost.toLocaleString('en-US')}`);
     }
     expect(claudeMd).toContain(`wall:    cost = ${DEFAULT_CONFIG.cost.wall.base} + maxHealth × ${DEFAULT_CONFIG.cost.wall.hp} `);
     expect(claudeMd).toContain(`body       = ${DEFAULT_CONFIG.cost.factory.base} + maxHealth × ${DEFAULT_CONFIG.cost.factory.hp} `);

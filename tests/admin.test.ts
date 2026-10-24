@@ -18,13 +18,13 @@ describe('config editor diff', () => {
   });
 
   it('produces a patch the server config schema accepts', () => {
-    const text = JSON.stringify(DEFAULT_CONFIG).replace('"budget":1000', '"budget":1200');
+    const text = JSON.stringify(DEFAULT_CONFIG).replace('"budget":5000', '"budget":6000');
     const parsed = parseConfigText(text);
     expect(parsed.ok).toBe(true);
     const patch = configDiff(DEFAULT_CONFIG, parsed.ok ? parsed.value : null);
-    expect(patch).toEqual({ caps: { budget: 1200 } });
+    expect(patch).toEqual({ caps: { budget: 6000 } });
     const r = safeParseConfig(patch, DEFAULT_CONFIG);
-    expect(r.success && r.data.caps.budget).toBe(1200);
+    expect(r.success && r.data.caps.budget).toBe(6000);
   });
 
   it('reports bad JSON and non-objects', () => {

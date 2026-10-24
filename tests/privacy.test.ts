@@ -20,7 +20,16 @@ import { Client, WsRecorder, adminClient, bootServer, namedUnit, newPlayer, remo
 const T = 60_000;
 
 /** Strings that identify Alice's secret army. */
-const SECRET = ['Secret Ninja', 'secret-ninja', 'Hidden Hawk', 'hidden-hawk'];
+const SECRET = ['Secret Ninja', 'secret-ninja', 'Hidden Hawk', 'hidden-hawk', 'Storm Shield', 'storm-shield'];
+
+/**
+ * M8.8 (§10.6): a lightning splash soldier with a shield aura. Its element,
+ * splash and support are part of the design: hidden until START like every stat.
+ * (Bob's own templates are 'normal' with no support, so these JSON values are Alice's.)
+ */
+const STORM_SHIELD = namedUnit('Storm Shield', { damage: 50 })
+  .replace('this.maxHealth = 2500;', "this.maxHealth = 600; this.element = 'lightning'; this.splashRadius = 37; this.support = 'shield'; this.supportPower = 33; this.supportRange = 80;");
+const M88_SECRET = ['"lightning"', '"shield"', '"splashRadius":37', '"power":33'];
 
 function leaks(payload: string, needles: readonly string[]): string[] {
   return needles.filter((n) => payload.includes(n));
@@ -71,13 +80,21 @@ describe('privacy', () => {
     await admin.post('/admin/match', { rounds: 1, armory: true });
     expect((await alice.client.post('/units', { source: namedUnit('Secret Ninja') })).status).toBe(200);
     expect((await alice.client.post('/units', { source: namedUnit('Hidden Hawk', { damage: 30 }) })).status).toBe(200);
-    await alice.client.put('/round/selection', { unitIds: ['secret-ninja', 'hidden-hawk'] });
+    const storm = await alice.client.post('/units', { source: STORM_SHIELD });
+    expect(storm.status, JSON.stringify(storm.body)).toBe(200);
+    expect(storm.body.unit.stats).toMatchObject({ element: 'lightning', splashRadius: 37, support: { kind: 'shield', power: 33, range: 80 } });
+    await alice.client.put('/round/selection', { unitIds: ['secret-ninja', 'hidden-hawk', 'storm-shield'] });
     await admin.post('/admin/phase/next'); // → PLACEMENT (zones assigned)
     const aliceState = (await alice.client.get('/state')).body as GameStateDTO;
     const aliceZone = aliceState.me!.myZone!;
     expect(aliceZone).toBeTruthy();
     // Alice places only the Secret Ninja (Hidden Hawk stays unfielded).
-    await alice.client.put('/round/placement', { placements: [{ unitId: 'secret-ninja', col: 2, row: 3 }] });
+    await alice.client.put('/round/placement', {
+      placements: [
+        { unitId: 'secret-ninja', col: 2, row: 3 },
+        { unitId: 'storm-shield', col: 3, row: 3 },
+      ],
+    });
     await alice.client.post('/round/ready', { ready: true });
     await sleep(100);
 
@@ -90,6 +107,7 @@ describe('privacy', () => {
     for (const s of [bobState, anonState]) {
       const text = JSON.stringify(withoutMe(s));
       expect(leaks(text, SECRET)).toEqual([]);
+      expect(leaks(JSON.stringify(s), M88_SECRET)).toEqual([]);
       for (const key of ['"selection"', '"placement"', '"zone"', '"myZone"', '"roster"', '"maxHealth"']) {
         expect(text).not.toContain(key);
       }
@@ -99,12 +117,14 @@ describe('privacy', () => {
     // Bob can't read Alice's units, even by id.
     expect((await bob.client.get('/units/secret-ninja')).status).toBe(404);
     expect(leaks(JSON.stringify((await bob.client.get('/units')).body), SECRET)).toEqual([]);
+    expect(leaks(JSON.stringify((await bob.client.get('/units')).body), M88_SECRET)).toEqual([]);
     // The replay endpoint has nothing for the running round.
     expect((await bob.client.get('/battles/1/replay')).status).toBe(404);
 
     // WS: every message so far to Bob and the projector.
     for (const ws of [wsBob, wsScreen]) {
       expect(leaks(ws.raw.join('\n'), SECRET)).toEqual([]);
+      expect(leaks(ws.raw.join('\n'), M88_SECRET)).toEqual([]);
       expect(ws.messages.some((m) => m.type === 'battle:reveal')).toBe(false);
       for (const m of ws.messages) {
         if (m.type === 'private') expect(m.data.player.id).toBe(bob.id);
@@ -127,10 +147,13 @@ describe('privacy', () => {
     expect(s.phase).toBe('BATTLE');
     const r = ((await reveal) as { data: BattleRevealDTO }).data;
     const a = r.players.find((p) => p.playerId === alice.id)!;
-    expect(a.units.map((u) => u.unitId)).toEqual(['secret-ninja']);
-    expect(a.units[0]).toHaveProperty('sprite');
-    expect(a.units[0]).toMatchObject({ spriteHidden: false, stats: { name: 'Secret Ninja' } });
-    expect(a.instances).toHaveLength(1);
+    expect(a.units.map((u) => u.unitId).sort()).toEqual(['secret-ninja', 'storm-shield']);
+    // M8.8: from START the reveal carries the fielded design's element, splash and support.
+    expect(a.units.find((u) => u.unitId === 'storm-shield')!.stats).toMatchObject({ element: 'lightning', splashRadius: 37, support: { kind: 'shield', power: 33, range: 80 } });
+    const ninja = a.units.find((u) => u.unitId === 'secret-ninja')!;
+    expect(ninja).toHaveProperty('sprite');
+    expect(ninja).toMatchObject({ spriteHidden: false, stats: { name: 'Secret Ninja' } });
+    expect(a.instances).toHaveLength(2);
     // Bob (auto-placed templates) is revealed too.
     expect(r.players.find((p) => p.playerId === bob.id)!.instances.length).toBeGreaterThan(0);
     // The unfielded design never leaks, not even after the reveal.
@@ -198,10 +221,10 @@ describe('privacy', () => {
     // Bob only ever gets his own report.
     const bobReport = (await bob.client.get('/battles/1/report')).body;
     expect(leaks(JSON.stringify(bobReport), SECRET)).toEqual([]);
-    // Open Armory after the release: the fielded Secret Ninja is borrowable by
+    // Open Armory after the release: the fielded Secret Ninja and Storm Shield are borrowable by
     // Bob (named after Alice); the unfielded Hidden Hawk and all code stay private.
     const bobArmory = srv.game.visibility.privateState(bob.id)!.armory;
-    expect(bobArmory.map((u) => u.name)).toEqual(['Secret Ninja (Alice)']);
+    expect(bobArmory.map((u) => u.name).sort()).toEqual(['Secret Ninja (Alice)', 'Storm Shield (Alice)']);
     const armoryText = JSON.stringify(bobArmory) + JSON.stringify((await bob.client.get('/state')).body);
     expect(leaks(armoryText, ['Hidden Hawk', 'hidden-hawk'])).toEqual([]);
     expect(armoryText).not.toContain('"source"');

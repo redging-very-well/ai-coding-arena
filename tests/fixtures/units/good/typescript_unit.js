@@ -21,8 +21,8 @@ export default class TypedTrooper {
   constructor() {
     this.name = 'Typed Trooper';
     this.type = 'soldier';
-    this.maxHealth = 120;
-    this.damage = 10;
+    this.maxHealth = 600;
+    this.damage = 50;
     this.range = 40;
     this.speed = 1.5;
     this.attackCooldown = 60;

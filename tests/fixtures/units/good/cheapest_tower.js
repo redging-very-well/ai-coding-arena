@@ -3,7 +3,7 @@ export default class Unit {
   constructor() {
     this.name = 'Pebble';
     this.type = 'tower';
-    this.maxHealth = 10;
+    this.maxHealth = 50;
     this.damage = 0;
     this.range = 20;
     this.speed = 0;

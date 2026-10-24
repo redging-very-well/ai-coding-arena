@@ -39,7 +39,7 @@ function maxAlive(frames: FrameDTO[], factoryId: string): number {
 }
 
 /** A far-away enemy that stays alive (no sudden death) so the battle runs to the end. */
-const farEnemy = (): FakePlayerSpec => ({ playerId: 'b', seat: 1, zone: 'BR', units: [design('t', stats({ type: 'tower', damage: 0 }))], placements: [at(5, 5, 't')], brains: { t: idleBrain } });
+const farEnemy = (): FakePlayerSpec => ({ playerId: 'b', seat: 1, zone: 'BR', units: [design('t', stats({ type: 'tower', damage: 5 }))], placements: [at(5, 5, 't')], brains: { t: idleBrain } });
 const rallyHome = scripted((self) => ({ action: 'rally', destination: { x: self.x - 60, y: self.y - 60 } }));
 
 describe('factory production (§5.2, §9.3 step 9b)', () => {
@@ -54,7 +54,7 @@ describe('factory production (§5.2, §9.3 step 9b)', () => {
     expect(s.map((x) => x.t)).toEqual([600, 1200, 1800, 2400, 3000, 3600, 4200, 4800]);
     expect(s.map((x) => x.e.instanceId)).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => `0-2-2-m${n}`));
     const f = result.units.find((u) => u.instanceId === '0-2-2')!;
-    expect(f.factory).toMatchObject({ minionsLeft: 0, minionsMade: 8, bodyCost: 53, minionValue: 28 });
+    expect(f.factory).toMatchObject({ minionsLeft: 0, minionsMade: 8, bodyCost: 247, minionValue: 148 });
     // Minions are reported under the factory's design.
     expect(result.units.filter((u) => u.type === 'minion').every((u) => u.unitId === 'f' && u.factoryId === '0-2-2')).toBe(true);
     // fac in the frames: progress, minionsLeft, ..., canMake.
@@ -112,7 +112,7 @@ describe('factory production (§5.2, §9.3 step 9b)', () => {
     // One minion at a time. The enemy tower holds fire until tick 1300, so the
     // first minion outlives the 600-tick interval: the factory is full with a full timer.
     const config = cfg({ ...noSD, factory: { maxAlivePerFactory: 1 } }, 3000);
-    const killer = stats({ type: 'tower', range: 300, damage: 60, attackCooldown: 10 });
+    const killer = stats({ type: 'tower', range: 300, damage: 300, attackCooldown: 10 });
     const shoot = scripted((self, enemies, _a, world) => {
       const m = enemies.find((e) => e.type === 'minion');
       if (!m || self.cooldownRemaining > 0 || world.tick < 1300) return { action: 'idle' };
@@ -184,7 +184,7 @@ describe('factory production (§5.2, §9.3 step 9b)', () => {
 
   it("destroying the factory stops production; its minions keep the last rally point", async () => {
     const config = cfg(noSD, 2400);
-    const strong = stats({ type: 'soldier', maxHealth: 500, damage: 60, attackCooldown: 10, speed: 4 });
+    const strong = stats({ type: 'soldier', maxHealth: 2500, damage: 300, attackCooldown: 10, speed: 4 });
     const hunter = scripted((self, enemies, _a, world) => {
       if (world.tick < 650) return { action: 'idle' };
       const f = enemies.find((e) => e.type === 'factory');
@@ -210,7 +210,7 @@ describe('factory production (§5.2, §9.3 step 9b)', () => {
     // (E = floor(2399 / 600) = 3 in this 2400-tick battle, 1 made).
     const hunterReport = result.units.find((u) => u.instanceId === '1-0-0')!;
     expect(hunterReport.kills).toBe(1);
-    expect(hunterReport.valueDestroyed).toBe(53 + 2 * 28);
+    expect(hunterReport.valueDestroyed).toBe(247 + 2 * 148);
     // Player a still has its minion (a fighter): not eliminated.
     const m1 = result.units.find((u) => u.instanceId === '0-0-0-m1')!;
     if (m1.survived) expect(result.players.find((p) => p.playerId === 'a')!.eliminatedAtTick).toBeNull();
@@ -244,7 +244,7 @@ describe('minion AI (§5.2)', () => {
     ...over,
   });
   const factory = mk({ id: '0-0-0', type: 'factory', x: 100, y: 100, radius: 18 });
-  factory.factory = { productionInterval: 600, timer: 0, minionsLeft: 3, canMake: 3, noSpot: false, made: 1, released: 1, kind: 'grunt', burst: 1, stored: 0, releaseRequested: false, order: 'attack', orderTargetId: null, storedLost: 0, rally: { x: 400, y: 400 }, holding: false, bodyCost: 53, minionValue: 28, spawnedSinceFrame: false, minionsLost: 0 };
+  factory.factory = { productionInterval: 600, timer: 0, minionsLeft: 3, canMake: 3, noSpot: false, made: 1, released: 1, kind: 'grunt', burst: 1, stored: 0, releaseRequested: false, order: 'attack', orderTargetId: null, storedLost: 0, rally: { x: 400, y: 400 }, holding: false, bodyCost: 247, minionValue: 147, spawnedSinceFrame: false, minionsLost: 0 };
   const minion = (over: Partial<SimUnit> = {}) =>
     mk({ id: '0-0-0-m1', type: 'minion', stats: minionStats(cfgF, '#C0A060'), radius: 8, x: 300, y: 300, minion: { factory, n: 1 }, ...over });
   const world = (living: SimUnit[], safeRadius = 570) => {
@@ -336,7 +336,7 @@ describe('minions in the sim: walls and buildings in the way (§5.2)', () => {
         { playerId: 'a', seat: 0, zone: 'TL', units: [design('f', FACTORY(600), undefined, config)], placements: [at(0, 0, 'f')], brains: { f: rallyOnTower } },
         {
           playerId: 'b', seat: 1, zone: 'BR',
-          units: [design('w', stats({ type: 'wall', maxHealth: 50 })), design('t', stats({ type: 'tower', damage: 0 }))],
+          units: [design('w', stats({ type: 'wall', maxHealth: 250 })), design('t', stats({ type: 'tower', damage: 5 }))],
           placements: [...ring, at(2, 2, 't')], brains: { t: idleBrain },
         },
       ],
@@ -367,11 +367,11 @@ describe('minions in the sim: walls and buildings in the way (§5.2)', () => {
 describe('credit, values and elimination with factories (§9.3)', () => {
   it("minion kills credit the factory's owner and its design (damage, KOs, value)", async () => {
     const config = cfg(noSD, 2000);
-    const weak = stats({ type: 'soldier', maxHealth: 10, damage: 0 });
+    const weak = stats({ type: 'soldier', maxHealth: 50, damage: 5 });
     const { done } = run(
       [
         { playerId: 'a', seat: 0, zone: 'TL', units: [design('f', FACTORY(600), undefined, config)], placements: [at(0, 0, 'f')], brains: { f: scripted(() => ({ action: 'rally', destination: { x: 560, y: 560 } })) } },
-        { playerId: 'b', seat: 1, zone: 'BR', units: [design('s', weak), design('t', stats({ type: 'tower', damage: 0 }))], placements: [at(0, 0, 's'), at(5, 5, 't')], brains: { s: idleBrain, t: idleBrain } },
+        { playerId: 'b', seat: 1, zone: 'BR', units: [design('s', weak), design('t', stats({ type: 'tower', damage: 5 }))], placements: [at(0, 0, 's'), at(5, 5, 't')], brains: { s: idleBrain, t: idleBrain } },
       ],
       config,
     );
@@ -388,7 +388,7 @@ describe('credit, values and elimination with factories (§9.3)', () => {
   it('a side with only a spent factory is eliminated; with minions left to make it is not', async () => {
     // a: a factory that can make exactly 1 minion in a 1300-tick battle (interval 1200 → E = 1).
     const config = cfg(noSD, 1300);
-    const strong = stats({ type: 'soldier', maxHealth: 500, damage: 60, attackCooldown: 10, speed: 4 });
+    const strong = stats({ type: 'soldier', maxHealth: 2500, damage: 300, attackCooldown: 10, speed: 4 });
     const minionHunter = scripted((self, enemies) => {
       const m = enemies.find((e) => e.type === 'minion');
       if (!m) return { action: 'idle' };
@@ -416,7 +416,7 @@ describe('credit, values and elimination with factories (§9.3)', () => {
     expect(result.units.find((u) => u.instanceId === '0-0-0')!.survived).toBe(false);
   });
 
-  it('timeout living value: factory body + $28 per unbuilt minion, minion $28, wall $0 (also from a frame)', async () => {
+  it('timeout living value: factory body + $148 per unbuilt minion, minion $148, wall $0 (also from a frame)', async () => {
     const config = cfg(noSD, 1300);
     const { engine, done } = run(
       [
@@ -428,12 +428,12 @@ describe('credit, values and elimination with factories (§9.3)', () => {
     const result = await done;
     // E = floor(1299 / 600) = 2 (priced for this battle length); both made by the end.
     const a = result.players.find((p) => p.playerId === 'a')!;
-    expect(a.livingCost).toBe(53 + 0 * 28 + 2 * 28);
+    expect(a.livingCost).toBe(247 + 0 * 148 + 2 * 148);
     // From the frame at t = 700: 1 minion made, 1 left.
     const frame = engine.frames.find((f) => f.t === 700)!;
     const placing = rankFromFrame(frame, result).find((p) => p.playerId === 'a')!;
-    expect(placing.livingCost).toBe(53 + 1 * 28 + 1 * 28);
-    expect(engine.metricsAt(700).find((m) => m.playerId === 'a')!.livingValue).toBe(53 + 2 * 28);
+    expect(placing.livingCost).toBe(247 + 1 * 148 + 1 * 148);
+    expect(engine.metricsAt(700).find((m) => m.playerId === 'a')!.livingValue).toBe(247 + 2 * 148);
   });
 });
 
@@ -461,8 +461,8 @@ describe('factories that never build (§9.3 canMake)', () => {
     const result = await done;
     expect(spawns(engine.frames)).toEqual([]);
     // Full value at the start, then it shrinks as the time to build runs out.
-    expect(engine.metricsAt(0).find((m) => m.playerId === 'a')!.livingValue).toBe(53 + 8 * 28);
-    expect(engine.metricsAt(4000).find((m) => m.playerId === 'a')!.livingValue).toBe(53 + 2 * 28);
+    expect(engine.metricsAt(0).find((m) => m.playerId === 'a')!.livingValue).toBe(247 + 8 * 148);
+    expect(engine.metricsAt(4000).find((m) => m.playerId === 'a')!.livingValue).toBe(247 + 2 * 148);
     const a = result.players.find((p) => p.playerId === 'a')!;
     expect(a.eliminatedAtTick).toBe(4800);
     expect(result.endReason).toBe('elimination');
@@ -491,8 +491,8 @@ describe('factories that never build (§9.3 canMake)', () => {
     const result = await done;
     const f = result.units.find((u) => u.instanceId === '0-2-2')!;
     expect(f.factory).toMatchObject({ minionsLeft: 2, canMake: 0 });
-    expect(f.livingValue).toBe(53);
-    expect(result.players.find((p) => p.playerId === 'a')!.livingCost).toBe(53 + 28);
+    expect(f.livingValue).toBe(247);
+    expect(result.players.find((p) => p.playerId === 'a')!.livingCost).toBe(247 + 148);
   });
 });
 

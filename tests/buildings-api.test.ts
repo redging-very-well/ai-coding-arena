@@ -140,7 +140,7 @@ describe('NO_FIGHTERS (§5.2 Fighters)', () => {
     const r = await ready(a.client, true);
     expect(r.status).toBe(409);
     expect(r.body.error.code).toBe('NO_FIGHTERS');
-    expect(r.body.error.message).toContain("Walls can't win on their own");
+    expect(r.body.error.message).toContain("can't win on their own. Pick a unit that attacks.");
     await pick(a.client, ['basic-wall', 'basic-factory']);
     expect((await ready(a.client, true)).body).toEqual({ ready: true });
   }, T);
@@ -168,7 +168,7 @@ describe('NO_FIGHTERS (§5.2 Fighters)', () => {
     const soldiers = placed.filter((p) => p.unitId === 'basic-soldier');
     expect(soldiers.length).toBeGreaterThan(0);
     for (const p of soldiers) expect(walls.some((w) => w.col === p.col && w.row === p.row)).toBe(false);
-    expect(s.game.round.spent(a.id)).toBeLessThanOrEqual(1000);
+    expect(s.game.round.spent(a.id)).toBeLessThanOrEqual(5000);
   }, T);
 
   it('the selection fallback adds a starter fighter to a walls-only pick', async () => {
@@ -215,7 +215,7 @@ describe('placement: copy caps per group and W_TRAPPED (§5.2 Copies, §9.3)', (
     expect(fine.status).toBe(200);
     const body = fine.body as PlacementResponse;
     expect(body.counts).toEqual({ fighters: 6, factories: 0, walls: 12 });
-    expect(body.spent).toBe(12 * 32 + 6 * 92);
+    expect(body.spent).toBe(12 * 149 + 6 * 529);
     expect(body.warnings).toEqual([]);
 
     // A soldier boxed in by four walls: placed, with a W_TRAPPED warning.
@@ -268,12 +268,12 @@ describe('privacy with walls and factories (§3)', () => {
       const reveal = wsScreen.next((m) => m.type === 'battle:reveal');
       expect((await admin.post('/admin/start', { force: true })).body.phase).toBe('BATTLE');
       const r = ((await reveal) as { data: BattleRevealDTO }).data;
-      expect(r.minion).toMatchObject({ value: 28, stats: { type: 'minion', maxHealth: 40 } });
+      expect(r.minion).toMatchObject({ value: 148, stats: { type: 'minion', maxHealth: 180 } });
       const a = r.players.find((p) => p.playerId === alice.id)!;
       expect(a.units.map((u) => u.stats.type).sort()).toEqual(['factory', 'soldier', 'wall']);
       expect(a.units.find((u) => u.unitId === facId)!.stats.productionInterval).toBe(900);
       // The factory's body price under the live config (the /screen bars count body + minions it can still make).
-      expect(a.units.find((u) => u.unitId === facId)!.bodyCost).toBe(53);
+      expect(a.units.find((u) => u.unitId === facId)!.bodyCost).toBe(247);
       expect(a.units.find((u) => u.unitId === 'basic-soldier')!.bodyCost).toBeUndefined();
     } finally {
       wsBob.close();
@@ -317,9 +317,9 @@ describe('minion kinds stay hidden until START (M8.6)', () => {
       const r = ((await reveal) as { data: BattleRevealDTO }).data;
       const fac = r.players.find((p) => p.playerId === alice.id)!.units.find((u) => u.unitId === facId)!;
       expect(fac.stats).toMatchObject({ produces: 'archer', burst: 3 });
-      expect(fac.bodyCost).toBe(53);
+      expect(fac.bodyCost).toBe(247);
       expect(Object.keys(r.minions!)).toEqual(['archer']);
-      expect(r.minions!.archer).toMatchObject({ value: 35, stats: { name: 'Archer', range: 110 } });
+      expect(r.minions!.archer).toMatchObject({ value: 195, stats: { name: 'Archer', range: 110 } });
     } finally {
       wsBob.close();
       wsScreen.close();
