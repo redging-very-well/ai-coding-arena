@@ -1,27 +1,29 @@
 # Pixel Clash Claude box (`sessions/`)
 
-One Docker container per seat (plan §11.1). Each container runs **ttyd**, which runs **Claude Code** straight inside that seat's kit folder `/kit`. The terminal opens straight into Claude, and if Claude exits it starts again.
+One Docker container per seat (plan §11.1). Each container runs **ttyd**, which runs the seat's coding agent straight inside that seat's kit folder `/kit`: **Claude Code** by default, or the **OpenAI Codex CLI** on seats set to `AGENT=codex` (plan §11.3, section 2b). The terminal opens straight into the agent, and if it exits it starts again. Both agents get the same kit instructions (CLAUDE.md for Claude, the same text as AGENTS.md for Codex) and the same game tools over MCP.
 
-**Players never open the Claude box directly.** The game server reverse-proxies each seat at `http://<game-server>:8080/terminal/N/` (plan §11.2) and shows it inside `/play`, next to the game (or as a "Claude" tab on small screens). A player can only reach the Claude seat assigned to them (picked once on /play, or set by the seat card's `/play?seat=N` QR), and an "Open in new tab" button opens the same terminal as its own browser tab. The proxy adds the seat password itself, so **players never see or type it**. Each ttyd runs with the base path `-b /terminal/N` so the same paths work behind the proxy and directly.
+**Players never open the Claude box directly.** The game server reverse-proxies each seat at `http://<game-server>:8080/terminal/N/` (plan §11.2) and shows it inside `/play`, next to the game (or as an "AI helper" tab on small screens). A player can only reach the AI seat assigned to them (picked once on /play, or set by the seat card's `/play?seat=N` QR), and an "Open in new tab" button opens the same terminal as its own browser tab. The proxy adds the seat password itself, so **players never see or type it**. Each ttyd runs with the base path `-b /terminal/N` so the same paths work behind the proxy and directly.
 
 **The container is the security boundary, not the ttyd loop.** Claude Code's `!` prefix runs any typed command in the container as user `player`, and a player can accept any approval prompt Claude raises. So treat each seat as "a player with a shell inside this container": they can reach `/kit`, the seat's own Claude state, and whatever the network allows, but not other seats, the host or the game server's files. In particular, **each seat can read its own Claude login** (`/home/player/.claude/.credentials.json`): use a dedicated event account and sign it out of all sessions after the event (§5). The image ships a root-owned `/etc/claude-code/managed-settings.json` that player-writable settings can't override: it turns off `bypassPermissions` mode and denies Claude reading the credentials file (the `!` prefix still can).
 
 | Seat | Host port | Direct URL (adults' fallback, user `player` / `SEAT_SECRET`) | Volumes |
 |---|---|---|---|
-| 1 | 7781 | `http://<claude-box>:7781/terminal/1/` | `kit1`, `claude1` |
-| 2 | 7782 | `http://<claude-box>:7782/terminal/2/` | `kit2`, `claude2` |
-| 3 | 7783 | `http://<claude-box>:7783/terminal/3/` | `kit3`, `claude3` |
-| 4 | 7784 | `http://<claude-box>:7784/terminal/4/` | `kit4`, `claude4` |
-| 5 | 7785 | `http://<claude-box>:7785/terminal/5/` | `kit5`, `claude5` |
-| 6 | 7786 | `http://<claude-box>:7786/terminal/6/` | `kit6`, `claude6` |
-| 7 | 7787 | `http://<claude-box>:7787/terminal/7/` | `kit7`, `claude7` |
-| 8 | 7788 | `http://<claude-box>:7788/terminal/8/` | `kit8`, `claude8` |
+| 1 | 7781 | `http://<claude-box>:7781/terminal/1/` | `kit1`, `claude1`, `codex1` |
+| 2 | 7782 | `http://<claude-box>:7782/terminal/2/` | `kit2`, `claude2`, `codex2` |
+| 3 | 7783 | `http://<claude-box>:7783/terminal/3/` | `kit3`, `claude3`, `codex3` |
+| 4 | 7784 | `http://<claude-box>:7784/terminal/4/` | `kit4`, `claude4`, `codex4` |
+| 5 | 7785 | `http://<claude-box>:7785/terminal/5/` | `kit5`, `claude5`, `codex5` |
+| 6 | 7786 | `http://<claude-box>:7786/terminal/6/` | `kit6`, `claude6`, `codex6` |
+| 7 | 7787 | `http://<claude-box>:7787/terminal/7/` | `kit7`, `claude7`, `codex7` |
+| 8 | 7788 | `http://<claude-box>:7788/terminal/8/` | `kit8`, `claude8`, `codex8` |
 
 - `kitN` → `/kit`: the rendered starter kit (CLAUDE.md, `.mcp.json`, `.claude/settings.json`, `units/`) plus `.pixel-clash/player.json` (the player's apiKey, written by Claude after login).
 - `claudeN` → `/home/player/.claude`: all Claude Code state (`CLAUDE_CONFIG_DIR`): the login, folder trust, `.claude.json` and chat history.
+- `codexN` → `/home/player/.codex`: all Codex state (`CODEX_HOME`): the login (`auth.json`) and chat history. Only used on Codex seats.
+- On a Codex seat `/kit` has AGENTS.md and `.codex/config.toml` instead of CLAUDE.md, `.mcp.json` and `.claude/`.
 - No host folders, no Docker socket, `cap_drop: ALL`, `no-new-privileges`, at most 1.5 GB RAM and 1 CPU per seat, runs as user `player`.
 
-Pinned versions (change the `ARG`s in `Dockerfile`): `node:22.23.3-slim`, Claude Code `2.1.290`, ttyd `1.7.7` (SHA-256 checked, amd64 and arm64).
+Pinned versions (change the `ARG`s in `Dockerfile`): `node:22.23.3-slim`, Claude Code `2.1.290`, OpenAI Codex CLI `0.162.1`, ttyd `1.7.7` (SHA-256 checked, amd64 and arm64). Both agents are installed in the one image; `AGENT` picks which one a seat runs.
 
 Inside every container ttyd listens on 7781; compose publishes seat N on host port 778N.
 
@@ -46,7 +48,7 @@ Allow inbound TCP 7781-7788 on the Claude box firewall (at least from the game s
 
 ### Give the game server the seat password
 
-On the game server, open **/admin → Claude seats** (turn on **Show details** first; keep it off while /admin is on the projector):
+On the game server, open **/admin → AI seats** (turn on **Show details** first; keep it off while /admin is on the projector):
 
 1. **Claude box address**: the Claude box's LAN IP or name, e.g. `192.168.8.20` (no port: the proxy uses 778N per seat).
 2. **Seat password**: exactly the `SEAT_SECRET` from `sessions/.env`. It is saved in the game server's `data/state.json` (it survives a game wipe) and is shown only with "Show details" on.
@@ -95,15 +97,47 @@ The login and trust are saved in the `claudeN` volume, so the running seat conta
 docker compose restart          # every seat that is running; or name them: docker compose restart seat1 seat2
 ```
 
+## 2b. Codex seats (optional)
+
+Any seat can run the OpenAI Codex CLI instead of Claude Code. In `.env`:
+
+```sh
+AGENT=codex            # every seat on Codex, or keep AGENT=claude and pick seats:
+SEAT_AGENT_7=codex     # seat 7 only
+```
+
+then `docker compose up -d`. The seat re-renders `/kit` for Codex (AGENTS.md + `.codex/config.toml`; the Claude files are removed) and its ttyd title becomes "Pixel Clash · Codex · seat N". /play, the seat proxy and /admin work the same.
+
+**Log in each Codex seat** (once; it is kept in `codexN`). Pick one:
+
+- **ChatGPT account** (Plus/Pro/Business/Edu/Enterprise), with the device code flow (the browser callback can't reach a container):
+  ```sh
+  docker compose run --rm seatN codex login --device-auth
+  ```
+  Open the printed link on any device, sign in, enter the code. (If your workspace has device code login turned off, enable it in ChatGPT's security settings, or use an API key.)
+- **API key**, per seat:
+  ```sh
+  printf '%s' 'sk-proj-…' | docker compose run --rm -T seatN codex login --with-api-key
+  ```
+  or once for all Codex seats: put `OPENAI_API_KEY=sk-proj-…` in `.env` and `docker compose up -d`. A Codex seat that isn't logged in yet logs itself in with that key when it starts; the entrypoint then removes the variable, so Codex never sees it in its environment.
+
+Check with `docker compose run --rm seatN codex login status` (or `check`). Then test like a Claude seat (section 3): ask **"Are you connected to Pixel Clash?"**. Codex should call `get_game_state` with no question.
+
+**No trust step and no approval prompts.** The image trusts `/kit` in the root-owned `/etc/codex/config.toml`, so Codex loads the kit's `.codex/config.toml` without a trust question. That file connects the `pixel-clash` MCP server by URL (Codex speaks streamable HTTP; no bridge), pre-approves its tools (`default_tools_approval_mode = "approve"`) and reads the whole AGENTS.md (`project_doc_max_bytes`). The seat starts `codex --sandbox $CODEX_SANDBOX --ask-for-approval $CODEX_APPROVAL`, by default `danger-full-access` and `never`: players never see an approval question for the game tools, edits in `/kit` or anything else.
+
+**Why no Codex sandbox on the seats.** Codex's own sandbox on Linux needs unprivileged user namespaces (bubblewrap), which these containers don't have (`cap_drop: ALL`, `no-new-privileges`, Docker's default seccomp). In `workspace-write` mode every file edit and command then fails and Codex asks to retry without the sandbox, which would put approval prompts in front of players. So, as for Claude Code, **the container is the boundary**. `check` says whether the Codex sandbox works in your containers; only then try `CODEX_SANDBOX=workspace-write` with `CODEX_APPROVAL=on-request`.
+
+**Credentials on Codex seats.** Codex has no equivalent of Claude Code's managed "deny reading the credentials" rule: on a Codex seat the agent itself can read `~/.codex/auth.json` if a player asks it to. Use a **dedicated** login: an OpenAI API project key with a spending limit (revoke it after the event), or a ChatGPT account used only for the event (sign it out of all sessions afterwards).
+
 ## 3. Check
 
 ```sh
 docker compose run --rm seatN check
 ```
 
-prints the Claude Code and ttyd versions, the game server URL, whether the kit is rendered, whether a player is saved, whether Claude looks logged in and trusted, and whether the container can reach the game server (`/api/health`) and Anthropic.
+prints the seat's agent, the Claude Code, Codex and ttyd versions, the game server URL, whether the kit is rendered, whether a player is saved, whether the agent looks logged in and trusted (Codex: also whether its sandbox works here), and whether the container can reach the game server (`/api/health`) and Anthropic (or OpenAI on a Codex seat).
 
-Then, from a player laptop: scan seat card N (or open `http://<game-server>:8080/play?seat=N`), join with a test name and PIN, and in the Claude pane ask "Are you connected to Pixel Clash?". There must be **no approval prompts** and **no password box**. Press **Open in new tab**: the terminal opens as its own tab (titled "Pixel Clash · Claude · seat N") and the pane in /play says it is open in another tab; **Use it here instead** brings it back. Without the game server, an adult can open the direct URL `http://<claude-box>:778N/terminal/N/` (user `player`, password `SEAT_SECRET`).
+Then, from a player laptop: scan seat card N (or open `http://<game-server>:8080/play?seat=N`), join with a test name and PIN, and in the AI helper pane ask "Are you connected to Pixel Clash?". There must be **no approval prompts** and **no password box**. Press **Open in new tab**: the terminal opens as its own tab (titled "Pixel Clash · Claude · seat N", or "· Codex ·" on a Codex seat) and the pane in /play says it is open in another tab; **Use it here instead** brings it back. Without the game server, an adult can open the direct URL `http://<claude-box>:778N/terminal/N/` (user `player`, password `SEAT_SECRET`).
 
 Isolation check (dress rehearsal), so facilitators know what a player can reach from a seat:
 
@@ -112,15 +146,15 @@ Isolation check (dress rehearsal), so facilitators know what a player can reach 
 
 ## 4. During the event
 
-- **A seat's terminal is stuck:** `docker compose restart seatN`. This keeps the Claude login, the kit and the player's key; the conversation reopens (see `CLAUDE_CONTINUE`) and the pane in /play reconnects by itself. Or move the player to a spare seat in /admin → Claude seats. An admin can open any seat's terminal from /admin (it opens in a new tab and takes over that seat until the player presses "Use it here instead").
+- **A seat's terminal is stuck:** `docker compose restart seatN`. This keeps the Claude login, the kit and the player's key; the conversation reopens (see `CLAUDE_CONTINUE`) and the pane in /play reconnects by itself. Or move the player to a spare seat in /admin → AI seats. An admin can open any seat's terminal from /admin (it opens in a new tab and takes over that seat until the player presses "Use it here instead").
 - **New player on the same seat:**
   ```sh
   docker compose run --rm seatN new-player
   docker compose restart seatN
   ```
-  `new-player` empties `/kit` completely (the old player's key in `.pixel-clash/`, their unit files, any other files Claude created, and `.claude/settings.local.json` with any "don't ask again" approvals), deletes this seat's chat history, file-history backups and todos, and re-renders the kit from the templates. The old player's designs stay on the game server. The Claude login and folder trust are kept. (Minimal version from the plan: `docker compose run --rm seatN rm -f /kit/.pixel-clash/player.json`.)
+  `new-player` empties `/kit` completely (the old player's key in `.pixel-clash/`, their unit files, any other files Claude created, and `.claude/settings.local.json` with any "don't ask again" approvals), deletes this seat's chat history, file-history backups and todos, and re-renders the kit from the templates. The old player's designs stay on the game server. The Claude login and folder trust are kept. On a Codex seat it also clears Codex's chats and state in `codexN`, keeping only the login (`auth.json`) and `config.toml`. (Minimal version from the plan: `docker compose run --rm seatN rm -f /kit/.pixel-clash/player.json`.)
 - **Game server IP changed:** edit `PIXEL_CLASH_URL` in `.env`, then `docker compose up -d` (the seats restart and re-render `.mcp.json` and CLAUDE.md).
-- **Reloading /play or opening the terminal in a new tab** starts a new `claude` process; with `CLAUDE_CONTINUE=1` (default) it reopens the seat's last conversation, so it costs a 2-3 s restart, not the chat. Through the game server only one terminal per seat is live: the newest tab wins and the older one shows "opened in another tab" until the player switches back. Direct `778N` tabs bypass that rule, so adults should close a direct tab when done.
+- **Reloading /play or opening the terminal in a new tab** starts a new `claude` (or `codex`) process; with `CLAUDE_CONTINUE=1` (default) it reopens the seat's last conversation (`codex resume --last` on a Codex seat), so it costs a 2-3 s restart, not the chat. Through the game server only one terminal per seat is live: the newest tab wins and the older one shows "opened in another tab" until the player switches back. Direct `778N` tabs bypass that rule, so adults should close a direct tab when done.
 
 ## 5. Wipe after the event
 
@@ -128,16 +162,21 @@ Isolation check (dress rehearsal), so facilitators know what a player can reach 
 docker compose down -v
 ```
 
-Removes all 16 volumes (`kit1`..`kit8`, `claude1`..`claude8`): kit folders, apiKeys, chat history and the Claude logins. Player laptops hold nothing. Deleting the volumes does **not** revoke the event account's login token on Anthropic's side (any seat could have read it): sign the event account out of all sessions (or change its password) after the event. Also run `npm run wipe` (or admin Wipe) on the game server. Optionally `docker image rm pixel-clash-seat:local`.
+Removes all 24 volumes (`kit1`..`kit8`, `claude1`..`claude8`, `codex1`..`codex8`): kit folders, apiKeys, chat history and the Claude and Codex logins. Player laptops hold nothing. Deleting the volumes does **not** revoke the event account's login token on Anthropic's side (any seat could have read it): sign the event account out of all sessions (or change its password) after the event. The same goes for Codex: revoke the OpenAI API key, or sign the ChatGPT account out of all sessions. Also run `npm run wipe` (or admin Wipe) on the game server. Optionally `docker image rm pixel-clash-seat:local`.
 
 ## 6. Options (`.env`)
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `PIXEL_CLASH_URL` | (required) | Game server base URL, `http://<ip>:<port>` |
-| `SEAT_SECRET` | (required) | One seat password for all seats (basic auth, user `player`): 12-64 characters of `A-Z a-z 0-9 . _ ~ -`. Enter the same value in /admin → Claude seats. Replaces `TTYD_PASS_1..8` (ignored now). |
+| `SEAT_SECRET` | (required) | One seat password for all seats (basic auth, user `player`): 12-64 characters of `A-Z a-z 0-9 . _ ~ -`. Enter the same value in /admin → AI seats. Replaces `TTYD_PASS_1..8` (ignored now). |
 | `CLAUDE_PERMISSION_MODE` | empty | `acceptEdits` or `plan` passes `--permission-mode` to claude. Decided in the M0 spike; `bypassPermissions` is refused. |
-| `CLAUDE_CONTINUE` | `1` | Reopen the last conversation after a restart or reload (`claude --continue`); `0` = always fresh |
+| `CLAUDE_CONTINUE` | `1` | Reopen the last conversation after a restart or reload (`claude --continue`, or `codex resume --last`); `0` = always fresh |
+| `AGENT` | `claude` | The coding agent every seat runs: `claude` (Claude Code) or `codex` (OpenAI Codex CLI, section 2b) |
+| `SEAT_AGENT_1` … `SEAT_AGENT_8` | empty | Per-seat override of `AGENT`, e.g. `SEAT_AGENT_7=codex` |
+| `CODEX_SANDBOX` | `danger-full-access` | Codex seats: `--sandbox`. `workspace-write` only if `check` says the Codex sandbox works in the container |
+| `CODEX_APPROVAL` | `never` | Codex seats: `--ask-for-approval`. `never` = players never see an approval question; `on-request` or `untrusted` let Codex ask |
+| `OPENAI_API_KEY` | empty | Codex seats: log in with this key on start if not logged in yet (then removed from the environment) |
 
 ## 7. Optional: egress firewall (Linux Docker hosts)
 
@@ -162,7 +201,7 @@ sudo iptables -I DOCKER-USER 1 -i pcseats -m conntrack --ctstate ESTABLISHED,REL
 sudo iptables -I INPUT 1 -i pcseats -m conntrack --ctstate NEW -p tcp --dport 7781:7788 -j REJECT
 ```
 
-Check with `docker compose run --rm seat1 check` (game server and Anthropic must still be reachable). That only tests outbound traffic, so also check inbound: on a player laptop, open the Claude pane in /play for seat 1 and type to Claude (the game server's proxy connects to 7781 and the replies must come back). `sudo iptables -L DOCKER-USER -n --line-numbers` must show the `ESTABLISHED,RELATED` rule as line 1. The rules disappear on reboot unless saved (`iptables-save`/`netfilter-persistent`). Allowing only `api.anthropic.com` and `claude.ai` by name needs an HTTPS proxy; port 443 to the internet is the practical middle ground. On Docker Desktop (macOS/Windows) these rules don't apply; rely on the router instead.
+Check with `docker compose run --rm seat1 check` (game server and Anthropic must still be reachable). That only tests outbound traffic, so also check inbound: on a player laptop, open the AI helper pane in /play for seat 1 and type to it (the game server's proxy connects to 7781 and the replies must come back). `sudo iptables -L DOCKER-USER -n --line-numbers` must show the `ESTABLISHED,RELATED` rule as line 1. The rules disappear on reboot unless saved (`iptables-save`/`netfilter-persistent`). Allowing only `api.anthropic.com` and `claude.ai` by name needs an HTTPS proxy; port 443 to the internet is the practical middle ground. On Docker Desktop (macOS/Windows) these rules don't apply; rely on the router instead.
 
 ## 8. Optional: only the game server may reach 7781-7788
 
@@ -177,7 +216,7 @@ sudo iptables -I DOCKER-USER 1 -o pcseats -p tcp -m conntrack --ctstate NEW \
   --ctorigdstport 7781:7788 ! -s 192.168.8.10 -j REJECT --reject-with tcp-reset
 ```
 
-It only matches NEW connections, so it can sit anywhere relative to the egress rules in section 7. Check it: in /admin → Claude seats all seats stay **up**, and from a player laptop `curl -m 3 http://<claude-box>:7781/terminal/1/` fails (connection refused). Like section 7, the rule is gone after a reboot unless saved (`iptables-save`/`netfilter-persistent`). If the LAN uses IPv6, add the same rule with `ip6tables` (and the game server's IPv6 address) or keep the Claude box IPv4-only. Remove it with the same command and `-D DOCKER-USER` instead of `-I DOCKER-USER 1`.
+It only matches NEW connections, so it can sit anywhere relative to the egress rules in section 7. Check it: in /admin → AI seats all seats stay **up**, and from a player laptop `curl -m 3 http://<claude-box>:7781/terminal/1/` fails (connection refused). Like section 7, the rule is gone after a reboot unless saved (`iptables-save`/`netfilter-persistent`). If the LAN uses IPv6, add the same rule with `ip6tables` (and the game server's IPv6 address) or keep the Claude box IPv4-only. Remove it with the same command and `-D DOCKER-USER` instead of `-I DOCKER-USER 1`.
 
 **Linux (ufw).** `ufw deny 7781:7788` has **no effect** on Docker's published ports (Docker's iptables rules run before ufw's). Put the rule in `/etc/ufw/after.rules` instead, at the end of the file:
 
@@ -218,11 +257,16 @@ then `sudo ufw reload` and run the check above. `ufw reload` resets `DOCKER-USER
 | The direct URL `http://<claude-box>:778N/` gives 404 or a blank page | ttyd now lives under its base path: use `http://<claude-box>:778N/terminal/N/` (with the trailing `/terminal/N/`). |
 | Direct URL asks again and again for a password | Wrong password: user `player`, password `SEAT_SECRET` from `.env`. (Through /play there is never a password box; if a player sees one, tell the game server's admin.) |
 | The pane in /play says "open in another tab" | That seat's terminal was opened in a newer tab (the player's "Open in new tab", or an adult from /admin). Press **Use it here instead**, or close the other tab. Only one terminal per seat is live through the game server. |
-| Player sees "not your seat" or someone else's Claude | Their Claude seat in /play doesn't match the laptop. Fix it in /admin → Claude seats (reassign), or have them pick the number on their seat card. |
+| Player sees "not your seat" or someone else's AI helper | Their AI seat in /play doesn't match the laptop. Fix it in /admin → AI seats (reassign), or have them pick the number on their seat card. |
 | Terminal opens but Claude asks to log in, or shows the trust dialog | That seat wasn't logged in or trusted: do step 2 for it, then `docker compose restart seatN`. |
 | Claude asks for permission to use the pixel-clash tools or to write `units/…` | The folder isn't trusted: Claude Code ignores the kit's `.claude/settings.json` allowlist in an untrusted folder. Do step 2 (accept the trust dialog) for that seat, then `docker compose restart seatN`. |
 | Claude says the pixel-clash tools are missing | `docker compose run --rm seatN check`: is the game server reachable? Is `.mcp.json` pointing at the right IP? In the seat, Claude can type `/mcp` to see the server status. Meanwhile Claude falls back to the `curl` commands in CLAUDE.md §9. They are not pre-approved (a prefix rule can't limit curl to the game API), so each one prompts and Claude asks the player to fetch an adult: check the command is one of the §9 commands to the game server before approving it. |
 | Player sees an approval prompt | Note which tool it was. Add the rule to `packages/starter-kit/.claude/settings.json.tmpl` (or set `CLAUDE_PERMISSION_MODE=acceptEdits`), `docker compose up -d --build`. |
+| Codex seat shows a sign-in screen | That seat's Codex isn't logged in: section 2b (`codex login --device-auth` or an API key), then `docker compose restart seatN`. |
+| Codex asks "Do you trust this folder?" or doesn't list the pixel-clash tools | The image is older than the Codex support (no `/etc/codex/config.toml`): `docker compose up -d --build`. In the seat, `/mcp` lists Codex's MCP servers. |
+| Codex asks to approve a pixel-clash tool or a file edit | Check `CODEX_SANDBOX`/`CODEX_APPROVAL` in `.env` (defaults `danger-full-access`/`never`) and that `/kit/.codex/config.toml` has `default_tools_approval_mode = "approve"` (`docker compose run --rm seatN render` re-renders it). |
+| Codex says commands fail with `bwrap: No permissions to create a new namespace` | `CODEX_SANDBOX=workspace-write` is set but the container has no user namespaces: set it back to `danger-full-access` (section 2b). |
+| `openai api: NOT reachable` | As for Anthropic: the Claude box needs internet to `api.openai.com` (and `chatgpt.com` for a ChatGPT login). |
 | `anthropic api: NOT reachable` | The Claude box or router has no internet uplink (venue Wi-Fi with captive portal?). |
 | `game server: NOT reachable` | Wrong IP in `.env`, the game server isn't running on `0.0.0.0`, or its firewall blocks 8080. Containers can't reach a game server that only listens on `localhost`. |
 | Build fails at `sha256sum` | The ttyd download changed or was corrupted: don't skip the check; retry, or re-pin `TTYD_VERSION` with the new release's `SHA256SUMS`. |

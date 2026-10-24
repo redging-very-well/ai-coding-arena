@@ -1,11 +1,12 @@
 # syntax=docker/dockerfile:1
 #
-# Pixel Clash "Claude box" seat image (plan §11.1).
+# Pixel Clash "Claude box" seat image (plan §11.1, §11.3).
 #
-# One container per seat runs ttyd, which starts Claude Code straight in the
-# seat's kit folder (/kit). The terminal opens straight into Claude, but that
-# is not a shell barrier (Claude Code's `!` prefix runs commands): the
-# container is the boundary.
+# One container per seat runs ttyd, which starts the seat's coding agent
+# (Claude Code, or OpenAI Codex CLI with AGENT=codex) straight in the seat's
+# kit folder (/kit). The terminal opens straight into the agent, but that is
+# not a shell barrier (both agents can run commands): the container is the
+# boundary.
 #
 # Build context is the REPO ROOT (see docker-compose.yml) so the starter-kit
 # templates in packages/starter-kit can be copied in. Only the files allowed by
@@ -21,6 +22,10 @@ FROM node:22.23.3-slim
 # Claude Code from npm, pinned (2.1.290, released 2026-10-05: >= 2 weeks old on
 # 2026-10-20). The npm package installs a native per-platform binary.
 ARG CLAUDE_CODE_VERSION=2.1.290
+
+# OpenAI Codex CLI from npm, pinned (0.162.1, released 2026-10-09: >= 2 weeks
+# old on 2026-10-24). The npm package pulls a native per-platform binary.
+ARG CODEX_VERSION=0.162.1
 
 # ttyd static binary from the official GitHub release, verified by SHA-256
 # (values from the release's SHA256SUMS file).
@@ -53,15 +58,16 @@ RUN set -eu; \
     chmod 0755 /usr/local/bin/ttyd; \
     ttyd --version
 
-RUN npm install -g --no-fund --no-audit "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+RUN npm install -g --no-fund --no-audit "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" "@openai/codex@${CODEX_VERSION}" \
  && npm cache clean --force \
- && claude --version
+ && claude --version \
+ && codex --version
 
-# Non-root user. /kit and the Claude config dir are created here and owned by
-# "player" so the named volumes mounted on them start with the right owner.
+# Non-root user. /kit and the Claude and Codex config dirs are created here and
+# owned by "player" so the named volumes mounted on them start with the right owner.
 RUN useradd --create-home --uid 10001 --user-group --shell /bin/bash player \
- && mkdir -p /kit /home/player/.claude \
- && chown player:player /kit /home/player/.claude
+ && mkdir -p /kit /home/player/.claude /home/player/.codex \
+ && chown player:player /kit /home/player/.claude /home/player/.codex
 
 # Managed settings (root-owned, so player-writable user/project settings can't
 # widen them): no bypassPermissions mode, and Claude may not read the login.
@@ -74,6 +80,18 @@ RUN mkdir -p /etc/claude-code \
       '}' >/etc/claude-code/managed-settings.json \
  && chmod 0644 /etc/claude-code/managed-settings.json
 
+# Codex system config (root-owned): /kit is a trusted project, so Codex loads
+# the kit's .codex/config.toml (MCP server, pre-approved game tools) with no
+# trust question, and the pinned version never offers an update. The seat's
+# sandbox and approval policy are command-line flags (entrypoint.sh codex_loop).
+RUN mkdir -p /etc/codex \
+ && printf '%s\n' \
+      'check_for_update_on_startup = false' \
+      '' \
+      '[projects."/kit"]' \
+      'trust_level = "trusted"' >/etc/codex/config.toml \
+ && chmod 0644 /etc/codex/config.toml
+
 # Kit templates (read-only, owned by root) and the entrypoint.
 COPY packages/starter-kit/ /opt/pixel-clash/starter-kit/
 COPY sessions/entrypoint.sh /usr/local/bin/pixel-clash-seat
@@ -81,11 +99,12 @@ RUN chmod -R a+rX,go-w /opt/pixel-clash \
  && chmod 0755 /usr/local/bin/pixel-clash-seat
 
 # CLAUDE_CONFIG_DIR keeps ALL Claude Code state (login, trust, .claude.json,
-# chat history) inside the claudeN volume. DISABLE_AUTOUPDATER keeps the
-# pinned version.
+# chat history) inside the claudeN volume, CODEX_HOME all Codex state (login,
+# chats) inside the codexN volume. DISABLE_AUTOUPDATER keeps the pinned version.
 ENV HOME=/home/player \
     SHELL=/bin/bash \
     CLAUDE_CONFIG_DIR=/home/player/.claude \
+    CODEX_HOME=/home/player/.codex \
     DISABLE_AUTOUPDATER=1 \
     PC_KIT_DIR=/kit \
     PC_TEMPLATE_DIR=/opt/pixel-clash/starter-kit

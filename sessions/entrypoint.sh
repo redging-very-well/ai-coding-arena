@@ -2,11 +2,12 @@
 # Pixel Clash seat entrypoint (plan §11.1).
 #
 #   pixel-clash-seat [serve]     render /kit, then exec ttyd (the default)
-#   pixel-clash-seat claude-loop the program ttyd runs: claude, restarted if it exits
+#   pixel-clash-seat agent-loop  the program ttyd runs: claude or codex, restarted if it exits
+#                                (claude-loop is an old name for it)
 #   pixel-clash-seat render      render /kit and exit
 #   pixel-clash-seat check       print versions, kit state and game-server reachability
 #   pixel-clash-seat new-player     forget the seat's player (empties /kit, chat history, approvals)
-#   pixel-clash-seat <cmd...>    render /kit, then exec <cmd> (e.g. `claude` for the adult login)
+#   pixel-clash-seat <cmd...>    render /kit, then exec <cmd> (e.g. `claude` or `codex login` for the adult login)
 #
 # Environment:
 #   PIXEL_CLASH_URL   game server base URL, e.g. http://192.168.8.10:8080 (required)
@@ -14,6 +15,13 @@
 #                     same value as /admin -> Claude seats); required for serve
 #   TTYD_USER         basic-auth user (default: player)
 #   SEAT              seat number 1-8: ttyd base path /terminal/$SEAT and the title
+#   AGENT             claude (default) or codex: which coding agent this seat runs (§11.3)
+#   SEAT_AGENT        optional per-seat override of AGENT (SEAT_AGENT_N in sessions/.env)
+#   CODEX_SANDBOX     codex only: danger-full-access (default; the container is the
+#                     boundary, see README) or workspace-write (needs user namespaces)
+#   CODEX_APPROVAL    codex only: never (default) | on-request | untrusted
+#   OPENAI_API_KEY    codex only, optional: log this seat's Codex in with an API key
+#                     on start (if it isn't logged in yet); never passed to codex
 #   CLAUDE_PERMISSION_MODE  optional: default | acceptEdits | plan (M0 spike decides)
 #   CLAUDE_CONTINUE   1 (default) = reopen the seat's last conversation after a
 #                     restart or page reload; 0 = always start fresh
@@ -23,10 +31,30 @@ set -euo pipefail
 KIT_DIR="${PC_KIT_DIR:-/kit}"
 TEMPLATE_DIR="${PC_TEMPLATE_DIR:-/opt/pixel-clash/starter-kit}"
 CONFIG_DIR="${CLAUDE_CONFIG_DIR:-${HOME:-/home/player}/.claude}"
+CODEX_DIR="${CODEX_HOME:-${HOME:-/home/player}/.codex}"
 SEAT="${SEAT:-?}"
+AGENT="${SEAT_AGENT:-${AGENT:-claude}}"
+AGENT="${AGENT,,}"
 
 log() { printf '[seat %s] %s\n' "$SEAT" "$*" >&2; }
 die() { log "ERROR: $*"; exit 1; }
+
+case "$AGENT" in
+  claude) AGENT_NAME=Claude; INSTRUCTIONS=CLAUDE.md ;;
+  codex) AGENT_NAME=Codex; INSTRUCTIONS=AGENTS.md ;;
+  *) die "AGENT must be claude or codex (got '$AGENT'); set AGENT or SEAT_AGENT_$SEAT in sessions/.env" ;;
+esac
+
+# Which agent a kit file belongs to (path after .tmpl is removed): claude,
+# codex or both. CLAUDE.md is the instructions for both (AGENTS.md for Codex).
+# Same rule as kitFileAgent() in packages/server/src/services/kit.ts.
+kit_file_agent() {
+  case "$1" in
+    CLAUDE.md | .mcp.json | .claude/*) echo claude ;;
+    .codex/*) echo codex ;;
+    *) echo both ;;
+  esac
+}
 
 # Claude Code keeps per-folder history under projects/<path with / -> ->.
 project_history_dir() { printf '%s/projects/%s' "$CONFIG_DIR" "${KIT_DIR//[^A-Za-z0-9]/-}"; }
@@ -52,6 +80,7 @@ render_file() { # <src> <dest> <host>
   tmp="$(mktemp "${dest}.XXXXXX")"
   sed -e "s|{{HOST}}|${host}|g" \
       -e "s|{{PLAYER_NAME}}|(not logged in yet: see below)|g" \
+      -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" \
       "$src" >"$tmp"
   if grep -q '{{[A-Z_]*}}' "$tmp"; then
     log "warning: unfilled placeholder in ${dest#"$KIT_DIR"/}: $(grep -o '{{[A-Z_]*}}' "$tmp" | sort -u | tr '\n' ' ')"
@@ -60,18 +89,25 @@ render_file() { # <src> <dest> <host>
   mv -f "$tmp" "$dest"
 }
 
-# Copy the starter kit into /kit. Kit files (CLAUDE.md, .mcp.json, settings,
+# Copy the starter kit into /kit for this seat's agent. Kit files (CLAUDE.md
+# or AGENTS.md, .mcp.json + .claude/settings.json or .codex/config.toml,
 # PROMPTS.md) are re-rendered on every start so a new PIXEL_CLASH_URL takes
-# effect. .claude/settings.local.json ("don't ask again" approvals) is deleted
-# so the rendered settings.json is the only allowlist. Never touched:
+# effect, and the other agent's files are removed (a seat can switch agent).
+# .claude/settings.local.json ("don't ask again" approvals) is deleted so the
+# rendered settings.json is the only allowlist. Never touched:
 # .pixel-clash/player.json and anything already in units/.
 render_kit() {
-  local host rel src dest
+  local host rel src dest owner
   [ -d "$TEMPLATE_DIR" ] || die "starter-kit templates not found at $TEMPLATE_DIR"
   [ -w "$KIT_DIR" ] || die "$KIT_DIR is not writable by $(id -un 2>/dev/null || id -u)"
   host="$(kit_host)"
   mkdir -p "$KIT_DIR/.pixel-clash" "$KIT_DIR/units"
   rm -f "$KIT_DIR/.claude/settings.local.json"
+  if [ "$AGENT" = codex ]; then
+    rm -rf "$KIT_DIR/.claude" "$KIT_DIR/.mcp.json" "$KIT_DIR/CLAUDE.md"
+  else
+    rm -rf "$KIT_DIR/.codex" "$KIT_DIR/AGENTS.md"
+  fi
 
   while IFS= read -r -d '' src; do
     rel="${src#"$TEMPLATE_DIR"/}"
@@ -86,12 +122,19 @@ render_kit() {
         continue
         ;;
     esac
-    dest="$KIT_DIR/${rel%.tmpl}"
+    rel="${rel%.tmpl}"
+    owner="$(kit_file_agent "$rel")"
+    if [ "$rel" = CLAUDE.md ]; then
+      rel="$INSTRUCTIONS"
+    elif [ "$owner" != both ] && [ "$owner" != "$AGENT" ]; then
+      continue
+    fi
+    dest="$KIT_DIR/$rel"
     mkdir -p "$(dirname "$dest")"
     render_file "$src" "$dest" "$host"
   done < <(find "$TEMPLATE_DIR" -type f -print0)
 
-  log "kit rendered in $KIT_DIR for http://$host"
+  log "kit for $AGENT_NAME rendered in $KIT_DIR for http://$host"
 }
 
 serve() {
@@ -101,18 +144,65 @@ serve() {
     || die "SEAT_SECRET must be 12-64 characters of A-Z a-z 0-9 . _ ~ - (no spaces or ':'), e.g. otter-lamp-quartz-ninety"
   local user="${TTYD_USER:-player}" base="/terminal/${SEAT}"
   render_kit
-  log "ttyd on :7781${base}/ (user '$user'); claude starts in $KIT_DIR"
+  [ "$AGENT" = codex ] && codex_api_key_login
+  # The API key is only for the login above: the player's agent never sees it.
+  unset OPENAI_API_KEY
+  log "ttyd on :7781${base}/ (user '$user'); $AGENT starts in $KIT_DIR"
   # -W writable, -O same-origin websockets only (the game server's proxy
   # rewrites Origin/Host to pass it), -b base path so the page, token and ws
   # all live under /terminal/N/ (behind the proxy and directly), -c basic auth,
-  # -w start dir. Each browser connection gets its own claude-loop (and so its
-  # own claude); the proxy keeps one live terminal per seat (plan §11.2).
+  # -w start dir. Each browser connection gets its own agent-loop (and so its
+  # own claude or codex); the proxy keeps one live terminal per seat (plan §11.2).
   exec ttyd -W -O -p 7781 -b "$base" -w "$KIT_DIR" \
     -c "${user}:${TTYD_PASS}" \
     -t fontSize=18 \
-    -t "titleFixed=Pixel Clash · Claude · seat ${SEAT}" \
+    -t "titleFixed=Pixel Clash · ${AGENT_NAME} · seat ${SEAT}" \
     -t disableLeaveAlert=true \
-    /usr/local/bin/pixel-clash-seat claude-loop
+    /usr/local/bin/pixel-clash-seat agent-loop
+}
+
+# Optional: OPENAI_API_KEY in sessions/.env logs a not-yet-logged-in Codex
+# seat in with that key (stored in the seat's codexN volume). An existing
+# login (ChatGPT or key) is kept.
+codex_api_key_login() {
+  [ -n "${OPENAI_API_KEY:-}" ] || return 0
+  if codex login status >/dev/null 2>&1; then return 0; fi
+  if printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key >/dev/null 2>&1; then
+    log "codex logged in with OPENAI_API_KEY"
+  else
+    log "warning: codex login --with-api-key failed (check OPENAI_API_KEY)"
+  fi
+}
+
+# Codex keeps its chats under $CODEX_HOME/sessions.
+codex_has_history() { [ -n "$(find "$CODEX_DIR/sessions" -type f -name '*.jsonl' -print -quit 2>/dev/null)" ]; }
+
+# What the player's terminal runs on a Codex seat: codex in /kit, forever.
+# The kit's .codex/config.toml pre-approves the pixel-clash tools; the flags
+# here set the seat's sandbox and approval policy (they win over the kit file).
+codex_loop() {
+  local sandbox="${CODEX_SANDBOX:-danger-full-access}" approval="${CODEX_APPROVAL:-never}"
+  case "$sandbox" in
+    danger-full-access | workspace-write) ;;
+    *) log "ignoring CODEX_SANDBOX='$sandbox' (allowed: danger-full-access, workspace-write)"; sandbox=danger-full-access ;;
+  esac
+  case "$approval" in
+    never | on-request | untrusted) ;;
+    *) log "ignoring CODEX_APPROVAL='$approval' (allowed: never, on-request, untrusted)"; approval=never ;;
+  esac
+  local -a args=(--sandbox "$sandbox" --ask-for-approval "$approval")
+  trap ':' INT QUIT
+  cd "$KIT_DIR"
+  while true; do
+    if [ "${CLAUDE_CONTINUE:-1}" = 1 ] && codex_has_history; then
+      # Reopen the last conversation (page reload, ttyd reconnect, restart).
+      codex resume --last "${args[@]}" || codex "${args[@]}" || true
+    else
+      codex "${args[@]}" || true
+    fi
+    printf '\r\nCodex stopped. Starting it again...\r\n'
+    sleep 1
+  done
 }
 
 # What the player's terminal runs: claude, forever. This is not a security
@@ -143,20 +233,62 @@ claude_loop() {
 check() {
   local host status
   echo "seat:            $SEAT"
+  echo "agent:           $AGENT"
   echo "claude:          $(claude --version 2>/dev/null || echo MISSING)"
+  echo "codex:           $(codex --version 2>/dev/null || echo MISSING)"
   echo "ttyd:            $(ttyd --version 2>/dev/null || echo MISSING)"
   host="$(kit_host)"
   echo "game server:     http://$host"
-  if [ -f "$KIT_DIR/CLAUDE.md" ] && [ -f "$KIT_DIR/.mcp.json" ]; then
-    echo "kit:             rendered ($(grep -o 'http://[^"]*/mcp' "$KIT_DIR/.mcp.json" | head -n1))"
+  local mcp_file="$KIT_DIR/.mcp.json"
+  [ "$AGENT" = codex ] && mcp_file="$KIT_DIR/.codex/config.toml"
+  if [ -f "$KIT_DIR/$INSTRUCTIONS" ] && [ -f "$mcp_file" ]; then
+    echo "kit:             rendered for $AGENT_NAME ($(grep -o 'http://[^"]*/mcp' "$mcp_file" | head -n1))"
   else
-    echo "kit:             NOT rendered yet"
+    echo "kit:             NOT rendered yet for $AGENT_NAME"
   fi
   if [ -f "$KIT_DIR/.pixel-clash/player.json" ]; then
     echo "player:          logged in (.pixel-clash/player.json exists)"
   else
-    echo "player:          none yet (the player tells Claude their name + PIN)"
+    echo "player:          none yet (the player tells $AGENT_NAME their name + PIN)"
   fi
+  if [ "$AGENT" = codex ]; then
+    check_codex
+  else
+    check_claude
+  fi
+  if status="$(curl -fsS --max-time 5 "http://$host/api/health" 2>&1)"; then
+    echo "game server:     reachable: $status"
+  else
+    echo "game server:     NOT reachable from this container: $status"
+  fi
+}
+
+check_codex() {
+  local status
+  if status="$(codex login status 2>&1)"; then
+    echo "codex login:     $status"
+  else
+    echo "codex login:     NOT logged in (docker compose run --rm seat$SEAT codex login --device-auth, or OPENAI_API_KEY; README)"
+  fi
+  if grep -qs '^\[projects\."/kit"\]' /etc/codex/config.toml; then
+    echo "folder trust:    /kit trusted by the image (/etc/codex/config.toml)"
+  else
+    echo "folder trust:    /kit NOT trusted (rebuild the image: docker compose build)"
+  fi
+  echo "codex policy:    sandbox ${CODEX_SANDBOX:-danger-full-access}, approvals ${CODEX_APPROVAL:-never}"
+  if (cd "$KIT_DIR" && codex sandbox -- true) >/dev/null 2>&1; then
+    echo "codex sandbox:   works here (CODEX_SANDBOX=workspace-write is possible)"
+  else
+    echo "codex sandbox:   not available in this container (keep CODEX_SANDBOX=danger-full-access)"
+  fi
+  if curl -sS -o /dev/null --max-time 5 https://api.openai.com/ 2>/dev/null; then
+    echo "openai api:      reachable"
+  else
+    echo "openai api:      NOT reachable (check the Claude box's internet)"
+  fi
+}
+
+check_claude() {
   if [ -f "$CONFIG_DIR/.credentials.json" ] || grep -qs '"oauthAccount"' "$CONFIG_DIR/.claude.json"; then
     echo "claude login:    looks logged in"
   else
@@ -167,11 +299,6 @@ check() {
   else
     echo "folder trust:    NOT accepted yet (accept it during the adult login)"
   fi
-  if status="$(curl -fsS --max-time 5 "http://$host/api/health" 2>&1)"; then
-    echo "game server:     reachable: $status"
-  else
-    echo "game server:     NOT reachable from this container: $status"
-  fi
   if curl -sS -o /dev/null --max-time 5 https://api.anthropic.com/ 2>/dev/null; then
     echo "anthropic api:   reachable"
   else
@@ -179,7 +306,7 @@ check() {
   fi
 }
 
-# Forget the previous player on this seat. Keeps the Claude login and folder trust.
+# Forget the previous player on this seat. Keeps the Claude / Codex login and folder trust.
 new_player() {
   # Everything in /kit is re-rendered below: the old key (.pixel-clash/), their
   # unit files (the designs stay on the game server), saved approvals
@@ -187,6 +314,10 @@ new_player() {
   find "${KIT_DIR:?}" -mindepth 1 -delete
   rm -rf "$(project_history_dir)" "$CONFIG_DIR/file-history" "$CONFIG_DIR/todos"
   rm -f "$CONFIG_DIR/history.jsonl"
+  # Codex: everything but the login (auth.json) and the user config.
+  if [ -d "$CODEX_DIR" ]; then
+    find "$CODEX_DIR" -mindepth 1 -maxdepth 1 ! -name auth.json ! -name config.toml -exec rm -rf {} +
+  fi
   render_kit
   log "seat cleared for a new player. Now run: docker compose restart seat${SEAT}"
 }
@@ -194,7 +325,9 @@ new_player() {
 cmd="${1:-serve}"
 case "$cmd" in
   serve) serve ;;
-  claude-loop) claude_loop ;;
+  agent-loop | claude-loop)
+    if [ "$AGENT" = codex ]; then codex_loop; else claude_loop; fi
+    ;;
   render) render_kit ;;
   check) check ;;
   new-player) new_player ;;

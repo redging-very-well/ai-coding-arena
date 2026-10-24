@@ -22,12 +22,12 @@ x-seat: &seat
   # running an image built from older sessions/ files (e.g. the old ttyd
   # port or base path). Layers are cached, so this is quick after the first build.
   pull_policy: build
-  init: true # tini as PID 1: reaps the claude processes ttyd spawns
+  init: true # tini as PID 1: reaps the claude / codex processes ttyd spawns
   restart: unless-stopped
   cap_drop: [ALL]
   security_opt:
     - no-new-privileges:true
-  # Limits, not reservations. One Claude Code process typically uses well
+  # Limits, not reservations. One Claude Code (or Codex) process typically uses well
   # under 1 GB and under 1 core; 8 seats x 1.5 GB still leaves ~4 GB for the
   # host on a 16 GB box (README "Sizing").
   mem_limit: 1536m
@@ -44,6 +44,14 @@ x-seat-env: &seat-env
   TTYD_PASS: ${SEAT_SECRET:?set SEAT_SECRET in sessions/.env}
   CLAUDE_PERMISSION_MODE: ${CLAUDE_PERMISSION_MODE:-}
   CLAUDE_CONTINUE: ${CLAUDE_CONTINUE:-1}
+  # Which coding agent the seats run: claude (default) or codex (§11.3).
+  # SEAT_AGENT_N in .env overrides it for seat N (set per seat below).
+  AGENT: ${AGENT:-claude}
+  CODEX_SANDBOX: ${CODEX_SANDBOX:-danger-full-access}
+  CODEX_APPROVAL: ${CODEX_APPROVAL:-never}
+  # Optional: Codex seats that aren't logged in yet log in with this key on
+  # start. The entrypoint unsets it before Codex runs.
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
 
 services:
   seat1:
@@ -52,10 +60,12 @@ services:
     environment:
       <<: *seat-env
       SEAT: "1"
+      SEAT_AGENT: ${SEAT_AGENT_1:-}
     ports: ["7781:7781"]
     volumes:
       - kit1:/kit
       - claude1:/home/player/.claude
+      - codex1:/home/player/.codex
 
   seat2:
     <<: *seat
@@ -63,10 +73,12 @@ services:
     environment:
       <<: *seat-env
       SEAT: "2"
+      SEAT_AGENT: ${SEAT_AGENT_2:-}
     ports: ["7782:7781"]
     volumes:
       - kit2:/kit
       - claude2:/home/player/.claude
+      - codex2:/home/player/.codex
 
   seat3:
     <<: *seat
@@ -74,10 +86,12 @@ services:
     environment:
       <<: *seat-env
       SEAT: "3"
+      SEAT_AGENT: ${SEAT_AGENT_3:-}
     ports: ["7783:7781"]
     volumes:
       - kit3:/kit
       - claude3:/home/player/.claude
+      - codex3:/home/player/.codex
 
   seat4:
     <<: *seat
@@ -85,10 +99,12 @@ services:
     environment:
       <<: *seat-env
       SEAT: "4"
+      SEAT_AGENT: ${SEAT_AGENT_4:-}
     ports: ["7784:7781"]
     volumes:
       - kit4:/kit
       - claude4:/home/player/.claude
+      - codex4:/home/player/.codex
 
   seat5:
     <<: *seat
@@ -96,10 +112,12 @@ services:
     environment:
       <<: *seat-env
       SEAT: "5"
+      SEAT_AGENT: ${SEAT_AGENT_5:-}
     ports: ["7785:7781"]
     volumes:
       - kit5:/kit
       - claude5:/home/player/.claude
+      - codex5:/home/player/.codex
 
   seat6:
     <<: *seat
@@ -107,10 +125,12 @@ services:
     environment:
       <<: *seat-env
       SEAT: "6"
+      SEAT_AGENT: ${SEAT_AGENT_6:-}
     ports: ["7786:7781"]
     volumes:
       - kit6:/kit
       - claude6:/home/player/.claude
+      - codex6:/home/player/.codex
 
   seat7:
     <<: *seat
@@ -118,10 +138,12 @@ services:
     environment:
       <<: *seat-env
       SEAT: "7"
+      SEAT_AGENT: ${SEAT_AGENT_7:-}
     ports: ["7787:7781"]
     volumes:
       - kit7:/kit
       - claude7:/home/player/.claude
+      - codex7:/home/player/.codex
 
   seat8:
     <<: *seat
@@ -129,10 +151,12 @@ services:
     environment:
       <<: *seat-env
       SEAT: "8"
+      SEAT_AGENT: ${SEAT_AGENT_8:-}
     ports: ["7788:7781"]
     volumes:
       - kit8:/kit
       - claude8:/home/player/.claude
+      - codex8:/home/player/.codex
 
 networks:
   default:
@@ -160,3 +184,11 @@ volumes:
   claude6:
   claude7:
   claude8:
+  codex1:
+  codex2:
+  codex3:
+  codex4:
+  codex5:
+  codex6:
+  codex7:
+  codex8:
