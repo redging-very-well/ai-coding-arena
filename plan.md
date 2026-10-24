@@ -958,9 +958,9 @@ maxHealth 1750 costs $782.25: $525 base + $257.25 for being at 70% of the max
 damage 265 costs $707.66: $397.5 base + $310.16 for being near the max (88% of max)
 Power ×1.37: tough (70% of max HP) AND strong (88% of max damage). One tough unit plus one strong unit is cheaper.
 Splash ×1.53 (radius 40: everyone within 40 px of the target takes half)
-Element fire ×1.2
-Heal 60 HP, reach 120 px: $382.64 (before the cooldown factor)
-Aura might 30% in 100 px: +$226.67 (always on: after the factors)
+Fire (hits burn) ×1.2
+Heal 60 HP up to 120 px away: $382.64 (faster healing costs more)
+Might aura 30% within 100 px: +$226.67, added on top
 ```
 
 - `UNIT_TOO_EXPENSIVE` names the biggest lever, checked in this order:
