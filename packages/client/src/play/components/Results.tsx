@@ -286,8 +286,8 @@ export function Results() {
 
       {(groups.length > 0 || extra.length > 0) && (
         <div class="ask-claude">
-          <h3>Ask Claude to fix it</h3>
-          <p class="dim small">Copy a message and paste it to Claude in your terminal.</p>
+          <h3>Ask your AI helper to fix it</h3>
+          <p class="dim small">Copy a message and paste it to your AI helper in your terminal.</p>
           <ul>
             {groups.map((g, i) => (
               <li key={`e${i}`}>

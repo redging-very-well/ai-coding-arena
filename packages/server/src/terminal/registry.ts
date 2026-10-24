@@ -20,10 +20,10 @@ export const FLAP_WINDOW_MS = 10_000;
 export const FLAP_BLOCK_MS = 5000;
 
 export const TAKEOVER_TEXT =
-  '\r\n\r\n  Your Claude terminal was opened in another tab.\r\n  Press Enter here to use it in this tab instead.\r\n';
+  '\r\n\r\n  Your AI helper terminal was opened in another tab.\r\n  Press Enter here to use it in this tab instead.\r\n';
 export const ADMIN_TAKEOVER_TEXT = '\r\n\r\n  A grown-up opened your terminal to help.\r\n  Press Enter to get it back.\r\n';
 /** The admin's rescue tab when the player takes their seat back. */
-export const PLAYER_RECLAIM_TEXT = '\r\n\r\n  The player took their Claude terminal back.\r\n  Press Enter to open it here again (that takes it from them).\r\n';
+export const PLAYER_RECLAIM_TEXT = '\r\n\r\n  The player took their AI helper terminal back.\r\n  Press Enter to open it here again (that takes it from them).\r\n';
 
 export class TerminalRegistry {
   private readonly live = new Map<number, Relay>();

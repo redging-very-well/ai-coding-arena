@@ -148,9 +148,9 @@ export function Join() {
             {error}
           </p>
         )}
-        {mode === 'new' && <p class="dim small">Remember your PIN! You (and Claude) need it to log in.</p>}
+        {mode === 'new' && <p class="dim small">Remember your PIN! You (and your AI helper) need it to log in.</p>}
       </div>
-      {st.laptopSeat !== null && <p class="dim small">This laptop is Claude seat {st.laptopSeat}.</p>}
+      {st.laptopSeat !== null && <p class="dim small">This laptop is AI seat {st.laptopSeat}.</p>}
     </main>
   );
 }

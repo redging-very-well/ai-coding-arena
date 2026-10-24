@@ -311,7 +311,7 @@ export class PlayStore {
         this.cardSeat = q.seat;
         writeLocal(LAPTOP_SEAT_KEY, String(q.seat));
       } else if (q.bad) {
-        this.toast("That seat card link has a seat number we don't know. Pick your Claude seat below.", 'warn');
+        this.toast("That seat card link has a seat number we don't know. Pick your AI seat below.", 'warn');
       }
       if (q.seat !== null || q.bad) history.replaceState(history.state, '', `${location.pathname}${q.search}${location.hash}`);
     } catch {
@@ -558,7 +558,7 @@ export class PlayStore {
     const kept = this.state.toasts.filter((t) => t.at >= fresh);
     this.set({ toasts: kept });
     // Missed the server's toast (socket was down when the phase changed): announce it ourselves.
-    if (kept.length === 0 && to === 'PLAN') this.toast('Plan time! Ask Claude for new units.', 'good');
+    if (kept.length === 0 && to === 'PLAN') this.toast('Plan time! Ask your AI helper for new units.', 'good');
     else if (kept.length === 0 && to === 'PLACEMENT') this.toast('Place your army!', 'good');
     if (to === 'BATTLE') this.toast('CLASH!', 'good', 2500);
     // A little jingle when you won the round.

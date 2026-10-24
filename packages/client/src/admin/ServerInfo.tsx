@@ -69,7 +69,7 @@ export function ServerInfo() {
           )}
 
           <p class="dim small">
-            Seat cards (one per Claude laptop, with its <code>/play?seat=N</code> QR) are on{' '}
+            Seat cards (one per AI seat laptop, with its <code>/play?seat=N</code> QR) are on{' '}
             <a class="link" href="/setup" target="_blank" rel="noopener">
               /setup
             </a>

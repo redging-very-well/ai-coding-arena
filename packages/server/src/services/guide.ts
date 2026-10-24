@@ -611,7 +611,7 @@ function typesSection(c: GameConfig): GuideSectionDTO {
       },
       {
         kind: 'code',
-        title: 'For Claude / code: the shape of a unit',
+        title: 'For your AI helper / code: the shape of a unit',
         text: 'A unit is a JavaScript class. The constructor sets the stats on `this`; `update()` runs every tick and returns an action.',
         code: [
           'export default class MyUnit {',
@@ -647,7 +647,7 @@ function statsSection(c: GameConfig): GuideSectionDTO {
       rows.push([`\`${field}\``, allowed, doc.what, doc.cost(c, t)]);
     }
     blocks.push({ kind: 'table', caption: `${TYPE_INFO[t].icon} ${TYPE_INFO[t].title}`, head: ['Field', 'Allowed', 'What it does', 'Price'], rows });
-    blocks.push({ kind: 'code', title: `For Claude / code: a ${t}`, code: TYPE_INFO[t].snippet(c) });
+    blocks.push({ kind: 'code', title: `For your AI helper / code: a ${t}`, code: TYPE_INFO[t].snippet(c) });
   }
   blocks.push({
     kind: 'list',
@@ -700,7 +700,7 @@ function elementsSection(c: GameConfig): GuideSectionDTO {
       },
       {
         kind: 'code',
-        title: 'For Claude / code: elements and combos',
+        title: 'For your AI helper / code: elements and combos',
         code: [
           "this.element = 'fire';     // 'normal' | 'fire' | 'ice' | 'lightning'",
           `this.splashRadius = 40;    // ${span(sb)} px`,
@@ -736,7 +736,7 @@ function supportSection(c: GameConfig): GuideSectionDTO {
       },
       {
         kind: 'code',
-        title: 'For Claude / code: a healer',
+        title: 'For your AI helper / code: a healer',
         code: [
           "this.support = 'heal';     // 'heal' | 'haste' | 'might' | 'shield'",
           'this.supportPower = 96;    // HP per heal (auras: %)',
@@ -781,7 +781,7 @@ function viewSection(c: GameConfig): GuideSectionDTO {
           'Stored minions (inside a factory) are invisible.',
         ],
       },
-      { kind: 'code', title: 'For Claude / code: the exact contract (TypeScript)', code: contractTypescript() },
+      { kind: 'code', title: 'For your AI helper / code: the exact contract (TypeScript)', code: contractTypescript() },
     ],
   };
 }
@@ -806,7 +806,7 @@ function actionsSection(): GuideSectionDTO {
       },
       {
         kind: 'code',
-        title: 'For Claude / code: a simple soldier update()',
+        title: 'For your AI helper / code: a simple soldier update()',
         code: [
           'update(self, enemies, allies, world) {',
           "  const targets = enemies.filter((e) => e.type !== 'wall');",
@@ -864,7 +864,7 @@ function factoriesSection(c: GameConfig): GuideSectionDTO {
       },
       {
         kind: 'code',
-        title: 'For Claude / code: a factory update()',
+        title: 'For your AI helper / code: a factory update()',
         code: [
           'update(self, enemies, allies, world) {',
           "  const wall = enemies.find((e) => e.type === 'wall');",
@@ -938,7 +938,7 @@ function costSection(c: GameConfig, examples: GuideExampleDTO[]): GuideSectionDT
       },
       {
         kind: 'code',
-        title: 'For Claude / code: the exact formula',
+        title: 'For your AI helper / code: the exact formula',
         text: 'Coefficients are the live config (`GET /api/rules` → `coefficients`).',
         code: String(buildRules(c).costFormula),
       },
@@ -997,7 +997,7 @@ function battlesSection(c: GameConfig): GuideSectionDTO {
       {
         kind: 'list',
         items: [
-          `**Plan** (${fmt(t.planFirstRoundSec / 60)} min first round, ${fmt(t.planLaterRoundsSec / 60)} min later): ask Claude for units and pick your army.`,
+          `**Plan** (${fmt(t.planFirstRoundSec / 60)} min first round, ${fmt(t.planLaterRoundsSec / 60)} min later): ask your AI helper for units and pick your army.`,
           `**Placement** (${fmt(t.placementSec / 60)} min): put your units on your zone.`,
           `**Battle** (${secs(t.battleTicks, c)}): the units fight on their own, running your code.`,
           `**Sudden death:** from ${secs(sd.startTick, c)} a safe circle shrinks to the centre; outside it units lose ${sd.damagePctPerSecond}% of max HP per second.`,
@@ -1051,7 +1051,7 @@ export function buildGuide(config: GameConfig, templates: readonly GuideTemplate
   const guide: GuideDTO = {
     stamp: stampOf(config, templates),
     title: 'Unit guide',
-    intro: 'Everything your units can do, with the numbers from this game. Ask Claude to build any of it!',
+    intro: 'Everything your units can do, with the numbers from this game. Ask your AI helper to build any of it!',
     sections: [
       typesSection(config),
       statsSection(config),

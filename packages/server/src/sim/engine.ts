@@ -1639,17 +1639,17 @@ function reportTypes(units: readonly UnitReport[], endTick: number): Pick<Battle
   if (types.length === 0) return {};
   const hints = types
     .filter((t) => t.type === 'soldier' && endTick > 0 && (t.blockedTicksMax ?? 0) > STUCK_HINT_SHARE * endTick)
-    .map((t) => `Your ${t.name} got stuck behind walls a lot. Ask Claude to make it break through (attack self.blockedBy) or go round.`)
+    .map((t) => `Your ${t.name} got stuck behind walls a lot. Ask your AI helper to make it break through (attack self.blockedBy) or go round.`)
     .concat(
       types
         .filter((t) => (t.storedLost ?? 0) > 0)
-        .map((t) => `Your ${t.name} was destroyed with ${t.storedLost} minion${t.storedLost === 1 ? '' : 's'} inside. Ask Claude to release them earlier (or use a smaller burst), or guard the factory.`),
+        .map((t) => `Your ${t.name} was destroyed with ${t.storedLost} minion${t.storedLost === 1 ? '' : 's'} inside. Ask your AI helper to release them earlier (or use a smaller burst), or guard the factory.`),
     )
     .concat(
       // M8.8 (§10.6): a heal-support type that never healed or cleansed anyone.
       types
         .filter((t) => healers.has(t.unitId) && !(t.healing ?? 0) && !(t.cleanses ?? 0))
-        .map((t) => `Your ${t.name} never healed anyone. Ask Claude to make it follow your soldiers and heal the hurt ones.`),
+        .map((t) => `Your ${t.name} never healed anyone. Ask your AI helper to make it follow your soldiers and heal the hurt ones.`),
     );
   return { types, ...(hints.length > 0 ? { hints } : {}) };
 }

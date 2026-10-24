@@ -132,7 +132,7 @@ describe('review regressions', () => {
   it('player hints for enum fields and the tower speed fix make sense', () => {
     const type = checkStats({ ...soldier, type: 'wizard' }, bounds);
     const shape = checkStats({ ...soldier, shape: 'star' }, bounds);
-    expect(!type.ok && playerHintForIssue(type.errors[0]!)).toBe('Your unit must be a soldier, tower, wall or factory. Ask Claude to fix its type.');
+    expect(!type.ok && playerHintForIssue(type.errors[0]!)).toBe('Your unit must be a soldier, tower, wall or factory. Ask your AI helper to fix its type.');
     expect(!shape.ok && playerHintForIssue(shape.errors[0]!)).toMatch(/circle, square, triangle or diamond/);
     const tower = checkStats({ ...soldier, type: 'tower', speed: NaN }, bounds);
     expect(!tower.ok && tower.errors[0]).toMatchObject({ code: 'STAT_NOT_FINITE', field: 'speed', fix: 'Towers never move: set this.speed = 0.' });
@@ -146,15 +146,15 @@ describe('review regressions', () => {
       return !r.ok && playerHintForIssue(r.errors[0]!);
     };
     const maxRange = bounds.soldierRange.max; // the test unit is a soldier
-    expect(hint({ range: maxRange + 100 })).toBe(`Your unit's range is too big! (${maxRange + 100}, the max is ${maxRange}) Ask Claude to lower it.`);
+    expect(hint({ range: maxRange + 100 })).toBe(`Your unit's range is too big! (${maxRange + 100}, the max is ${maxRange}) Ask your AI helper to lower it.`);
     expect(hint({ damage: bounds.damage.max + 1 })).toMatch(/WAY too hard/);
     expect(hint({ attackCooldown: bounds.attackCooldown.min - 1 })).toMatch(/attacks too fast/);
     expect(playerHintForIssue({ code: 'UNIT_TOO_EXPENSIVE', field: 'cost', value: 612, allowed: { max: 500 }, message: '', fix: '' })).toBe(
-      'Your unit costs too much! ($612, the max is $500) Ask Claude to make it cheaper.',
+      'Your unit costs too much! ($612, the max is $500) Ask your AI helper to make it cheaper.',
     );
     // §12: thousands separators wherever money is shown.
     expect(playerHintForIssue({ code: 'UNIT_TOO_EXPENSIVE', field: 'cost', value: 5032, allowed: { max: 3000 }, message: '', fix: '' })).toBe(
-      'Your unit costs too much! ($5,032, the max is $3,000) Ask Claude to make it cheaper.',
+      'Your unit costs too much! ($5,032, the max is $3,000) Ask your AI helper to make it cheaper.',
     );
   });
 });

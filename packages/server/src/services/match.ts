@@ -396,7 +396,7 @@ export class MatchService {
     }
     const t = this.game.config.timers;
     this.startTimer(m.round === 1 ? t.planFirstRoundSec : t.planLaterRoundsSec);
-    this.game.notifier.toast({ all: true }, 'info', `Round ${m.round}: Plan time! Ask Claude for new units.`);
+    this.game.notifier.toast({ all: true }, 'info', `Round ${m.round}: Plan time! Ask your AI helper for new units.`);
     this.changed();
     this.allPrivateChanged();
   }

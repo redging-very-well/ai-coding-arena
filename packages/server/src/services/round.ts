@@ -126,7 +126,7 @@ export class RoundService {
       if (!d) return fail('NOT_FOUND', `You have no unit "${id}".`);
       if (!UnitsService.latestValid(d)) {
         return fail('UNIT_INVALID', `${UnitsService.latest(d).stats.name} is not valid right now, so it can't be picked.`, {
-          hint: 'Ask Claude to fix it first (list_my_units shows the error).',
+          hint: 'Ask your AI helper to fix it first (list_my_units shows the error).',
         });
       }
       types.push(UnitsService.latestValid(d)!.stats.type);

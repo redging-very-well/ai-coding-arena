@@ -88,7 +88,7 @@ export function ClaudeSeats() {
   return (
     <section class="panel claude-seats">
       <div class="panel-head">
-        <h2>Claude seats</h2>
+        <h2>AI seats</h2>
         <label class="toggle">
           <input type="checkbox" checked={showDetails} onChange={(e) => setShowDetails(e.currentTarget.checked)} />
           Show details
@@ -97,7 +97,7 @@ export function ClaudeSeats() {
           class="btn small"
           disabled={busy}
           onClick={async () => {
-            const r = await act(() => api.admin.checkClaudeSeats(), 'Checked every Claude seat');
+            const r = await act(() => api.admin.checkClaudeSeats(), 'Checked every AI seat');
             if (r) setSeats(r);
           }}
         >
@@ -109,6 +109,8 @@ export function ClaudeSeats() {
           The seat password here doesn't match SEAT_SECRET on the Claude box (seat {wrong.join(', ')}). Enter the value from sessions/.env below.
         </div>
       )}
+
+      <p class="dim small">Each seat runs Claude Code or Codex (AGENT in sessions/.env).</p>
 
       <h3>Claude box</h3>
       <p class="dim small">
@@ -157,13 +159,13 @@ export function ClaudeSeats() {
                   <select
                     value={r.playerId ?? ''}
                     disabled={busy}
-                    aria-label={`Player on Claude seat ${r.seat}`}
+                    aria-label={`Player on AI seat ${r.seat}`}
                     onChange={(e) => {
                       const id = e.currentTarget.value || null;
                       const name = players.find((p) => p.id === id)?.name;
                       void act(
                         () => api.admin.assignClaudeSeat(r.seat, id),
-                        id ? `Claude seat ${r.seat} is now ${name ?? 'assigned'}'s` : `Claude seat ${r.seat} is free`,
+                        id ? `AI seat ${r.seat} is now ${name ?? 'assigned'}'s` : `AI seat ${r.seat} is free`,
                       ).then((d) => d && setSeats(d));
                     }}
                   >
@@ -180,7 +182,7 @@ export function ClaudeSeats() {
                       class="btn small"
                       disabled={busy}
                       onClick={() =>
-                        void act(() => api.admin.assignClaudeSeat(r.seat, null), `Claude seat ${r.seat} is free`).then((d) => d && setSeats(d))
+                        void act(() => api.admin.assignClaudeSeat(r.seat, null), `AI seat ${r.seat} is free`).then((d) => d && setSeats(d))
                       }
                     >
                       Unassign

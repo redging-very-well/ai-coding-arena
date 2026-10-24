@@ -59,54 +59,54 @@ function spec(code: ProxyErrorCode, ctx: ProxyErrorContext): PageSpec {
     case 'TERMINAL_LOGIN_REQUIRED':
       return {
         heading: 'Log in on the game page first',
-        text: 'Your Claude terminal opens once you have joined the game with your name and PIN.',
+        text: 'Your AI helper terminal opens once you have joined the game with your name and PIN.',
         link: [seat ? `/play?seat=${seat}` : '/play', 'Go to the game page'],
         message: 'Log in on the game page first.',
       };
     case 'CLAUDE_SEAT_NOT_YOURS':
       return ctx.mySeat
         ? {
-            heading: `This is Claude seat ${seat}`,
+            heading: `This is AI seat ${seat}`,
             text: `Yours is seat ${ctx.mySeat}.`,
-            link: [`/terminal/${ctx.mySeat}/`, `Open Claude seat ${ctx.mySeat}`],
-            message: `This is Claude seat ${seat}. Yours is seat ${ctx.mySeat}.`,
+            link: [`/terminal/${ctx.mySeat}/`, `Open AI seat ${ctx.mySeat}`],
+            message: `This is AI seat ${seat}. Yours is seat ${ctx.mySeat}.`,
           }
         : {
-            heading: `This is Claude seat ${seat}`,
-            text: "You haven't picked your Claude seat yet. Use the number on your laptop's card.",
+            heading: `This is AI seat ${seat}`,
+            text: "You haven't picked your AI seat yet. Use the number on your laptop's card.",
             link: [seat ? `/play?seat=${seat}` : '/play', 'Pick your seat on the game page'],
-            message: `This is Claude seat ${seat}, and you have no Claude seat yet. Pick your seat on the game page.`,
+            message: `This is AI seat ${seat}, and you have no AI seat yet. Pick your seat on the game page.`,
           };
     case 'BAD_CLAUDE_SEAT':
       return {
-        heading: 'No such Claude seat',
-        text: 'Claude seats are numbered 1 to 8.',
+        heading: 'No such AI seat',
+        text: 'AI seats are numbered 1 to 8.',
         link: ['/play', 'Go to the game page'],
-        message: 'There is no such Claude seat. Claude seats are 1-8.',
+        message: 'There is no such AI seat. AI seats are 1-8.',
       };
     case 'TERMINAL_BAD_ORIGIN':
       return { heading: 'Not allowed', text: 'This terminal only opens from the game page.', message: 'Cross-site terminal connections are not allowed.' };
     case 'CLAUDE_BOX_NOT_SET':
       return {
-        heading: 'Claude is not connected yet',
-        text: "The grown-ups haven't connected the Claude computer yet. This page tries again by itself.",
+        heading: 'Your AI helper is not connected yet',
+        text: "The grown-ups haven't connected the AI computer yet. This page tries again by itself.",
         retryMs: 5000,
-        message: "The grown-ups haven't connected the Claude computer yet.",
+        message: "The grown-ups haven't connected the AI computer yet.",
       };
     case 'CLAUDE_BOX_DOWN':
       return {
-        heading: 'Waking up Claude…',
-        text: "Your Claude computer isn't answering yet. Trying again…",
+        heading: 'Waking up your AI helper…',
+        text: "Your AI computer isn't answering yet. Trying again…",
         retryMs: 5000,
         checkFirst: true,
-        message: "Your Claude computer isn't answering yet.",
+        message: "Your AI computer isn't answering yet.",
       };
     case 'SEAT_PASSWORD_WRONG':
       return {
-        heading: 'Claude needs a grown-up',
-        text: "Claude's computer needs a grown-up (password check). This page tries again by itself.",
+        heading: 'Your AI helper needs a grown-up',
+        text: "The AI computer needs a grown-up (password check). This page tries again by itself.",
         retryMs: 10_000,
-        message: "Claude's computer needs a grown-up (password check).",
+        message: "The AI computer needs a grown-up (password check).",
       };
     case 'TERMINAL_BUSY':
       return {
@@ -124,7 +124,7 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 export function errorPageHtml(code: ProxyErrorCode, ctx: ProxyErrorContext): string {
   const s = spec(code, ctx);
-  const title = ctx.seat ? `Pixel Clash · Claude · seat ${ctx.seat}` : 'Pixel Clash · Claude';
+  const title = ctx.seat ? `Pixel Clash · AI helper · seat ${ctx.seat}` : 'Pixel Clash · AI helper';
   const script = s.retryMs
     ? `<script>setTimeout(function again(){${
         s.checkFirst

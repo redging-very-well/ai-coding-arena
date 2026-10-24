@@ -15,7 +15,7 @@ import { MatchSetup } from './MatchSetup.js';
 
 const PHASE_HELP: Record<Phase, string> = {
   LOBBY: 'Players join (up to 8). Pick the map and teams, then start the match when 2-8 players are in.',
-  PLAN: 'Players ask Claude for units, pick up to 4 units and 4 buildings and press Ready. Ends when the timer runs out, or press Next (any time: Ready never blocks you).',
+  PLAN: 'Players ask their AI helper for units, pick up to 4 units and 4 buildings and press Ready. Ends when the timer runs out, or press Next (any time: Ready never blocks you).',
   PLACEMENT: 'Players place their armies and press READY. START when everyone is ready, or Force start.',
   BATTLE: 'The battle is playing. Pause, 1x/2x, or Skip to the results.',
   RESULTS: 'Round results. Press Next for the next round (or the final results).',

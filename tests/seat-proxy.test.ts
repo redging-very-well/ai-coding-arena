@@ -275,7 +275,7 @@ describe('seat terminal proxy', () => {
     expect((await sam.client.put('/me/claude-seat', { seat: 1 })).body).toEqual({ claudeSeat: 1 });
     const page = await raw(srv.url, '/terminal/1/', { headers: { ...HTML, cookie: sam.client.cookieHeader() } });
     expect(page.status).toBe(503);
-    expect(page.text).toContain('connected the Claude computer yet');
+    expect(page.text).toContain('connected the AI computer yet');
     expect(page.headers.get('www-authenticate')).toBeNull();
     const ws = await openTerm(srv.url, 1, sam.client.cookieHeader());
     expect(ws).toMatchObject({ ok: false, status: 503 });
@@ -318,7 +318,7 @@ describe('seat terminal proxy', () => {
     expect((await zoe.client.put('/me/claude-seat', { seat: 2 })).body).toEqual({ claudeSeat: 2 });
     const page = await raw(srv.url, '/terminal/2/', { headers: { ...HTML, cookie: sam.client.cookieHeader() } });
     expect(page.status).toBe(403);
-    expect(page.text).toContain('This is Claude seat 2');
+    expect(page.text).toContain('This is AI seat 2');
     expect(page.text).toContain('/terminal/1/');
     const json = await raw(srv.url, '/terminal/2/', { headers: { cookie: sam.client.cookieHeader() } });
     expect(JSON.parse(json.text).error).toMatchObject({ code: 'CLAUDE_SEAT_NOT_YOURS', details: { seat: 2, mySeat: 1 } });
@@ -573,7 +573,7 @@ describe('seat terminal proxy', () => {
     expect(Date.now() - t0).toBeLessThan(3500);
     expect(page.status).toBe(502);
     expect(page.text).toContain('answering yet');
-    expect(page.text).toContain('Pixel Clash · Claude · seat 8');
+    expect(page.text).toContain('Pixel Clash · AI helper · seat 8');
     expect(await openTerm(srv.url, 8, kim.client.cookieHeader())).toMatchObject({ ok: false, status: 502 });
     const seats = (await admin.post<AdminClaudeSeatsDTO>('/admin/claude-seats/check')).body;
     expect(seats.seats[7]).toMatchObject({ status: 'down', playerName: 'Kim' });

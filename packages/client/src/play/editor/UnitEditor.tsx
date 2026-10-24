@@ -63,7 +63,7 @@ import {
 } from './logic.js';
 import { allowProtectedEdit, protectSprite, protectedRange, setProtected } from './protect.js';
 
-const LOCK_TEXT = 'Ask Claude to change how it looks';
+const LOCK_TEXT = 'Ask your AI helper to change how it looks';
 
 // ---------------------------------------------------------------------------
 // CodeMirror setup

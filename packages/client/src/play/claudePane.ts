@@ -62,7 +62,7 @@ export function seatAction(mySeat: number | null, cardSeat: number | null): Seat
 /** The player-facing text of a CLAUDE_SEAT_TAKEN conflict. */
 export function seatTakenText(seat: number, takenBy: string | null | undefined): string {
   const who = takenBy ? `${takenBy}'s` : 'taken';
-  return `Claude seat ${seat} is ${who}. Check the number on your laptop's card, or ask a grown-up.`;
+  return `AI seat ${seat} is ${who}. Check the number on your laptop's card, or ask a grown-up.`;
 }
 
 // ---------------------------------------------------------------------------

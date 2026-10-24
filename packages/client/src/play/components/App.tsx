@@ -59,7 +59,7 @@ function Lobby() {
     <section class="panel lobby">
       <h2>You're in!</h2>
       <p>
-        When everyone has joined, the host starts the game. First, say hi to Claude in your Claude terminal: tell it your player name and PIN.
+        When everyone has joined, the host starts the game. First, say hi to your AI helper in your terminal: tell it your player name and PIN.
       </p>
       {others.length > 0 && <p class="dim">Also here: {others.map((p) => p.name).join(', ')}</p>}
     </section>
@@ -73,7 +73,7 @@ function Benched() {
   return (
     <section class="panel benched">
       <h2>Teams are set for this match</h2>
-      <p>You'll play in the next match! You can still ask Claude to build units now, so you're ready.</p>
+      <p>You'll play in the next match! You can still ask your AI helper to build units now, so you're ready.</p>
     </section>
   );
 }
@@ -237,7 +237,7 @@ function PlayShell() {
           id="pane-claude"
           class={cx('pane claude-side', !claudeShowing && 'pane-hidden')}
           role={isSplit ? 'region' : 'tabpanel'}
-          aria-label="Claude"
+          aria-label="AI helper"
           inert={!claudeShowing}
         >
           <ClaudePane visible={claudeShowing} layout={layout} focusSeq={focusSeq} onShowGame={() => choose('game')} />
@@ -246,7 +246,7 @@ function PlayShell() {
           class="divider"
           role="separator"
           aria-orientation="vertical"
-          aria-label="Make Claude or the game bigger"
+          aria-label="Make the AI helper or the game bigger"
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(ratio * 100)}
@@ -315,7 +315,7 @@ function PaneTabs({ tab, onChoose, claudeWarn }: { tab: PlayTab; onChoose: (t: P
   useSecondTick(placing);
   const pulse = placing && nudgeAllowed(store.lastTypedAt, Date.now());
   return (
-    <nav class="pane-tabs" role="tablist" aria-label="Claude or game">
+    <nav class="pane-tabs" role="tablist" aria-label="AI helper or game">
       <button
         role="tab"
         id="tab-claude"
@@ -324,9 +324,9 @@ function PaneTabs({ tab, onChoose, claudeWarn }: { tab: PlayTab; onChoose: (t: P
         class={cx('pane-tab', tab === 'claude' && 'on')}
         onClick={() => onChoose('claude')}
       >
-        <span>Claude</span>
+        <span>AI helper</span>
         {tab === 'game' && claudeWarn && (
-          <span class="tab-badge warn" title="Your Claude terminal needs a look">
+          <span class="tab-badge warn" title="Your AI helper terminal needs a look">
             ⚠
           </span>
         )}

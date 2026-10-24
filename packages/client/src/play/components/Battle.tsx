@@ -92,7 +92,7 @@ export function Battle() {
               </ul>
               {napping.length > 0 && (
                 <p class="note small">
-                  💤 A unit takes a nap when its code keeps going wrong or thinks too slowly. After the battle, ask Claude to fix it!
+                  💤 A unit takes a nap when its code keeps going wrong or thinks too slowly. After the battle, ask your AI helper to fix it!
                 </p>
               )}
             </>

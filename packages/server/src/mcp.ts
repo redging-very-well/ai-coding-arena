@@ -58,23 +58,23 @@ function playerHintForService(code: string): string {
       return "We'll send your unit when Plan time starts!";
     case 'AUTH_REQUIRED':
     case 'KEY_INVALID':
-      return 'Tell Claude your player name and your 4-digit PIN.';
+      return 'Tell your AI helper your player name and your 4-digit PIN.';
     case 'RATE_LIMITED':
-      return 'Whoa, slow down! Claude will try again in a moment.';
+      return 'Whoa, slow down! Your AI helper will try again in a moment.';
     case 'TOO_MANY_DESIGNS':
-      return 'You have lots of units! Ask Claude to improve one of them instead.';
+      return 'You have lots of units! Ask your AI helper to improve one of them instead.';
     case 'BAD_LOGIN':
-      return 'Check your player name and 4-digit PIN and tell Claude again.';
+      return 'Check your player name and 4-digit PIN and tell your AI helper again.';
     case 'NOT_FOUND':
       return 'Nothing to show yet!';
     case 'UNIT_CHANGED':
-      return 'Your unit was changed while Claude was working on it. Claude will load the new version and try again.';
+      return 'Your unit was changed while your AI helper was working on it. It will load the new version and try again.';
     case 'TEMPLATE_PROTECTED':
-      return "The starter units can't be changed, so Claude will make you your own copy with a new name.";
+      return "The starter units can't be changed, so your AI helper will make you your own copy with a new name.";
     case 'GAME_FULL':
       return 'All the seats are taken. Ask a grown-up for help.';
     default:
-      return 'Oops, that didn\'t work. Ask Claude to take a look.';
+      return 'Oops, that didn\'t work. Ask your AI helper to take a look.';
   }
 }
 

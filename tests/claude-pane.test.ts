@@ -67,8 +67,8 @@ describe('seat card ?seat=N (§11.2 c)', () => {
     expect(seatAction(null, null)).toEqual({ kind: 'none' });
   });
   it("explains a taken seat in kid words", () => {
-    expect(seatTakenText(3, 'Sam')).toBe("Claude seat 3 is Sam's. Check the number on your laptop's card, or ask a grown-up.");
-    expect(seatTakenText(3, null)).toContain('Claude seat 3 is taken');
+    expect(seatTakenText(3, 'Sam')).toBe("AI seat 3 is Sam's. Check the number on your laptop's card, or ask a grown-up.");
+    expect(seatTakenText(3, null)).toContain('AI seat 3 is taken');
   });
 });
 

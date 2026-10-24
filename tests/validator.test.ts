@@ -298,7 +298,7 @@ describe('validator: bad fixtures (one per error code)', () => {
     ]);
     expect(r.cost).toBeNull();
     expect(r.warnings).toEqual([]);
-    expect(r.playerHint).toBe('Whoa, that unit hits WAY too hard! Ask Claude to lower its damage.');
+    expect(r.playerHint).toBe('Whoa, that unit hits WAY too hard! Ask your AI helper to lower its damage.');
   });
 
   it('STAT_OUT_OF_RANGE: -5', async () => {
@@ -610,7 +610,7 @@ describe('validator: sprites (§7 step 8b)', () => {
     expect(r.unit.sprite).toBeNull();
     const w = r.warnings.find((x) => x.code === 'W_NO_SPRITE');
     expect(w?.fix).toMatch(/sprite\(\)/);
-    expect(r.playerHint).toContain('Ask Claude to draw a pixel-art sprite for your unit!');
+    expect(r.playerHint).toContain('Ask your AI helper to draw a pixel-art sprite for your unit!');
   });
 
   it('SPRITE_BAD_FRAME: wrong row length names state, frame, row and col', async () => {

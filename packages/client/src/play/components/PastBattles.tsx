@@ -166,7 +166,7 @@ export function PastBattles({ onClose }: { onClose: () => void }) {
           </p>
           {groups.length > 0 ? (
             <div class="ask-claude">
-              <p class="dim small">Copy a message and paste it to Claude to fix it:</p>
+              <p class="dim small">Copy a message and paste it to your AI helper to fix it:</p>
               <ul>
                 {groups.map((g, i) => (
                   <li key={i}>

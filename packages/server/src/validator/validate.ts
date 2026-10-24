@@ -262,7 +262,7 @@ function failure(errors: ValidationError[], warnings: ValidationWarning[] = [], 
     errors,
     warnings,
     cost,
-    playerHint: first ? playerHintForIssue(first) : 'Something went wrong. Ask Claude to check the unit.',
+    playerHint: first ? playerHintForIssue(first) : 'Something went wrong. Ask your AI helper to check the unit.',
   };
 }
 

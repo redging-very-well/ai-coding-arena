@@ -118,7 +118,7 @@ export class ClaudeSeatsService {
   claim(player: PlayerRecord, seatIn: unknown): Result<{ claudeSeat: number | null }> {
     const seat = seatIn === null ? null : parseClaudeSeat(seatIn);
     if (seatIn !== null && seat === null) {
-      return fail('BAD_CLAUDE_SEAT', `There is no Claude seat ${String(seatIn)}. Claude seats are 1-${CLAUDE_SEATS}.`, {
+      return fail('BAD_CLAUDE_SEAT', `There is no AI seat ${String(seatIn)}. AI seats are 1-${CLAUDE_SEATS}.`, {
         hint: "Use the number on your laptop's seat card.",
       });
     }
@@ -127,7 +127,7 @@ export class ClaudeSeatsService {
     if (seat !== null) {
       const other = this.holder(seat);
       if (other && other.id !== player.id) {
-        return fail('CLAUDE_SEAT_TAKEN', `Claude seat ${seat} is ${other.name}'s.`, {
+        return fail('CLAUDE_SEAT_TAKEN', `AI seat ${seat} is ${other.name}'s.`, {
           hint: "Check the number on your laptop's card, or ask a grown-up.",
           details: { seat, takenBy: other.name },
         });
@@ -148,7 +148,7 @@ export class ClaudeSeatsService {
    */
   adminAssign(seatIn: unknown, playerIdIn: unknown): Result<AdminClaudeSeatsDTO> {
     const seat = parseClaudeSeat(seatIn);
-    if (seat === null) return fail('BAD_CLAUDE_SEAT', `There is no Claude seat ${String(seatIn)}. Claude seats are 1-${CLAUDE_SEATS}.`);
+    if (seat === null) return fail('BAD_CLAUDE_SEAT', `There is no AI seat ${String(seatIn)}. AI seats are 1-${CLAUDE_SEATS}.`);
     if (playerIdIn !== null && typeof playerIdIn !== 'string') {
       return fail('BAD_REQUEST', 'Send {"playerId": "<id>"} to assign, or {"playerId": null} to unassign.');
     }

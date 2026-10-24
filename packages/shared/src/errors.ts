@@ -297,49 +297,49 @@ const FRIENDLY_FIELD: Record<string, string> = {
 };
 
 const PLAYER_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
-  SOURCE_TOO_LARGE: 'That unit is HUGE! Ask Claude to make the code shorter.',
-  EMPTY_SOURCE: "Oops, there's no code yet! Ask Claude to write your unit.",
-  SYNTAX_ERROR: "There's a typo in the code. Ask Claude to fix it!",
-  IMPORT_NOT_ALLOWED: "Units can't use code from other files. Ask Claude to keep it all in one file.",
-  NO_DEFAULT_EXPORT: "The game can't find your unit in the code. Ask Claude to fix it!",
-  NOT_A_CLASS: "The code isn't shaped like a unit yet. Ask Claude to fix it!",
-  EVAL_THREW: 'The code crashed when the game loaded it. Ask Claude to fix it!',
-  TIMEOUT: 'The code took too long to load. Ask Claude to look for a loop that never ends.',
-  CONSTRUCTOR_THREW: 'Your unit crashed while being built. Ask Claude to fix it!',
-  STAT_MISSING: 'Your unit is missing its {field}! Ask Claude to add it.',
-  STAT_IS_GETTER: 'Your unit needs plain numbers for its stats. Ask Claude to fix its {field}.',
-  STAT_WRONG_TYPE: "Your unit's {field} looks wrong. Ask Claude to fix it.",
-  STAT_NOT_FINITE: "Your unit's {field} isn't a real number. Ask Claude to fix it.",
-  STAT_OUT_OF_RANGE: "Your unit's {field} is too big or too small! Ask Claude to change it.",
-  COOLDOWN_NOT_INTEGER: 'Attack speed must be a whole number. Ask Claude to fix it.',
-  BAD_COLOR: 'That colour code looks wrong. Ask Claude to pick a colour like #33CC66.',
-  BAD_NAME: 'Your unit needs a name from 1 to 24 letters. Ask Claude to rename it.',
-  TOWER_CANNOT_MOVE: "Towers can't move! Ask Claude to set the tower's speed to 0.",
-  BUILDING_CANNOT_ATTACK: "Walls and factories can't attack! Ask Claude to remove the damage, or make a tower instead.",
-  BUILDING_CANNOT_MOVE: "Walls and factories can't move! Ask Claude to remove the speed.",
-  INTERVAL_NOT_INTEGER: 'The factory needs a whole number of ticks between minions. Ask Claude to fix it.',
-  BURST_NOT_INTEGER: 'A burst must be a whole number of minions (1 to 4). Ask Claude to fix it.',
-  STATS_NOT_STABLE: 'Your unit changes its stats every time. Ask Claude to use fixed numbers.',
-  UNIT_TOO_EXPENSIVE: 'Your unit costs too much! Ask Claude to make it cheaper.',
-  SPRITE_THREW: "Drawing your unit's picture crashed. Ask Claude to fix it!",
-  SPRITE_BAD_GRID: "Your unit's picture is the wrong size. Ask Claude to fix it!",
-  SPRITE_BAD_PALETTE: "Your unit's picture uses a colour the game doesn't know. Ask Claude to fix it!",
-  SPRITE_BAD_FRAME: "Your unit's picture has a mistake in it. Ask Claude to fix it!",
-  SPRITE_TOO_MANY_FRAMES: "Your unit's animation is too long. Ask Claude to use fewer pictures.",
-  SPRITE_EMPTY: "Your unit's picture is blank! Ask Claude to draw something.",
-  SPRITE_NOT_STABLE: "Your unit's picture changes every time. Ask Claude to draw it the same way each time.",
-  UPDATE_MISSING: "Your unit doesn't know what to do in battle. Ask Claude to give it some moves!",
-  UPDATE_THREW: 'Your unit crashed during a practice battle. Ask Claude to fix it!',
-  UPDATE_TIMEOUT: 'Your unit thinks too slowly. Ask Claude to help it think faster!',
-  BAD_ACTION: "Your unit gave an order the game doesn't understand. Ask Claude to fix it.",
-  W_NO_SPRITE: 'Ask Claude to draw a pixel-art sprite for your unit!',
+  SOURCE_TOO_LARGE: 'That unit is HUGE! Ask your AI helper to make the code shorter.',
+  EMPTY_SOURCE: "Oops, there's no code yet! Ask your AI helper to write your unit.",
+  SYNTAX_ERROR: "There's a typo in the code. Ask your AI helper to fix it!",
+  IMPORT_NOT_ALLOWED: "Units can't use code from other files. Ask your AI helper to keep it all in one file.",
+  NO_DEFAULT_EXPORT: "The game can't find your unit in the code. Ask your AI helper to fix it!",
+  NOT_A_CLASS: "The code isn't shaped like a unit yet. Ask your AI helper to fix it!",
+  EVAL_THREW: 'The code crashed when the game loaded it. Ask your AI helper to fix it!',
+  TIMEOUT: 'The code took too long to load. Ask your AI helper to look for a loop that never ends.',
+  CONSTRUCTOR_THREW: 'Your unit crashed while being built. Ask your AI helper to fix it!',
+  STAT_MISSING: 'Your unit is missing its {field}! Ask your AI helper to add it.',
+  STAT_IS_GETTER: 'Your unit needs plain numbers for its stats. Ask your AI helper to fix its {field}.',
+  STAT_WRONG_TYPE: "Your unit's {field} looks wrong. Ask your AI helper to fix it.",
+  STAT_NOT_FINITE: "Your unit's {field} isn't a real number. Ask your AI helper to fix it.",
+  STAT_OUT_OF_RANGE: "Your unit's {field} is too big or too small! Ask your AI helper to change it.",
+  COOLDOWN_NOT_INTEGER: 'Attack speed must be a whole number. Ask your AI helper to fix it.',
+  BAD_COLOR: 'That colour code looks wrong. Ask your AI helper to pick a colour like #33CC66.',
+  BAD_NAME: 'Your unit needs a name from 1 to 24 letters. Ask your AI helper to rename it.',
+  TOWER_CANNOT_MOVE: "Towers can't move! Ask your AI helper to set the tower's speed to 0.",
+  BUILDING_CANNOT_ATTACK: "Walls and factories can't attack! Ask your AI helper to remove the damage, or make a tower instead.",
+  BUILDING_CANNOT_MOVE: "Walls and factories can't move! Ask your AI helper to remove the speed.",
+  INTERVAL_NOT_INTEGER: 'The factory needs a whole number of ticks between minions. Ask your AI helper to fix it.',
+  BURST_NOT_INTEGER: 'A burst must be a whole number of minions (1 to 4). Ask your AI helper to fix it.',
+  STATS_NOT_STABLE: 'Your unit changes its stats every time. Ask your AI helper to use fixed numbers.',
+  UNIT_TOO_EXPENSIVE: 'Your unit costs too much! Ask your AI helper to make it cheaper.',
+  SPRITE_THREW: "Drawing your unit's picture crashed. Ask your AI helper to fix it!",
+  SPRITE_BAD_GRID: "Your unit's picture is the wrong size. Ask your AI helper to fix it!",
+  SPRITE_BAD_PALETTE: "Your unit's picture uses a colour the game doesn't know. Ask your AI helper to fix it!",
+  SPRITE_BAD_FRAME: "Your unit's picture has a mistake in it. Ask your AI helper to fix it!",
+  SPRITE_TOO_MANY_FRAMES: "Your unit's animation is too long. Ask your AI helper to use fewer pictures.",
+  SPRITE_EMPTY: "Your unit's picture is blank! Ask your AI helper to draw something.",
+  SPRITE_NOT_STABLE: "Your unit's picture changes every time. Ask your AI helper to draw it the same way each time.",
+  UPDATE_MISSING: "Your unit doesn't know what to do in battle. Ask your AI helper to give it some moves!",
+  UPDATE_THREW: 'Your unit crashed during a practice battle. Ask your AI helper to fix it!',
+  UPDATE_TIMEOUT: 'Your unit thinks too slowly. Ask your AI helper to help it think faster!',
+  BAD_ACTION: "Your unit gave an order the game doesn't understand. Ask your AI helper to fix it.",
+  W_NO_SPRITE: 'Ask your AI helper to draw a pixel-art sprite for your unit!',
   W_NEVER_ATTACKS: "Heads up: your unit never attacks, even when an enemy is close!",
   W_NEVER_MOVES: 'Heads up: your soldier never moves.',
   W_ZERO_DAMAGE: 'Heads up: your unit does 0 damage.',
   W_RETURNS_NOTHING: "Heads up: sometimes your unit can't decide what to do.",
   W_SLOW: 'Heads up: your unit thinks a bit slowly.',
   W_SLOW_NO_DISCOUNT:
-    "Tip: attacking slower than once a second doesn't make it cheaper. Ask Claude to make it attack once a second.",
+    "Tip: attacking slower than once a second doesn't make it cheaper. Ask your AI helper to make it attack once a second.",
   W_STAT_NEAR_MAX: 'Tip: a maxed-out stat costs up to 2 times as much. Two medium units usually beat one giant one!',
   W_STAT_IGNORED: "Heads up: this kind of unit doesn't use its {field}, so the game ignores it.",
   W_UPDATE_IGNORED: "Heads up: walls don't think, so the game never runs this wall's update().",
@@ -347,7 +347,7 @@ const PLAYER_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
   W_TRAPPED: 'Walled in! Leave a gap so your unit can get out.',
   W_ORDER_TARGET: 'Heads up: your factory sometimes points its minions at the wrong side (swarm an enemy, guard a friend).',
   W_BURST_NEVER_FULL: "Heads up: this factory never makes enough minions to fill its burst, so they leave when it runs out.",
-  W_HEAL_NEVER_USED: "Heads up: your healer never healed anyone in the practice battles. Ask Claude to make it heal hurt friends!",
+  W_HEAL_NEVER_USED: "Heads up: your healer never healed anyone in the practice battles. Ask your AI helper to make it heal hurt friends!",
   W_POWER_HIGH: 'Tip: a unit that is very tough AND very strong costs extra. One tough unit plus one strong unit is cheaper!',
 };
 
@@ -361,39 +361,39 @@ export function playerHintFor(code: ValidationErrorCode | WarningCode, field?: s
 export function playerHintForIssue(issue: ValidationIssue): string {
   // Enum fields: "too big or too small" makes no sense for a word.
   if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'type') {
-    return 'Your unit must be a soldier, tower, wall or factory. Ask Claude to fix its type.';
+    return 'Your unit must be a soldier, tower, wall or factory. Ask your AI helper to fix its type.';
   }
   if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'produces') {
-    return 'A factory can build grunts, archers, runners, brutes or medics. Ask Claude to pick one of those.';
+    return 'A factory can build grunts, archers, runners, brutes or medics. Ask your AI helper to pick one of those.';
   }
   if (issue.code === 'STAT_OUT_OF_RANGE' && (issue.field === 'element' || issue.field === 'minionElement')) {
-    return 'The elements are normal, fire, ice and lightning. Ask Claude to pick one of those.';
+    return 'The elements are normal, fire, ice and lightning. Ask your AI helper to pick one of those.';
   }
   if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'support') {
-    return 'A unit can support with heal, haste, might or shield. Ask Claude to pick one of those.';
+    return 'A unit can support with heal, haste, might or shield. Ask your AI helper to pick one of those.';
   }
   if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'shape') {
-    return 'Your unit must be a circle, square, triangle or diamond. Ask Claude to fix its shape.';
+    return 'Your unit must be a circle, square, triangle or diamond. Ask your AI helper to fix its shape.';
   }
   const { min, max } = (issue.allowed ?? {}) as { min?: number; max?: number };
   const value = typeof issue.value === 'number' && Number.isFinite(issue.value) ? issue.value : undefined;
   const n = (v: number) => String(Math.round(v * 100) / 100);
   if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'damage' && value !== undefined && max !== undefined && value > max) {
-    return 'Whoa, that unit hits WAY too hard! Ask Claude to lower its damage.';
+    return 'Whoa, that unit hits WAY too hard! Ask your AI helper to lower its damage.';
   }
   // Attack speed is a cooldown: a small number means fast, so say it in words.
   if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'attackCooldown' && value !== undefined) {
-    if (min !== undefined && value < min) return 'Your unit attacks too fast! Ask Claude to slow it down a little.';
-    if (max !== undefined && value > max) return 'Your unit attacks too slowly! Ask Claude to speed it up.';
+    if (min !== undefined && value < min) return 'Your unit attacks too fast! Ask your AI helper to slow it down a little.';
+    if (max !== undefined && value > max) return 'Your unit attacks too slowly! Ask your AI helper to speed it up.';
   }
   // Concrete numbers: "Your unit's range is too big! (500, the max is 300)".
   if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field && value !== undefined) {
     const name = FRIENDLY_FIELD[issue.field] ?? issue.field;
-    if (max !== undefined && value > max) return `Your unit's ${name} is too big! (${n(value)}, the max is ${n(max)}) Ask Claude to lower it.`;
-    if (min !== undefined && value < min) return `Your unit's ${name} is too small! (${n(value)}, the min is ${n(min)}) Ask Claude to raise it.`;
+    if (max !== undefined && value > max) return `Your unit's ${name} is too big! (${n(value)}, the max is ${n(max)}) Ask your AI helper to lower it.`;
+    if (min !== undefined && value < min) return `Your unit's ${name} is too small! (${n(value)}, the min is ${n(min)}) Ask your AI helper to raise it.`;
   }
   if (issue.code === 'UNIT_TOO_EXPENSIVE' && value !== undefined && max !== undefined) {
-    return `Your unit costs too much! (${money(value)}, the max is ${money(max)}) Ask Claude to make it cheaper.`;
+    return `Your unit costs too much! (${money(value)}, the max is ${money(max)}) Ask your AI helper to make it cheaper.`;
   }
   return playerHintFor(issue.code, issue.field);
 }

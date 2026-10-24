@@ -104,7 +104,7 @@ export function Roster(props: { phase: Phase }) {
           ? groupFullText(r.group, r.max)
           : 'armoryId' in u
             ? `${u.name} doesn't fit the rules right now. Pick another one!`
-            : `${u.name} needs fixing before you can pick it. Ask Claude!`,
+            : `${u.name} needs fixing before you can pick it. Ask your AI helper!`,
       );
       return;
     }
@@ -166,12 +166,12 @@ export function Roster(props: { phase: Phase }) {
             <strong>
               Tap up to {limits.unit} units and {limits.building} buildings
             </strong>{' '}
-            to use this round. Claude can send new units now!
+            to use this round. Your AI helper can send new units now!
           </>
         ) : props.phase === 'LOBBY' ? (
-          <>Claude can send new units at Plan time. It can already make and check them now!</>
+          <>Your AI helper can send new units at Plan time. It can already make and check them now!</>
         ) : (
-          <>Claude can send new units at Plan time.</>
+          <>Your AI helper can send new units at Plan time.</>
         )}
       </p>
       {(note ?? overCap) && (
@@ -183,7 +183,7 @@ export function Roster(props: { phase: Phase }) {
         <>
           <p class="dim small">
             Open Armory: units other players used in a battle. Borrow them for your army (they count toward your picks). They can't
-            be changed, but Claude can build you a counter or an improved version!
+            be changed, but your AI helper can build you a counter or an improved version!
           </p>
           {armory.length === 0 && <p class="dim">No units in the Armory yet. Units join it when a battle ends.</p>}
           {grouped(armory).map(([group, cards]) => (

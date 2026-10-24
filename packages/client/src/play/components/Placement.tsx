@@ -184,7 +184,7 @@ export function Placement() {
     return (
       <section class="panel placement">
         <h2>Teams are set for this match</h2>
-        <p>You'll play in the next match! Meanwhile, ask Claude to make some great units.</p>
+        <p>You'll play in the next match! Meanwhile, ask your AI helper to make some great units.</p>
       </section>
     );
   }
@@ -192,7 +192,7 @@ export function Placement() {
     return (
       <section class="panel placement">
         <h2>Watch this round</h2>
-        <p>You joined partway through, so you're in from the next round. Ask Claude to make some units while you wait!</p>
+        <p>You joined partway through, so you're in from the next round. Ask your AI helper to make some units while you wait!</p>
       </section>
     );
   }

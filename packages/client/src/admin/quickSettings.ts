@@ -94,7 +94,7 @@ export const QUICK_GROUPS: QuickGroup[] = [
     title: 'Timers',
     fields: [
       { path: 'timers.defaultRounds', label: 'Rounds per match', help: 'Default for the Start match box (1-10).', min: 1, max: 10, step: 1, integer: true },
-      { ...minutes, path: 'timers.planFirstRoundSec', label: 'Plan time, round 1', help: 'Time to design units with Claude in the first round.', min: 0.5 },
+      { ...minutes, path: 'timers.planFirstRoundSec', label: 'Plan time, round 1', help: 'Time to design units with the AI helper in the first round.', min: 0.5 },
       { ...minutes, path: 'timers.planLaterRoundsSec', label: 'Plan time, later rounds', help: 'Plan time in rounds 2 and later.', min: 0.5 },
       { ...minutes, path: 'timers.placementSec', label: 'Placement time', help: 'Time to pick units and place them on the arena.', min: 0.5 },
       {

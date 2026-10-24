@@ -83,8 +83,8 @@ export function ClaudePane({ visible, layout, focusSeq, onShowGame }: ClaudePane
   return (
     <div class={cx('claude-pane', `claude-${view.kind}`)}>
       <div class="claude-head">
-        <button class="claude-title" onClick={focusHere} title={live ? 'Type to Claude' : undefined}>
-          <span class="pixel">Claude</span>
+        <button class="claude-title" onClick={focusHere} title={live ? 'Type to your AI helper' : undefined}>
+          <span class="pixel">AI helper</span>
           {seat !== null && <span class="dim small">seat {seat}</span>}
         </button>
         {seat !== null && viewOffersTab(view) && (
@@ -92,7 +92,7 @@ export function ClaudePane({ visible, layout, focusSeq, onShowGame }: ClaudePane
             class="btn small open-tab"
             href={terminalPath(seat)}
             target={terminalTabName(seat)}
-            title="Opens this same Claude terminal as its own browser tab"
+            title="Opens this same terminal as its own browser tab"
           >
             Open in new tab ↗
           </a>
@@ -111,7 +111,7 @@ export function ClaudePane({ visible, layout, focusSeq, onShowGame }: ClaudePane
         {view.kind === 'not-ready' && <NotReady seat={seat} />}
         {view.kind === 'terminal' && !st.holderKnown && (
           <div class="claude-msg">
-            <p class="dim">Connecting to Claude…</p>
+            <p class="dim">Connecting to your AI helper…</p>
           </div>
         )}
         {viewHasFrame(view) && st.holderKnown && seat !== null && (
@@ -152,7 +152,7 @@ function TerminalFrame(props: { frameRef: { current: HTMLIFrameElement | null };
       ref={props.frameRef}
       class="claude-frame"
       src={props.src}
-      title={`Claude terminal, seat ${props.seat}`}
+      title={`AI helper terminal, seat ${props.seat}`}
       // Copy/paste in xterm. No sandbox: the terminal must be same-origin.
       allow="clipboard-read; clipboard-write"
       onLoad={onLoad}
@@ -190,7 +190,7 @@ function SeatAsk({ ask }: { ask: { seat: number; current: number } }) {
   return (
     <div class="note seat-ask" role="alert">
       <p>
-        This laptop is Claude seat <b>{ask.seat}</b>, but you're on seat <b>{ask.current}</b>. Switch to seat {ask.seat}?
+        This laptop is AI seat <b>{ask.seat}</b>, but you're on seat <b>{ask.current}</b>. Switch to seat {ask.seat}?
       </p>
       <div class="btn-row">
         <button class="btn primary" onClick={() => void store.claimSeat(ask.seat)}>
@@ -216,19 +216,19 @@ function SeatPicker() {
   return (
     <div class="seat-pick">
       <h2>Which number is on your laptop's card?</h2>
-      <p class="dim">That's your Claude seat. Your Claude terminal then opens right here.</p>
+      <p class="dim">That's your AI seat. Your AI helper terminal then opens right here.</p>
       {offerLaptop && (
         <button class="btn big-link" onClick={() => void store.claimSeat(laptop)}>
-          Use Claude seat {laptop}
+          Use AI seat {laptop}
         </button>
       )}
-      <div class="seat-picker" role="group" aria-label="Claude seat">
+      <div class="seat-picker" role="group" aria-label="AI seat">
         {seats.map((s) => (
           <button
             key={s.seat}
             class={cx('seat-btn', s.seat === laptop && 'chosen', s.takenBy && 'taken')}
             onClick={() => void store.claimSeat(s.seat)}
-            title={s.takenBy ? `${s.takenBy} is on Claude seat ${s.seat}` : `Use Claude seat ${s.seat}`}
+            title={s.takenBy ? `${s.takenBy} is on AI seat ${s.seat}` : `Use AI seat ${s.seat}`}
           >
             <span>Seat {s.seat}</span>
             <span class="seat-sub">{s.takenBy ?? (s.status === 'down' ? '(off)' : 'free')}</span>
@@ -241,7 +241,7 @@ function SeatPicker() {
         </p>
       )}
       {st.claudeSeats && !st.claudeSeats.boxReady && (
-        <p class="dim small">Claude isn't ready yet, but you can pick your seat already.</p>
+        <p class="dim small">Your AI helper isn't ready yet, but you can pick your seat already.</p>
       )}
     </div>
   );
@@ -253,8 +253,8 @@ function NotReady({ seat }: { seat: number | null }) {
       <div class="claude-msg-icon" aria-hidden="true">
         🛠️
       </div>
-      <h2>Claude isn't ready yet</h2>
-      <p>A grown-up is on it! Your terminal opens here by itself once it's ready{seat !== null ? ` (Claude seat ${seat})` : ''}.</p>
+      <h2>Your AI helper isn't ready yet</h2>
+      <p>A grown-up is on it! Your terminal opens here by itself once it's ready{seat !== null ? ` (AI seat ${seat})` : ''}.</p>
       <p class="dim small">Meanwhile, have a look at the Game.</p>
     </div>
   );
@@ -268,7 +268,7 @@ function DownStrip({ seat }: { seat: number }) {
   const direct = claudeTerminalUrl(st.boxHost, seat);
   return (
     <div class="term-strip" role="status">
-      <span>Claude's computer isn't answering. Trying again by itself…</span>
+      <span>The AI computer isn't answering. Trying again by itself…</span>
       {direct && <GrownUps url={direct} />}
     </div>
   );
@@ -295,7 +295,7 @@ function Elsewhere({ view }: { view: Extract<ClaudeView, { kind: 'elsewhere' }> 
         <div class="claude-msg-icon" aria-hidden="true">
           {admin ? '🧑‍🏫' : '🗂️'}
         </div>
-        <h2 id="claude-elsewhere">{admin ? 'A grown-up is helping on your Claude terminal' : 'Your Claude terminal is open in another tab'}</h2>
+        <h2 id="claude-elsewhere">{admin ? 'A grown-up is helping on your AI helper terminal' : 'Your AI helper terminal is open in another tab'}</h2>
         <p>
           {admin
             ? 'Wait until they are done, then take it back here.'
@@ -304,7 +304,7 @@ function Elsewhere({ view }: { view: Extract<ClaudeView, { kind: 'elsewhere' }> 
         <button class="btn primary big" onClick={() => store.useHere()}>
           {admin ? 'Get it back' : 'Use it here instead'}
         </button>
-        <p class="dim small">Claude remembers your chat, it just restarts for a moment.</p>
+        <p class="dim small">Your AI helper remembers your chat, it just restarts for a moment.</p>
       </div>
     </div>
   );

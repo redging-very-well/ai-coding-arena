@@ -177,7 +177,7 @@ export function UnitCard(props: UnitCardProps) {
             <strong>Can't use this one right now.</strong> {playerHintForIssue(u.error)}
           </p>
           {props.borrowedRound === undefined && (
-            <CopyButton text={`My unit ${u.name} is invalid: ${u.error.message} Please fix it.`} label="Copy “Ask Claude”" />
+            <CopyButton text={`My unit ${u.name} is invalid: ${u.error.message} Please fix it.`} label="Copy “Ask your AI helper”" />
           )}
         </div>
       )}

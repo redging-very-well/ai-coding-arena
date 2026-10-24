@@ -83,7 +83,10 @@ export function SetupPage() {
               {info.lanUrls.length === 0 && <p class="warn-text">No LAN address found: is this machine on the event network?</p>}
               <div class="btn-row">
                 <a class="btn primary" href={api.setupKitUrl()} download>
-                  Download Claude kit (generic zip)
+                  Download kit for Claude Code (zip)
+                </a>
+                <a class="btn" href={api.setupKitUrl('codex')} download>
+                  Download kit for Codex (zip)
                 </a>
                 <button class="btn" onClick={() => void copyText(info.playUrl)}>
                   Copy URL
@@ -101,11 +104,11 @@ export function SetupPage() {
       </section>
 
       <section class="panel">
-        <h2>Seat cards (Claude laptops)</h2>
+        <h2>Seat cards (AI seat laptops)</h2>
         <p class="dim small">
-          Print one card per laptop and lay it next to it. The QR opens /play with that laptop's Claude seat, and the player's Claude
+          Print one card per laptop and lay it next to it. The QR opens /play with that laptop's AI seat, and the player's AI helper
           terminal then shows inside /play. No terminal address or password goes on a card.
-          {info && !info.settings.claudeBoxHost && ' Set the Claude box address and the seat password in /admin (Claude seats).'}
+          {info && !info.settings.claudeBoxHost && ' Set the Claude box address and the seat password in /admin (AI seats).'}
         </p>
         {!info ? (
           <p class="dim">Loading…</p>
@@ -113,7 +116,7 @@ export function SetupPage() {
           <div class="seat-grid">
             {info.seatCards.map((c) => (
               <div class="seat-card" key={c.seat}>
-                <div class="pixel seat-card-num">Claude seat {c.seat}</div>
+                <div class="pixel seat-card-num">AI seat {c.seat}</div>
                 <div class="qr" dangerouslySetInnerHTML={{ __html: c.qrSvg }} />
                 <a href={c.playUrl} target="_blank" rel="noopener">
                   {c.playUrl}

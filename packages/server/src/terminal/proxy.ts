@@ -60,7 +60,7 @@ const PANE_RE = /^[A-Za-z0-9_-]{1,40}$/;
 /** Paths under /terminal/<N> forwarded to ttyd (its page is one self-contained index.html). */
 const FORWARDED_PATHS = new Set(['/', '/index.html']);
 
-const PLAYER_REVOKED_TEXT = "\r\n\r\n  This Claude terminal isn't yours any more.\r\n  Go back to the game page (or ask a grown-up).\r\n";
+const PLAYER_REVOKED_TEXT = "\r\n\r\n  This AI helper terminal isn't yours any more.\r\n  Go back to the game page (or ask a grown-up).\r\n";
 /** Logout or PIN reset: the seat is still theirs (§11.2 c), only the login ended. */
 const PLAYER_LOGGED_OUT_TEXT = '\r\n\r\n  You were logged out.\r\n  Log in again on the game page (/play), then press Enter.\r\n';
 const ADMIN_REVOKED_TEXT = '\r\n\r\n  Your admin login ended. Log in on /admin again.\r\n';

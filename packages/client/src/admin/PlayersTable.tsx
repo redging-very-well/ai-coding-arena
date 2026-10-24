@@ -43,7 +43,7 @@ export function PlayersTable() {
             <thead>
               <tr>
                 <th>Seat</th>
-                <th title="Claude seat 1-8: the laptop's terminal (assign in Claude seats)">Claude</th>
+                <th title="AI seat 1-8: the laptop's terminal (assign in AI seats)">AI seat</th>
                 {teamMode && <th>Team</th>}
                 <th>Zone</th>
                 <th>Name</th>
@@ -133,7 +133,7 @@ function PlayerActions({ player, phase, onGone }: { player: OverviewPlayer; phas
     <div class="player-actions">
       <div class="action-group">
         <h3>Reset PIN</h3>
-        <p class="dim small">Logs the player out of /play. Their Claude key keeps working.</p>
+        <p class="dim small">Logs the player out of /play. Their AI helper key keeps working.</p>
         <div class="btn-row">
           <input
             class="pin"
@@ -194,8 +194,8 @@ function PlayerActions({ player, phase, onGone }: { player: OverviewPlayer; phas
       </div>
 
       <div class="action-group">
-        <h3>Claude key</h3>
-        <p class="dim small">Rotate only if the key leaked: the player's Claude has to log in again.</p>
+        <h3>AI helper key</h3>
+        <p class="dim small">Rotate only if the key leaked: the player's AI helper has to log in again.</p>
         <div class="btn-row">
           <button
             class="btn"

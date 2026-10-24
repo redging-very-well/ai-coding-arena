@@ -124,7 +124,7 @@ describe('checkSprite (§5.1 validation rules)', () => {
       expect(VALIDATION_ERROR_CODES).toContain(c);
     }
     expect(WARNING_CODES).toContain('W_NO_SPRITE');
-    expect(playerHintFor('W_NO_SPRITE')).toBe('Ask Claude to draw a pixel-art sprite for your unit!');
+    expect(playerHintFor('W_NO_SPRITE')).toBe('Ask your AI helper to draw a pixel-art sprite for your unit!');
     expect(noSpriteWarning().code).toBe('W_NO_SPRITE');
   });
 });

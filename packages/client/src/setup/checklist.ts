@@ -47,11 +47,11 @@ export const CHECKLIST: readonly ChecklistSection[] = [
       {
         id: 'box-check',
         title: 'In each seat terminal ask "Are you connected to Pixel Clash?"',
-        detail: 'Claude should call get_game_state with no approval prompts (test through the Claude pane in /play).',
+        detail: 'The AI helper should call get_game_state with no approval prompts (test through the AI helper pane in /play).',
       },
       {
         id: 'box-admin',
-        title: 'In /admin → Claude seats, enter the Claude box address and the same SEAT_SECRET',
+        title: 'In /admin → AI seats, enter the Claude box address and the same SEAT_SECRET',
         detail: 'Turn on Show details first (not on the projector). Every running seat should turn green (up).',
       },
       {
@@ -64,11 +64,11 @@ export const CHECKLIST: readonly ChecklistSection[] = [
   {
     title: 'Player laptops',
     items: [
-      { id: 'laptop-cards', title: 'Each laptop has its seat card: the Claude seat number and its /play?seat=N QR (no password)' },
+      { id: 'laptop-cards', title: 'Each laptop has its seat card: the AI seat number and its /play?seat=N QR (no password)' },
       {
         id: 'laptop-tabs',
-        title: 'One tab per laptop: scan the card, join, and the Claude pane in /play shows the terminal',
-        detail: '"Open in new tab" in the Claude pane also works; the newest tab takes over the seat.',
+        title: 'One tab per laptop: scan the card, join, and the AI helper pane in /play shows the terminal',
+        detail: '"Open in new tab" in the AI helper pane also works; the newest tab takes over the seat.',
       },
       { id: 'laptop-projector', title: 'Projector shows /screen in full screen (F11)' },
     ],
