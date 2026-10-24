@@ -9,6 +9,10 @@
 // | __tick exceeds the hard timeout        | all units idle; the culprit (__current) gets +1      |
 // |                                        | strike ("…took too long once"); its 2nd timeout in   |
 // |                                        | the battle disables it (one GC stall is forgiven)    |
+// | a host stall (the sandbox process was  | all units idle, no strike, no count; but if the unit |
+// | frozen) that names a culprit           | it named times out on its own on the next tick, the  |
+// |                                        | stall was its first timeout (an endless loop that    |
+// |                                        | met a stall still naps on its next tick)             |
 // | timeouts continue (no culprit left to  | 3 in a row or 5 in total disable the whole player    |
 // | blame; a culprit's own don't count)    |                                                      |
 // | __tick slower than the soft limit      | +1 slow strike; at the limit (30) the slowest unit   |
@@ -66,6 +70,12 @@ export class StrikeTracker {
   /** Time (ms) each instance spent in slow ticks; names the slowest unit. */
   private readonly slowMs = new Map<string, number>();
   private slowUnitDisabled = false;
+  /**
+   * The unit a host-stall timeout named, until the next result: a stall hides
+   * whether the unit was looping, so if it then times out on its own, the
+   * stall is counted as its first timeout.
+   */
+  private stallSuspect: string | undefined;
   private _playerDisabled = false;
   /** Every event so far (also returned per tick by `record`). */
   readonly events: StrikeEvent[] = [];
@@ -107,6 +117,8 @@ export class StrikeTracker {
   record(tick: number, result: TickResult): StrikeEvent[] {
     const out: StrikeEvent[] = [];
     if (this._playerDisabled) return out;
+    const suspect = this.stallSuspect;
+    this.stallSuspect = undefined;
 
     switch (result.status) {
       case 'crashed':
@@ -119,7 +131,9 @@ export class StrikeTracker {
         return this.push(out);
       case 'timeout': {
         if (result.hostStall) {
-          // The sandbox process was frozen, not the player's code: idle, no blame.
+          // The sandbox process was frozen, not the player's code: idle, no blame
+          // (but remember who was running, in case it times out again on its own).
+          if (result.culprit && !this.disabled.has(result.culprit)) this.stallSuspect = result.culprit;
           out.push({ kind: 'timeout', tick, elapsedMs: result.elapsedMs, hostStall: true });
           return this.push(out);
         }
@@ -128,9 +142,12 @@ export class StrikeTracker {
         if (culprit && !this.disabled.has(culprit)) {
           // A single stall can be the host (GC, scheduler), not the player's code:
           // the first one only idles this tick and is reported; a repeat naps.
-          const timeouts = (this.unitTimeouts.get(culprit) ?? 0) + 1;
+          // Timing out right after a host stall that named it: that stall was
+          // its first timeout (a loop the stall hid), so this one is a repeat.
+          const hidden = culprit === suspect ? 1 : 0;
+          const timeouts = (this.unitTimeouts.get(culprit) ?? 0) + 1 + hidden;
           this.unitTimeouts.set(culprit, timeouts);
-          const strikes = (this.unitStrikes.get(culprit) ?? 0) + 1;
+          const strikes = (this.unitStrikes.get(culprit) ?? 0) + 1 + hidden;
           this.unitStrikes.set(culprit, strikes);
           const name = this.nameOf(culprit);
           if (timeouts >= this.limits.timeoutsToDisable) {

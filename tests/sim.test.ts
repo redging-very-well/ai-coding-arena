@@ -578,6 +578,38 @@ describe('sandbox policy (runner envelope → strikes, disable, report)', () => 
     expect(unit(result, '0-0-0').damageDealt).toBeGreaterThan(0);
   });
 
+  it('a looper whose first timeout met a host stall is still blamed: it naps on its next timeout', async () => {
+    // Tick 5: the sandbox process was frozen while the looper ran (a forgiven
+    // host stall naming it). Tick 6: it times out again on its own, so the
+    // stall was its first timeout and this one disables it (not a third).
+    const hook = (input: { tick: number }) =>
+      input.tick === 5
+        ? { status: 'timeout' as const, outputs: [], elapsedMs: 40, slow: false, forged: 0, culprit: '0-0-0', hostStall: true }
+        : input.tick === 6
+          ? { status: 'timeout' as const, outputs: [], elapsedMs: 12, slow: false, forged: 0, culprit: '0-0-0' }
+          : undefined;
+    const { result } = await battle(twoPlayers({ s: soldierBrain }, hook), cfg({}, 600));
+    const looper = unit(result, '0-0-0');
+    expect(looper).toMatchObject({ disabled: true, disabledReason: 'timeout', strikes: 2 });
+    expect(looper.errors).toEqual([{ tick: 6, message: expect.stringMatching(/^Basic Soldier took too long again/) }]);
+    expect(result.players[0]).toMatchObject({ disabled: false, timeouts: 1 });
+    expect(unit(result, '0-0-1').disabled).toBe(false);
+    expect(unit(result, '0-0-1').damageDealt).toBeGreaterThan(0);
+  });
+
+  it('a host stall followed by a healthy tick forgets the unit it named', async () => {
+    // Stall naming 0-0-0 at tick 5, a normal tick 6, then one real timeout at
+    // tick 9: that is only its first (forgiven) timeout.
+    const hook = (input: { tick: number }) =>
+      input.tick === 5
+        ? { status: 'timeout' as const, outputs: [], elapsedMs: 40, slow: false, forged: 0, culprit: '0-0-0', hostStall: true }
+        : input.tick === 9
+          ? { status: 'timeout' as const, outputs: [], elapsedMs: 12, slow: false, forged: 0, culprit: '0-0-0' }
+          : undefined;
+    const { result } = await battle(twoPlayers({ s: soldierBrain }, hook), cfg({}, 600));
+    expect(unit(result, '0-0-0')).toMatchObject({ disabled: false, strikes: 1 });
+  });
+
   it('timeouts 3 in a row disable the whole player', async () => {
     const hook = (input: { tick: number }) =>
       input.tick >= 5 && input.tick < 8 ? { status: 'timeout' as const, outputs: [], elapsedMs: 12, slow: false, forged: 0 } : undefined;

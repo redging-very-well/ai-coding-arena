@@ -264,6 +264,11 @@ interface PlayerState {
   timeoutsInARow: number;
   /** Hard timeouts blamed on each of this player's instances (via `__current`). */
   unitTimeouts: Map<string, number>;
+  /**
+   * The unit the last host-stall timeout named, until the next tick result: if
+   * it then times out on its own, the stall was its first timeout (§8).
+   */
+  stallSuspect?: string;
   slowStrikes: number;
   slowUnitDisabled: boolean;
   disabled: boolean;
@@ -314,6 +319,12 @@ export class BattleEngine {
 
   /** Wall time of every completed tick in ms (sandbox calls included): the §14 "sim ms/tick" (diagnostics, load test). */
   readonly tickMs: number[] = [];
+  /**
+   * Of each tick's `tickMs`, the wall time spent waiting for the players'
+   * sandboxes (their update() calls, IPC and the OS scheduling the sandbox
+   * processes). `tickMs[i] - tickWaitMs[i]` is the engine's own work.
+   */
+  readonly tickWaitMs: number[] = [];
 
   private projectiles: Projectile[] = [];
   private nextProjectileId = 1;
@@ -665,12 +676,14 @@ export class BattleEngine {
     for (const u of living) {
       if (u.type === 'minion') minionRaw.set(u.id, minionAction(u, minionWorld, cfg));
     }
+    const waitStart = performance.now();
     const results = await Promise.all(
       this.players.map((p, i) => {
         const input = inputs[i];
         return input ? safeTick(p.runner, input) : Promise.resolve(undefined);
       }),
     );
+    this.tickWaitMs.push(performance.now() - waitStart);
 
     // 3) Apply sandbox results (policy) and validate actions, seat then instanceId order.
     const pending: PendingAction[] = [];
@@ -1066,10 +1079,16 @@ export class BattleEngine {
       return actions;
     }
 
+    const suspect = p.stallSuspect;
+    p.stallSuspect = undefined;
     if (res.status === 'timeout' && res.hostStall) {
       // The sandbox process was frozen (OS / VM scheduler) for most of the
       // tick: the units idle, but it's not the player's code, so no strike and
-      // no timeout count (§8).
+      // no timeout count (§8). The stall hides whether the unit it named was
+      // looping, so remember it: if it times out again on its own next tick,
+      // this stall counts as its first timeout.
+      const named = res.culprit !== undefined ? this.byId.get(res.culprit) : undefined;
+      if (named && named.playerId === p.setup.playerId && !named.disabled && named.alive) p.stallSuspect = named.id;
       this.incident(p, tick, 'timeout', 'The game computer paused for a moment (not your code); all units idled this tick.');
       return actions;
     }
@@ -1084,9 +1103,12 @@ export class BattleEngine {
         // the player limits, which are for timeouts that CONTINUE after the
         // culprit naps (§8). Otherwise 2 copies of one looping design (A, A,
         // then B) would disable the whole player, healthy units included.
-        const timeouts = (p.unitTimeouts.get(culprit.id) ?? 0) + 1;
+        // Timing out right after a host stall that named it: that stall was its
+        // first timeout (an endless loop the stall hid), so this one is a repeat.
+        const hidden = culprit.id === suspect ? 1 : 0;
+        const timeouts = (p.unitTimeouts.get(culprit.id) ?? 0) + 1 + hidden;
         p.unitTimeouts.set(culprit.id, timeouts);
-        culprit.strikes += 1;
+        culprit.strikes += 1 + hidden;
         if (timeouts >= limits.timeoutsToDisable) {
           const again = timeouts > 1 ? ' again' : '';
           this.recordUnitError(

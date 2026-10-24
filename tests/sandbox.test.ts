@@ -207,19 +207,32 @@ describe('ivm runner: deadlines and culprits', () => {
     const tracker = new StrikeTracker(STRIKE_LIMITS, (id) => (id === '0-1-0' ? 'Looper' : 'Soldier'));
     const results = await battle(r, tracker, selves, 10, [otherView('1-0-0', 'p1', 400, 400)]);
 
+    // The looper is the culprit of every timeout until it naps.
+    const disabledAt = tracker.events.find((e) => e.kind === 'unit-disabled')?.tick;
+    expect(disabledAt).toBeDefined();
+    expect(results.slice(0, disabledAt! + 1).map((x) => [x.status, x.culprit])).toEqual(Array(disabledAt! + 1).fill(['timeout', '0-1-0']));
     // First timeout is forgiven (could be a GC stall); the second, on the very
-    // next tick, disables the genuine infinite loop.
-    expect(results.slice(0, 2).map((x) => [x.status, x.culprit])).toEqual([['timeout', '0-1-0'], ['timeout', '0-1-0']]);
-    expect(tracker.events[1]).toMatchObject({ kind: 'unit-error', tick: 0, instanceId: '0-1-0', message: timedOutOnceMessage('Looper'), strikes: 1 });
+    // next tick, disables the genuine infinite loop. A busy test machine can
+    // freeze the sandbox process during one of them (a host stall, no blame):
+    // the looper is then blamed on its next timeout, so each stall costs at
+    // most one more tick (a stall on the first timeout costs none).
+    const stalls = results.slice(0, disabledAt! + 1).filter((x) => x.hostStall).length;
+    if (stalls === 0) {
+      expect(disabledAt).toBe(1);
+      expect(tracker.events[1]).toMatchObject({ kind: 'unit-error', tick: 0, instanceId: '0-1-0', message: timedOutOnceMessage('Looper'), strikes: 1 });
+    } else {
+      expect(results[disabledAt!]!.hostStall).toBeUndefined();
+      expect(disabledAt!).toBeLessThanOrEqual(1 + stalls);
+    }
     expect(tracker.isDisabled('0-1-0')).toBe(true);
     expect(tracker.isDisabled('0-0-0')).toBe(false);
     expect(tracker.playerDisabled).toBe(false);
-    for (const res of results.slice(2)) {
+    for (const res of results.slice(disabledAt! + 1)) {
       expect(res.status).toBe('ok');
       expect(Object.keys(actions(res))).toEqual(['0-0-0', '0-0-1']);
     }
     expect(tracker.events.filter((e) => e.kind === 'unit-disabled')).toEqual([
-      expect.objectContaining({ tick: 1, instanceId: '0-1-0', reason: 'timeout' }),
+      expect.objectContaining({ tick: disabledAt, instanceId: '0-1-0', reason: 'timeout' }),
     ]);
   });
 
@@ -377,6 +390,58 @@ describe('host hiccups are not the player\'s fault', () => {
     }
   });
 
+  // Regression (flake): a while(true) whose FIRST timeout coincided with a
+  // host stall was classed as the host's fault, so it earned no strike and
+  // took two more timeouts (two more idle ticks for the whole army) to nap.
+  // Now a unit that times out on its own right after a stall that named it is
+  // blamed for both: it naps on the next tick.
+  it('a looper frozen by the host on its first timeout still naps on the next tick', async () => {
+    const soldier = await design('basic-soldier', TEMPLATE_SOLDIER);
+    const looper = await design('looper', 'malicious/loop_update.js');
+    let stalled = false;
+    // The pause must land inside the looper's 12 ms run; on a very busy machine
+    // it can miss (then that tick is an ordinary timeout), so try a few times.
+    for (let attempt = 0; attempt < 5 && !stalled; attempt++) {
+      let child: ChildIvmSession | undefined;
+      const runner = await SessionPlayerRunner.create(
+        async (o) => (child = await ChildIvmSession.open(o)),
+        { playerId: 'p0', seat: 0, seed: 1 },
+        [soldier, looper],
+        LIMITS,
+      );
+      open.push(runner);
+      const selves = [selfView('0-0-0', 'basic-soldier'), selfView('0-1-0', 'looper')];
+      for (const s of selves) expect(await runner.spawn(s.id, s.unitId)).toEqual({ ok: true });
+      const tracker = new StrikeTracker(STRIKE_LIMITS, (id) => (id === '0-1-0' ? 'Looper' : 'Soldier'));
+      const ticking = runner.tick(input(0, tracker.active(selves)));
+      await new Promise((r) => setTimeout(r, 2));
+      process.kill(child!.pid!, 'SIGSTOP');
+      await new Promise((r) => setTimeout(r, 80));
+      process.kill(child!.pid!, 'SIGCONT');
+      const first = await ticking;
+      expect([first.status, first.culprit]).toEqual(['timeout', '0-1-0']);
+      tracker.record(0, first);
+      if (!first.hostStall) {
+        runner.dispose();
+        continue;
+      }
+      stalled = true;
+      expect(tracker.strikesOf('0-1-0')).toBe(0);
+      // Tick 1, no pause: the loop runs its whole budget and is blamed for both.
+      const second = await runner.tick(input(1, tracker.active(selves)));
+      expect([second.status, second.culprit, second.hostStall]).toEqual(['timeout', '0-1-0', undefined]);
+      tracker.record(1, second);
+      expect(tracker.isDisabled('0-1-0')).toBe(true);
+      expect(tracker.events.find((e) => e.kind === 'unit-disabled')).toMatchObject({ tick: 1, instanceId: '0-1-0', reason: 'timeout' });
+      expect(tracker.playerDisabled).toBe(false);
+      // The soldier acts from tick 2 on.
+      const third = await runner.tick(input(2, tracker.active(selves)));
+      expect(third.status).toBe('ok');
+      expect(Object.keys(actions(third))).toEqual(['0-0-0']);
+    }
+    expect(stalled).toBe(true);
+  });
+
   it('a slow host alone gives no slow strike: the units\' own (in-isolate) time must be slow too', async () => {
     const reply = (ms: number) => JSON.stringify([{ instanceId: '0-0-0', action: { action: 'idle' }, ms }]);
     let unitMs = 0;
@@ -466,6 +531,33 @@ describe('strikes', () => {
     expect(t.strikesOf('a')).toBe(0);
     expect(t.isDisabled('a')).toBe(false);
     expect(t.playerDisabled).toBe(false);
+  });
+
+  it('a unit that times out on its own right after a host stall named it is a looper: it naps at once', () => {
+    const t = new StrikeTracker(STRIKE_LIMITS, () => 'Looper');
+    const stalled: TickResult = { status: 'timeout', outputs: [], elapsedMs: 40, slow: false, forged: 0, culprit: 'a', hostStall: true };
+    const timeout = (culprit: string): TickResult => ({ status: 'timeout', outputs: [], elapsedMs: 13, slow: false, forged: 0, culprit });
+    const ok: TickResult = { status: 'ok', outputs: [], elapsedMs: 1, slow: false, forged: 0 };
+    t.record(0, stalled);
+    expect(t.strikesOf('a')).toBe(0);
+    const next = t.record(1, timeout('a'));
+    expect(next).toEqual([
+      { kind: 'timeout', tick: 1, elapsedMs: 13, culprit: 'a' },
+      { kind: 'unit-error', tick: 1, instanceId: 'a', message: 'Looper took too long again', strikes: 2 },
+      expect.objectContaining({ kind: 'unit-disabled', tick: 1, instanceId: 'a', reason: 'timeout' }),
+    ]);
+    expect(t.playerDisabled).toBe(false);
+    // Several stalls in a row keep the suspect; another unit's timeout is not it.
+    t.record(2, { ...stalled, culprit: 'b' });
+    t.record(3, { ...stalled, culprit: 'b' });
+    t.record(4, timeout('c'));
+    expect(t.isDisabled('c')).toBe(false);
+    // A healthy tick (or a stall naming someone else) in between forgets the suspect.
+    t.record(5, { ...stalled, culprit: 'd' });
+    t.record(6, ok);
+    t.record(7, timeout('d'));
+    expect(t.isDisabled('d')).toBe(false);
+    expect(t.strikesOf('d')).toBe(1);
   });
 
   it('timeoutsToDisable is configurable (1 = the old disable-on-first rule)', () => {
