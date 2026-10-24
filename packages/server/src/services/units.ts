@@ -38,6 +38,7 @@ import { validateDetailed, slugify } from '../validator/validate.js';
 import { repoPath } from '../util/paths.js';
 import { RateLimiter, Semaphore } from '../util/ratelimit.js';
 import type { Game } from './game.js';
+import type { GuideTemplate } from './guide.js';
 import type { DesignRecord, PlayerRecord, UnitVersionRecord } from './store.js';
 
 export const TEMPLATE_FILES = {
@@ -64,6 +65,8 @@ export type SubmitResult = ValidationResult & { unitId?: string; version?: numbe
 
 export class UnitsService {
   private templates: Array<UnitVersionRecord & { unitId: string }> = [];
+  /** The templates as the unit guide prices them (GET /guide, §10.3); one array per init so the guide can memoize. */
+  private guideTemplateList: GuideTemplate[] = [];
   private readonly validateLimiter = new RateLimiter(1, 1000);
   private readonly submitLimiter = new RateLimiter(1, 3000);
   private readonly sandboxes = new Semaphore(4);
@@ -79,6 +82,7 @@ export class UnitsService {
     for (const key of Object.keys(TEMPLATE_FILES) as Array<keyof typeof TEMPLATE_FILES>) {
       this.templates.push(await this.validateTemplate(templateSource(key), this.game.config));
     }
+    this.guideTemplateList = this.templates.map((t, i) => ({ key: Object.keys(TEMPLATE_FILES)[i]!, name: t.stats.name, stats: t.stats }));
     for (const p of this.game.store.players.values()) this.addTemplates(p.id);
     // Re-check stored units against the (possibly changed) config.
     this.repriceAll(this.game.config);
@@ -115,6 +119,11 @@ export class UnitsService {
     };
     templateCache.set(key, rec);
     return rec;
+  }
+
+  /** The starter templates' names and frozen stats, for the unit guide's live example prices. */
+  guideTemplates(): readonly GuideTemplate[] {
+    return this.guideTemplateList;
   }
 
   templateIds(): string[] {

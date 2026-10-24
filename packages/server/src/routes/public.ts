@@ -6,6 +6,7 @@ import QRCode from 'qrcode';
 import { SESSION_COOKIE, type HealthDTO, type JoinInfoDTO } from '@pixel-clash/shared';
 import type { Game } from '../services/game.js';
 import { safeHost, writeKitZip } from '../services/kit.js';
+import { buildGuide } from '../services/guide.js';
 import { buildContract, buildRules } from '../services/rules.js';
 import { lanUrls } from '../util/lan.js';
 import { COOKIE_OPTS, body, cookieOf, optionalPlayer, roundParam, send, sendError, wrap } from './common.js';
@@ -42,6 +43,11 @@ export function publicRoutes(game: Game): Router {
 
   r.get('/contract', (_req, res) => {
     res.json(buildContract(game.config));
+  });
+
+  // The unit guide (§10.3, §12.1): the full rulebook for units from the live config. Public: nothing secret in it.
+  r.get('/guide', (_req, res) => {
+    res.json(buildGuide(game.config, game.units.guideTemplates()));
   });
 
   r.get('/state', (req, res) => {
