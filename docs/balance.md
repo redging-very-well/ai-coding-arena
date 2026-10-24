@@ -1033,9 +1033,10 @@ same file into unit code: the validator's transpile plus a unit class whose
 isolated-vm in a child process, the server default, and node:vm (`inproc-unsafe`).
 `balanceBattle(..., runner)` takes `'lean' | 'vm' | 'ivm'`.
 
-`tests/balance-parity.test.ts` runs in the balance pass. It plays 12 matchups on
+`tests/balance-parity.test.ts` runs in the balance pass. It plays 15 matchups on
 all three runners, with every brain covered: chase, hold, towers, medics and
-auras, focus fire (soldiers, hold soldiers, towers), all six factory orders plus hold, walls, elements and splash, on both maps
+auras, focus fire (soldiers, hold soldiers, towers), backline divers (dive, flank,
+the factories' dive raid), all six factory orders plus hold, walls, elements and splash, on both maps
 and both seeds. Every frame must hash the same, and the result must be identical.
 It is. Per battle, the lean runner is about 10× faster than node:vm and about 14×
 faster than isolated-vm (5 battles: 0.22 s, 2.3 s and 3.1 s). Caveats:
@@ -1159,7 +1160,8 @@ stay in the test.
 player could submit:
 - up to 4 soldier designs and 4 tower designs;
 - each design picks HP, damage, range, speed, cooldown, size, element and splash,
-  plus its copies and the hold-by-the-tower brain;
+  plus its copies and the hold-by-the-tower brain (and, since 2026-10-24, focus fire
+  for the army and the dive or flank brain per soldier design);
 - every design passes the shared `checkStats` bounds and is priced by
   `computeCost`, and the army fits the budget, unit cost cap, copy cap and type caps.
 
@@ -1167,7 +1169,10 @@ The search starts from the template rush, the bricks and the turtle plus random
 armies. Fitness is the win rate against the 37 round-robin archetypes, using 4
 battles per opponent from the spread order, on the lean runner with the cache.
 The best builds are then played in full (16 battles per opponent) and reported
-with their best counters. A build above the 70% cap fails the run (exit code 1).
+with their best counters. Builds above 70% go on a **watch list** (since
+2026-10-24, the user's call; it used to fail the run): the CLI prints each with the
+archetypes that beat it, to review before the event. Exit code 0; `--strict` exits 1
+when the watch list isn't empty.
 Support units, walls and factories are not searched yet.
 
 ```
@@ -1331,3 +1336,127 @@ chase-nearest bots: they spread their fire over the fast tanks and never focus
 the 480 HP ice soldier. It is the first pre-event watch item; the levers to try
 are the ice price (×1.75 → ×2), the splash price at large radii on glass bodies,
 and a bot pool archetype that focuses the weakest enemy. Not changed here.
+
+## Focus fire, backline divers and the exploit watch list (2026-10-24)
+
+The exploit search kept finding one family at 89-94% against the bot pool:
+**tanks in front, a fragile ranged or caster hitter behind** (for example 4 brawlers
+1,840 HP / 144 dmg + 3 glass archers 240 HP / 140 dmg / range 140; or a glass ice
+splash-60 soldier + 3 fast decoy tanks + 2 ranged soldiers).
+
+**Focus fire** (`targeting: 'focus'`, `tests/helpers/brains.ts`): soldiers and towers
+pick, among the enemies they can reach (towers: range; soldiers: range + 80 px),
+healers first, then other support units and ice or splash casters, then the lowest HP.
+Seven archetypes use it (hugetanks, glass, icewall, overload, firebrawl,
+guardedcatapults, icemortars). The 48-archetype matrix still passed all 237 rules.
+The family stayed at 92-94%.
+
+**No price lever fixes it.** Short re-searches from the family's builds (1 generation,
+12 armies) under `cost.damage` 2.2, `cost.range` 2, `powerFactor` 2.5/3/4 and `curveK`
+1.5 still found 84-93% builds. Ice ×2 with splash 1.0 found 80%. Each budget refit
+undoes a global price change. Pairing a tank with a hitter is also what CLAUDE.md
+teaches, and the family has counters in the pool (ice behind walls, ice mortars,
+fire nests, the long-bow snipers, guarded catapults, bombard).
+
+**The user's call: "Accept it as healthy + add backline divers".** No price change.
+The bot pool gets the counter a player would build, and the exploit search's 70%
+bar becomes a watch list.
+
+### The dive and flank brains
+
+- **`dive`** (per soldier design: `soldierBrain: { assassin: 'dive' }`): hunt the
+  dive pick **anywhere on the map**, past the front line (the game routes round walls
+  and buildings). The pick order is healers, then other support and ice or splash
+  casters, then ranged units (range ≥ 100). Walls, factories and minions are never
+  picked. Within a rank, the smallest max HP goes first (max HP, so the pick doesn't
+  flip as bodies get hurt), then the nearest. With no dive pick left (only a front
+  line), the unit fights like a focus soldier. If an enemy wall stops it for 120 ticks,
+  it smashes the wall.
+- **`flank`**: the same target, but while more than 160 px away the unit heads for a
+  waypoint. The waypoint is the midpoint of its line to the target, pushed 180 px to
+  the side away from the rest of the enemy army (its centre of mass), and kept inside
+  the arena and the safe zone. The unit swings round the front instead of walking
+  through it.
+- **Factory `dive`**: every minion swarms the dive pick; with none, they swarm the
+  weakest (like `swarm`).
+
+All three are self-contained in `brains.ts`, so the lean, node:vm and isolated-vm
+runners play them the same. `tests/balance-parity.test.ts` now plays 15 matchups:
+assassins vs exploit, cavalry vs healerball (Ring 8) and raiders vs shatter.
+
+### Three diver archetypes ($10,000; `DIVER_ARCHETYPES` in `tests/helpers/balance.ts`)
+
+| key | army | brains | wins (51, both seeds) |
+|---|---|---|---|
+| `assassins` | 4 Basic Soldiers + 4 Assassins (960 HP, 112 dmg, range 30, speed 3.2, cd 50, size 7) | Assassins flank; focus fire | 65.0% |
+| `cavalry` | 3 Basic Soldiers + 5 Cavalry (1,600 HP, 72 dmg, range 30, speed 2.8, cd 55, size 12) | Cavalry dive | 67.5% |
+| `raiders` | 11 walls sealing 2 padded Basic Towers + 2 Runner Rushes (burst 4) | factories dive | 51.9% |
+
+These are test bots, so their makeup was tuned and no game number changed. About 30
+compositions were tried, and many came out between 30% and 98%. The bar was the
+existing caps: bricks could gain at most 34 of the 48 new battles and the padded
+soldiers 36. Small changes swing these armies a lot. For example, padding the
+assassin pack's designs takes it from 63% to 78%, and an 8th body is worth more than
+a 7th. Factory-only runner raids won 32-41%, and every one lost all 16 to the bricks.
+The sealed tower base is what lets `raiders` beat the bricks and the padded soldiers.
+- **assassins** beat healerball 12-4, rush 10-6, guardedcatapults, icebreak, shatter,
+  longbow, raiders. They lose to walls, splash, fire, the shield wall and cavalry.
+- **cavalry** beat soldiersFilled 15-1, rush 16-0, assassins 16-0, shatter, icebreak,
+  longbow. They lose to walls, splash, fire, healerball 6-10 and raiders 6-10.
+- **raiders** beat bricks 9-7, soldiersFilled 14-2, healerball 15-1, rush 14-2, the
+  fortress and the walled nests, and cavalry 10-6. They lose to archers, the home
+  guard, five factories and the elemental armies.
+
+### Full matrix (51 archetypes, 800 battles each, seeds 11 and 4242)
+
+`npm run balance -- --full --all --seeds 11,4242`: 20,400 battles in 425 s, **PASS,
+249 rules** (237 + 12 for the three new rows; 45/45 stated outcomes and shape checks,
+no new exception). Bricks 71.4% (under its recorded cap of 72.6%, which stays),
+soldiersFilled 69.3% (watch cap 71.8%), splashline 68.5%, cavalry 67.5%,
+guardedcatapults 66.3%, healerball 66.0%, exploit 65.9%, rush 65.5%, assassins 65.0%.
+At the bottom are mixed 18.3% and scouts 11.0%. No cell between the 48 old archetypes
+changed.
+
+### What the divers do to the family
+
+The family's builds from the focus run, replayed against the 51 (16 battles per
+opponent): 94.4 → 90.8%, 94.0 → 93.1%, 93.6 → 91.1%, 93.4 → 90.6%, 92.8 → 89.3%.
+Head to head, the divers beat the ice-caster builds (cavalry 14-16 of 16, assassins
+10-16 of 16), and cavalry beat the 4 brawlers + 3 glass archers 10-6. The raiders lose
+to all of them. So the pool now has counters for the family, but it drops only 1-4
+points overall. Most of its wins come from efficient brawlers that beat the other 48,
+not from the glass hitter. In a sampled battle of assassins (padded) against the 4 brawlers +
+3 archers, the divers killed all three archers within 3 s and then lost to the brawlers.
+
+### Exploit search: a watch list, not a failure
+
+`npm run balance:exploit` now lists builds above 70% as a **WATCH LIST**. Each is
+printed with the archetypes that beat it, as a pre-event review item. Exit code 0;
+`--strict` gives the old exit 1. The `--json` rows carry `watch` and `counters`. The
+search also evolves the per-design `dive` / `flank` brain.
+
+**Run (51 archetypes, seed 1, 10 generations × 24 armies, starting from the focus
+run's builds; 194 armies, 40,392 battles, 389 s).** All five builds are on the watch
+list:
+
+| win rate | army | cost | beaten by |
+|---|---|---|---|
+| **94.6%** | 3 brawlers (1,680 HP, 144 dmg, range 30, speed 1.9, cd 60) + 1 brawler (1,840 HP, 168 dmg, range 50, speed 1.6, cd 55, **flank**) + 1 glass ice splash-80 caster (480 HP, 96 dmg, range 140) (focus) | $9,913 | icewall 2-0-14, icemortars 4-0-12 |
+| 94.0% | the same without the flank brain (size 12) | $9,934 | icemortars 2-0-14, icewall 5-0-11 |
+| 93.9% | the same without the flank brain | $9,913 | icemortars, icewall |
+| 93.1% | 4 brawlers (1,840 HP, 144 dmg) + 3 glass archers (240 HP, 140 dmg, range 140) (focus) | $9,988 | icewall 0-0-16, icemortars 2-0-14, firenest 4-0-12, **cavalry 6-0-10** |
+| 91.1% | 2 fast decoy tanks (one fire) + a glass ice splash-80 soldier + 2 slow lightning brawlers + a splash tower (focus) | $9,998 | **cavalry 2-0-14**, longbow 4-0-12, **assassins 6-0-10** |
+
+The search has moved to **heavy brawlers with a single caster**: five bodies, four of
+them 1,700-1,800 HP hitters. There is little back line left to dive, and ice behind
+walls is what stops it. **Pre-event review:** each watch-list build has a counter a
+player can build, so nothing here blocks the event. If one keeps topping real games,
+the brawler's value per dollar (damage × HP at speed 1.6-1.9) is the place to look,
+not the ranged or caster prices.
+
+### Teaching
+
+The CLAUDE.md template (shared by the Claude and Codex kits, §4d point 2), the unit
+guide's tips (`STRATEGY_TIPS`, so also `get_rules`) and PROMPTS.md now say how to beat a
+protected back line: focus their casters first and send fast units round the side
+to hunt their fragile shooters. No numbers changed.
