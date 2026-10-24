@@ -592,7 +592,7 @@ function notFoundUnit(unitId: unknown): Result<never> {
 
 function borrowedNotFound(unitId: string): Result<never> {
   return fail('NOT_FOUND', `"${unitId}" is a borrowed Armory unit: its code is never shared and it can't be changed.`, {
-    hint: "Borrowed units can't be changed. Build your own counter or improved version instead (a NEW unit, submitted WITHOUT unitId).",
+    hint: "Borrowed units can't be changed. To build something like it, make a NEW unit (submitted WITHOUT unitId).",
   });
 }
 

@@ -545,7 +545,7 @@ function statWarnings(stats: StatsSnapshot, config: GameConfig): ValidationWarni
       value: stats.attackCooldown,
       allowed: { recommendedMax: ref },
       message: `attackCooldown is ${stats.attackCooldown}. Attacking slower than once per second doesn't make it cheaper.`,
-      fix: `Set attackCooldown to ${ref} for free extra damage.`,
+      fix: `Any attackCooldown of ${ref} or more costs the same as ${ref}.`,
     });
   }
   return out;

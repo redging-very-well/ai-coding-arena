@@ -126,7 +126,7 @@ describe('validator: good units', () => {
     const r = expectOk(await run(reference('slow_sniper.js')));
     expect(r.unit.cost).toBe(1717);
     const w = r.warnings.find((x) => x.code === 'W_SLOW_NO_DISCOUNT');
-    expect(w?.fix).toBe('Set attackCooldown to 60 for free extra damage.');
+    expect(w?.fix).toBe('Any attackCooldown of 60 or more costs the same as 60.');
     expect(w?.message).toContain("Attacking slower than once per second doesn't make it cheaper.");
   });
 
@@ -135,8 +135,8 @@ describe('validator: good units', () => {
     const near = r.warnings.filter((w) => w.code === 'W_STAT_NEAR_MAX');
     expect(near.map((w) => w.field)).toEqual(['maxHealth', 'size']);
     expect(near[0]).toMatchObject({ value: 3600, allowed: { max: 4000, ratio: 0.9 } });
-    expect(near[0]!.message).toBe('maxHealth is at 90% of max and costs 1.81× its normal price; two medium units usually beat one maxed one.');
-    expect(near[0]!.fix).toBe("If you don't need it this high, set this.maxHealth to 2400: that saves $1,212 (cost $1,656) to spend on another unit.");
+    expect(near[0]!.message).toBe('maxHealth is at 90% of max and costs 1.81× its normal price.');
+    expect(near[0]!.fix).toBe('this.maxHealth = 2400 would cost $1,656 ($1,212 less).');
     expect(near[1]).toMatchObject({ value: 20, allowed: { max: 20, ratio: 1 } });
     // Its power factor is ×1.6 (power factor 2): at or above ×1.25 gives W_POWER_HIGH.
     expect(r.warnings.find((w) => w.code === 'W_POWER_HIGH')).toMatchObject({ value: 1.6 });
@@ -149,8 +149,9 @@ describe('validator: good units', () => {
     const src = template('basic_soldier.js').replace('this.maxHealth = 1400;', 'this.maxHealth = 3840;').replace('this.damage = 56;', 'this.damage = 24;');
     const r = expectOk(await run(src));
     const w = r.warnings.find((x) => x.code === 'W_STAT_NEAR_MAX');
-    expect(w?.message).toBe('maxHealth is at 96% of max and costs 1.92× its normal price; two medium units usually beat one maxed one.');
-    expect(r.playerHint).toContain('Two medium units usually beat one giant one!');
+    expect(w?.message).toBe('maxHealth is at 96% of max and costs 1.92× its normal price.');
+    expect(r.playerHint).toContain('a stat near its max costs up to 2 times its normal price');
+    expect(r.playerHint).not.toMatch(/beat|two medium/i);
   });
 
   it('cheapest tower (damage 0) gets W_ZERO_DAMAGE', async () => {

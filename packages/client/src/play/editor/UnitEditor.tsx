@@ -724,7 +724,7 @@ export function UnitEditor({ target }: { target: EditorTarget }) {
               {panel.surcharge > 0 && (
                 <p class="dim small">
                   Stats near their max cost up to {panel.maxMultiple.toLocaleString('en-US', { maximumFractionDigits: 2 })} times as much (+{formatMoney(panel.surcharge)} here).
-                  {panel.extras.some((x) => x.label === 'Tough + strong') ? ' Very tough AND very strong costs extra: one tank plus one hitter is cheaper.' : ' Two medium units often beat one giant!'}
+                  {panel.extras.some((x) => x.label === 'Tough + strong') ? ' Very tough AND very strong costs extra.' : ''}
                 </p>
               )}
             </div>

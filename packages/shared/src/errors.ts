@@ -339,8 +339,8 @@ const PLAYER_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
   W_RETURNS_NOTHING: "Heads up: sometimes your unit can't decide what to do.",
   W_SLOW: 'Heads up: your unit thinks a bit slowly.',
   W_SLOW_NO_DISCOUNT:
-    "Tip: attacking slower than once a second doesn't make it cheaper. Ask your AI helper to make it attack once a second.",
-  W_STAT_NEAR_MAX: 'Tip: a maxed-out stat costs up to 2 times as much. Two medium units usually beat one giant one!',
+    "Heads up: attacking slower than once a second doesn't make a unit any cheaper.",
+  W_STAT_NEAR_MAX: 'Heads up: a stat near its max costs up to 2 times its normal price.',
   W_STAT_IGNORED: "Heads up: this kind of unit doesn't use its {field}, so the game ignores it.",
   W_UPDATE_IGNORED: "Heads up: walls don't think, so the game never runs this wall's update().",
   W_ACTION_NOT_FOR_TYPE: "Heads up: your unit sometimes gives an order its type can't do, so it waits instead.",
@@ -348,7 +348,7 @@ const PLAYER_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
   W_ORDER_TARGET: 'Heads up: your factory sometimes points its minions at the wrong side (swarm an enemy, guard a friend).',
   W_BURST_NEVER_FULL: "Heads up: this factory never makes enough minions to fill its burst, so they leave when it runs out.",
   W_HEAL_NEVER_USED: "Heads up: your healer never healed anyone in the practice battles. Ask your AI helper to make it heal hurt friends!",
-  W_POWER_HIGH: 'Tip: a unit that is very tough AND very strong costs extra. One tough unit plus one strong unit is cheaper!',
+  W_POWER_HIGH: 'Heads up: a unit that is very tough AND very strong costs extra (up to 3 times).',
 };
 
 /** Player hint for a code, with `{field}` filled in. */

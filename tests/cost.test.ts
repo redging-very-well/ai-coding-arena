@@ -223,7 +223,7 @@ describe('breakdown texts (§6 Economy: breakdown)', () => {
     const b = computeCost(brick, coeffs).breakdown;
     expect(b.parts.maxHealth.text).toBe('maxHealth 2800 costs $782.25: $525 base + $257.25 for being at 70% of the max');
     expect(b.parts.damage.text).toBe('damage 212 costs $707.66: $397.5 base + $310.16 for being near the max (88% of max)');
-    expect(b.power!.text).toBe('Power ×2.24: tough (70% of max HP) AND strong (88% of max damage). One tough unit plus one strong unit is cheaper.');
+    expect(b.power!.text).toBe('Power ×2.24: tough (70% of max HP) AND strong (88% of max damage).');
     expect(b.splash!.text).toBe('Splash ×1 (one target)');
     expect(b.element!.text).toBe('No element ×1');
     const splashy = computeCost({ ...brick, splashRadius: 40, element: 'fire' }, coeffs).breakdown;
@@ -268,7 +268,7 @@ describe('breakdown texts (§6 Economy: breakdown)', () => {
     const stats: CostStats = { type: 'soldier', maxHealth: 3600, damage: 20, range: 40, speed: 1, attackCooldown: 60 };
     const w = nearMaxWarnings(stats, computeCost(stats, coeffs), coeffs);
     expect(w.map((x) => x.field)).toEqual(['maxHealth']);
-    expect(w[0]!.message).toBe('maxHealth is at 90% of max and costs 1.81× its normal price; two medium units usually beat one maxed one.');
+    expect(w[0]!.message).toBe('maxHealth is at 90% of max and costs 1.81× its normal price.');
     const healer: CostStats = { type: 'soldier', maxHealth: 800, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, support: { kind: 'heal', power: 384, range: 100 } };
     expect(nearMaxWarnings(healer, computeCost(healer, coeffs), coeffs).map((x) => x.field)).toEqual(['supportPower']);
     expect(powerHighWarning(brick, computeCost(brick, coeffs), coeffs)).toMatchObject({ code: 'W_POWER_HIGH', field: 'damage', value: 2.24 });

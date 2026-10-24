@@ -314,8 +314,8 @@ export function Results() {
         <div class="ask-claude">
           <ul>
             <li>
-              <blockquote>{`We came ${ordinal(mine.place)} last battle. Call get_battle_report and suggest one change to make my army stronger.`}</blockquote>
-              <CopyButton text={`We came ${ordinal(mine.place)} last battle. Call get_battle_report and suggest one change to make my army stronger.`} />
+              <blockquote>{`We came ${ordinal(mine.place)} last battle. Call get_battle_report and tell me what happened to my units.`}</blockquote>
+              <CopyButton text={`We came ${ordinal(mine.place)} last battle. Call get_battle_report and tell me what happened to my units.`} />
             </li>
           </ul>
         </div>

@@ -183,7 +183,7 @@ describe('placement taps (§12.1)', () => {
     expect(tapCell(three, 3, 0, 'a', { ...tight, budget: 415 }).ok).toBe(true);
     // Copy last layout prices each copy on the ramp too.
     expect(copyLastLayout(five, tight).placements).toHaveLength(3);
-    expect(copyRampHint({ freeCopies: 3, pctPerCopy: 15 })).toBe('Copy 4+ of one design costs more: +15%, +30%, … (walls never). Mix designs!');
+    expect(copyRampHint({ freeCopies: 3, pctPerCopy: 15 })).toBe('Copy 4+ of one design costs more: +15%, +30%, … (walls never).');
   });
 });
 

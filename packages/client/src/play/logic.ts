@@ -392,7 +392,7 @@ export function copiesOf(placements: readonly PlacementDTO[]): Map<string, numbe
 /** Redesign (§6 copy ramp): "Copy 4+ of one design costs +15%, +30%, … (walls never)". */
 export function copyRampHint(r: CopyRamp): string {
   const n = r.freeCopies + 1;
-  return `Copy ${n}+ of one design costs more: +${r.pctPerCopy}%, +${2 * r.pctPerCopy}%, … (walls never). Mix designs!`;
+  return `Copy ${n}+ of one design costs more: +${r.pctPerCopy}%, +${2 * r.pctPerCopy}%, … (walls never).`;
 }
 
 /** "$4,370 / $5,000 — $630 left" pieces. */
@@ -774,7 +774,7 @@ export function unitPrompts(roster: readonly UnitCardDTO[], round: number, repor
     if (lb.disabled > 0 && !errored.has(u.unitId)) {
       out.push(`My unit ${u.name} fell asleep in the last battle (too many errors or too slow). Please call get_battle_report and fix it.`);
     } else if (lb.damageDealt === 0 && u.stats.damage > 0) {
-      out.push(`My unit ${u.name} did no damage last battle. Can you make it find and attack enemies better?`);
+      out.push(`My unit ${u.name} did no damage last battle. Can you find out why?`);
     }
   }
   return out;
@@ -831,7 +831,7 @@ export function stuckPrompts(report: Pick<BattleReportDTO, 'types' | 'hints'> | 
   for (const t of report?.types ?? []) {
     if (t.type !== 'soldier' || !t.blockedTicksMax || battleTicks <= 0) continue;
     if (t.blockedTicksMax / battleTicks > 0.3) {
-      out.add(`My ${t.name} got stuck behind walls a lot last battle. Please make them smash through enemy walls (self.blockedBy) or go round them.`);
+      out.add(`My ${t.name} got stuck behind walls a lot last battle. Can you find out why?`);
     }
   }
   return [...out];

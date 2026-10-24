@@ -526,8 +526,7 @@ export function computeCost(stats: CostStats, coeffs: CostCoefficients, pricing:
         damageRatio,
         text:
           power >= 1 + 5e-3
-            ? `Power ×${fmt(power)}: tough (${Math.round(hpRatio * 100)}% of max HP) AND strong (${Math.round(damageRatio * 100)}% of max damage).` +
-              (power >= POWER_HIGH ? ' One tough unit plus one strong unit is cheaper.' : '')
+            ? `Power ×${fmt(power)}: tough (${Math.round(hpRatio * 100)}% of max HP) AND strong (${Math.round(damageRatio * 100)}% of max damage).`
             : 'Power ×1: not both tough and strong.',
       },
       splash: {
@@ -737,7 +736,7 @@ function powerLever(stats: CostStats, result: CostResult, coeffs: CostCoefficien
   const next = computeCost(withStat(stats, stat, to), coeffs, pricing);
   return (
     `Lowering ${stat} from ${fmt(from)} to ${fmt(to)} drops the power factor from ×${fmt(p.factor)} to ×${fmt(next.breakdown.power?.factor ?? 1)} ` +
-    `and saves ${money(result.cost - next.cost)} (${money(next.cost)}): one tough unit plus one strong unit is cheaper than one unit that is both.`
+    `and saves ${money(result.cost - next.cost)} (${money(next.cost)}).`
   );
 }
 
@@ -814,7 +813,7 @@ export function tooExpensiveLevers(
     supportLever(stats, result, coeffs, bounds, pricing);
   let fix = `${lever ? `${lever} ` : ''}${statSentence}`;
   // Only true when the curve is on (curveK = 0 is the old linear price).
-  if (coeffs.curveK > 0) fix += ` Maxed stats cost up to ${fmt(1 + coeffs.curveK)}× their normal price, so spread them over two units instead.`;
+  if (coeffs.curveK > 0) fix += ` Maxed stats cost up to ${fmt(1 + coeffs.curveK)}× their normal price.`;
   return fix;
 }
 
@@ -849,10 +848,9 @@ export function tooExpensiveError(
 
 /**
  * W_STAT_NEAR_MAX (non-fatal): one warning per stat at ≥ 80% of its max,
- * e.g. "maxHealth is at 96% of max and costs 1.92× its normal price; two
- * medium units usually beat one maxed one." M8.8: supportPower too (the heal
- * and aura terms are curved). None when curveK = 0: with no curve a maxed
- * stat costs its normal price, so the advice would be false.
+ * e.g. "maxHealth is at 96% of max and costs 1.92× its normal price." M8.8:
+ * supportPower too (the heal and aura terms are curved). None when curveK = 0:
+ * with no curve a maxed stat costs its normal price, so the note would be false.
  */
 export function nearMaxWarnings(
   stats: CostStats,
@@ -876,11 +874,10 @@ export function nearMaxWarnings(
       value: part.value,
       allowed: { max: stat === 'size' ? CURVE_MAX.size + MIN_PRICED_SIZE : curveMax, ratio: Math.round(part.ratio * 100) / 100 },
       message:
-        `${stat} is at ${Math.round(part.ratio * 100)}% of max and costs ${fmt(part.multiplier)}× its normal price; ` +
-        'two medium units usually beat one maxed one.',
+        `${stat} is at ${Math.round(part.ratio * 100)}% of max and costs ${fmt(part.multiplier)}× its normal price.`,
       fix: lower
-        ? `If you don't need it this high, set this.${stat} to ${fmt(target)}: that saves ${money(saving)} (cost ${money(lower.cost)}) to spend on another unit.`
-        : `Consider a lower ${stat} and spend the savings on a second unit.`,
+        ? `this.${stat} = ${fmt(target)} would cost ${money(lower.cost)} (${money(saving)} less).`
+        : `A lower ${stat} costs less.`,
     });
   }
   const sp = result.breakdown.heal ?? result.breakdown.aura;
@@ -894,10 +891,10 @@ export function nearMaxWarnings(
       field: 'supportPower',
       value: sp.power,
       allowed: { max, ratio: Math.round(sp.ratio * 100) / 100 },
-      message: `supportPower is at ${Math.round(sp.ratio * 100)}% of max and costs ${fmt(sp.multiplier)}× its normal price; two medium supports usually beat one maxed one.`,
+      message: `supportPower is at ${Math.round(sp.ratio * 100)}% of max and costs ${fmt(sp.multiplier)}× its normal price.`,
       fix: lower
-        ? `If you don't need it this high, set this.supportPower to ${fmt(target)}: that saves ${money(result.cost - lower.cost)} (cost ${money(lower.cost)}).`
-        : 'Consider a lower supportPower and spend the savings on a second unit.',
+        ? `this.supportPower = ${fmt(target)} would cost ${money(lower.cost)} (${money(result.cost - lower.cost)} less).`
+        : 'A lower supportPower costs less.',
     });
   }
   return out;
@@ -905,8 +902,7 @@ export function nearMaxWarnings(
 
 /**
  * W_POWER_HIGH (non-fatal, §7 M8.8): the power factor is ≥ 1.25, e.g. "Very
- * tough AND very strong costs ×1.37 here; one tough unit plus one strong unit
- * is cheaper". Null below the threshold.
+ * tough AND very strong costs ×1.37 here". Null below the threshold.
  */
 export function powerHighWarning(
   stats: CostStats,
@@ -923,7 +919,7 @@ export function powerHighWarning(
     field: p.damageRatio >= p.hpRatio ? 'damage' : 'maxHealth',
     value: Math.round(p.factor * 100) / 100,
     allowed: { max: POWER_HIGH },
-    message: `Very tough AND very strong costs ×${fmt(p.factor)} here (${Math.round(p.hpRatio * 100)}% of max HP and ${Math.round(p.damageRatio * 100)}% of max damage); one tough unit plus one strong unit is cheaper.`,
-    fix: lever ?? 'Lower maxHealth or damage, and put the rest into a second unit.',
+    message: `Very tough AND very strong costs ×${fmt(p.factor)} here (${Math.round(p.hpRatio * 100)}% of max HP and ${Math.round(p.damageRatio * 100)}% of max damage).`,
+    fix: lever ?? 'A lower maxHealth or damage lowers the power factor.',
   };
 }

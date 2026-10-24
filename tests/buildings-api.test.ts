@@ -383,6 +383,6 @@ describe('battle report per type (§10.5)', () => {
       { unitId: 'forge', name: 'Forge', type: 'factory', fielded: 1, survived: 1, damageDealt: 12, kills: 1, minionsMade: 3, minionsLost: 1, minionDamage: 12 },
       { unitId: 'moat', name: 'Moat', type: 'wall', fielded: 1, survived: 1, damageDealt: 0, kills: 0 },
     ]);
-    expect(r.hints).toEqual(['Your Ninja got stuck behind walls a lot. Ask your AI helper to make it break through (attack self.blockedBy) or go round.']);
+    expect(r.hints).toEqual(['Your Ninja got stuck behind walls a lot. In update(), self.blockedBy, self.blockedTicks and self.pathing show when a wall stops it.']);
   });
 });
