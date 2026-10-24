@@ -53,7 +53,7 @@ import {
   type SandboxSession,
 } from '../sandbox/session.js';
 import type { TickInput } from '../sandbox/runner.js';
-import { locate, type Ctx } from './context.js';
+import { locate, type Ctx, type PracticeNames } from './context.js';
 import { excerptAround } from './normalize.js';
 
 export interface DryRunResult {
@@ -73,6 +73,25 @@ export function noStatus(healRoom = 0): StatusView {
 const TICKS_PER_WORLD = 5;
 const ME = 'you';
 const ENEMY = 'enemy';
+/** The practice enemy's player name ("Show enemy names to units"). */
+export const PRACTICE_ENEMY_NAME = 'Practice Enemy';
+
+/**
+ * "Show enemy names to units" (§5): the practice bodies carry ownerName (and
+ * teamName in team mode) and the world lists both practice players.
+ */
+function withNames(input: TickInput, names: PracticeNames): TickInput {
+  const nameOf = (ownerId: string) => (ownerId === ME ? names.me : PRACTICE_ENEMY_NAME);
+  const teamOf = (ownerId: string) => (ownerId === ME ? 'Team 1' : 'Team 2');
+  const tag = (o: OtherView): OtherView => ({ ...o, ownerName: nameOf(o.ownerId), ...(names.teams ? { teamName: teamOf(o.ownerId) } : {}) });
+  const player = (id: string, teamId: number) => ({ id, name: nameOf(id), teamId, ...(names.teams ? { teamName: teamOf(id) } : {}) });
+  return {
+    ...input,
+    enemies: input.enemies.map(tag),
+    allies: input.allies.map(tag),
+    world: { ...input.world, players: [player(ME, 0), player(ENEMY, 1)] },
+  };
+}
 
 /** Median of a non-empty list (upper middle for an even count); 0 when empty. */
 function median(values: readonly number[]): number {
@@ -424,7 +443,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
         ],
         world: worldView,
       };
-      const out = await session.call('tick', [encodeTickInput(input)], callMs, { deadlineMs: callMs + DEFAULT_DEADLINE_SLACK_MS });
+      const out = await session.call('tick', [encodeTickInput(ctx.names ? withNames(input, ctx.names) : input)], callMs, { deadlineMs: callMs + DEFAULT_DEADLINE_SLACK_MS });
       if (out.kind === 'timeout') {
         errors.push({
           code: 'UPDATE_TIMEOUT',

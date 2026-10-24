@@ -144,6 +144,8 @@ export interface OtherView {
   status: StatusView;
   moving: boolean;       // it moved last tick: ranged shots at a moving body can miss
   currentSpeed: number;  // px it moved last tick (0 standing, blocked or stopped); misses grow with it
+  ownerName?: string;    // only when the match setting 'Show enemy names to units' is on: its player's name (a minion: its factory's player)
+  teamName?: string;     // team mode, only with that setting on: its team's name, e.g. 'Team 2'
 }
 // A wall has radius 20: for range it counts as a circle of radius 20 (so inRange works unchanged),
 // but its body blocks the whole 40×40 square. Walls and factories have range 0.
@@ -156,6 +158,7 @@ export interface WorldView {
   myCorner: { x: number; y: number };   // centre of my start zone this round (name kept from the 4-corner map; a zone need not be a corner)
   center: { x: number; y: number };     // = { x: width / 2, y: height / 2 }
   safeZone: { x: number; y: number; radius: number }; // centred on `center`; shrinks from tick 4500 (sudden death, §9)
+  players?: { id: string; name: string; teamId: number; teamName?: string }[]; // only when 'Show enemy names to units' is on: every player in this battle, you too (id = ownerId; teamName in team mode)
 }
 // teamId: free-for-all = the owner's seat (0-7), so every player is their own team.
 // Team mode = the team index (0-3). Same teamId = friend, different = enemy.
@@ -261,6 +264,8 @@ For soldiers and towers (walls and factories: see **4c**):
 | `status` | burns, freezes and auras on it now (table below) |
 | `moving` | it moved last tick (a ranged shot at a moving body can miss) |
 | `currentSpeed` | px it moved last tick (0 = standing, blocked or stopped) |
+| `ownerName` | its player's name (a minion: its factory's player); only when the match setting 'Show enemy names to units' is on, else missing |
+| `teamName` | team mode: its team's name, e.g. `'Team 2'`; only when the match setting 'Show enemy names to units' is on, else missing |
 
 **`status`** (on `self` and on every other body; each number is 0 when nothing applies):
 
@@ -304,6 +309,7 @@ For soldiers and towers (walls and factories: see **4c**):
 | `myCorner` | `{ x, y }`: the centre of this player's start zone this round |
 | `center` | `{ x, y }`: the centre of the arena |
 | `safeZone` | `{ x, y, radius }`: the safe circle; it shrinks from 75 s (sudden death) |
+| `players` | every player in this battle, this player too: `{ id, name, teamId, teamName }` (`id` matches a body's `ownerId`; `teamName` in team mode); only when the match setting 'Show enemy names to units' is on, else missing |
 
 ## 4b. Drawing the unit: `sprite()`
 
@@ -668,6 +674,10 @@ Call `get_battle_report`. Its `score` shows how the player's points were made (p
 ### Open Armory (only when the host switched it on)
 
 `get_rules` and `get_game_state` say whether Open Armory is on. Then every unit type that fought in a battle becomes borrowable by the other players from the next Plan phase, named like "Ogre (Ninja Sam)". Call `list_armory` to see them (stats, cost, round added). The player picks borrowed units on the Pixel Clash page (they count toward the 4 unit / 4 building types), and a borrowed unit's damage and points are the player's. Borrowed units can't be changed and their code is never shared: `get_unit_source` on one says `NOT_FOUND`. To make something like it, build a new unit (submitted without `unitId`). When another player fields one of *your* player's units, your player gets the 💡 Inventor badge.
+
+### Show enemy names to units (only when the host switched it on)
+
+`get_rules` and `get_game_state` say whether this match setting is on (`revealNames`). When it is on, in battle every body in `enemies` and `allies` also has `ownerName` (its player's name; a minion's is its factory's player, a borrowed Armory unit's is the player who fielded it) and, in team mode, `teamName`, and `world.players` lists every player in the battle as `{ id, name, teamId, teamName }`. When it is off these fields are missing, so code that reads them must also work without them. Player names are the ones on the scoreboard.
 
 ## 8. Don'ts
 

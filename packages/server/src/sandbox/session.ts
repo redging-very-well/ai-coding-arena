@@ -128,7 +128,7 @@ export function encodeTickInput(input: Pick<TickInput, 'nowMs' | 'selves' | 'ene
     nowMs: input.nowMs,
     selves: input.selves,
     enemiesJson: enemiesJsonOf(input.enemies),
-    worldJson: JSON.stringify(input.world),
+    worldJson: worldJsonOf(input.world),
     allyIds: input.allies.map((a) => a.id),
     alliesJson: alliesJsonOf(input.allies),
   });
@@ -147,6 +147,22 @@ function enemiesJsonOf(enemies: TickInput['enemies']): string {
     enemiesJsonCache.set(enemies, json);
   }
   return json;
+}
+
+// `world.players` ("Show enemy names to units") is one array per battle: its
+// JSON is made once and spliced in, so names add no per-tick stringify work.
+const playersJsonCache = new WeakMap<readonly unknown[], string>();
+
+function worldJsonOf(world: TickInput['world']): string {
+  const players = world.players;
+  if (!players) return JSON.stringify(world);
+  let pj = playersJsonCache.get(players);
+  if (pj === undefined) {
+    pj = JSON.stringify(players);
+    playersJsonCache.set(players, pj);
+  }
+  const { players: _p, ...rest } = world;
+  return JSON.stringify(rest).slice(0, -1) + ',"players":' + pj + '}';
 }
 
 function alliesJsonOf(allies: TickInput['allies']): string[] {

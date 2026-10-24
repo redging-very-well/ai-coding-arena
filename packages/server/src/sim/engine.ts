@@ -242,6 +242,12 @@ export interface BattleOptions {
   seed: number;
   /** Called synchronously for every recorded frame, in order. */
   onFrame?: (frame: FrameDTO) => void;
+  /**
+   * The match setting "Show enemy names to units" (§5, §9.2): every OtherView
+   * also carries `ownerName` (and `teamName` in team mode) and `world.players`
+   * lists the battle's players. Off/omitted: the views are exactly as before.
+   */
+  revealNames?: boolean;
   /** Players kicked during this battle; excluded from `result.ranking` (§4). */
   kickedPlayerIds?: ReadonlySet<string>;
   /**
@@ -316,6 +322,10 @@ export class BattleEngine {
   private readonly minionValue: number;
   /** Alive minions allowed per player (§5.2 (c)). */
   private readonly minionCapPerPlayer: number;
+  /** revealNames: playerId → the names its bodies carry; null = off (views unchanged). */
+  private readonly ownerNames: ReadonlyMap<string, OwnerNames> | null;
+  /** revealNames: `world.players`, built once per battle and shared by every world view. */
+  private readonly worldPlayers: NonNullable<WorldView['players']> | undefined;
 
   /** Per-unit counters at each frame where they changed (for `countersAt`). */
   private readonly unitCounterLog = new Map<string, Array<UnitCounters & { t: number }>>();
@@ -391,6 +401,22 @@ export class BattleEngine {
         };
       });
     this.units = this.players.flatMap((p) => p.units).sort((a, b) => compareIds(a.id, b.id));
+    if (opts.revealNames === true) {
+      const names = new Map<string, OwnerNames>();
+      const list: NonNullable<WorldView['players']> = [];
+      for (const p of this.players) {
+        const s = p.setup;
+        const ownerName = s.name ?? s.playerId;
+        const teamName = this.teamMode && s.teamName !== undefined ? s.teamName : undefined;
+        names.set(s.playerId, teamName !== undefined ? { ownerName, teamName } : { ownerName });
+        list.push({ id: s.playerId, name: ownerName, teamId: s.teamId ?? s.seat, ...(teamName !== undefined ? { teamName } : {}) });
+      }
+      this.ownerNames = names;
+      this.worldPlayers = list;
+    } else {
+      this.ownerNames = null;
+      this.worldPlayers = undefined;
+    }
     for (const u of this.units) {
       this.byId.set(u.id, u);
       if (u.type === 'wall') this.walls.add(u);
@@ -664,7 +690,7 @@ export class BattleEngine {
     // died defend, before anyone decides (dead factories too: their minions
     // keep the last order).
     for (const u of this.units) if (u.factory) this.checkOrder(u);
-    const others = living.map((u) => toOtherView(u, tick, cfg));
+    const others = living.map((u) => toOtherView(u, tick, cfg, this.ownerNames));
     const safeRadius = safeRadiusAt(tick, cfg);
     // enemies/allies are built once per side and shared by its players, so
     // the sandbox serialises them once per side (§9.2 Performance).
@@ -1082,6 +1108,7 @@ export class BattleEngine {
       myCorner: { x: corner.x, y: corner.y },
       center: { x: cx, y: cy },
       safeZone: { x: cx, y: cy, radius: safeRadius },
+      ...(this.worldPlayers ? { players: this.worldPlayers } : {}),
     };
     // Same teamId = friend (own units and, in team mode, every teammate's), else enemy.
     const teamId = p.setup.teamId ?? p.setup.seat;
@@ -1683,9 +1710,15 @@ export function missChance(moved: number, config: Pick<GameConfig, 'accuracy'>):
 // Views and runner safety
 // ---------------------------------------------------------------------------
 
-function toOtherView(u: SimUnit, tick: number, config: GameConfig): OtherView {
+/** The names a player's bodies carry when "Show enemy names to units" is on. */
+interface OwnerNames {
+  ownerName: string;
+  teamName?: string;
+}
+
+function toOtherView(u: SimUnit, tick: number, config: GameConfig, names: ReadonlyMap<string, OwnerNames> | null): OtherView {
   // A wall is a circle of radius 20 for range (§5.2); walls and factories have range 0.
-  return {
+  const view: OtherView = {
     id: u.id,
     ownerId: u.playerId,
     teamId: u.teamId, // free-for-all: the seat; team mode: the team (§5, §9.2)
@@ -1706,6 +1739,14 @@ function toOtherView(u: SimUnit, tick: number, config: GameConfig): OtherView {
     moving: (u.moved ?? 0) > 0,
     currentSpeed: Math.round((u.moved ?? 0) * 100) / 100,
   };
+  // revealNames (§5): a minion's playerId is its factory's player; a borrowed
+  // Armory unit's is the player who fielded it.
+  const n = names?.get(u.playerId);
+  if (n) {
+    view.ownerName = n.ownerName;
+    if (n.teamName !== undefined) view.teamName = n.teamName;
+  }
+  return view;
 }
 
 function toSelfView(u: SimUnit, factory: FactoryView | null, tick: number, config: GameConfig): SelfView {

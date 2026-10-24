@@ -56,6 +56,10 @@ export interface BattlePlayerSetup {
    * or to none; without it every player is their own side (teamId = seat).
    */
   teamId?: number;
+  /** The player's display name: shown to units only with `BattleOptions.revealNames` (default: the playerId). */
+  name?: string;
+  /** Team mode: the team's name (e.g. "Team 2"), shown to units only with `revealNames`. */
+  teamName?: string;
   /** The designs this player fields (≤ 4 unit + ≤ 4 building types, §5.2). */
   units: readonly BattleUnitDesign[];
   /** Zone-local placements (one per cell). Order does not matter. */

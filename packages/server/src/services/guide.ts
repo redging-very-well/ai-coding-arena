@@ -324,6 +324,8 @@ const OTHER_FIELDS: Record<keyof OtherView, string> = {
   status: 'its burns, freezes and buffs',
   moving: 'it moved last tick: ranged shots at a moving body can miss',
   currentSpeed: 'px it moved last tick (0 = standing still); the faster, the more ranged shots miss',
+  ownerName: "its player's name (a minion: its factory's player), only when the match setting 'Show enemy names to units' is on",
+  teamName: "team mode: its team's name, e.g. 'Team 2', only when the match setting 'Show enemy names to units' is on",
 };
 
 const STATUS_FIELDS: Record<keyof StatusView, (c: GameConfig) => string> = {
@@ -366,6 +368,7 @@ const WORLD_FIELDS: Record<keyof WorldView, (c: GameConfig) => string> = {
   myCorner: () => 'centre of your start zone this round',
   center: () => 'centre of the arena',
   safeZone: (c) => `the safe circle \`{ x, y, radius }\`: it shrinks from ${secs(c.suddenDeath.startTick, c)} (sudden death)`,
+  players: () => "every player in this battle, you too: `{ id, name, teamId, teamName }` (`id` = a body's `ownerId`; `teamName` in team mode), only when the match setting 'Show enemy names to units' is on",
 };
 
 // ---------------------------------------------------------------------------
@@ -780,6 +783,7 @@ function viewSection(c: GameConfig): GuideSectionDTO {
           'Range is EDGE to edge: `inRange(self, other)` is `Math.hypot(other.x - self.x, other.y - self.y) - self.radius - other.radius <= self.range`.',
           "Free-for-all: every player is their own team. Team mode: teammates' units are in `allies`.",
           'Stored minions (inside a factory) are invisible.',
+          "Show enemy names to units (a match setting the host picks at Start match; off by default): when it is on, every body also has `ownerName` (and `teamName` in team mode) and `world.players` lists the players. When it is off these fields are missing.",
         ],
       },
       { kind: 'code', title: 'For your AI helper / code: the exact contract (TypeScript)', code: contractTypescript() },

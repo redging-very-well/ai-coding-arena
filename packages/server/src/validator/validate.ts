@@ -51,7 +51,7 @@ import {
   type SessionOpener,
 } from '../sandbox/session.js';
 import { LineMapper, splitInlineSourceMap } from '../sandbox/sourcemap.js';
-import { locate, type Ctx } from './context.js';
+import { locate, type Ctx, type PracticeNames } from './context.js';
 import { dryRun } from './dryrun.js';
 import { normalizeSource } from './normalize.js';
 import { spriteStep } from './sprite.js';
@@ -66,6 +66,8 @@ export interface ValidateOptions {
   openSession?: SessionOpener;
   /** Run the step-9 dry-run of update() (default true). */
   dryRun?: boolean;
+  /** "Show enemy names to units" is on this match (§5): the dry-run worlds carry names. */
+  names?: PracticeNames;
 }
 
 export interface ValidationDetails {
@@ -113,7 +115,7 @@ export async function validateDetailed(source: unknown, opts: ValidateOptions, c
   if (!tr.ok) return { result: failure([tr.error]), source: src, sha256 };
   const { compiledJs } = tr;
   const details = { source: src, compiledJs, sha256 };
-  const ctx: Ctx = { source: src, mapper: new LineMapper(splitInlineSourceMap(compiledJs).mappings), config };
+  const ctx: Ctx = { source: src, mapper: new LineMapper(splitInlineSourceMap(compiledJs).mappings), config, ...(opts.names ? { names: opts.names } : {}) };
 
   // 4-10 run in a fresh sandbox.
   const open = opts.openSession ?? ivmSessionOpener();

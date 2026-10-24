@@ -12,7 +12,8 @@
 //
 // Inside a borrowed part the frozen code sees the ids it saw in its creator's
 // battles: `self.unitId` is the creator's unitId (never `armory:…`), and the
-// borrower's and creator's player ids are swapped in every `ownerId`.
+// borrower's and creator's player ids are swapped in every `ownerId` (and in
+// `world.players` ids when names are shown).
 
 import type {
   PlayerRunner,
@@ -183,5 +184,8 @@ function partInput(part: Part, input: TickInput, selves: TickInput['selves']): T
     selves: selves.map((s) => ({ ...s, unitId: part.inner.get(s.unitId) ?? s.unitId, ownerId: owner(s.ownerId) })),
     enemies: input.enemies.map((o) => ({ ...o, ownerId: owner(o.ownerId) })),
     allies: input.allies.map((o) => ({ ...o, ownerId: owner(o.ownerId) })),
+    // "Show enemy names to units": the same id swap, so every id still matches
+    // the names its bodies carry (a body's ownerName is never swapped).
+    ...(input.world.players ? { world: { ...input.world, players: input.world.players.map((p) => ({ ...p, id: owner(p.id) })) } } : {}),
   };
 }

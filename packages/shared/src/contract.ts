@@ -100,6 +100,8 @@ export interface OtherView {
   status: StatusView;
   moving: boolean;       // it moved last tick: ranged shots at a moving body can miss
   currentSpeed: number;  // px it moved last tick (0 standing, blocked or stopped); misses grow with it
+  ownerName?: string;    // only when the match setting 'Show enemy names to units' is on: its player's name (a minion: its factory's player)
+  teamName?: string;     // team mode, only with that setting on: its team's name, e.g. 'Team 2'
 }
 // A wall has radius 20: for range it counts as a circle of radius 20 (so inRange works unchanged),
 // but its body blocks the whole 40×40 square. Walls and factories have range 0.
@@ -112,6 +114,7 @@ export interface WorldView {
   myCorner: { x: number; y: number };   // centre of my start zone this round (name kept from the 4-corner map; a zone need not be a corner)
   center: { x: number; y: number };     // = { x: width / 2, y: height / 2 }
   safeZone: { x: number; y: number; radius: number }; // centred on `center`; shrinks from tick 4500 (sudden death, §9)
+  players?: { id: string; name: string; teamId: number; teamName?: string }[]; // only when 'Show enemy names to units' is on: every player in this battle, you too (id = ownerId; teamName in team mode)
 }
 // teamId: free-for-all = the owner's seat (0-7), so every player is their own team.
 // Team mode = the team index (0-3). Same teamId = friend, different = enemy.

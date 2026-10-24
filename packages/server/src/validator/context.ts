@@ -12,6 +12,16 @@ export interface Ctx {
   /** Maps compiled positions back to `source`. */
   mapper: LineMapper;
   config: GameConfig;
+  /** "Show enemy names to units" is on (§5): the practice worlds carry names too. */
+  names?: PracticeNames;
+}
+
+/** Names for the practice worlds when "Show enemy names to units" is on. */
+export interface PracticeNames {
+  /** The player's own name (their bodies' ownerName). */
+  me: string;
+  /** Team mode: bodies also carry teamName. */
+  teams: boolean;
 }
 
 /** line/column/excerpt/errorMessage for an error thrown by unit code. */
