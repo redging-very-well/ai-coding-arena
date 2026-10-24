@@ -2,12 +2,12 @@ import { fileURLToPath } from 'node:url';
 import { defaultClientConditions, defineConfig, type Plugin } from 'vite';
 
 const page = (name: string) => fileURLToPath(new URL(`./${name}.html`, import.meta.url));
-const PAGES = ['play', 'screen', 'admin', 'setup'];
+const PAGES = ['play', 'screen', 'admin', 'setup', 'guide'];
 
 /** The game server the dev server proxies to (`npm run dev` starts it on 8080). */
 const target = `http://localhost:${process.env.PORT ?? 8080}`;
 
-/** Dev only: serve /play, /screen, /admin, /setup like the game server does. */
+/** Dev only: serve /play, /screen, /admin, /setup, /guide like the game server does. */
 function pageRoutes(): Plugin {
   return {
     name: 'pixel-clash-pages',
@@ -22,7 +22,7 @@ function pageRoutes(): Plugin {
   };
 }
 
-// Multi-page Vite build (plan §13): play, screen, admin, setup. The dev server
+// Multi-page Vite build (plan §13): play, screen, admin, setup, guide. The dev server
 // proxies /api, /mcp, /ws and /terminal to the game server. Preact JSX is compiled by
 // Vite's built-in transform via tsconfig `jsxImportSource` (no Babel preset).
 export default defineConfig({
@@ -47,6 +47,7 @@ export default defineConfig({
         screen: page('screen'),
         admin: page('admin'),
         setup: page('setup'),
+        guide: page('guide'),
       },
     },
   },

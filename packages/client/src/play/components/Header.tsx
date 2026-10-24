@@ -6,6 +6,7 @@ import { mapName, teamOfPlayer } from '../../common/maps.js';
 import { seatStyle } from '../../common/seats.js';
 import { cx, formatClock, PHASE_TEXT, ticksToSeconds } from '../../common/ui.js';
 import { getStore, useStore } from '../store.js';
+import { GuideButton } from './GuideOverlay.js';
 import { TeamChip } from './TeamPanel.js';
 
 export function Header() {
@@ -78,6 +79,7 @@ export function Header() {
         </div>
       )}
       <div class="hdr-end">
+        <GuideButton />
         <button
           class={cx('sound-btn', sound.muted && 'off')}
           onClick={() => sound.toggleMuted()}

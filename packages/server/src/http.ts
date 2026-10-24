@@ -1,5 +1,5 @@
 // The Express app (plan §2): REST under /api, MCP at /mcp, and the static
-// client build with its multi-page routes (/play /screen /admin /setup).
+// client build with its multi-page routes (/play /screen /admin /setup /guide).
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,7 +14,7 @@ import { publicRoutes } from './routes/public.js';
 import { log } from './util/log.js';
 import { defaultPublicDir } from './util/paths.js';
 
-export const PAGES = ['play', 'screen', 'admin', 'setup'] as const;
+export const PAGES = ['play', 'screen', 'admin', 'setup', 'guide'] as const;
 
 export interface HttpOptions {
   /** The built client (default packages/server/dist/public). */

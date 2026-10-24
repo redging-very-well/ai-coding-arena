@@ -13,6 +13,7 @@ import type {
   ContractDTO,
   GameConfig,
   GameStateDTO,
+  GuideDTO,
   HealthDTO,
   LoginResponse,
   MapStyle,
@@ -134,6 +135,8 @@ export const api = {
   health: () => request<HealthDTO>('GET', '/health'),
   rules: () => request<RulesDTO>('GET', '/rules'),
   contract: () => request<ContractDTO>('GET', '/contract'),
+  /** The unit guide (§10.3): the rulebook for units from the live config. */
+  guide: () => request<GuideDTO>('GET', '/guide'),
   state: () => request<GameStateDTO>('GET', '/state'),
   join: (name: string, pin: string) => request<LoginResponse>('POST', '/players', { name, pin }),
   login: (name: string, pin: string) => request<LoginResponse>('POST', '/login', { name, pin }),

@@ -28,6 +28,7 @@ import { getStore, useStore } from '../store.js';
 import { Battle } from './Battle.js';
 import { ClaudePane } from './ClaudePanel.js';
 import { EditorHost } from './EditorHost.js';
+import { GuideOverlay, setGuideOpen } from './GuideOverlay.js';
 import { Header } from './Header.js';
 import { Join } from './Join.js';
 import { PastBattles, PastBattlesButton } from './PastBattles.js';
@@ -211,6 +212,7 @@ function PlayShell() {
 
   const choose = (t: PlayTab) => {
     setTab(t);
+    setGuideOpen(false);
     writeStorage('session', TAB_KEY, t);
     if (t === 'claude') setFocusSeq((n) => n + 1);
   };
@@ -294,6 +296,8 @@ function PlayShell() {
             </div>
           </main>
         </section>
+        {/* The unit guide (§12.1): over the Game column (split) or both panes (tabs); the terminal stays mounted. */}
+        <GuideOverlay />
         {/* While dragging, a shield over everything so the iframe doesn't swallow the pointer. */}
         {dragging && <div class="drag-shield" />}
       </div>
