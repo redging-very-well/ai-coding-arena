@@ -15,6 +15,7 @@ import {
   type AdminOverviewDTO,
   type BattleEndDTO,
   type GameStateDTO,
+  type MatchAwardDTO,
   type MyStateDTO,
   type PlayerStatusDTO,
   type PrivateStateDTO,
@@ -84,6 +85,18 @@ export class VisibilityService {
   }
 
   /**
+   * The match awards (§9 Match awards), MATCH_RESULTS only (undefined in any
+   * other phase). A winner kicked since is left out (an award left without
+   * winners goes).
+   */
+  matchAwards(): MatchAwardDTO[] | undefined {
+    const m = this.game.store.match;
+    if (m.phase !== 'MATCH_RESULTS' || !m.awards) return undefined;
+    const here = (id: string) => this.game.players.get(id) !== undefined;
+    return m.awards.map((a) => ({ ...a, winners: a.winners.filter((w) => here(w.playerId)) })).filter((a) => a.winners.length > 0);
+  }
+
+  /**
    * The owner-only `me` block. `team` (teammates' live selection, zones and
    * placements, §9.2 Team privacy) is included unless `withTeam` is false: the
    * WS `state` push leaves it out (it travels in `private`, debounced).
@@ -113,6 +126,8 @@ export class VisibilityService {
     if (teamId !== undefined) me.teamId = teamId;
     if (g.teams.isBenched(p)) me.benched = true;
     if (withTeam && g.teams.active) me.team = g.teams.privateTeam(playerId);
+    const awards = this.matchAwards();
+    if (awards) me.awards = awards.filter((a) => a.winners.some((w) => w.playerId === playerId)).map((a) => a.id);
     return me;
   }
 
@@ -139,6 +154,8 @@ export class VisibilityService {
     }
     const last = this.lastBattle();
     if (last) state.lastBattle = last;
+    const awards = this.matchAwards();
+    if (awards) state.matchAwards = awards;
     if (viewer.role === 'player') {
       const me = this.me(viewer.playerId, opts.withTeam !== false);
       if (me) state.me = me;

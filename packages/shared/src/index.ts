@@ -10,3 +10,4 @@ export * from './protocol.js';
 export * from './sprite.js';
 export * from './teams.js';
 export * from './buildings.js';
+export * from './awards.js';

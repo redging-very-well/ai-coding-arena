@@ -45,6 +45,7 @@ import { minionReveal, minionsReveal } from '../sim/minion.js';
 import { topUnits } from '../sim/topUnits.js';
 import { log } from '../util/log.js';
 import { ArmoryService, type BorrowedUse, type FieldedDesign } from './armory.js';
+import type { RoundBorrow, RoundStatsInput } from './awards.js';
 import type { Game } from './game.js';
 import type { RoundResultRecord } from './store.js';
 import { SCALE_VERSION } from './units.js';
@@ -602,10 +603,26 @@ export class BattleService {
     if (inventors.length > 0) end.inventors = inventors;
     end.topUnits = topUnits({ reveal: a.reveal, summaries: unitSummaries, kicked, shown: scoring.topUnitsShown });
     const record: RoundResultRecord = { round: a.round, end, reports, unitSummaries };
+    // Match awards (§9): this round's contribution to the per-match stats (before the Armory changes).
+    const borrowed: RoundBorrow[] = [];
+    for (const b of a.setup.flatMap((s) => s.borrowed)) {
+      const armoryUnitId = ArmoryService.unitIdOf(b);
+      const e = game.armory.forUnitId(armoryUnitId);
+      if (e) borrowed.push({ borrowerId: b.borrowerId, creatorId: b.creatorId, sourceUnitId: e.sourceUnitId, name: e.name, armoryUnitId });
+    }
+    const roundStats: RoundStatsInput = {
+      round: a.round,
+      reveal: a.reveal,
+      frames: a.frames.filter((f) => f.t <= endTick),
+      units: reported.units,
+      ranking,
+      borrowed,
+      ownDesigns: Object.fromEntries(a.setup.map((s) => [s.playerId, s.fielded.map((f) => f.unitId)])),
+    };
     this.active = undefined;
     // The fielded types enter the Open Armory now that the result is public (§9.1).
     game.armory.addFielded(a.round, a.setup.flatMap((s) => s.fielded));
-    game.match.battleReleased(record); // adds points and fills end.scoreboard
+    game.match.battleReleased(record, roundStats); // adds points, fills end.scoreboard, adds the match stats
     // M8.8: the replay header names the economy it was played in (§6 M8.8 migration).
     const replay: ReplayDTO = { round: a.round, scaleVersion: SCALE_VERSION, reveal: a.reveal, frames: a.frames.filter((f) => f.t <= endTick), end };
     this.lastReplay = replay;

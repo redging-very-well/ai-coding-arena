@@ -16,6 +16,7 @@ import type {
   BattleEndDTO,
   CostBreakdown,
   DeepPartial,
+  MatchAwardDTO,
   GameConfig,
   MapStyle,
   MapZone,
@@ -35,6 +36,7 @@ import type {
 } from '@pixel-clash/shared';
 import { cornerZone, isMapStyle, isTeamMode, migrateEconomyPatch, type Corner } from '@pixel-clash/shared';
 import { log } from '../util/log.js';
+import type { MatchStats } from './awards.js';
 
 // ---------------------------------------------------------------------------
 // Model
@@ -215,6 +217,10 @@ export interface MatchState {
   pendingDeletes?: string[];
   /** Open Armory (§9.1). */
   armory: ArmoryState;
+  /** Per-match stats for the match awards, accumulated at every released round (§9 Match awards). */
+  stats: MatchStats;
+  /** The match awards, computed when the match reaches MATCH_RESULTS; null before. */
+  awards: MatchAwardDTO[] | null;
 }
 
 /** MatchState as written to state.json (Armory code lives in data/armory). */
@@ -264,6 +270,8 @@ export function newMatchState(defaultRounds: number): MatchState {
     results: [],
     pendingKicks: [],
     armory: { enabled: false, entries: [] },
+    stats: {},
+    awards: null,
   };
 }
 
@@ -394,6 +402,9 @@ export class Store {
       // State files from before the damage tie-break and badges.
       this.match.damage ??= {};
       this.match.badges ??= {};
+      // State files from before the match awards (§9 Match awards).
+      this.match.stats ??= {};
+      this.match.awards ??= null;
       // State files from before maps and teams (§9.2): zones were Corners of the 800 Corners map.
       const setup = (this.match.setup ?? {}) as Partial<MatchState['setup']>;
       this.match.setup = {

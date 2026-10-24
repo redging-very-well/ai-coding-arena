@@ -281,7 +281,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Game state',
       description:
-        "Phase, round, time left, whether submissions are open, my selection and budget, the scoreboard (per player: total points, total damage, place and badges won), the map style and arena size, the team mode, my team and my teammates' picked unit types (team mode), and the team table.",
+        "Phase, round, time left, whether submissions are open, my selection and budget, the scoreboard (per player: total points, total damage, place and badges won), the map style and arena size, the team mode, my team and my teammates' picked unit types (team mode), the team table, and after the last round the match awards (matchAwards, myAwards) to congratulate the player.",
       inputSchema: { apiKey: API_KEY },
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },
@@ -320,6 +320,20 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
                 }))
             : [],
           teamTable: s.match?.teamTable ?? null,
+          // MATCH_RESULTS only (§9 Match awards): every award and the ones this player won, to congratulate them.
+          ...(s.matchAwards
+            ? {
+                matchAwards: s.matchAwards.map((a) => ({
+                  award: `${a.emoji} ${a.title}`,
+                  rule: a.rule,
+                  stat: a.text,
+                  winners: a.winners.map((w) => ({ name: w.name, ...(w.detail ? { detail: w.detail } : {}), ...(w.bestUnit ? { bestUnit: w.bestUnit.name } : {}) })),
+                })),
+                myAwards: s.matchAwards
+                  .filter((a) => s.me?.awards?.includes(a.id))
+                  .map((a) => `${a.emoji} ${a.title} (${a.text})`),
+              }
+            : {}),
         };
         const time = data.secondsLeft === null ? '' : `, ${data.secondsLeft} s left`;
         return toolResult(
@@ -327,7 +341,13 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
           `Phase ${s.phase} (round ${s.round} of ${s.rounds}${time}). Submissions are ${data.submissionsOpen ? 'OPEN' : 'closed'}.` +
             (s.armory.enabled ? ` Open Armory is ON (${s.armory.entries} units; see list_armory).` : '') +
             (data.arena ? ` Map: ${data.mapStyle}, arena ${data.arena.width}x${data.arena.height}.` : '') +
-            (team ? ` Team mode: you are on ${team.name} with ${data.myTeam!.members.filter((n) => n !== p.name).join(', ') || 'nobody else'}.` : ''),
+            (team ? ` Team mode: you are on ${team.name} with ${data.myTeam!.members.filter((n) => n !== p.name).join(', ') || 'nobody else'}.` : '') +
+            (s.matchAwards
+              ? ` The game is over! Match awards: ${s.matchAwards.map((a) => `${a.emoji} ${a.title}: ${a.winners.map((w) => w.name).join(' & ')} (${a.text})`).join('; ')}.` +
+                (s.me?.awards?.length
+                  ? ` This player won: ${s.matchAwards.filter((a) => s.me!.awards!.includes(a.id)).map((a) => `${a.emoji} ${a.title}`).join(', ')}. Congratulate them!`
+                  : ' Congratulate the player on a great game!')
+              : ''),
         );
       }),
   );

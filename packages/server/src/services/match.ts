@@ -16,6 +16,7 @@ import { log } from '../util/log.js';
 import type { Game } from './game.js';
 import { teamRoundRanking } from '../sim/scoring.js';
 import type { RoundResultRecord } from './store.js';
+import { accumulateRound, computeAwards, type RoundStatsInput } from './awards.js';
 
 export type GatedOp = 'submit' | 'retire' | 'selection' | 'placement' | 'ready' | 'adminSubmit';
 
@@ -370,6 +371,8 @@ export class MatchService {
     this.m.points = Object.fromEntries(players.map((p) => [p.id, 0]));
     this.m.damage = {};
     this.m.badges = {};
+    this.m.stats = {};
+    this.m.awards = null;
     this.game.armory.reset(armoryIn === true);
     const teamsText = setup.data.teams ? `, ${setup.data.teamMode} on ${setup.data.style}` : `, free-for-all (${setup.data.mapStyle ?? 'default'} map)`;
     log.info(`match started: ${rounds} rounds, ${players.length} players${teamsText}${armoryIn === true ? ', Open Armory on' : ''}`);
@@ -458,7 +461,7 @@ export class MatchService {
   }
 
   /** Called by the battle service when playback reached the end (or Skip). */
-  battleReleased(result: RoundResultRecord): void {
+  battleReleased(result: RoundResultRecord, roundStats?: RoundStatsInput): void {
     const m = this.m;
     // Round points, match damage (standings tie-break) and badge counts (§9).
     for (const r of result.end.ranking) {
@@ -470,6 +473,8 @@ export class MatchService {
     // Players kicked during this battle leave the scoreboard with it (§4).
     const leaving = new Set(m.pendingKicks);
     result.end.scoreboard = this.game.visibility.scoreboard(leaving);
+    // Match awards (§9): add the round to the per-match stats (places after this round).
+    if (roundStats) accumulateRound((m.stats ??= {}), roundStats, result.end.scoreboard);
     // Team mode (§9.2): the round's team ranking, then the match team table.
     if (this.game.teams.active) result.end.teams = teamRoundRanking(result.end.ranking);
     m.results.push(result);
@@ -527,6 +532,7 @@ export class MatchService {
     } else {
       this.m.phase = 'MATCH_RESULTS';
       this.clearTimer();
+      this.m.awards = this.computeAwards();
       this.game.notifier.toast({ all: true }, 'info', 'Game over! Great battles, everyone!');
       this.changed();
     }
@@ -554,6 +560,8 @@ export class MatchService {
     m.results = [];
     m.damage = {};
     m.badges = {};
+    m.stats = {};
+    m.awards = null;
     m.zones = {};
     m.map = null;
     this.game.armory.reset(false);
@@ -578,6 +586,30 @@ export class MatchService {
     return ok(true);
   }
 
+  /**
+   * The match awards (§9 Match awards) from the per-match stats and the final
+   * standings. Kicked players can't win (their stats stay but don't count).
+   */
+  computeAwards() {
+    const g = this.game;
+    const teams = g.teams;
+    return computeAwards({
+      stats: this.m.stats ?? {},
+      standings: g.visibility.scoreboard(),
+      candidates: g.players.list().map((p) => ({
+        playerId: p.id,
+        name: p.name,
+        seat: p.seat,
+        ...(teams.active && teams.teamIdOf(p.id) !== undefined ? { teamId: teams.teamIdOf(p.id)! } : {}),
+      })),
+      spriteHidden: (playerId, unitId) => {
+        const armory = g.armory.forUnitId(unitId);
+        if (armory) return g.store.designsOf(armory.creatorId).get(armory.sourceUnitId)?.spriteHidden ?? false;
+        return g.store.designsOf(playerId).get(unitId)?.spriteHidden ?? false;
+      },
+    });
+  }
+
   /** After a restart: a running battle is reset to PLACEMENT (§13). */
   recover(): void {
     if (this.m.phase === 'BATTLE') {
@@ -587,6 +619,8 @@ export class MatchService {
       for (const p of this.game.players.active()) this.game.round.stateOf(p.id).ready = false;
       this.m.timer = { deadline: null, remainingMs: null, paused: false, expired: true };
     }
+    // A state file from before the match awards, saved at MATCH_RESULTS.
+    if (this.m.phase === 'MATCH_RESULTS' && !this.m.awards) this.m.awards = this.computeAwards();
     this.startTicker();
   }
 }

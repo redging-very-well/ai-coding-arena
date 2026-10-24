@@ -112,6 +112,7 @@
 //     PHASE_CLOSED with details {phase, opensIn, secondsLeft?}.
 // ===========================================================================
 
+import type { AwardId, MatchAwardDTO } from './awards.js';
 import type { CostBreakdown } from './cost.js';
 import type { BodyType, Element, MapStyle, MinionKind, MinionOrder, SpriteSpec, StatsSnapshot, UnitGroup, UnitType } from './contract.js';
 import type { ValidationError, ValidationResult, ValidationSuccess, ValidationWarning } from './errors.js';
@@ -500,6 +501,8 @@ export interface MyStateDTO {
   benched?: boolean;
   /** Team mode: teammates' live selection/zone/placement (§9.2 Team privacy). */
   team?: TeamPrivateDTO | null;
+  /** MATCH_RESULTS only: the match awards this player won (details in `GameStateDTO.matchAwards`, §9 Match awards). */
+  awards?: AwardId[];
 }
 
 /** Playback state of the current battle. */
@@ -556,6 +559,12 @@ export interface GameStateDTO {
    * (timers.autoAdvanceWhenAllReady). Absent when none runs.
    */
   pendingAdvance?: PendingAdvanceDTO;
+  /**
+   * MATCH_RESULTS only: the match awards in ceremony order (§9 Match awards),
+   * each with its winner(s), stat and best unit (fielded designs only, never
+   * source). Absent in every other phase.
+   */
+  matchAwards?: MatchAwardDTO[];
   /** Owner-only block. */
   me?: MyStateDTO;
 }
