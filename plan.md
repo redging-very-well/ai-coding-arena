@@ -177,8 +177,10 @@ Players' units are one JS module (TS syntax is tolerated) with a default-exporte
 // packages/shared/src/contract.ts
 export type UnitType = 'soldier' | 'tower' | 'wall' | 'factory';   // §5.2
 export type BodyType = UnitType | 'minion'; // minions are made by factories: you see them, you never submit one
-export type MinionKind = 'grunt' | 'archer' | 'runner' | 'brute';  // what a factory builds (§5.3)
+export type MinionKind = 'grunt' | 'archer' | 'runner' | 'brute' | 'medic'; // what a factory builds (§5.3, medic §5.5)
 export type MinionOrder = 'attack' | 'defend' | 'swarm' | 'guard'; // what a factory's minions do (§5.3)
+export type Element = 'normal' | 'fire' | 'ice' | 'lightning';     // §5.4: one per unit
+export type SupportKind = 'heal' | 'haste' | 'might' | 'shield';  // §5.5: one per unit
 export type MapStyle = 'duel' | 'triangle' | 'corners' | 'ring' | 'lanes' | 'islands'; // §9.2
 export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 
@@ -186,16 +188,22 @@ export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 export interface UnitStats {
   name: string;          // 1-24 chars, shown on screen
   type: UnitType;        // soldiers move; towers, walls and factories are buildings and never move
-  maxHealth: number;     // soldier/tower 10-500, wall 50-1500, factory 100-1000
-  damage?: number;       // soldier/tower: required, 0-60. wall/factory: leave it out (they can't attack)
+  maxHealth: number;     // soldier/tower 50-2500, wall 250-7500, factory 500-5000
+  damage?: number;       // soldier/tower: required, 0-300. wall/factory: leave it out (they can't attack)
   range?: number;        // soldier/tower: required, 20-300 px, EDGE to edge (gap between the two bodies). wall/factory: leave it out
   speed?: number;        // soldier: required, 0.5-5 px per tick (60 ticks = 1 s). tower/wall/factory: 0 or leave it out
-  attackCooldown?: number;// soldier/tower: required, integer ticks between attacks. wall/factory: leave it out
+  attackCooldown?: number;// soldier/tower: required, integer ticks between attacks (and heals). wall/factory: leave it out
+  element?: Element;     // soldier/tower, optional (default 'normal'): fire burns, ice freezes, lightning zaps. Price ×1.2
+  splashRadius?: number; // soldier/tower, optional (default 0 = one target): 0-80 px; other enemies this close to the target take half
+  support?: SupportKind; // soldier/tower, optional: heal = an action you return; haste/might/shield = an aura that works by itself
+  supportPower?: number; // required with support. heal: HP per heal 10-250. haste/might: 5-50 (%). shield: 5-40 (%)
+  supportRange?: number; // required with support, EDGE to edge. heal: 20-200 px reach. haste/might/shield: 40-150 px aura
   productionInterval?: number; // factory only, required: integer ticks between two minions, 600-1800 (10-30 s)
   produces?: MinionKind; // factory only, optional (default 'grunt'): the minion it builds; the price follows (§6)
+  minionElement?: Element; // factory only, optional (default 'normal'): the element of every minion it builds (medics ignore it)
   burst?: number;        // factory only, optional (default 1): integer 1-4; minions wait inside until this many are ready, then leave together
   color: string;         // "#RRGGBB": projectiles, particles, fallback sprite; a wall's block colour; a factory's minion colour
-  size?: number;         // soldier/tower: body radius in px = hitbox AND drawn size, 6-20 (default 10 / 14), $0.5 per px above 6. Walls always fill their 40 px cell, factories are always 18: size is ignored for them.
+  size?: number;         // soldier/tower: body radius in px = hitbox AND drawn size, 6-20 (default 10 / 14), $8 per px above 6. Walls always fill their 40 px cell, factories are always 18: size is ignored for them.
   shape?: Shape;         // optional; only used by the fallback sprite when sprite() is missing
 }
 
@@ -213,6 +221,18 @@ export interface SpriteSpec {
   };
 }
 
+/** What is on a body right now. Every number is 0 when nothing applies. */
+export interface StatusView {
+  burning: number;   // ticks until the burn ends (max 180)
+  burnLeft: number;  // HP the burn will still take
+  frozen: number;    // ticks until the freeze ends (max 120): moves, reloads and builds 35% slower
+  haste: number;     // % from the strongest haste aura on it
+  might: number;     // % from the strongest might aura on it
+  shield: number;    // % from the strongest shield aura on it
+  healRoom: number;  // HP it can still be healed this second (0: full, a wall/factory, the cap is used, or sudden death)
+}
+export interface SupportView { kind: SupportKind; power: number; range: number }
+
 export interface FactoryView {
   productionInterval: number;
   nextMinionIn: number;  // ticks until the next minion (it waits while you hold, or while the factory is full)
@@ -221,6 +241,7 @@ export interface FactoryView {
   stored: number;        // built minions waiting inside: safe from attacks, but LOST if the factory is destroyed
   burst: number;         // stored minions leave together when stored reaches burst (or on { action: 'release' })
   produces: MinionKind;
+  minionElement: Element;
   order: MinionOrder;    // starts 'attack'; a swarm whose target died becomes 'attack', a guard whose ally died 'defend'
   orderTargetId: string | null; // swarm: the enemy, guard: the ally, else null
   rally: { x: number; y: number }; // where 'attack' minions go; starts at world.center
@@ -230,8 +251,10 @@ export interface SelfView {
   unitId: string;        // the design this copy was made from
   ownerId: string; teamId: number; type: UnitType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number;
-  damage: number; range: number; speed: number;
-  attackCooldown: number; cooldownRemaining: number; // 0 = can attack this tick
+  damage: number; range: number; speed: number; // the BASE stats: might, haste and a freeze change them in battle (status)
+  attackCooldown: number; cooldownRemaining: number; // 0 = can attack (or heal) this tick
+  element: Element; splashRadius: number; support: SupportView | null;
+  status: StatusView;
   blockedBy: string | null; // id of the wall that stopped my last move, else null
   blockedTicks: number;     // ticks in a row a wall has stopped me (no progress; 0 = free)
   pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls by a route the game found, or walled off (smash self.blockedBy)
@@ -240,10 +263,15 @@ export interface SelfView {
 export interface OtherView {
   id: string; ownerId: string; teamId: number; type: BodyType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number; range: number;
+  element: Element;      // a minion's is its factory's minionElement; walls and factories 'normal'
+  splashRadius: number;  // spread out against splash
+  support: SupportView | null; // find the enemy medic
+  status: StatusView;
 }
 // A wall has radius 20: for range it counts as a circle of radius 20 (so inRange works unchanged),
 // but its body blocks the whole 40×40 square. Walls and factories have range 0.
-// A minion's name is its kind: 'Grunt', 'Archer', 'Runner' or 'Brute'. Stored minions are invisible.
+// A minion's name is its kind: 'Grunt', 'Archer', 'Runner', 'Brute' or 'Medic'. Stored minions are invisible.
+// cooldownRemaining is Math.ceil of an internal float that counts down by the tempo: 0.65 frozen, ×(1 + haste%) hasted.
 export interface WorldView {
   width: number; height: number;        // arena size this battle: 800 (2-4 players), 1040 (5-6), 1200 (7-8), §9.2
   tick: number; ticksLeft: number;
@@ -261,6 +289,7 @@ export type Action =
   | { action: 'idle' }
   | { action: 'move'; destination: { x: number; y: number } }   // soldiers
   | { action: 'attack'; targetId: string }                     // soldiers and towers
+  | { action: 'heal'; targetId: string }                       // support 'heal' only: heal one ally in supportRange (uses the attack cooldown)
   | { action: 'rally'; destination: { x: number; y: number } }  // factories: order 'attack' and send my minions here
   | { action: 'command'; order: MinionOrder; targetId?: string; destination?: { x: number; y: number } } // factories: squad order; swarm/guard need targetId
   | { action: 'release' }                                       // factories: send the stored minions out now
@@ -291,22 +320,50 @@ Rules (enforced by the engine, and written into CLAUDE.md):
 
 **Routing round walls (M8.7).** The block also carries `SelfView.pathing` (§9.3 Routing round walls): `'direct'` (the last move went straight at the destination), `'detour'` (the engine walked it round walls on an open route) or `'no-route'` (walls close the destination off for a body this size: the unit walks to the wall the route has to break and presses on it, so `blockedBy`/`blockedTicks` name that wall). `blockedBy`/`blockedTicks` now count only ticks a wall **stopped** the move (no progress), not ticks it merely turned a move that kept going. Units that never moved say `'direct'`.
 
+**Elements, splash, support and the ×5 economy (M8.8, landed).** The block above is the **M8.8** contract (it replaced the M8.7 block word for word in `plan.md`, `shared/contract.ts` and `CLAUDE.md.tmpl` in one change, the same way M8.5 did). `tests/config.test.ts` keeps the block identical to `shared/contract.ts`, and `tests/starterkit.test.ts` keeps it identical to the kit's CLAUDE.md. M8.8 adds:
+- `Element` (`normal`, `fire`, `ice`, `lightning`) and the optional stats `element` and `splashRadius` (§5.4);
+- `SupportKind` (`heal`, `haste`, `might`, `shield`) and the optional stats `support`, `supportPower` and `supportRange` (§5.5);
+- the factory stat `minionElement` and the `medic` minion kind;
+- `StatusView` and `SupportView`, and the new fields on `SelfView`, `OtherView` and `FactoryView`;
+- the `heal` action;
+- every HP, damage and money bound ×5 (§6 M8.8 economy).
+
+Rule 4 for `heal` (M8.8; engine-validated and written into CLAUDE.md):
+- The unit must have `support: 'heal'`.
+- The target must be a living ally (same `teamId`): a soldier, tower or minion. It can't be the healer itself, a wall or a factory.
+- The edge-to-edge gap must be ≤ `supportRange + 0.5`, and `cooldownRemaining` must be 0.
+- The target must need healing: hurt with `status.healRoom > 0`, or burning, or frozen.
+- Otherwise the unit idles, **keeps its cooldown** and gets no strike.
+- A good heal sets `cooldownRemaining = attackCooldown`. Heal and attack share one cooldown.
+- `heal` from a unit without heal support idles without a strike, and the dry run warns `W_ACTION_NOT_FOR_TYPE`.
+- Auras need no action. They keep working while their unit is disabled by strikes, the same way a disabled factory keeps building.
+- The cooldown timing rule changes in M8.8. `cooldownRemaining` is an internal float that drops by the unit's **tempo** each tick: 1 normally, 0.65 while frozen, ×(1 + haste%) while hasted. Views show `Math.ceil` of it, so 0 still means "can act this tick".
+
 ### Stat bounds (config: `stats.bounds`)
 
-Soldier and tower bounds below. Walls and factories have their own rows in §5.2 (walls up to 1500 HP, factories 100-1000 HP plus `productionInterval`).
+Soldier and tower bounds below. Walls and factories have their own rows in §5.2 (walls up to 1500 HP, factories 100-1000 HP plus `productionInterval`). **M8.8** multiplies every HP and damage bound by 5:
+- soldier and tower `maxHealth` 50-2,500 and `damage` 0-300;
+- walls 250-7,500 and factories 500-5,000.
+
+Range, speed, cooldown, size, interval and burst don't change. M8.8 also adds the bounds `splashRadius` 0-80 and the support bounds (§5.4, §5.5).
 
 | Field | Rule | Notes |
 |---|---|---|
 | name | string, 1-24 chars after trim, no control chars | rendered only via `textContent`/`fillText` |
 | type | `'soldier'` or `'tower'` (M8.5: also `'wall'`, `'factory'`, §5.2) | |
-| maxHealth | finite number, 10-500 | tightened from 1000 so concentrating everything in 1-2 units doesn't pay (§6) |
-| damage | finite number, 0-60 | tightened from 200 for the same reason. 0 is allowed (gives a warning) |
+| maxHealth | finite number, 10-500 (**M8.8: 50-2,500**) | tightened from 1000 so concentrating everything in 1-2 units doesn't pay (§6) |
+| damage | finite number, 0-60 (**M8.8: 0-300**) | tightened from 200 for the same reason. 0 is allowed (gives a warning) |
 | range | finite number, 20-300 | edge to edge |
 | speed | soldier: 0.5-5. tower: exactly 0 | a tower with speed > 0 gets `TOWER_CANNOT_MOVE` |
 | attackCooldown | integer, 10-600 | 60 = one attack per second. Above 60 gets `W_SLOW_NO_DISCOUNT` (§6) |
 | color | `/^#[0-9a-fA-F]{6}$/` | the owner is shown by an outline colour and ground ring, so player colours never clash with ownership |
 | size | optional, finite number, **6-20** (min and max unit size). Default soldier 10, tower 14 | body radius: hitbox, separation, edge-to-edge range, and drawn width (2 × size). Max 20 means one unit exactly fills a 40 px placement cell |
 | shape | optional, one of 4 values | fallback sprite only |
+| element (M8.8) | optional, one of `'normal'`, `'fire'`, `'ice'`, `'lightning'` (default `'normal'`) | §5.4. `STAT_WRONG_TYPE` / `STAT_OUT_OF_RANGE` with a near-miss fix |
+| splashRadius (M8.8) | optional, finite number, 0-80 (default 0) | §5.4. Measured from the target's centre to the other body's edge |
+| support (M8.8) | optional, one of `'heal'`, `'haste'`, `'might'`, `'shield'` | §5.5. Needs `supportPower` and `supportRange` (`STAT_MISSING`) |
+| supportPower (M8.8) | finite number. heal: 10-250 HP per heal. haste and might: 5-50 (%). shield: 5-40 (%) | bounds per kind (`stats.bounds.support`). Ignored without `support` (`W_STAT_IGNORED`) |
+| supportRange (M8.8) | finite number, edge to edge. heal: 20-200 px reach. Auras: 40-150 px radius | as above |
 
 ### 5.1 Unit rendering: `sprite()`
 
@@ -333,7 +390,7 @@ Two building types join soldiers and towers. **Walls** are solid blocks with lot
 | minion (engine-made) | none | yes | yes (melee) | built-in AI (`sim/minion.ts`) | circle, radius 8 | swarm |
 
 - **Groups and selection.** Per round a player fields **≤ 4 unit types (soldiers) and ≤ 4 building types (towers, walls, factories)** (`caps.maxUnitTypes: 4`, `caps.maxBuildingTypes: 4`, replacing `caps.maxTypes: 3`). Over the limit: `TOO_MANY_TYPES` with `details: {group: 'units' | 'buildings', max: 4, count}`. Open Armory types count in the group of their type. A picked design that is later revised into the other group (e.g. a soldier resubmitted as a tower) can leave the stored selection over a cap: the submit toasts the owner ("You picked 5 buildings; 4 max. Tap one to un-pick it."), the /play roster flags the group, PLAN Ready is refused with that `TOO_MANY_TYPES` until one is un-picked (un-picking is always allowed), and if the lock comes first the later picks of the full group are left out with a toast naming them.
-- **Fighters.** Soldiers, towers, factories that can still make a minion before time runs out (`canMake` > 0, §9.3), and minions are **fighters**. Walls never are. PLAN Ready and PLACEMENT Ready need at least one fighter type selected / one fighter placed (`NO_FIGHTERS`: "Walls can't win on their own. Pick a soldier, tower or factory too."). A side with no fighters left is eliminated (§9).
+- **Fighters.** Soldiers, towers, factories that can still make a minion before time runs out (`canMake` > 0, §9.3), and minions are **fighters**. Walls never are. PLAN Ready and PLACEMENT Ready need at least one fighter type selected / one fighter placed (`NO_FIGHTERS`: "Walls can't win on their own. Pick a soldier, tower or factory too."). A side with no fighters left is eliminated (§9). **M8.8:** a soldier or tower with **damage 0** (a pure support unit: a medic, a banner or a healing shrine) and a factory that makes only medics are **not** fighters. They still count against `maxCopies`, because they run code. `NO_FIGHTERS` then needs a soldier or tower with damage > 0, or a factory that doesn't produce medics. Its message becomes "Medics and banners can't win on their own. Pick a unit that attacks." (§5.5, §9.4).
 - **Copies.** ≤ 12 fighter copies (soldiers + towers + factories: everything that runs code, the existing isolate performance guard `caps.maxCopies`), **of which ≤ 2 factories** (`caps.maxFactoryCopies: 2`), plus **≤ 12 walls** (`caps.maxWallCopies: 12`, walls run no code). So a zone holds at most 24 of its 36 cells. Errors: `TOO_MANY_COPIES` with `details: {group: 'fighters' | 'factories' | 'walls', max}`.
 
 **Contract (replaces the §5 block when M8.5 lands).** Unchanged parts (`MapStyle`, `Shape`, `SpriteFrame`, `SpriteSpec`, `WorldView`, the `teamId` and `inRange` comments) are written out in full in the real block; they are elided here.
@@ -453,6 +510,9 @@ Factories felt limited: every factory made the same minion and could only move a
 | `archer` | Archer | 24 | 5 | **110 (ranged: homing projectile)** | 1.2 | 60 | 7 | 150 | 120 | ×1 | fragile, shoots from behind walls and soldiers |
 | `runner` | Runner | 28 | 4 | 20 (melee) | **2.6** | 60 | 6 | 120 | 120 | ×1 | fast scout: reaches far targets first |
 | `brute` | Brute | **100** | 8 | 20 (melee) | **0.9** | 60 | 11 | 120 | **30** | **×3** | slow tank that breaks walls |
+| `medic` (**M8.8**, §5.5) | Medic | 150 | 0 (heals 40 HP, reach 60) | 20 | 1.4 | 60 | 7 | 150 | 120 | ×1 | never attacks: cleanses and heals its own side |
+
+**M8.8 (×5 economy):** the four attacking kinds become grunt **180 / 25**, archer **120 / 25**, runner **140 / 20** and brute **550 / 40** (HP / damage). The spec's grunt was 200 HP; the M8.8 balance retune (§14) took it to 180, the spec's knob for the grunt home guard. The other preset stats stay the same. The medic row above is already at the ×5 scale. Each kind can also carry its factory's `minionElement` (§5.4). Medics ignore it.
 
 - **Ranged archers** use the existing projectile system unchanged: their range 110 is above `sim.meleeMaxRange` (50), so their attacks spawn homing projectiles (10 px/tick) that fly over walls (§9).
 - **Brutes break walls:** every brute hit on a **wall** deals `damage × wallDamageMultiplier` (8 × 3 = 24, so one brute takes a 400-HP Basic Wall down with 17 hits in 16 s, four brutes in about 4 s); other targets take the plain 8. They also lose patience with a blocking enemy wall after 30 ticks instead of 120 (`impatientTicks`). The multiplier is engine-side: it is not in the soldier formula, so the brute's price doesn't see it; its slow speed (0.9, the slowest kind) is the trade-off, and the balance test checks brute factories don't dominate (§14).
@@ -487,178 +547,491 @@ Factories felt limited: every factory made the same minion and could only move a
 
 **Choosing well (CLAUDE.md tips, §11):** archers behind walls or towers (`defend`/`guard` a tower); runners with `swarm` on the weakest or most valuable far target (a burst of 4 runners arrives together); brutes with `swarm` on the wall that blocks your soldiers (or `attack`: they smash any wall that blocks them after 0.5 s); grunts for a cheap steady stream.
 
+### 5.4 Elements and splash (M8.8)
+
+Requested on 2026-10-23: "Add in additional damage types for all units: fire (damage over time), ice (slows), lightning (chance to arc to nearby units). Also, units can optionally have area damage. All cost more." Each unit has **one element**, plus an optional **splash** radius. Every rule fits in one sentence. Constants live in config `elements.*` (§6 M8.8 coefficients), and the exact engine pipeline is §9.4.
+
+| Thing | Rule (one sentence) | Numbers |
+|---|---|---|
+| **Fire** (`element: 'fire'`) | A fire hit adds half its damage again as a burn, dealt over the next 3 s. | +50%, 6 pulses, one every 30 ticks |
+| **Ice** (`'ice'`) | An ice hit freezes the target for 2 s: it moves, reloads and builds 35% slower. | tempo ×0.65, 120 ticks, refreshes, never stacks; works at damage 0 |
+| **Lightning** (`'lightning'`) | 35% of lightning hits also zap the nearest other enemy within 100 px for the same damage. | 1 hop |
+| **Shatter** (combo) | A fire hit on a frozen target does 1.5× damage and thaws it. | ×1.5 |
+| **Overload** (combo) | A lightning zap from a burning target hops once more. | 2 hops |
+| **Splash** (`splashRadius` 0-80) | Every other enemy within `splashRadius` of the target takes half the hit and gets its fire or ice. | 50%, no falloff, edge rule `dist(centres) − their radius ≤ R` |
+| **Walls** | A hit on a wall is plain damage: no element, no splash, no zap. | brutes keep their ×3 |
+| **Price** | Each element multiplies the **whole** unit price by 1.2. Splash multiplies it by 1 + 0.7·ρ(2 − ρ) with ρ = R/80 (×1.53 at 40 px, ×1.7 at 80). | §6 M8.8 |
+| **Minions** | `this.minionElement` (factory only) gives every minion of that factory the element. Minions never splash. | element ×1.2 on the minion price |
+
+- **Who is affected** (§9.4 interactions table):
+  - Soldiers, towers and minions burn, freeze, get zapped and take splash.
+  - Factories burn, build 35% slower when frozen, get zapped and take splash.
+  - Walls are immune to all four.
+  - Stored minions are not bodies, so nothing reaches them.
+- **Each element has a niche, and none beats `normal` per dollar on average:**
+  - fire is best on fast melee hitters. It is a trap on snipers, because they kill before the burn lands;
+  - ice is best against a few big units. Against two bricks it is worth about 61% of a unit. It is the designed anti-brick tool;
+  - lightning is best in crowds.
+- **Splash and lightning** are the designed answers to cheap swarms (§14 `scoutsFilled`).
+
+### 5.5 Support (M8.8)
+
+Requested on 2026-10-23: "we should have a mechanic that allows units to support other units (healing, faster, stronger, more damage, etc)". A soldier or tower can have **one** support kind. It may also attack (damage > 0, element, splash): a Battle Cleric heals or hits on each cooldown. A tower with damage 0 and heal support is a **Healing Shrine**.
+
+| | heal: an action, `{ action: 'heal', targetId }` | haste / might / shield: a passive aura |
+|---|---|---|
+| Why | Healing is a decision (who is hurt, who is burning), which is good code for players to write. The cooldown already limits throughput | Buffs should "just work" while the army fights together, with no code to get wrong and big visible rings on the projector |
+| Stats | `supportPower` = HP per heal (10-250); `supportRange` = reach, edge to edge (20-200 px) | `supportPower` = % (haste and might 5-50, shield 5-40); `supportRange` = aura radius, edge to edge (40-150 px) |
+| Engine | the attack path with the side flipped: range check, shared cooldown, an instant beam | one radius query per support unit per tick, from start-of-tick positions |
+| Price | inside the cooldown factor (a faster healer heals more) | added **after** the factors (always on, so the cooldown factor never touches it) |
+
+**Rules:**
+- **Heal amount:** `min(supportPower, maxHp − hp, healRoom)`.
+  - `healRoom` is 5% of the target's max HP per 60-tick window, shared by every healer.
+  - Two medics on one Basic Soldier still give at most 30 HP/s, and on a Huge Tank at most 125 HP/s.
+  - Two Basic Soldiers (100 DPS) always out-damage any healing on one Basic Soldier.
+- **Cleanse first:** a heal on a burning or frozen ally only removes every burn record and the freeze (amount 0, a `cleanse` event). One rule covers both "medics put out fire" and "fire beats medics": every burn costs the enemy a heal.
+- **Sudden death:** from `suddenDeath.startTick` (tick 3000) heals and cleanses do nothing (`healRoom` = 0, and the action idles, keeping its cooldown). Auras keep working. Shield never reduces sudden-death damage. So a healer turtle still dies to the circle.
+- **Never healed:** walls ("no healing walls to immortality"), factories, the healer itself, dead bodies.
+- **Auras:**
+  - Each tick, every living ally soldier, tower or minion within `supportRange` (edge to edge) of the source gets the aura. Allies are bodies with the same `teamId`, including teammates' units. The source itself, walls and factories never get it.
+  - For each kind, only the **strongest** aura applies: two 30% drummers give 30%.
+  - Different kinds combine: might + haste + shield on one body is fine.
+- **Aura effects** (p = power %):
+
+  | Aura | Effect |
+  |---|---|
+  | haste | move speed ×(1 + p) and cooldown recovery ×(1 + p). It multiplies with a freeze: 30% haste on a frozen body = 1.3 × 0.65 = 0.845 |
+  | might | outgoing hit damage ×(1 + p), taken at fire time. Burn, splash, zaps and shatter follow, because they are derived from the hit |
+  | shield | incoming hit, splash, zap, burn and shatter damage ×(1 − p). The max is 40%, so a body is never immune. Shield never applies to sudden death |
+
+- **Elimination:** a side whose remaining bodies are only walls, spent factories, medic-only factories and **damage-0 units** is eliminated, and those leftovers crumble like walls (§9.4). Pure support units still count against `maxCopies`.
+- **Visible to player code:**
+  - `self.support` and the `support` of others ("kill the medic first");
+  - `status.*` on every view;
+  - `status.healRoom` ("heal the ally with the most room").
+
+**Medic minion** (`produces: 'medic'`):
+- **Preset:** HP 150, damage 0, range 20, speed 1.4, CD 60, size 7, heal 40, reach 60, aggro 150, impatience 120, wall ×1.
+- **AI** (`sim/minion.ts`):
+  1. If an ally that needs healing (hurt with `healRoom > 0`, burning or frozen) is within reach and the cooldown is 0, heal it. Burning or frozen allies come first, then the lowest `hp / maxHp`, then the lowest instanceId.
+  2. Else, if such an ally is within aggro, walk to it.
+  3. Else move by the factory's order:
+     - `attack` and `swarm`: follow the nearest living non-medic minion of its own factory, else go to the rally point;
+     - `defend`: stay by the factory;
+     - `guard`: stay by the guarded ally.
+- Medics never attack.
+- Medics move with the M8.7 router like every minion: they go round walls, and a walled-off medic presses on the wall but never smashes it (damage 0).
+- **Price:** the soldier formula with its heal term, $418, so minionValue is $209. `minionElement` on a medic factory is ignored (`W_STAT_IGNORED`, "medics never attack") and not priced.
+
+### 5.6 M8.8 contract: per-type rules
+
+**Contract block.** The M8.8 block is the §5 block above (it landed in `plan.md`, `packages/shared/src/contract.ts` between the BEGIN/END CONTRACT markers, and `packages/starter-kit/CLAUDE.md.tmpl`).
+
+**Per-type table (adds to the §5.2 stats table):**
+
+| Field | soldier | tower | wall | factory | minion (preset) |
+|---|---|---|---|---|---|
+| element | any (default normal) | any | ignored, `W_STAT_IGNORED` | ignored, fix "use this.minionElement" | its factory's `minionElement` (medic: normal) |
+| splashRadius | 0-80 | 0-80 | ignored | ignored | 0 |
+| support / supportPower / supportRange | any | any (a damage-0 healing tower is a **Healing Shrine**) | ignored | ignored, fix "produce 'medic' minions" | medic: heal 40, reach 60 |
+| minionElement | ignored | ignored | ignored | any (default normal); with `produces: 'medic'` it is ignored and not priced | |
+
+**Snapshot:** when they are left out, the snapshot fills in `element` 'normal', `splashRadius` 0, `support` null (with no power or range) and `minionElement` 'normal'. Walls and factories get 'normal', 0 and null.
+
 ---
 
 ## 6. Cost formula and economy
 
-```
-term_i = c_i × x_i × (1 + k × r_i²)          r_i = x_i / max_i   ("the curve", k = cost.curveK = 2)
-raw    = (Base + Σ term_i) × max(1, 60 / attackCooldown)
-cost   = ceil(raw - 1e-9)                    // whole credits; the epsilon guards float noise
+> **M8.8 economy (landed).** User requests (2026-10-23): "update the starting cash, and the scaling to allow for these new types"; "don't penalise extremes so heavily". Every money, HP and damage number went ×5. The curve softened to k = 1. A power factor targets units that are both tough and hard-hitting. Elements, splash and support are priced. The formula, the coefficients and every reference table are in the subsections from **"M8.8 economy: formula"** to **"M8.8 economy: migration"** below. The $1,000-game (k = 2) tables were deleted when M8.8 landed; `tests/cost-curve.test.ts` and `tests/cost.test.ts` parse "Reference units (curve k = 1)".
 
-x_i / max_i:  HP / 500,  Damage / 60,  Range / 300,  Speed / 5,  (Size - 6) / 14
-```
-
-- **The curve.** Each stat term is its linear price `c_i × x_i` times `1 + k·r²`, where `r` is how far the stat is towards its §5 max. With k = 2 a stat at **half** its max costs **1.5×** its linear price and a **maxed** stat costs **3×**. Every term is convex, so one unit with doubled stats costs more than two normal units (once a stat reaches about half its max; the per-unit Base is the only thing that favours fewer units). This is what discourages pouring the whole budget into one expensive unit. The curve maxima are the default §5 bounds (fixed in code, so a live bounds retune doesn't move the curve). `curveK` is in config: 0 gives the old linear formula, the schema allows 0-5 (a negative k would make cost fall as a stat rises, so it is refused).
-- **Explained in the output.** The breakdown returned by validate/submit has, per stat, the linear part and the curve surcharge, e.g. "maxHealth 500 costs $375: $125 base + $250 for being near the max (100% of max)". Any stat at ≥ 80% of its max gives the non-fatal warning `W_STAT_NEAR_MAX` ("maxHealth is at 96% of max and costs 2.84× its normal price; two medium units usually beat one maxed one"), with a `fix` that names a lower value and the saving. `UNIT_TOO_EXPENSIVE` names the most expensive stat and the saving of a concrete lower value ("Lowering maxHealth from 500 to 300 saves $246").
-- The cooldown factor scales the **whole** stat sum. It is **clamped at 1**, so slow attackers (cooldown > 60) get no discount. That makes any cooldown above 60 strictly worse (same price, less damage per second), so the validator warns with `W_SLOW_NO_DISCOUNT`: "Attacking slower than once per second doesn't make it cheaper. Set attackCooldown to 60 for free extra damage." The same tip is in CLAUDE.md §5 and in the `get_unit_contract` strategy tips.
+General rules that hold for every formula version:
+- **The curve.** Each stat term is its linear price `c_i × x_i` times `1 + k·r²`, where `r` is how far the stat is towards its §5 max. With k = 1 a stat at **half** its max costs **1.25×** its linear price and a **maxed** stat costs **2×**. Every term is convex, so one unit with doubled stats costs more than two normal units once a stat reaches about 65% of its max (§6 M8.8 concentration property). The curve maxima are the default §5 bounds (fixed in code, so a live bounds retune doesn't move the curve). `curveK` is in config: 0 gives a linear formula, the schema allows 0-5 (a negative k would make cost fall as a stat rises, so it is refused).
+- **Explained in the output.** The breakdown returned by validate/submit has, per stat, the linear part and the curve surcharge, e.g. "maxHealth 1750 costs $782.25: $525 base + $257.25 for being at 70% of the max", plus the M8.8 factor lines (§6 M8.8 breakdown). Any stat at ≥ 80% of its max gives the non-fatal warning `W_STAT_NEAR_MAX` ("maxHealth is at 90% of max and costs 1.81× its normal price; two medium units usually beat one maxed one"), with a `fix` that names a lower value and the saving. `UNIT_TOO_EXPENSIVE` names the biggest lever (§6 M8.8 levers).
+- The cooldown factor scales the **whole** core (stats and heal). It is **clamped at 1**, so slow attackers (cooldown > 60) get no discount. That makes any cooldown above 60 strictly worse (same price, less damage per second), so the validator warns with `W_SLOW_NO_DISCOUNT`: "Attacking slower than once per second doesn't make it cheaper. Set attackCooldown to 60 for free extra damage." The same tip is in CLAUDE.md §5 and in the `get_unit_contract` strategy tips.
 - Coefficients (`curveK` included) and bounds live in config and can be retuned live in LOBBY, PLAN, or RESULTS. A change re-prices every stored unit.
-- **After a re-price or bounds change**, any unit that now breaks the $500 cap or a bound gets `status: "invalid"` with the new error object (`UNIT_TOO_EXPENSIVE` or `STAT_OUT_OF_RANGE`, with its `fix`). An invalid unit can't be selected or placed, is dropped from current and carried-over selections (with a toast to the owner), is skipped by the selection fallback, and shows up in `list_my_units` and `GET /units` so Claude can revise it. The config editor refuses a retune that would make either template invalid.
+- **After a re-price or bounds change**, any unit that now breaks the $2,500 cap or a bound gets `status: "invalid"` with the new error object (`UNIT_TOO_EXPENSIVE` or `STAT_OUT_OF_RANGE`, with its `fix`). An invalid unit can't be selected or placed, is dropped from current and carried-over selections (with a toast to the owner), is skipped by the selection fallback, and shows up in `list_my_units` and `GET /units` so Claude can revise it. The config editor refuses a retune that would make any template invalid.
+- Size defaults (soldier 10, tower 14) apply when `size` is omitted, and they are priced.
 
-Retuned defaults. With the curve on the previous linear coefficients the templates came out at soldier $113 and tower $261, so the linear part was lowered (mostly Base, range, speed and size) to bring the templates back to about $90-200:
+**Size trade-off.** A bigger body reaches targets sooner (range is edge to edge, so +10 size is +10 effective reach for both sides of a fight), wins shoving matches in separation, and looks impressive, but it is easier to block in and is reachable from further away. The $8/px term (2× at size 20) keeps "max size everything" from being free.
 
-| Coefficient | Original | Linear (before the curve) | **Default with the curve** |
-|---|---|---|---|
-| Base | 50 | 20 | **10** |
-| cHP (per HP) | 0.5 | 0.25 | **0.25** |
-| cDmg (per damage) | 3.0 | 1.5 | **1.5** |
-| cRange (per px) | 1.5 | 0.3 | **0.2** |
-| cSpeed (per px/tick) | 20 | 15 | **12** |
-| cSize (per px of size above 6) | n/a | 1 | **0.5** |
-| k (`curveK`) | n/a | n/a | **2** (maxed stat = 3×) |
-
-Size defaults (soldier 10, tower 14) apply when `size` is omitted, and they are priced.
-
-### Reference units (curve k = 2)
-
-"Linear" is Base + Σ c_i·x_i (the old shape), "Curve" is Σ c_i·x_i·k·r_i², Sum = Linear + Curve. The last column is what the unit would cost without the curve (k = 0), for comparison.
-
-| Unit | Type | HP | Dmg | Range | Speed | Size | CD | Linear | Curve | Sum | Factor max(1,60/CD) | Raw | **Cost** | Without curve |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Basic Soldier (template) | soldier | 120 | 10 | 40 | 1.5 | 10 | 60 | 83 | +8.14 | 91.14 | 1 | 91.14 | **$92** | $83 |
-| Basic Tower (template) | tower | 150 | 15 | 180 | 0 | 14 | 45 | 110 | +38.09 | 148.09 | 1.333… | 197.46 | **$198** | $147 |
-| Big Tank | soldier | 500 | 20 | 40 | 0.8 | 20 | 60 | 189.6 | +271.44 | 461.04 | 1 | 461.04 | **$462** | $190 |
-| Half Tank (maxHealth 250) | soldier | 250 | 20 | 40 | 0.8 | 20 | 60 | 127.1 | +52.69 | 179.79 | 1 | 179.79 | **$180** | $128 |
-| Sniper Tower | tower | 80 | 40 | 280 | 0 | 14 | 60 | 150 | +154.53 | 304.53 | 1 | 304.53 | **$305** | $150 |
-| Slow Sniper (the trap) | tower | 80 | 40 | 280 | 0 | 14 | 90 | 150 | +154.53 | 304.53 | 1 (clamped from 0.667) | 304.53 | **$305**, same price, ⅔ the DPS, `W_SLOW_NO_DISCOUNT` | $150 |
-| Speedy Scout | soldier | 60 | 6 | 30 | 4 | 6 | 20 | 88 | +62.17 | 150.17 | 3 | 450.52 | **$451** | $264 |
-| Scout with cooldown 10 | soldier | 60 | 6 | 30 | 4 | 6 | 10 | 88 | +62.17 | 150.17 | 6 | 901.03 | **$902, rejected** (> $500) | $528 |
-| Old plan's "Laser Sniper" (as soldier) | soldier | 100 | 20 | 150 | 2 | 10 | 30 | 121 | +31.67 | 152.67 | 2 | 305.35 | **$306** | $242 |
-| Half stats at CD 60 | soldier | 250 | 30 | 150 | 2.5 | 13 | 60 | 181 | +85.5 | 266.5 | 1 | 266.5 | **$267** | $181 |
-| Max stats at CD 60 | soldier | 500 | 60 | 300 | 5 | 20 | 60 | 352 | +684 | 1036 | 1 | 1036 | **$1036, rejected** (> $500) | $352 |
-| Everything maxed | soldier | 500 | 60 | 300 | 5 | 20 | 10 | 352 | +684 | 1036 | 6 | 6216 | **$6216, rejected** (> $500) | $2112 |
-| Cheapest legal | tower | 10 | 0 | 20 | 0 | 6 | 600 | 16.5 | +0.04 | 16.54 | 1 | 16.54 | **$17** | $17 |
-
-Example armies within $1,000: 4 Basic Soldiers + 3 Basic Towers = $962 (7 units). 1 Sniper Tower + 3 Basic Soldiers + 2 Basic Towers = $977 (6 units). 1 Big Tank + 5 Basic Soldiers = $922 (6 units). 1 Speedy Scout + 5 Basic Soldiers = $911 (6 units). Two Big Tanks ($924) leave no room for a third template-sized unit, and one maxed unit ($1036) can't even be built, while two "Half stats" units cost $534. These hit the 4-8 unit target. They are unaffected by the player count, the map and team mode (§9.2): every player always has their own $1,000, the type limits (≤3 types today; ≤4 unit + ≤4 building types from M8.5) and the copy caps, and teammates never pool or share budget.
-
-**Size trade-off.** A bigger body reaches targets sooner (range is edge to edge, so +10 size is +10 effective reach for both sides of a fight), wins shoving matches in separation, and looks impressive, but it is easier to block in and is reachable from further away. The $0.5/px term (3× at size 20) keeps "max size everything" from being free.
-
-**Why the curve (and why the bounds were tightened).** With linear pricing every unit pays a fixed overhead (Base, plus the minimum stats), so concentrating stats into a few big units was efficient: with the original bounds (HP 1000, damage 200) two ~$490 "bricks" beat most armies, and even after tightening the bounds (HP ≤ 500, damage ≤ 60) a once-per-second unit with every stat maxed cost only $414. The k = 2 curve makes each stat's price convex: the first half of a stat is cheap, the last part costs up to 3×. A maxed-out unit at CD 60 now costs $1036 and is rejected, a 500-HP tank costs $462 instead of $190, and a 280-range sniper $305 instead of $150, while the templates stay at $92 and $198 (they sit at 13-60% of each max, where the curve adds little). Base was lowered to $10 so the per-unit overhead is small next to the curve: once any of HP, damage, range or speed reaches half its max, one unit with doubled stats always costs at least as much as two normal units (`tests/cost-curve.test.ts` checks this, together with monotonicity and convexity of every stat). A balance test (§14) checks that no single archetype dominates. If it fails, retune the coefficients, `curveK` or the bounds in config; the $500 cap stays.
-
-### Walls and factories (M8.5)
-
-Same shape as the unit formula, with per-type coefficients (config `cost.wall`, `cost.factory`) and the same curve k. Neither type attacks, so there is no cooldown factor (factor 1).
-
-```
-wall:     raw     = BaseW + cW × HP × (1 + k × (HP / 1500)²)
-          cost    = ceil(raw − 1e-9)
-factory:  bodyRaw = BaseF + cF × HP × (1 + k × (HP / 1000)²)
-          cost    = ceil(bodyRaw − 1e-9) + minionValue × E           // body cost + production cost
-          E           = min(factory.maxMinionsPerFactory (8), floor((battleTicks − 1) / productionInterval))
-          minionValue = ceil(minionCost × minionDiscount − 1e-9)     // minionCost = the unit formula on the §5.2 minion stats
-```
-
-| Coefficient | Default |
-|---|---|
-| BaseW (`cost.wall.base`) | **4** |
-| cW per wall HP (`cost.wall.hp`) | **0.06** |
-| BaseF (`cost.factory.base`) | **10** |
-| cF per factory HP (`cost.factory.hp`) | **0.12** |
-| `cost.factory.minionDiscount` | **0.5** |
-| minionCost / minionValue (derived) | **$55** / **$28** |
-
-- **Curve semantics kept.** Every HP term has the k = 2 curve with its maximum at the type's default HP max (wall 1500, factory 1000; fixed in code like the §5 maxima), so a maxed wall costs 3× its linear price and the near-max warning, `W_STAT_NEAR_MAX`, and the "biggest lever" fix work unchanged. Two 750-HP walls ($72 each, $144) cost about half of one 1500-HP wall ($274).
-- **Why wall HP is cheap** (0.06 vs 0.25 per HP for units): a wall can't move or fight, is worth $0 at timeout and loses 7% of its max HP per second in sudden death whatever its HP. The Basic Wall (400 HP, $32) holds a Basic Soldier for 40 s, four of them for 10 s.
-- **Factory pricing = pay up front for the expected output.** E is the number of minions the factory can make in a 90 s battle, and each costs half of its price (`minionDiscount` 0.5) because it arrives during the battle (the first after 10-30 s; with interval 600 the average minion arrives at 45 s) and the alive caps throttle them. Production is linear in E (no curve): the per-factory alive cap (4) already makes one fast factory worse than two slow ones, and factories are capped at 2 copies. The cap of $500 applies to the whole factory price.
-- **Re-pricing.** A factory's price follows the soldier coefficients and `curveK` (through minionCost), the minion stats, `minionDiscount`, `maxMinionsPerFactory` and `timers.battleTicks`. Changing any of them re-prices every factory (§6 re-pricing and invalidation rules apply; the config editor refuses a retune that would make any of the four templates invalid).
-- **Breakdown.** Walls: base + HP, as for units. Factories: base, HP and a production line: "Production: 5 minions × $28 (half of a $55 minion, because they arrive during the battle) = $140". `UNIT_TOO_EXPENSIVE` on a factory names the bigger of HP and production as the lever ("Raising productionInterval from 600 to 900 makes 5 minions instead of 8 and saves $84").
-
-### Reference buildings (curve k = 2)
-
-Walls ("Linear" = BaseW + cW·HP; "Without curve" = k = 0):
-
-| Wall | HP | Linear | Curve | Sum = raw | **Cost** | Without curve |
-|---|---|---|---|---|---|---|
-| Cheapest legal wall | 50 | 7 | +0.01 | 7.01 | **$8** | $7 |
-| Fence | 150 | 13 | +0.18 | 13.18 | **$14** | $13 |
-| Stone wall | 300 | 22 | +1.44 | 23.44 | **$24** | $22 |
-| Basic Wall (template) | 400 | 28 | +3.41 | 31.41 | **$32** | $28 |
-| Thick wall | 600 | 40 | +11.52 | 51.52 | **$52** | $40 |
-| Rampart | 800 | 52 | +27.31 | 79.31 | **$80** | $52 |
-| Castle wall | 1000 | 64 | +53.33 | 117.33 | **$118** | $64 |
-| Maxed wall | 1500 | 94 | +180 | 274 | **$274** | $94 |
-
-Factories (minionValue $28; "Body" = BaseF + cF·HP with its curve):
-
-| Factory | HP | Interval (ticks) | E | Body linear | Body curve | Body raw | Body cost | Production E × $28 | **Cost** |
-|---|---|---|---|---|---|---|---|---|---|
-| Cheapest legal factory | 100 | 1800 | 2 | 22 | +0.24 | 22.24 | $23 | $56 | **$79** |
-| Slow Factory | 300 | 1200 | 4 | 46 | +6.48 | 52.48 | $53 | $112 | **$165** |
-| Basic Factory (template) | 300 | 900 | 5 | 46 | +6.48 | 52.48 | $53 | $140 | **$193** |
-| Swarm Factory | 300 | 600 | 8 | 46 | +6.48 | 52.48 | $53 | $224 | **$277** |
-| Armoured Factory | 600 | 600 | 8 | 82 | +51.84 | 133.84 | $134 | $224 | **$358** |
-| Fortress Factory | 1000 | 1800 | 2 | 130 | +240 | 370 | $370 | $56 | **$426** |
-| Maxed factory | 1000 | 600 | 8 | 130 | +240 | 370 | $370 | $224 | **$594, rejected** (> $500) |
-
-The built-in minion priced as a soldier: HP 40, damage 5, range 20, speed 1.5, size 8, cooldown 60 → linear 50.5, curve +3.55, sum 54.05 → **minionCost $55**, **minionValue $28**.
-
-### Minion kinds and factory prices (M8.6)
-
-The factory formula keeps its shape; only minionValue now follows the factory's `produces` (§5.3):
-
-```
-factory:  cost        = ceil(bodyRaw − 1e-9) + minionValue(kind) × E
-          minionValue(kind) = ceil(minionCost(kind) × minionDiscount − 1e-9)
-          minionCost(kind)  = the unit formula on factory.minions.<kind> (a soldier, current coefficients and curve)
-          kind        = this.produces, default 'grunt'; burst never changes the price
-```
-
-Each kind priced as a soldier (CD 60 for all, so the factor is 1; "Linear" = Base + Σ c·x):
-
-| Kind | HP | Dmg | Range | Speed | Size | Linear | Curve | Sum = raw | **minionCost** | **minionValue** (× 0.5) |
-|---|---|---|---|---|---|---|---|---|---|---|
-| grunt | 40 | 5 | 20 | 1.5 | 8 | 50.5 | +3.55 | 54.05 | **$55** | **$28** |
-| archer | 24 | 5 | 110 | 1.2 | 7 | 60.4 | +7.71 | 68.11 | **$69** | **$35** |
-| runner | 28 | 4 | 20 | 2.6 | 6 | 58.2 | +17.01 | 75.21 | **$76** | **$38** |
-| brute | 100 | 8 | 20 | 0.9 | 11 | 64.3 | +3.8 | 68.1 | **$69** | **$35** |
-
-The brute's ×3 wall damage and the kinds' aggro / impatience are behaviour, not priced stats (§5.3).
-
-Reference factories per kind (body as in the table above: HP 300 → $53, HP 600 → $134):
-
-| Factory | produces | HP | Interval | E | Body | Production | **Cost** |
-|---|---|---|---|---|---|---|---|
-| Basic Factory (template, `produces` omitted) | grunt | 300 | 900 | 5 | $53 | 5 × $28 = $140 | **$193** (unchanged) |
-| Archer Factory | archer | 300 | 900 | 5 | $53 | 5 × $35 = $175 | **$228** |
-| Runner Factory | runner | 300 | 900 | 5 | $53 | 5 × $38 = $190 | **$243** |
-| Brute Factory | brute | 300 | 900 | 5 | $53 | 5 × $35 = $175 | **$228** |
-| Swarm Factory | grunt | 300 | 600 | 8 | $53 | 8 × $28 = $224 | **$277** (unchanged) |
-| Archer Nest | archer | 300 | 600 | 8 | $53 | 8 × $35 = $280 | **$333** |
-| Runner Rush | runner | 300 | 600 | 8 | $53 | 8 × $38 = $304 | **$357** |
-| Brute Forge | brute | 300 | 600 | 8 | $53 | 8 × $35 = $280 | **$333** |
-| Slow Brutes | brute | 300 | 1200 | 4 | $53 | 4 × $35 = $140 | **$193** |
-| Armoured Runner Rush | runner | 600 | 600 | 8 | $134 | 8 × $38 = $304 | **$438** |
-| Maxed runner factory | runner | 1000 | 600 | 8 | $370 | 8 × $38 = $304 | **$674, rejected** (> $500) |
-
-`burst` (1-4) never changes these prices. Why: burst adds no minions (E is unchanged), it delays the first ones (they wait inside instead of fighting) and risks them (they die with the factory), so it trades time and risk for a stronger arrival. Pricing it would charge twice for a choice that already costs something.
-
-Breakdown text per kind: "Production: 5 archers × $35 (half of a $69 archer, because they arrive during the battle) = $175". `UNIT_TOO_EXPENSIVE` on a factory whose production is the bigger cost also names a cheaper kind when one fits ("Making grunts instead of runners saves $50").
-
-Example armies with buildings (all within $1,000 and the §5.2 caps): **Wall fortress** 10 Basic Walls + 3 Basic Towers = $914 (13 bodies, 3 fighters). **Factory swarm** 2 Swarm Factories + 4 Basic Soldiers = $922 (up to 8 + 4 minions alive). **Mixed** 4 Basic Soldiers + 2 Basic Towers + 6 Basic Walls = $956. **All four templates** 1 Basic Factory + 5 Basic Soldiers + 1 Basic Tower + 4 Basic Walls = $979.
+**Walls and factories.** Same shape as the unit formula, with per-type coefficients (config `cost.wall`, `cost.factory`) and the same curve k. Neither type attacks, so there are no factors. The formulas and the ×5 reference tables are in "M8.8 economy: formula" and "Reference walls, minions and factories (curve k = 1)".
+- **Curve semantics kept.** Every HP term has the curve with its maximum at the type's default HP max (wall 7,500, factory 5,000; fixed in code like the §5 maxima), so the near-max warning, `W_STAT_NEAR_MAX`, and the "biggest lever" fix work unchanged.
+- **Why wall HP is cheap** (0.06 vs 0.3 per HP for units): a wall can't move or fight, is worth $0 at timeout and loses 7% of its max HP per second in sudden death whatever its HP.
+- **Factory pricing = pay up front for the expected output.** E is the number of minions the factory can make in a 90 s battle, and each costs half of its price (`minionDiscount` 0.5) because it arrives during the battle (the first after 10-30 s) and the alive caps throttle them. Production is linear in E (no curve): the per-factory alive cap (4) already makes one fast factory worse than two slow ones, and factories are capped at 2 copies. The $2,500 cap applies to the whole factory price.
+- **Re-pricing.** A factory's price follows the soldier coefficients and `curveK` (through minionCost), the minion stats, `minionDiscount`, `maxMinionsPerFactory` and `timers.battleTicks`. Changing any of them re-prices every factory (the config editor refuses a retune that would make any of the four templates invalid).
+- **Breakdown.** Walls: base + HP, as for units. Factories: base, HP and a production line: "Production: 5 minions × $148 (half of a $296 minion, because they arrive during the battle) = $740"; with an element "5 fire brutes × $256 …". `UNIT_TOO_EXPENSIVE` on a factory names the bigger of HP and production as the lever ("Raising productionInterval from 600 to 900 makes 5 minions instead of 8 …"), and a cheaper kind or normal minions when that fits.
+- **Minion kinds** (M8.6): the factory pays `minionValue(kind, element) × E`; `burst` (1-4) never changes the price. Why: burst adds no minions (E is unchanged), it delays the first ones (they wait inside instead of fighting) and risks them (they die with the factory), so it trades time and risk for a stronger arrival. Pricing it would charge twice for a choice that already costs something. The brute's ×3 wall damage and the kinds' aggro / impatience are behaviour, not priced stats (§5.3).
 
 ### Caps and rules
 
 | Rule | Default (config) | Error code |
 |---|---|---|
-| Single unit cost | ≤ $500 (checked on the rounded cost) | `UNIT_TOO_EXPENSIVE` |
-| Budget per round | $1,000. Resets every round. Unspent credits don't carry over. | `OVER_BUDGET` |
-| Designs | free to register. Max 8 active designs per player. Revisions replace a design and don't count. The templates (2; 4 from M8.5: soldier, tower, wall, factory) don't count. | `TOO_MANY_DESIGNS` |
-| Types fielded per round | ≤ 3 (`caps.maxTypes`). **M8.5:** ≤ 4 unit types (soldiers, `caps.maxUnitTypes`) **and** ≤ 4 building types (towers, walls, factories, `caps.maxBuildingTypes`), §5.2; `caps.maxTypes` is removed | `TOO_MANY_TYPES` (M8.5: `details: {group, max, count}`) |
-| Copies placed per player | ≤ 12 (performance guard; 4-8 is typical). **M8.5:** ≤ 12 fighters (soldiers + towers + factories, everything that runs code) of which ≤ 2 factories (`caps.maxFactoryCopies`), plus ≤ 12 walls (`caps.maxWallCopies`, no code, so outside the isolate guard). 12 walls cover a full front row and both flanks (6 + 2 × 3), or an L of 11 that seals a corner zone (its other two sides are the arena edge); the answers to a sealed fortress are smashing a wall (templates and minions do it after 2 s blocked), range, and sudden death, which reaches every corner zone | `TOO_MANY_COPIES` (M8.5: `details: {group: 'fighters' \| 'factories' \| 'walls', max}`) |
-| Minions (M8.5, engine-side, no error) | ≤ 8 made per factory, ≤ 4 alive per factory, alive per player ≤ min(6, floor(40 / players)): 6 with 2-6 players, 5 with 7-8, so ≤ 40 minions in any battle (`factory.*`) | the factory waits |
-| Fighters | PLAN Ready needs a fighter type selected, PLACEMENT Ready a fighter placed (M8.5) | `NO_FIGHTERS` |
+| Single unit cost | ≤ **$2,500** (checked on the rounded cost, `caps.unitCost`) | `UNIT_TOO_EXPENSIVE` |
+| Budget per round | **$5,000** (`caps.budget`). Resets every round. Unspent credits don't carry over. | `OVER_BUDGET` |
+| Designs | free to register. Max 8 active designs per player. Revisions replace a design and don't count. The four templates (soldier, tower, wall, factory) don't count. | `TOO_MANY_DESIGNS` |
+| Types fielded per round | ≤ 4 unit types (soldiers, `caps.maxUnitTypes`) **and** ≤ 4 building types (towers, walls, factories, `caps.maxBuildingTypes`), §5.2 | `TOO_MANY_TYPES` (`details: {group, max, count}`) |
+| Copies placed per player | ≤ 12 fighters (soldiers + towers + factories, everything that runs code) of which ≤ 2 factories (`caps.maxFactoryCopies`), plus ≤ 12 walls (`caps.maxWallCopies`, no code, so outside the isolate guard). 12 walls cover a full front row and both flanks (6 + 2 × 3), or an L of 11 that seals a corner zone (its other two sides are the arena edge); the answers to a sealed fortress are smashing a wall (templates and minions do it after 2 s blocked), range, and sudden death, which reaches every corner zone | `TOO_MANY_COPIES` (`details: {group: 'fighters' \| 'factories' \| 'walls', max}`) |
+| Minions (engine-side, no error) | ≤ 8 made per factory, ≤ 4 alive per factory, alive per player ≤ min(6, floor(40 / players)): 6 with 2-6 players, 5 with 7-8, so ≤ 40 minions in any battle (`factory.*`) | the factory waits |
+| Fighters | PLAN Ready needs a fighter type selected, PLACEMENT Ready a fighter placed. M8.8: damage-0 units and medic-only factories are not fighters (§5.2) | `NO_FIGHTERS` |
 
-Every player starts with the two templates (M8.5: four, adding Basic Wall and Basic Factory) pre-registered, so nobody is ever unarmed. The cost breakdown (each term with its linear part and curve surcharge, the sum, the factor, the total) is returned by validate/submit and shown on unit cards.
+Every player starts with the four templates pre-registered, so nobody is ever unarmed. The cost breakdown (each term with its linear part and curve surcharge, the sum, the factors, the aura, the total) is returned by validate/submit and shown on unit cards. Budgets are never pooled between teammates, and the player count, map and team mode don't change them.
+
+### M8.8 economy: formula
+
+Every price below is printed by the reference implementation `cost.mjs` through `tables.mjs`. The approved design spec and its scripts live outside the repo, in `/home/vscode/pixel-clash-design/elements-spec/` (`elements-spec.md`, `final/cost.mjs`, `final/tables.mjs`, `final/tables.out`, `final/conc.mjs`). The **M8.8 balance retune** (§14 "M8.8 balance": `cost.speed` 60 → 66, `cost.range` 1.45 → 1.38, grunt HP 200 → 180) re-ran them from copies in `final-retune/` (the approved `final/` files are left as they were), and every table below is that output. `shared/cost.ts` must reproduce every number exactly.
+
+```
+term_i  = c_i × x_i × (1 + k × r_i²)          r_i = x_i / max_i, k = cost.curveK = 1
+          x_i / max_i: HP/2500, damage/300, range/300, speed/5, (size − 6)/14
+heal    = c_heal × P × (1 + k × (P/250)²) × reach(R/200)                 support 'heal' (P = supportPower, R = supportRange)
+aura    = c_kind × P × (1 + k × (P/Pmax)²) × reach(R/150)               haste/might Pmax 50, shield Pmax 40
+reach(ρ)= 0.5 + ρ(2 − ρ)                                                  0.5 at reach 0, 1.5 at the max
+core    = Base + Σ term_i + heal
+raw     = core × max(1, 60/attackCooldown)                                cooldown factor (as today, clamped at 1)
+             × (1 + q × HP/2500 × damage/300)                             power factor, q = 0.6 (max ×1.6)
+             × (1 + s × ρs(2 − ρs))                                       splash factor, s = 0.7, ρs = splashRadius/80 (max ×1.7)
+             × e                                                          element factor: normal 1, fire/ice/lightning 1.2
+        + aura                                                            always on: after the factors
+cost    = ceil(raw − 1e-9)
+```
+
+**In one paragraph for Claude** (CLAUDE.md §5 and `get_unit_contract`): "Each stat costs its normal price, more near its max (up to 2× at the max). Healing adds a price too. Then multiply: fast attacks (60 / cooldown), being both tough and strong (up to ×1.6), splash (×1.53 at 40 px, ×1.7 at 80) and an element (×1.2). An aura is added at the end."
+
+Walls: `raw = 20 + 0.06·HP·(1 + (HP/7500)²)`. Factories: body = `ceil(50 + 0.12·HP·(1 + (HP/5000)²))`, and cost = body + minionValue × E, with E = min(8, floor(5399 / interval)) as before. Minions: `minionCost = ceil(soldier formula on the kind's stats × element factor)`, `minionValue = ceil(minionCost × 0.5)`. The medic's heal term is in its soldier formula, and medics ignore `minionElement`.
+
+### M8.8 factor tables
+
+`node tables.mjs`, factor lines (exact output):
+
+```text
+splash 10:×1.16 20:×1.31 30:×1.43 40:×1.53 50:×1.6 60:×1.66 70:×1.69 80:×1.7
+heal reach 20:×0.69 60:×1.01 100:×1.25 120:×1.34 160:×1.46 200:×1.5
+aura radius 40:×0.96 60:×1.14 80:×1.28 100:×1.39 120:×1.46 150:×1.5
+curve k=1 vs k=2 0.25: ×1.06 vs ×1.13 | 0.5: ×1.25 vs ×1.5 | 0.75: ×1.56 vs ×2.13 | 0.9: ×1.81 vs ×2.62 | 1: ×2 vs ×3
+power corners 600/50:×1.02 2500/100:×1.2 300/300:×1.07 400/250:×1.08 1800/260:×1.37 1250/150:×1.15 2500/300:×1.6
+```
+
+The curve line reads: a stat at 50% of its max costs 1.25× its plain price (was 1.5×), and a maxed stat costs **2×** (was 3×). That is the "don't penalise extremes so heavily" change.
+
+### M8.8 economy: why these shapes
+
+- **Lanchester value.** An army's strength is (Σ DPS) × (Σ HP). So a unit's worth grows like √(DPS × HP), and a fair price grows like that worth^1.26. An effect that adds X to a unit's effective damage is worth a whole-unit factor of about (1 + X)^0.63, **whatever the unit's mix of HP and damage**.
+  - That is why elements and splash multiply the whole price.
+  - A multiplier on the attack part alone would make fire on a 2,500-HP tank nearly free (+3.6%).
+- **Measured fight geometry** (about 55,000 hits on the pre-pathing engine):
+  - share of a 3 s burn that lands: soldiers 0.74, towers 0.38, snipers 0.19, minions 0.68;
+  - P(another enemy within 100 px of the target): soldiers 0.95, towers 0.75;
+  - extra enemies inside the splash radius: 2.46 for soldiers and 1.90 for towers at R40, 2.94 and 2.32 at R80.
+- **Fair factors vs the price:**
+
+  | Effect | X (soldiers / towers) | fair factor | price |
+  |---|---|---|---|
+  | fire (+50% × landed share) | 0.37 / 0.19 | ×1.22 / ×1.12 | **×1.2** |
+  | lightning (35% × P(target)) | 0.33 / 0.26 | ×1.20 / ×1.16 | **×1.2** |
+  | ice (removes 35% of one enemy's DPS while frozen, worth ≈ 0.175 × n/N of a unit, where n/N = my units / theirs) | equal armies: +18% of the unit | ×1.18 | **×1.2**. Against 2 bricks (n/N = 3.5) it is worth ≈ 61% of a unit |
+  | splash 40 px (50% × extra) | 1.23 / 0.95 | ×1.66 / ×1.52 | **×1.53** |
+  | splash 80 px | 1.47 / 1.16 | ×1.77 / ×1.63 | **×1.70** |
+
+- **Power factor.** What k = 2 really stopped was the brick (high HP **and** high damage). A brick's strength is HP × damage, so the surcharge is on that product.
+  - It barely touches specialists: Glass Cannon ×1.07, Max Sniper ×1.08, Huge Tank ×1.20.
+  - It hits the max-cost brick with ×1.37.
+- **Support:**
+  - Might X on N covered allies out of n is worth about X·(N/n)/2 of the army. For example, 30% on 2 of 7 is about $214, and the War Drummer's aura costs $227.
+  - Shield is priced a little high, because it combines with heals.
+  - 60 HP/s of capped healing is worth about $400, and the Field Medic's heal term costs $383.
+  - The reach factor saturates like the measured coverage: on average 2.0, 2.1 and 2.4 allies are within 60, 100 and 150 px.
+
+### M8.8 economy: coefficients, bounds and config keys (×5 defaults)
+
+| Config key | Today | **M8.8** | Note |
+|---|---|---|---|
+| `caps.budget` / `caps.unitCost` | 1,000 / 500 | **5,000 / 2,500** | ×5 |
+| `cost.base` | 10 | **50** | ×5 |
+| `cost.hp` | 0.25 | **0.30** | +20%: k = 1 made Half Tanks cheaper, and they already dominated (84% at a pure ×5) |
+| `cost.damage` | 1.5 | **1.5** | the ×5 price and ×5 damage cancel out |
+| `cost.range` | 0.2 | **1.38** | a pure ×5 would be 1.0. The spec set 1.45 (the 300-range longbow army won 71% at 1.2 before routing); the M8.8 balance retune lowered it to 1.38 so that 4 Basic Soldiers + 3 Basic Towers still fit $5,000 after the speed retune (the longbow army then wins 65%, §14 M8.8 balance) |
+| `cost.speed` | 12 | **66** | ×5 = 60 (at 50, filled scouts reached 82%); the M8.8 balance retune took the spec's first scout knob, 60 → 66, because the HP-padded scout swarm won 70.3% on the routing engine (now 58%, §14 M8.8 balance) |
+| `cost.size` | 0.5 | **8** | a pure ×5 would be 2.5. Size 20 is the tanks' hidden edge: it blocks melee and adds 10 px reach |
+| `cost.referenceCooldown` | 60 | 60 | |
+| `cost.curveK` | 2 | **1** | schema 0-5 |
+| `cost.powerFactor` (new) | – | **0.6** | schema 0-2 |
+| `cost.splash` (new) | – | **0.7** | schema 0-2 |
+| `cost.element` (new) | – | **{fire: 1.2, ice: 1.2, lightning: 1.2}** | schema ≥ 1 |
+| `cost.heal` (new) | – | **4.5** per HP per heal | |
+| `cost.aura` (new) | – | **{haste: 5, might: 4, shield: 7}** per % | |
+| `cost.wall` | 4 / 0.06 | **20 / 0.06** | ×5 |
+| `cost.factory` | 10 / 0.12 / 0.5 | **50 / 0.12 / 0.5** | ×5 |
+| `stats.bounds.maxHealth` / `damage` | 10-500 / 0-60 | **50-2,500 / 0-300** | ×5 |
+| `stats.bounds.range`, `soldierSpeed`, `attackCooldown`, `size`, `productionInterval`, `burst` | | unchanged | geometry and time don't scale |
+| `stats.bounds.wallHealth` / `factoryHealth` | 50-1,500 / 100-1,000 | **250-7,500 / 500-5,000** | ×5 |
+| `stats.bounds.splashRadius` (new) | – | **0-80** | |
+| `stats.bounds.support` (new) | – | heal power 10-250, reach 20-200; haste/might 5-50; shield 5-40; aura radius 40-150 | |
+| `factory.minions.*` HP/damage | 40/5, 24/5, 28/4, 100/8 | **180/25, 120/25, 140/20, 550/40** + **medic 150/0** (heal 40, reach 60, speed 1.4, size 7, aggro 150) | other preset stats unchanged. Grunt 200 → 180 is the M8.8 balance retune (the spec's home-guard knob): the grunt home guard took 9 of 16 kind free-for-alls, over the half cap |
+| `elements` (new) | – | `{ fire: {burnPct: 50, pulses: 6, pulseTicks: 30}, ice: {slowPct: 35, ticks: 120}, lightning: {chancePct: 35, hopRange: 100, burningExtraHops: 1}, shatterPct: 50, splashPct: 50 }` | |
+| `support` (new) | – | `{ healRoomPctPerSecond: 5 }` (heals stop at `suddenDeath.startTick`) | |
+| `economyVersion` (new) | – | **2** | migration (§6 M8.8 migration) |
+| Curve maxima (code constants) | 500, 60, 300, 5, 14; wall 1500; factory 1000 | **2500, 300, 300, 5, 14; wall 7500; factory 5000**; heal 250 / 200; aura 50 (shield 40) / 150; splash 80 | fixed to the defaults |
+
+Bounds are deliberately **not** widened beyond ×5. What felt "limited" was the price of extremes (3× at the max) and the lack of other axes. Now a maxed stat costs 2×, and elements, splash, might and shield push effective damage and toughness past the caps: a Glass Cannon with a 30% might aura hits for 390, and a shatter on it hits for 585.
+
+### M8.8 economy: worked examples (exact arithmetic)
+
+- **Basic Soldier** (600 HP, 50 dmg, range 40, speed 1.5, size 10, CD 60):
+  - base 50
+  - HP 0.3·600 = 180, + 180·0.24² = 10.37 → 190.37
+  - damage 75 + 75·(1/6)² = 2.08 → 77.08
+  - range 1.38·40 = 55.2, + 55.2·(40/300)² = 0.98 → 56.18
+  - speed 66·1.5 = 99, + 99·0.3² = 8.91 → 107.91
+  - size 8·4 = 32, + 32·(4/14)² = 2.61 → 34.61
+  - Sum 516.15 (linear 491.2, curve 24.95). Cooldown ×1. Power 1 + 0.6·0.24·(1/6) = ×1.024 → **528.54 → $529**.
+- **Basic Tower** (625 HP, 75 dmg, range 140, size 14, CD 45):
+  - 50 + HP 187.5 + 11.72 + damage 112.5 + 7.03 + range 193.2 + 42.07 + size 64 + 20.90 = 688.92
+  - × 60/45 = 918.56
+  - × power 1 + 0.6·0.25·0.25 = 1.0375 → **953.01 → $954**.
+- **Fire Soldier:** 516.15 × 1.024 × 1.2 = **634.25 → $635**. Fire costs $106 on a template.
+- **Field Medic** (soldier 500 HP, damage 0, range 20, speed 1.5, size 10, heal 60, reach 120):
+  - body 50 + 156 + 0 + 27.72 + 107.91 + 34.61 = 376.24
+  - heal 4.5·60·(1 + 0.24²)·reach(0.6) = 285.55 × 1.34 = 382.64
+  - core 758.88 → **$759**.
+- **War Drummer** (same body, might 30%, radius 100): body 376.24 + aura 4·30·(1 + 0.6²)·reach(0.667) = 163.2 × 1.389 = 226.67 → **602.91 → $603**.
+
+### Reference units (curve k = 1)
+
+Exact output of `node tables.mjs` in `final-retune/` (the M8.8 balance retune, 2026-10-24; stored in its `tables.out`). Column meanings:
+- **Linear** = Base + Σ c·x.
+- **Curve** = Σ c·x·k·r².
+- **Heal** = the heal term.
+- **Sum** = Linear + Curve + Heal.
+- **CD f** is the cooldown factor, **Power** the power factor, **Splash f** the splash factor and **Elem f** the element factor.
+- **Aura** = the aura term, added after the factors.
+- **Old ×5 (k 2)** = today's formula with every money coefficient ×5 and k = 2 on the same stats, which is what a pure rescale would cost. ✗ means it is over $2,500, and – means the row has new mechanics.
+
+`tests/cost-curve.test.ts` and `tests/cost.test.ts` parse this table (every column); `tests/buildings-cost.test.ts` parses the k = 1 walls, minions and factories tables.
+
+| Unit | Type | HP | Dmg | Range | Spd | Size | CD | Element | Splash | Support | Linear | Curve | Heal | Sum | CD f | Power | Splash f | Elem f | Aura | Raw | **Cost** | Old ×5 (k 2) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Basic Soldier (template) | soldier | 600 | 50 | 40 | 1.5 | 10 | 60 |  |  |  | 491.2 | +24.95 |  | 516.15 | ×1 | ×1.02 | ×1 | ×1 |  | 528.54 | **$529** | $456 |
+| Basic Tower (template) | tower | 625 | 75 | 140 | 0 | 14 | 45 |  |  |  | 607.2 | +81.72 |  | 688.92 | ×1.33 | ×1.04 | ×1 | ×1 |  | 953.01 | **$954** | $782 |
+| Today's Basic Tower ×5 | tower | 750 | 75 | 180 | 0 | 14 | 45 |  |  |  | 699.9 | +137.6 |  | 837.5 | ×1.33 | ×1.05 | ×1 | ×1 |  | 1166.92 | **$1,167** | $988 |
+| Half Tank | soldier | 1250 | 100 | 40 | 0.8 | 20 | 60 |  |  |  | 795 | +224.75 |  | 1019.75 | ×1 | ×1.1 | ×1 | ×1 |  | 1121.72 | **$1,122** | $899 |
+| Huge Tank | soldier | 2500 | 100 | 40 | 0.8 | 20 | 60 |  |  |  | 1170 | +881 |  | 2051 | ×1 | ×1.2 | ×1 | ×1 |  | 2461.2 | **$2,462** | $2,306 |
+| Sniper Tower | tower | 400 | 200 | 280 | 0 | 14 | 60 |  |  |  | 920.4 | +493.9 |  | 1414.3 | ×1 | ×1.06 | ×1 | ×1 |  | 1504.82 | **$1,505** | $1,523 |
+| Slow Sniper (the trap) | tower | 400 | 200 | 280 | 0 | 14 | 90 |  |  |  | 920.4 | +493.9 |  | 1414.3 | ×1 | ×1.06 | ×1 | ×1 |  | 1504.82 | **$1,505** | $1,523 |
+| Max Sniper | tower | 400 | 250 | 300 | 0 | 14 | 60 |  |  |  | 1023 | +698.39 |  | 1721.39 | ×1 | ×1.08 | ×1 | ×1 |  | 1859.1 | **$1,860** | $1,985 |
+| Glass Cannon | soldier | 300 | 300 | 40 | 2 | 8 | 60 |  |  |  | 793.2 | +473.72 |  | 1266.92 | ×1 | ×1.07 | ×1 | ×1 |  | 1358.14 | **$1,359** | $1,683 |
+| Max-cost Brick | soldier | 1700 | 270 | 40 | 1.5 | 16 | 60 |  |  |  | 1199.2 | +614.58 |  | 1813.78 | ×1 | ×1.37 | ×1 | ×1 |  | 2479.8 | **$2,480** | $2,128 |
+| Today's brick ×5 | soldier | 2150 | 250 | 40 | 1.5 | 16 | 60 |  |  |  | 1304.2 | +788.17 |  | 2092.37 | ×1 | ×1.43 | ×1 | ×1 |  | 2992.08 | **$2,993**, rejected | $2,477 |
+| Speedy Scout | soldier | 300 | 30 | 30 | 4 | 6 | 20 |  |  |  | 490.4 | +171.12 |  | 661.52 | ×3 | ×1.01 | ×1 | ×1 |  | 1998.85 | **$1,999** | $2,253 |
+| Scout with cooldown 10 | soldier | 300 | 30 | 30 | 4 | 6 | 10 |  |  |  | 490.4 | +171.12 |  | 661.52 | ×6 | ×1.01 | ×1 | ×1 |  | 3997.7 | **$3,998**, rejected | $4,506 ✗ |
+| Laser Sniper (soldier) | soldier | 500 | 100 | 150 | 2 | 10 | 30 |  |  |  | 721 | +98.15 |  | 819.15 | ×2 | ×1.04 | ×1 | ×1 |  | 1703.83 | **$1,704** | $1,527 |
+| Half stats at CD 60 | soldier | 1250 | 150 | 150 | 2.5 | 13 | 60 |  |  |  | 1078 | +257 |  | 1335 | ×1 | ×1.15 | ×1 | ×1 |  | 1535.25 | **$1,536** | $1,333 |
+| Max stats at CD 60 | soldier | 2500 | 300 | 300 | 5 | 20 | 60 |  |  |  | 2106 | +2056 |  | 4162 | ×1 | ×1.6 | ×1 | ×1 |  | 6659.2 | **$6,660**, rejected | $5,180 ✗ |
+| Everything maxed | soldier | 2500 | 300 | 300 | 5 | 20 | 10 |  |  |  | 2106 | +2056 |  | 4162 | ×6 | ×1.6 | ×1 | ×1 |  | 39955.2 | **$39,956**, rejected | $31,080 ✗ |
+| Cheapest legal | tower | 50 | 0 | 20 | 0 | 6 | 600 |  |  |  | 92.6 | +0.13 |  | 92.73 | ×1 | ×1 | ×1 | ×1 |  | 92.73 | **$93** | $83 |
+| Fire Soldier | soldier | 600 | 50 | 40 | 1.5 | 10 | 60 | fire |  |  | 491.2 | +24.95 |  | 516.15 | ×1 | ×1.02 | ×1 | ×1.2 |  | 634.25 | **$635** | – |
+| Ice Soldier | soldier | 600 | 50 | 40 | 1.5 | 10 | 60 | ice |  |  | 491.2 | +24.95 |  | 516.15 | ×1 | ×1.02 | ×1 | ×1.2 |  | 634.25 | **$635** | – |
+| Lightning Soldier | soldier | 600 | 50 | 40 | 1.5 | 10 | 60 | lightning |  |  | 491.2 | +24.95 |  | 516.15 | ×1 | ×1.02 | ×1 | ×1.2 |  | 634.25 | **$635** | – |
+| Ice Tower | tower | 625 | 75 | 140 | 0 | 14 | 45 | ice |  |  | 607.2 | +81.72 |  | 688.92 | ×1.33 | ×1.04 | ×1 | ×1.2 |  | 1143.61 | **$1,144** | – |
+| Storm Tower | tower | 625 | 75 | 140 | 0 | 14 | 45 | lightning |  |  | 607.2 | +81.72 |  | 688.92 | ×1.33 | ×1.04 | ×1 | ×1.2 |  | 1143.61 | **$1,144** | – |
+| Frost Archer | soldier | 400 | 40 | 140 | 1.5 | 9 | 60 | ice |  |  | 546.2 | +56.23 |  | 602.43 | ×1 | ×1.01 | ×1 | ×1.2 |  | 732.16 | **$733** | – |
+| Frost Sniper | tower | 400 | 200 | 280 | 0 | 14 | 60 | ice |  |  | 920.4 | +493.9 |  | 1414.3 | ×1 | ×1.06 | ×1 | ×1.2 |  | 1805.78 | **$1,806** | – |
+| Mortar Tower | tower | 625 | 100 | 140 | 0 | 14 | 60 |  | 40 |  | 644.7 | +91.36 |  | 736.06 | ×1 | ×1.05 | ×1.53 | ×1 |  | 1178.61 | **$1,179** | – |
+| Fire Mortar | tower | 625 | 100 | 140 | 0 | 14 | 60 | fire | 40 |  | 644.7 | +91.36 |  | 736.06 | ×1 | ×1.05 | ×1.53 | ×1.2 |  | 1414.34 | **$1,415** | – |
+| Fireball Catapult | tower | 600 | 150 | 220 | 0 | 14 | 60 | fire | 40 |  | 822.6 | +250.79 |  | 1073.39 | ×1 | ×1.07 | ×1.53 | ×1.2 |  | 2105.72 | **$2,106** | – |
+| Blizzard Totem | tower | 650 | 0 | 160 | 0 | 14 | 60 | ice | 60 |  | 529.8 | +96.89 |  | 626.69 | ×1 | ×1 | ×1.66 | ×1.2 |  | 1245.54 | **$1,246** | – |
+| Fire Bomber | soldier | 700 | 60 | 40 | 1.2 | 12 | 60 | fire | 30 |  | 532.4 | +34.42 |  | 566.82 | ×1 | ×1.03 | ×1.43 | ×1.2 |  | 1002.93 | **$1,003** | – |
+| Max-splash fire brick | soldier | 1500 | 200 | 40 | 1.5 | 16 | 60 | fire | 80 |  | 1034.2 | +346.04 |  | 1380.24 | ×1 | ×1.24 | ×1.7 | ×1.2 |  | 3491.46 | **$3,492**, rejected | – |
+| Field Medic | soldier | 500 | 0 | 20 | 1.5 | 10 | 60 |  |  | heal 60 / 120 px | 358.6 | +17.64 | 382.64 | 758.88 | ×1 | ×1 | ×1 | ×1 |  | 758.88 | **$759** | – |
+| Healing Shrine | tower | 800 | 0 | 20 | 0 | 14 | 60 |  |  | heal 80 / 160 px | 381.6 | +45.6 | 579.42 | 1006.62 | ×1 | ×1 | ×1 | ×1 |  | 1006.62 | **$1,007** | – |
+| Battle Cleric | soldier | 600 | 40 | 40 | 1.5 | 10 | 60 |  |  | heal 40 / 100 px | 476.2 | +23.94 | 230.76 | 730.9 | ×1 | ×1.02 | ×1 | ×1 |  | 744.93 | **$745** | – |
+| Rapid Medic (CD 30) | soldier | 500 | 0 | 20 | 1.5 | 10 | 30 |  |  | heal 60 / 120 px | 358.6 | +17.64 | 382.64 | 758.88 | ×2 | ×1 | ×1 | ×1 |  | 1517.77 | **$1,518** | – |
+| War Drummer | soldier | 500 | 0 | 20 | 1.5 | 10 | 60 |  |  | might 30% / 100 px | 358.6 | +17.64 |  | 376.24 | ×1 | ×1 | ×1 | ×1 | +226.67 | 602.91 | **$603** | – |
+| Wind Banner | soldier | 500 | 0 | 20 | 1.5 | 10 | 60 |  |  | haste 30% / 100 px | 358.6 | +17.64 |  | 376.24 | ×1 | ×1 | ×1 | ×1 | +283.33 | 659.58 | **$660** | – |
+| Shield Bearer | soldier | 1000 | 30 | 30 | 1.2 | 14 | 60 |  |  | shield 25% / 80 px | 579.6 | +74.32 |  | 653.92 | ×1 | ×1.02 | ×1 | ×1 | +312.04 | 981.66 | **$982** | – |
+| Haste Totem | tower | 500 | 0 | 20 | 0 | 12 | 60 |  |  | haste 30% / 120 px | 275.6 | +14.94 |  | 290.54 | ×1 | ×1 | ×1 | ×1 | +297.84 | 588.38 | **$589** | – |
+| Max might pole | tower | 50 | 0 | 20 | 0 | 6 | 60 |  |  | might 50% / 150 px | 92.6 | +0.13 |  | 92.73 | ×1 | ×1 | ×1 | ×1 | +600 | 692.73 | **$693** | – |
+| Max shield pole | tower | 50 | 0 | 20 | 0 | 6 | 60 |  |  | shield 40% / 150 px | 92.6 | +0.13 |  | 92.73 | ×1 | ×1 | ×1 | ×1 | +840 | 932.73 | **$933** | – |
+| Max healer | soldier | 500 | 0 | 20 | 1.5 | 10 | 30 |  |  | heal 250 / 200 px | 358.6 | +17.64 | 3375 | 3751.24 | ×2 | ×1 | ×1 | ×1 |  | 7502.49 | **$7,503**, rejected | – |
+
+Notes on the table:
+- The Slow Sniper has ⅔ the DPS at the same price (`W_SLOW_NO_DISCOUNT`).
+- The max might pole dies to one hit.
+- The Blizzard Totem has damage 0 (ice still freezes).
+
+**Softer extremes, measured in price** (M8.8 vs Old ×5):
+- **Cheaper single-stat specialists:** Glass Cannon −19%, Speedy Scout −11%, Max Sniper −6%.
+- **About the same:** Sniper Tower −1%, Huge Tank +7%. HP had to get dearer, because tanks were already among the strongest archetypes.
+- **Dearer mid-range all-rounders:** Half stats +15%, Half Tank +25%.
+- **Bricks pay the power factor:** the max-cost brick is 1,700 HP / 270 dmg ($2,480; the spec's 1,750 / 265 costs $2,502 after the speed retune). Today's brick ×5 (2,150 / 250) would cost $2,993 and is rejected.
+
+### Reference walls, minions and factories (curve k = 1)
+
+Exact output of `node tables.mjs` in `final-retune/` (headers added).
+
+Walls, `raw = 20 + 0.06·HP·(1 + (HP/7500)²)`:
+
+| HP | Linear | Curve | Raw | **Cost** | Old ×5 |
+|---|---|---|---|---|---|
+| 250 | 35 | +0.02 | 35.02 | **$36** | $36 |
+| 750 | 65 | +0.45 | 65.45 | **$66** | $66 |
+| 1500 | 110 | +3.6 | 113.6 | **$114** | $118 |
+| 2000 | 140 | +8.53 | 148.53 | **$149** | $158 |
+| 3000 | 200 | +28.8 | 228.8 | **$229** | $258 |
+| 4000 | 260 | +68.27 | 328.27 | **$329** | $397 |
+| 5000 | 320 | +133.33 | 453.33 | **$454** | $587 |
+| 7500 | 470 | +450 | 920 | **$920** | $1,370 |
+
+250 HP is the minimum, 2,000 HP is the Basic Wall template, and 7,500 HP is the maximum.
+
+Minions are priced with the soldier formula at CD 60. The element factor is ×1.2 and minionValue = ceil(cost × 0.5). Each cell reads: raw → minionCost → **minionValue**.
+
+| Kind | HP | Dmg | Range | Spd | Size | normal | fire | ice | lightning |
+|---|---|---|---|---|---|---|---|---|---|
+| grunt | 180 | 25 | 20 | 1.5 | 8 | 295.06 → $296 → **$148** | 354.07 → $355 → **$178** | 354.07 → $355 → **$178** | 354.07 → $355 → **$178** |
+| archer | 120 | 25 | 110 | 1.2 | 7 | 388.79 → $389 → **$195** | 466.54 → $467 → **$234** | 466.54 → $467 → **$234** | 466.54 → $467 → **$234** |
+| runner | 140 | 20 | 20 | 2.6 | 6 | 368.81 → $369 → **$185** | 442.58 → $443 → **$222** | 442.58 → $443 → **$222** | 442.58 → $443 → **$222** |
+| brute | 550 | 40 | 20 | 0.9 | 11 | 425.56 → $426 → **$213** | 510.67 → $511 → **$256** | 510.67 → $511 → **$256** | 510.67 → $511 → **$256** |
+| medic | 150 | 0 (heal 40, reach 60) | 20 | 1.4 | 7 | 417.02 → $418 → **$209** | 417.02 → $418 → **$209** | 417.02 → $418 → **$209** | 417.02 → $418 → **$209** |
+
+The medic ignores its element, so every column is the same price.
+
+Factories:
+
+| Factory | Kind | Element | HP | Interval | E | Body raw | Body | Production | **Cost** |
+|---|---|---|---|---|---|---|---|---|---|
+| Cheapest legal factory | grunt | normal | 500 | 1800 | 2 | 110.6 | $111 | 2 × $148 = $296 | **$407** |
+| Slow Factory | grunt | normal | 1500 | 1200 | 4 | 246.2 | $247 | 4 × $148 = $592 | **$839** |
+| Basic Factory (template) | grunt | normal | 1500 | 900 | 5 | 246.2 | $247 | 5 × $148 = $740 | **$987** |
+| Swarm Factory | grunt | normal | 1500 | 600 | 8 | 246.2 | $247 | 8 × $148 = $1,184 | **$1,431** |
+| Armoured Factory | grunt | normal | 3000 | 600 | 8 | 539.6 | $540 | 8 × $148 = $1,184 | **$1,724** |
+| Fortress Factory | grunt | normal | 5000 | 1800 | 2 | 1250 | $1,250 | 2 × $148 = $296 | **$1,546** |
+| Maxed grunt factory | grunt | normal | 5000 | 600 | 8 | 1250 | $1,250 | 8 × $148 = $1,184 | **$2,434** |
+| Archer Nest | archer | normal | 1500 | 600 | 8 | 246.2 | $247 | 8 × $195 = $1,560 | **$1,807** |
+| Runner Rush | runner | normal | 1500 | 600 | 8 | 246.2 | $247 | 8 × $185 = $1,480 | **$1,727** |
+| Brute Forge | brute | normal | 1500 | 600 | 8 | 246.2 | $247 | 8 × $213 = $1,704 | **$1,951** |
+| Ice Archer Nest | archer | ice | 1500 | 600 | 8 | 246.2 | $247 | 8 × $234 = $1,872 | **$2,119** |
+| Fire Brute Forge | brute | fire | 1500 | 600 | 8 | 246.2 | $247 | 8 × $256 = $2,048 | **$2,295** |
+| Storm Runners | runner | lightning | 1500 | 600 | 8 | 246.2 | $247 | 8 × $222 = $1,776 | **$2,023** |
+| Fire Grunts | grunt | fire | 1500 | 900 | 5 | 246.2 | $247 | 5 × $178 = $890 | **$1,137** |
+| Fire Brute Pack | brute | fire | 1500 | 900 | 5 | 246.2 | $247 | 5 × $256 = $1,280 | **$1,527** |
+| Medic Tent | medic | normal | 1500 | 900 | 5 | 246.2 | $247 | 5 × $209 = $1,045 | **$1,292** |
+| Maxed storm-runner factory | runner | lightning | 5000 | 600 | 8 | 1250 | $1,250 | 8 × $222 = $1,776 | **$3,026**, rejected |
+
+The maxed grunt factory is legal now. It was rejected at the ×1 scale.
+
+`burst` still never changes a price. The brute's ×3 wall damage and the kinds' aggro and impatience are still unpriced behaviour.
+
+### M8.8 economy: concentration property (`tests/cost-curve.test.ts`)
+
+Doubling a unit adds Σ 6k·c·x·r² of extra curve and saves one Base, because two halves pay Base twice.
+- The power factor makes doubling dearer still, because doubling quadruples r_HP·r_dmg.
+- The cooldown, splash and element factors multiply both sides equally.
+- An aura term is paid once by the doubled unit but twice by two halves.
+- The smallest c·max of the four big stats is speed's: 66 × 5 = 330. So a doubled unit can only be cheaper than two halves below r ≈ (50 / (6·330))^(1/3) = 0.29, which means a doubled ratio of 0.59.
+
+Measured by `conc.mjs` (re-run in `final-retune/` with the M8.8 balance retune): 20,000 seeded random half units per variant, plus the existing worst-case grid (one stat pushed, the others at their minimum, CD 10/20/45/60/600).
+
+| Doubled unit has a stat ≥ | normal | fire | splash 80 | ice + splash 80 |
+|---|---|---|---|---|
+| 50% (today's test) | 2 random + 70 grid failures (worst 0.948) | same | same | 3 + 70 |
+| 60% | 0 random, 0 grid (worst 1.022 / 1.009) | 0 / 0 | 0 / 0 | 0 / 0 |
+| **65% (M8.8 test)** | **0 / 16,607 random, 0 grid; worst 1.064 / 1.042** | 0, worst 1.064 / 1.043 | 0, 1.065 / 1.043 | 0, 1.065 / 1.043 |
+| 70% | 0, worst 1.078 / 1.078 | 0 | 0 | 0 |
+
+**How the test changes:**
+- `bigEnough` uses `ratio ≥ 0.65`, and the grid loops r from 0.325 to 0.5.
+- The random check keeps `checked > 3000` (about 4,150 of 5,000 qualify).
+- The test gains variants with an element and with splash 80.
+- Explicit checks:
+  - Max stats $6,660 > 2 × Half stats $1,536 = $3,072;
+  - Huge Tank $2,462 > 2 × Half Tank $1,122 = $2,244;
+  - Glass Cannon $1,359 > 2 × (300 HP, 150 dmg) $672 = $1,344.
+- "Without the curve" (k 0, power 0) must still fail as intended: doubled half stats $2,106 < 2 × $1,078 = $2,156.
+- Exact multipliers: a maxed term = **2×** linear, half max = **1.25×**.
+- The slope ratio at the max is 1 + 3k = **4**, so the "> 5" assertion becomes "> 3".
+
+### M8.8 economy: breakdown, warnings and levers
+
+```
+maxHealth 1750 costs $782.25: $525 base + $257.25 for being at 70% of the max
+damage 265 costs $707.66: $397.5 base + $310.16 for being near the max (88% of max)
+Power ×1.37: tough (70% of max HP) AND strong (88% of max damage). One tough unit plus one strong unit is cheaper.
+Splash ×1.53 (radius 40: everyone within 40 px of the target takes half)
+Element fire ×1.2
+Heal 60 HP, reach 120 px: $382.64 (before the cooldown factor)
+Aura might 30% in 100 px: +$226.67 (always on: after the factors)
+```
+
+- `UNIT_TOO_EXPENSIVE` names the biggest lever, checked in this order:
+  1. the cooldown factor (as today);
+  2. the power factor ("Lowering damage from 265 to 180 drops the power factor from ×1.37 to ×1.25 and saves $X");
+  3. splash ("Splash 80 → 40 saves $X");
+  4. the element ("normal instead of fire saves $X");
+  5. the aura or heal power and range;
+  6. the biggest stat.
+- `W_STAT_NEAR_MAX` keeps its 80% threshold and now says "costs 1.81× its normal price" at 90%.
+- The sentence "Maxed stats cost up to 2× their normal price" follows `curveK` (`1 + curveK`).
+- New warning `W_POWER_HIGH` when the power factor is ≥ 1.25 (§7 M8.8).
+- `CostBreakdown` gains `heal`, `aura`, `power`, `splash` and `element` parts with these texts. A factory's `production` gains `element`.
+
+### M8.8 example armies at $5,000
+
+Exact output of `node tables.mjs` in `final-retune/` (headers added):
+
+| Army | Units | **Cost** | Count |
+|---|---|---|---|
+| Templates | 4 Basic Soldier ($529) + 3 Basic Tower ($954) | **$4,978** | 7 |
+| All four templates | 4 Basic Soldier ($529) + 1 Basic Tower ($954) + 1 Basic Factory ($987) + 4 Basic Wall ($149) | **$4,653** | 6 + 4 walls |
+| Fire squad | 4 Fire Soldier ($635) + 2 Basic Tower ($954) + 1 Basic Soldier ($529) | **$4,977** | 7 |
+| Shatter squad | 2 Frost Archer ($733) + 5 Fire Soldier ($635) | **$4,641** | 7 |
+| Frost nest | 2 Ice Tower ($1,144) + 1 Frost Sniper ($1,806) + 1 Basic Soldier ($529) | **$4,623** | 4 |
+| Storm crowd | 7 Lightning Soldier ($635) | **$4,445** | 7 |
+| Mortar battery | 4 Mortar Tower ($1,179) | **$4,716** | 4 |
+| Fire splash nest | 2 Fire Mortar ($1,415) + 1 Basic Tower ($954) + 6 Basic Wall ($149) | **$4,678** | 3 + 6 walls |
+| Ice wall + snipers | 1 Frost Sniper ($1,806) + 1 Ice Tower ($1,144) + 1 Basic Tower ($954) + 6 Basic Wall ($149) | **$4,798** | 3 + 6 walls |
+| Bombard | 2 Fireball Catapult ($2,106) + 1 Basic Soldier ($529) | **$4,741** | 3 |
+| Blizzard + fire | 1 Blizzard Totem ($1,246) + 5 Fire Soldier ($635) + 1 Basic Soldier ($529) | **$4,950** | 7 |
+| Healer ball | 2 Half Tank ($1,122) + 1 Field Medic ($759) + 1 Shield Bearer ($982) + 1 Basic Soldier ($529) | **$4,514** | 5 |
+| Buffed rush | 1 War Drummer ($603) + 1 Wind Banner ($660) + 6 Basic Soldier ($529) + 2 Basic Wall ($149) | **$4,735** | 8 + 2 walls |
+| Shield wall | 2 Shield Bearer ($982) + 3 Basic Tower ($954) | **$4,826** | 5 |
+| Shrine fort | 1 Healing Shrine ($1,007) + 2 Basic Tower ($954) + 2 Basic Soldier ($529) + 3 Basic Wall ($149) | **$4,420** | 5 + 3 walls |
+| Glass battery | 2 Glass Cannon ($1,359) + 1 War Drummer ($603) + 3 Basic Soldier ($529) | **$4,908** | 6 |
+| Huge tank + friends | 1 Huge Tank ($2,462) + 1 Field Medic ($759) + 1 Basic Tower ($954) + 1 Basic Soldier ($529) | **$4,704** | 4 |
+| Elemental factories | 1 Ice Archer Nest ($2,119) + 1 Fire Brute Pack ($1,527) + 2 Basic Soldier ($529) | **$4,704** | 4 |
+| Storm runners | 2 Storm Runners ($2,023) + 1 Basic Soldier ($529) | **$4,575** | 3 |
+| Medic tent + tanks | 1 Medic Tent ($1,292) + 2 Half Tank ($1,122) + 2 Basic Soldier ($529) | **$4,594** | 5 |
+| Two max bricks | 2 Max-cost Brick ($2,480) | **$4,960** | 2 |
+
+Army sizes:
+- Templates still give 7 units.
+- Specialist armies land at 3-6 units and mixed ones at 6-9.
+- 11 cheap scouts ($441 each) still fit.
+- 9 Basic Soldiers ($4,761) is the biggest template rush, so the 10-soldier `RUSH` archetype becomes 9.
+- The mortar battery, fire splash nest, ice wall + snipers, shield wall, storm crowd and storm runners rows are the armies the balance test fields (§14 M8.8 balance); the spec's versions (2 mortars + 3 soldiers + 4 walls; 2 Shield Bearers + 2 towers + 6 walls; 7 Lightning Soldiers + 1 Basic Soldier; 2 Storm Runners + 2 soldiers, now $5,104) were re-made there.
+
+As before, budgets are never pooled between teammates, and the player count, map and team mode don't change them.
+
+### M8.8 economy: migration
+
+- **Templates** are server-owned and replaced at boot. The template version goes up, and the kit's `units/basic_*.js` files get the new arithmetic in their header comments. The new stats:
+  - Basic Soldier 600 HP / 50 dmg;
+  - Basic Tower 625 HP / 75 dmg / range 140;
+  - Basic Wall 2,000 HP;
+  - Basic Factory 1,500 HP.
+
+  The templates show element and support examples in comments.
+- **Stored designs** (players' units and armory entries) are re-priced with the new formula and bounds through the existing re-price path:
+  - **Below a new minimum** (HP < 50, wall < 250, factory < 500): the unit gets `status: "invalid"` and `STAT_OUT_OF_RANGE`, with the fix "This unit was built for the $1,000 game: multiply maxHealth and damage by 5 (it would then cost $X)". The price is still computed. The unit is dropped from selections with the usual toast.
+  - **Legal but old-scale** (record `scaleVersion < 2`, HP ≤ 500 and damage ≤ 60, not a template): a non-fatal `W_OLD_SCALE` warning on the card and in `list_my_units`: "Made for the old game: about 5× weaker and 5× cheaper. Ask Claude to multiply maxHealth and damage by 5."
+  - **Never silently multiply stats.** The player's source would disagree with the battle, and Claude's next edit would shrink the unit again. Records gain `scaleVersion: 2` when they are submitted or resubmitted.
+- **Config patches** (`configPatch` in `state.json`, and the admin quick settings):
+  - `migrateConfigPatch` gets a v2 step. A patch without `economyVersion: 2` has its **scale-sensitive keys dropped**: `cost.*`, `caps.budget`, `caps.unitCost`, `stats.bounds.maxHealth/damage/wallHealth/factoryHealth` and `factory.minions.*.maxHealth/damage`.
+  - The rest of the patch is kept (timers, sudden death, copy caps, scoring, map). The server logs the dropped keys, and /admin shows a banner: "Your economy overrides were for the $1,000 game and were reset."
+  - A mechanical ×5 conversion is rejected, because an old `curveK: 2` or `cost.hp` would silently undo this retune.
+- **Timing:** the migration runs at boot. *(As built:* it runs in every phase. Keeping a $1,000-game patch for a running match would mix its old budget and coefficients with the ×5 defaults and templates, so a boot mid-match drops the old keys too, re-prices the units and logs a warning that suggests a New match.*)*
+- **Replays and past battles** keep their recorded numbers. The replay header carries `scaleVersion`, and the past-battles UI labels v1 reports "($1,000 game)". Rendering uses `hp / maxHp`, so old replays play unchanged.
+- **Event day:** running `npm run wipe` before the event avoids all of this (§15). The path above is for rehearsal data.
 
 ---
 
@@ -678,7 +1051,7 @@ Every player starts with the two templates (M8.5: four, adding Basic Wall and Ba
 | 8 | **Cost.** It must be finite and ≤ cap. The error names the most expensive term. | `UNIT_TOO_EXPENSIVE` |
 | 8b | **Sprite.** If `sprite` exists, call it twice (50 ms each), JSON-copy the results (max 200 KB) and check them per §5.1. Store the normalized spec. If it is missing, warn. | `SPRITE_*` (§5.1), `W_NO_SPRITE` |
 | 9 | **Dry-run `update()`.** 3 synthetic worlds (no enemies / one enemy in range, measured edge to edge like the engine / 3 enemies far away), 5 ticks each. The worlds use an 800×800 arena for the first two and a 1200×1200 one for the third, and the first one includes a teammate's unit (other `ownerId`, same `teamId`) in `allies`, so code that hard-codes 800 or `ownerId` still runs (§9.2). 20 ms per call. It must not throw, and each return must be a valid Action or undefined. | `UPDATE_MISSING`, `UPDATE_THREW`, `UPDATE_TIMEOUT`, `BAD_ACTION` |
-| 10 | **Warnings** (non-fatal): never attacks when an enemy is in range, soldier never moves, damage 0, returns undefined, update is slower than 2 ms, cooldown above 60. | `W_NEVER_ATTACKS`, `W_NEVER_MOVES`, `W_ZERO_DAMAGE`, `W_RETURNS_NOTHING`, `W_SLOW`, `W_SLOW_NO_DISCOUNT` |
+| 10 | **Warnings** (non-fatal): never attacks when an enemy is in range, soldier never moves, damage 0, returns undefined, update is slower than 2 ms, cooldown above 60. M8.8 adds: heal support never heals, very tough and very strong at once, made for the old scale. | `W_NEVER_ATTACKS`, `W_NEVER_MOVES`, `W_ZERO_DAMAGE`, `W_RETURNS_NOTHING`, `W_SLOW`, `W_SLOW_NO_DISCOUNT`; M8.8: `W_HEAL_NEVER_USED`, `W_POWER_HIGH`, `W_OLD_SCALE` |
 
 Steps 1-8 ship in M1. Steps 9-10 and the full malicious fixture set ship in M6 (§16).
 
@@ -697,6 +1070,26 @@ Steps 1-8 ship in M1. Steps 9-10 and the full malicious fixture set ship in M6 (
 - **Step 9 (dry run):** `self.factory` has `stored: 0`, `burst`, `produces`, `order: 'attack'`, `orderTargetId: null`; the worlds' `allies` include a friendly tower to guard. Valid factory returns add `command` and `release`. `command` with an `order` that isn't one of the four, or `swarm`/`guard` without a string `targetId`, or a non-finite `destination`, is **`BAD_ACTION`** with a fix that shows the right shape ("swarm needs targetId: the id of an ENEMY, e.g. { action: 'command', order: 'swarm', targetId: target.id }. When there is no enemy, return { action: 'command', order: 'attack' } instead."). A `swarm` whose `targetId` is not an enemy in that world, or a `guard` whose `targetId` is not an ally, gives the non-fatal **`W_ORDER_TARGET`** ("swarm targets must come from `enemies`, guard targets from `allies` (or self.id)"); the engine would fall back to attack / defend. `command`/`release` from a soldier or tower give `W_ACTION_NOT_FOR_TYPE` like `rally`.
 - **Step 10 (warnings):** **`W_BURST_NEVER_FULL`** when `burst` > E ("This factory makes only 2 minions per battle, so a burst of 4 never fills up: they leave when it runs out. Lower burst to 2 or make minions faster.").
 - **Stored unit:** `stats.produces` and `stats.burst` for factories (older stored factories without them are read as grunt / 1). The dry run records which orders `update()` gave (`dryRunOrders`, e.g. `['swarm', 'attack']`) so the /play card can show them (§12.5).
+
+**Elements, splash and support (M8.8, §5.4-§5.6).**
+- **Steps 5 and 6 (stats).** `element`, `splashRadius`, `support`, `supportPower`, `supportRange` and `minionElement` are optional stats, read like the others (own data properties; getters are refused).
+  - `element`, `minionElement` and `support` reuse the `produces` pattern: `STAT_WRONG_TYPE` or `STAT_OUT_OF_RANGE` with `allowed: {oneOf}`. The fix lists the allowed strings and names the closest one for a near miss ("'lightening' → 'lightning'", "'healing' → 'heal'").
+  - `splashRadius`, `supportPower` and `supportRange` are checked like every stat: `STAT_NOT_FINITE`, then `STAT_OUT_OF_RANGE`. The support bounds depend on the kind (§5 bounds table).
+  - `support` without `supportPower` or `supportRange` → `STAT_MISSING`. The fix gives an example for that kind, e.g. "this.supportPower = 60; this.supportRange = 120; // heal 60 HP, reach 120 px".
+  - `supportPower` or `supportRange` without `support` → `W_STAT_IGNORED`.
+  - The §5.6 per-type table decides what is ignored: `W_STAT_IGNORED` with a type-specific fix ("use this.minionElement" on a factory, "medics never attack" for `minionElement` with `produces: 'medic'`).
+  - The bounds change to ×5 (§5): `maxHealth` 50-2,500, `damage` 0-300, walls 250-7,500, factories 500-5,000. Error and fix examples use the new numbers ("damage is 999 but must be between 0 and 300").
+- **Step 8 (cost):** the §6 M8.8 formula and breakdown, and the new levers in `UNIT_TOO_EXPENSIVE`. A factory's production line carries the element ("Production: 5 fire brutes × $253 …").
+- **Step 9 (dry run):**
+  - Views carry `element`, `splashRadius`, `support` and `status`. One world has a burning ally and a frozen enemy, so code that reads `status` runs.
+  - Valid soldier and tower returns add `heal` (a string `targetId`; anything else is `BAD_ACTION` with the shape in the fix).
+  - `heal` from a unit without `support: 'heal'`, or from a factory, gives `W_ACTION_NOT_FOR_TYPE`. The dry run records whether `heal` was returned.
+- **Step 10 (warnings):**
+  - `W_HEAL_NEVER_USED`: the unit has heal support, but the dry run never returned `heal`. Fix: "Return { action: 'heal', targetId } for a hurt ally in supportRange".
+  - `W_POWER_HIGH`: the power factor is ≥ 1.25. Fix: "Very tough AND very strong costs ×1.37 here; one tough unit plus one strong unit is cheaper" (with the unit's own factor).
+  - `W_ZERO_DAMAGE` gains a line: "fire, lightning and splash scale with damage, so they do nothing at damage 0 (ice still freezes)". It is not given to a unit that has support.
+  - `W_OLD_SCALE` (re-price only, §6 M8.8 migration).
+- **Stored unit:** `stats` always has `element`, `splashRadius` and `support` (null, or `{kind, power, range}`), and factories have `minionElement`. Records gain `scaleVersion: 2`.
 
 A stored unit is `{ unitId, ownerId, version, status: "valid"|"invalid", source, compiledJs, stats: StatsSnapshot (Object.freeze, includes the resolved size), sprite: SpriteSpec | null, spriteHidden: boolean, cost, breakdown, sha256, createdAt }`.
 
@@ -729,7 +1122,7 @@ A stored unit is `{ unitId, ownerId, version, status: "valid"|"invalid", source,
 ```
 
 - `SYNTAX_ERROR`, `*_THREW` and `BAD_ACTION` include `line`, `column`, the `excerpt` (3 lines of source), and the thrown `errorMessage`.
-- `UNIT_TOO_EXPENSIVE` includes `breakdown` and a `fix` that names the biggest lever. Example (Scout with cooldown 10, $902): `"Cost is $902 but the max is $500. The ×6 cooldown factor is the biggest cost: raising attackCooldown from 10 to 20 makes it ×3 ($451). The most expensive stat is speed: 4 costs $109.44 before the factor ..."`.
+- `UNIT_TOO_EXPENSIVE` includes `breakdown` and a `fix` that names the biggest lever. Example (Scout with cooldown 10, $902): `"Cost is $902 but the max is $500. The ×6 cooldown factor is the biggest cost: raising attackCooldown from 10 to 20 makes it ×3 ($451). The most expensive stat is speed: 4 costs $109.44 before the factor ..."`. At M8.8 the same scout costs $3,998 against a $2,500 cap, and cooldown 20 brings it to $1,999. The levers follow the §6 M8.8 order.
 - A success returns `{ ok: true, unit: {unitId, version, stats, cost, breakdown}, warnings, playerHint }`.
 
 ---
@@ -799,24 +1192,24 @@ The `Runner` interface is shared by all modes: `create(player, units) → { spaw
 | Auto-place | at lock (START or Force start), any player with zero placements gets an automatic layout: "Copy last layout" if it is still valid and within budget, otherwise their selected types are placed greedily (cheapest first, round-robin across types) in the front cells up to the budget. Toast: "X's army was placed for them." Nobody gets an empty zone. **M8.5:** walls are never auto-placed, factories are placed after the other types, and a player whose placement has walls but no fighter gets fighters auto-placed in the free cells (the walls stay). |
 | Instance ids | `${seat}-${row}-${col}` (zone-local cell), assigned at lock time. |
 | Radii | each unit's `size` stat (6-20; default soldier 10, tower 14). Sent in the views as `radius`. Used for range, separation, clamping to the arena, and projectile hits. M8.5: walls 20 (range only; the body is the 40×40 square), factories 18, minions 8 (§5.2). |
-| Tick order | 1) decrement every `cooldownRemaining` (not below 0), then build views from the start-of-tick state; 2) call all players' `__tick` **in parallel** (`Promise.all`), then **apply the results in seat order, then instanceId order**, never in resolve order; 3) validate the actions; 4) apply moves for all soldiers; 5) separation; 6) fire attacks (firing sets `cooldownRemaining = attackCooldown`); 7) advance projectiles and apply hits; 8) apply sudden-death damage; 9) remove the dead (hp ≤ 0); 10) check elimination. All players' decisions use the same snapshot, so resolution is simultaneous. **M8.5** (§9.3): step 2 also computes the minion AI from the same snapshot; step 3 accepts `rally`/`hold` from factories; step 4 moves soldiers and minions with wall steering; step 5 ends with the wall push; a new step 9b runs factory production (new minions appear at the end of the tick and act from the next); step 10 counts fighters and crumbles an eliminated side's walls and spent factories. |
+| Tick order | 1) decrement every `cooldownRemaining` (not below 0), then build views from the start-of-tick state; 2) call all players' `__tick` **in parallel** (`Promise.all`), then **apply the results in seat order, then instanceId order**, never in resolve order; 3) validate the actions; 4) apply moves for all soldiers; 5) separation; 6) fire attacks (firing sets `cooldownRemaining = attackCooldown`); 7) advance projectiles and apply hits; 8) apply sudden-death damage; 9) remove the dead (hp ≤ 0); 10) check elimination. All players' decisions use the same snapshot, so resolution is simultaneous. **M8.5** (§9.3): step 2 also computes the minion AI from the same snapshot; step 3 accepts `rally`/`hold` from factories; step 4 moves soldiers and minions with wall steering; step 5 ends with the wall push; a new step 9b runs factory production (new minions appear at the end of the tick and act from the next); step 10 counts fighters and crumbles an eliminated side's walls and spent factories. **M8.8** (§9.4): step 1 also lowers cooldowns and the factory timers by the tempo, counts down status timers, resets the heal room every 60 ticks and computes auras; step 3 accepts `heal`; step 4 moves at `speed × tempo`; step 6 bakes might into each shot and queues heals; step 7 runs the element and splash pipeline, then 7b applies the queued heals and 7c the due burn pulses. |
 | Movement | straight line toward the destination, ≤ speed px/tick, clamped to the arena. M8.5: walls in the way are slid along (§9.3 Wall steering). M8.7: when walls block the straight line, the engine routes the body round them over the 40 px cell grid and steers it to the next waypoint instead (§9.3 Routing round walls). |
 | Separation | 2 relaxation passes. Overlapping pairs are pushed apart along the centre line. Towers never move: the soldier takes the full push. M8.5: factories are fixed like towers, and each pass ends by pushing soldiers and minions out of wall squares (§9.3). |
 | Attacks | range is **edge to edge**: in range when `distance − rA − rB ≤ range + 0.5`. A range stat ≤ 50 counts as melee: instant hit with a swipe animation. Otherwise the attack spawns a **homing projectile** (10 px/tick) that always hits if the target is alive and vanishes if it dies. Range is checked when firing. `cooldownRemaining` starts at 0 at spawn. M8.5: walls, factories and minions are valid targets; projectiles fly over walls. |
 | Sudden death | from tick 3000 (50 s) a **safe circle** centred on the arena centre (S/2, S/2) shrinks linearly from radius 570 (covers everything) to 60 at tick 5400. Both radii are given for the 800 arena and **scaled by S/800** (rounded): 570→60 at 800, 741→78 at 1040, 855→90 at 1200 (§9.2). Units outside it lose 7% of maxHP per second (M8.5: every body, walls, factories and minions included). The ring is drawn on the projector and sent in `world.safeZone`, so units can react. This forces contact: towers are capped at range 300 and on Corners adjacent zones' nearest cells are 360 px apart (diagonal 509; other maps in §9.2), so without it two all-tower armies could never touch each other and a max-HP tower turtle would win by sitting still. Ranking at 90 s is still by living cost (user rule). Radius, start tick and damage rate are config. **Tuned in M6** against `tests/balance.test.ts` (matrix in `docs/balance.md`): the original 60 s / 4%/s let all-tower armies on Duel, Corners 4 and Ring 8 reach 90 s without losing a single tower (a pure tie); 50 s / 7%/s kills at least one tower in every all-tower battle on every map style. |
 | Friendly fire | none. Attacking an ally (your own unit, or in team mode any teammate's unit) or a dead unit means idle. Projectiles only ever hit their (enemy) target. Separation pushes every pair of bodies, friend or foe. |
-| Elimination | a **side** (free-for-all: a player; team mode: a team) with zero living units is eliminated (M8.5: zero living **fighters**, §9.3). A team is eliminated on the tick its last member's last unit dies; a member whose units are all dead just watches. With auto-place, nobody starts empty. |
+| Elimination | a **side** (free-for-all: a player; team mode: a team) with zero living units is eliminated (M8.5: zero living **fighters**, §9.3; M8.8: damage-0 support units and medic-only factories are not fighters, §9.4). A team is eliminated on the tick its last member's last unit dies; a member whose units are all dead just watches. With auto-place, nobody starts empty. |
 | End | when ≤ 1 side (player or team) has living units (M8.5: fighters), or at tick 5400 (sim clock). The **visible** end is when playback reaches that frame. |
 | Skip | `POST /admin/phase/skip` in BATTLE ends the battle at the **current playback tick**. Ranking uses the unit state from the recorded frame at that tick (as a timeout), never the sim's lead tick. The sim is stopped and the result is released at once. |
 | Ranking | sides are ranked: survivors rank above the eliminated. On timeout, surviving sides are ranked by the **total cost of their living units** (full unit cost, not scaled by HP; M8.5: the living value per type of §9.3, walls $0; for a team, the sum over all its members' living units = "team living cost"). Eliminated sides are ranked by elimination tick (later is better). Players kicked during this battle are removed before ranking (§4); in team mode their units don't count towards the team's living cost, and a team whose remaining members were all kicked is removed. |
 | Ties | equal value or the same elimination tick share a place. Tied sides get the points of the better place, and the next place is skipped (for a team, every member gets them). |
 | Points | **round points = place points + damage bonus + value bonus** (config `scoring.*`). With P = players ranked this round and T = sides (T = P free-for-all): **Place:** a player whose side is in place k gets `round((P − 1) × (T − k) / (T − 1))`. Free-for-all that is P − k: 1st gets P − 1 down to 0 for last (2p 1/0, 3p 2/1/0, 4p 3/2/1/0, 8p 7..0). In team mode every member gets the team's place points (§9.2). **Damage bonus:** `round(Dmax × myDamage / topDamage)` with `Dmax = scoring.damageBonusMax (2) × P / 4`. **Value bonus:** `round(Vmax × myValueDestroyed / topValueDestroyed)` with `Vmax = scoring.valueBonusMax (1) × P / 4`. Bonuses are always individual, and top values are taken over all players in the battle. Rounding is half-up (so the top earner gets `round(Dmax)` and `round(Vmax)`, e.g. 2p 1 + 1, 4p 2 + 1, 8p 4 + 2). A bonus is 0 when the top value is 0 or P = 1. The bonus maxima scale with P so they keep about the same weight as 1st place, so an aggressive army that dies 2nd can outscore a turtle that survives. |
-| Damage metric | **effective** damage dealt to enemy units: `min(hit, targetHpBeforeHit)` (no overkill). It is credited to the attacker's owner when the hit lands (projectiles on impact). Sudden-death damage is credited to nobody. M8.5: hits on walls, factories and minions count; a minion's hits go to its factory's owner and, in `topUnits`, to the factory's type ("Basic Factory + minions"). |
-| Value destroyed | when a unit's hit takes an enemy to hp ≤ 0, the attacker's owner is credited the victim's **full unit cost** and a kill (M8.5: walls their full price, factories their living value at death, minions $28, §9.3). Hits in the same tick resolve in seat order, then instanceId order (deterministic), so exactly one owner gets each kill. Deaths from sudden death credit nobody. |
-| Badges | titles only, **no points**, shown on RESULTS (projector, /play) and in reports: 🏆 **Last Standing** (1st place; in team mode **every member of the 1st-place team**, even one whose units died), 💥 **Biggest Hitter** (most damage), 🗡️ **Giant Slayer** (most value destroyed), 🛡️ **Iron Wall** (most living army value at the end). Ties share a badge. A badge needs a value > 0. The other three badges are always individual. |
+| Damage metric | **effective** damage dealt to enemy units: `min(hit, targetHpBeforeHit)` (no overkill). It is credited to the attacker's owner when the hit lands (projectiles on impact). Sudden-death damage is credited to nobody. M8.5: hits on walls, factories and minions count; a minion's hits go to its factory's owner and, in `topUnits`, to the factory's type ("Basic Factory + minions"). M8.8: main hits, splash, zaps, shatter and burn pulses all count, credited to the source's owner and type; healing never counts as damage, value destroyed or a bonus (§9.4). |
+| Value destroyed | when a unit's hit takes an enemy to hp ≤ 0, the attacker's owner is credited the victim's **full unit cost** and a kill (M8.5: walls their full price, factories their living value at death, minions $28, §9.3). Hits in the same tick resolve in seat order, then instanceId order (deterministic), so exactly one owner gets each kill. Deaths from sudden death credit nobody. M8.8: the full price includes element, splash and support (killing a $759 medic credits $759), minions use their element-aware minionValue, and a kill by a burn pulse, splash, zap or shatter credits the source as in §9.4. |
+| Badges | titles only, **no points**, shown on RESULTS (projector, /play) and in reports: 🏆 **Last Standing** (1st place; in team mode **every member of the 1st-place team**, even one whose units died), 💥 **Biggest Hitter** (most damage), 🗡️ **Giant Slayer** (most value destroyed), 🛡️ **Iron Wall** (most living army value at the end). Ties share a badge. A badge needs a value > 0. The other three badges are always individual. **M8.8** adds 💚 **Best Medic** (most effective healing: HP actually restored, medic minions included) and ⚡ **Combo Master** (most shatters + overload zaps), with the same rules (> 0 to win, ties share, individual, no points). |
 | Skip / kick | on Skip, metrics are taken from the recorded counters at the playback tick (same as the ranking). Players kicked during the battle get no points or badges, but damage dealt **to** them still counts for others. |
 | Match standings | individual: total points, then total damage across the match as a tie-break, then a shared place. Team mode adds a **team table** (§9.2): team points = the average of its current members' match totals, then the sum of the team's place points, then a shared place. |
-| Determinism | instance ids are deterministic (above) and units iterate sorted by instance id; there's a seeded PRNG and no `Math.random` in the engine. Placement order (debounced autosave) doesn't matter. Given identical sandbox results, the sim is bit-identical. Wall-clock timeouts can differ between runs, so **replay plays back recorded frames** rather than re-simulating. |
+| Determinism | instance ids are deterministic (above) and units iterate sorted by instance id; there's a seeded PRNG and no `Math.random` in the engine. Placement order (debounced autosave) doesn't matter. Given identical sandbox results, the sim is bit-identical. Wall-clock timeouts can differ between runs, so **replay plays back recorded frames** rather than re-simulating. M8.8: lightning draws from its own seeded stream (`elementRng`, §9.4), so a battle without lightning is bit-identical to one before M8.8. |
 | Frames | every 2nd tick, `{t, units:[[instanceId,x,y,hp,flags]], projectiles, safeZoneRadius, events:[spawn,hit,death,disable,fire]}`. `flags` include moved, fired and facing-left bits, which drive the sprite animation and mirroring (§5.1). Sim coordinates stay top-down; isometric is purely a rendering projection (§12). M8.5 additions in §9.3 Frames. | The last battle is kept in memory and in `data/replays/round-N.json`. |
 
 ---
@@ -982,6 +1375,116 @@ Code: `sim/walls.ts` (wall grid and wall push), `sim/steering.ts`, `sim/factory.
 
 **Config additions (M8.7):** `sim.replanTicks: 10` (positive integer). `ONE_CELL_MAX_RADIUS` (18), `WALL_STEP` (100,000), the 8-node look-ahead, the 0.5 px clearance and the 64-field cache are code constants in `sim/pathing.ts`.
 
+### 9.4 Elements, splash and support in the sim (M8.8)
+
+Code (proposed split): `sim/effects.ts` (hit pipeline, burn, freeze, splash, zaps), `sim/support.ts` (auras, heal room, heal queue), plus changes to `engine.ts`, `projectiles.ts`, `actions.ts`, `movement.ts`/`steering.ts`/`pathing.ts`, `minion.ts`, `factory.ts`, `scoring.ts`, `topUnits.ts`, `value.ts`, `frames.ts` and `suddenDeath.ts`. Rules: §5.4 and §5.5. Constants: config `elements.*` and `support.*`.
+
+**Hit pipeline.** All hits of a tick still land in seat → instanceId → projectile id order (`resolveHits`). For each landed hit by attacker A on target T:
+1. `d = A.damage × (1 + might%)`. Might is taken at **fire time**, and the projectile carries it together with A's element and splashRadius. A minion hit on a wall is also × `wallDamageMultiplier`.
+2. **Wall target:** `T.hp −= d`, and nothing else happens.
+3. **Shatter:** if A is fire and T is frozen, `d ×= 1.5`, T thaws (`frozen = 0`), and a `shatter` event is recorded.
+4. **Apply:** `T.hp −= d × (1 − T.shield%)`. The effective damage (`min(hit, hpBefore)`) is credited to A's owner and type.
+5. **Status** (T is not a wall):
+   - fire: `T.burn[A.owner].pool += 0.5 × d`, using the d from before the shatter;
+   - ice: `T.frozen = 120` (it refreshes and never goes higher).
+6. **Splash** (R = A.splashRadius > 0): every other living enemy body E with `dist(T.centre, E.centre) − E.radius ≤ R` takes a splash hit, in instanceId order. Walls and stored minions are never splashed.
+   - A splash hit runs steps 3-5 with `d_s = 0.5 × d`. So fire splash burns and can shatter, and ice splash freezes.
+   - One `splash {x, y, r, element}` event is recorded.
+   - The query uses the 40 px spatial hash once more than 64 bodies are alive.
+7. **Lightning** runs on main hits only, never on splash hits, zaps or burn pulses.
+   - Draw `u = elementRng()`. If `u < 0.35`, zap the nearest other living enemy of A that is not a wall, whose edge is within 100 px of T's edge, and that this attack hasn't already hit (main or splash). Ties go to the lower instanceId.
+   - The victim takes `d × (1 − its shield%)`: plain damage with no status.
+   - **Overload:** if T was burning **before this hit**, the zap hops once more, from the first victim to its nearest new enemy within 100 px.
+   - One `arc {from, to: [ids]}` event is recorded. A zap starts from T's last position even when this hit killed T.
+
+**Credit.** Every point of damage (main, splash, zap, burn, shatter) goes to A's owner and type as effective damage, and kills credit value destroyed as today. A minion's credit goes to its factory's owner and type. Sudden-death damage still credits nobody, and shield never reduces it.
+
+**Fire: burn.**
+- **State:** each body holds at most one burn record **per owning player**: `{pool, pulsesLeft, nextPulseTick, lastType}`. That is at most 8 per body.
+- **A new fire hit from that owner:** `pool += 0.5 × d`, `pulsesLeft = 6`, `lastType` = A's type. The phase is kept: pulses stay 30 ticks apart, counted from the record's first hit.
+- **A pulse** (every 30 ticks): the body takes `pool / pulsesLeft × (1 − shield%)`. Then `pool −=` that amount and `pulsesLeft −= 1`. The record is dropped when it reaches 0.
+- **Pulses can kill.** They credit the owner and `lastType` even after the attacker died, like a projectile in flight.
+- **Value:** exactly +50% of the fire damage if the target lives 3 s. Repeated hits add linearly, so there is no exponential stacking.
+- **Immune:** walls. Removed by any heal on the body (cleanse).
+
+**Ice: freeze.** Every ice hit sets `frozen = 120`: any damage (also 0), main or splash. While frozen, the body's tempo is 0.65:
+- its move step is `speed × 0.65 × (1 + haste%)`;
+- `cooldownRemaining` drops by `0.65 × (1 + haste%)` per tick. It is a float, and views show `Math.ceil`;
+- a factory's production timer gains 0.65 per tick, which slows burst accumulation too.
+
+Walls are immune. A freeze is removed by a shatter or a heal.
+
+**Interactions:**
+
+| Body | Burn | Freeze | Zapped | Splashed | Healed | Auras |
+|---|---|---|---|---|---|---|
+| soldier, tower | yes | yes | yes | yes | yes | yes |
+| minion | yes | yes | yes | yes | yes | yes |
+| factory | yes | builds slower | yes | yes | no | no |
+| wall | no | no | no | no | no | no |
+| stored minion | no (not a body) | no | no | no | no | no |
+
+**Tick order** (additions to §9 only):
+1. Decrement cooldowns by the tempo. Status timers drop by 1. On `tick % 60 == 0`, every body's `healRoom` resets to `0.05 × maxHp`, or 0 from `suddenDeath.startTick`. **Auras** are computed from start-of-tick positions: each body's strongest haste, might and shield. Views are built with `status`.
+2. Player `__tick` and the minion AI (medics decide here).
+3. Validate (`heal` joins the actions).
+4. Moves at `speed × tempo`.
+5. Separation.
+6. Fire attacks, with might baked into the projectile. **Queue heals.**
+7. Land hits by the pipeline above, in seat → instanceId → projectile id order.
+   - **7b:** apply the queued heals in seat → instanceId order. A body with hp ≤ 0 after step 7 is not healed (dead is dead).
+   - **7c:** burn pulses that are due, in body instanceId order, then owner seat order.
+8. Sudden death.
+9. Remove the dead.
+   - **9b:** factory production, with `timer += tempo`.
+10. Elimination.
+
+**Heals (step 7b).**
+- **Amount:** `min(supportPower, maxHp − hp, healRoom)`, and `healRoom` goes down by the amount.
+- **Cleanse:** a burning or frozen target is only cleansed (amount 0, a `cleanse {from, to}` event).
+- **Otherwise** a `heal {from, to, amount}` event is recorded.
+- **Credit:** the effective healing (HP actually restored) is credited to the healer's owner and type for the report and Best Medic. A medic minion's healing goes to its factory's owner and type.
+
+**Elimination change.** A side whose remaining bodies are only walls, spent factories, medic-only factories and **damage-0 units** (pure support) is eliminated, and those bodies crumble like walls (a `crumble` event, credited to nobody). At timeout, living value still counts pure support units at their full price while they are alive, even though they are not fighters.
+
+**Determinism.**
+- A new stream `elementRng = mulberry32(deriveSeed(battleSeed, 0xE1E))` is drawn **exactly once per lightning main hit**, in hit order.
+- The separation `rng` is untouched, so a battle without lightning is bit-identical to one before M8.8.
+- Burn, freeze, splash, auras, heals and shatter are pure functions of state.
+- Shuffled placements + the same seed + the fake runner still give identical frames.
+
+**Interplay with M8.7 routing.** The pathing work landed after the design spec's frozen snapshot (`743f2bf`), so these points adapt the spec to it:
+- A frozen or hasted body follows the same flow field and waypoint. Only its step length changes (`speed × tempo`). The planner's "within `speed` px of the waypoint" re-plan check and the "< 25% of a step" blocked rule use that **effective** step. So a frozen unit is never mistaken for a blocked one.
+- Medic minions route like every minion. Their "follow the nearest non-medic minion of my factory" destination is a moving target, which the existing re-plan slot picks up (a new destination cell within `replanTicks`).
+- Flow fields don't depend on elements or auras, so the cache is unchanged.
+
+**Frames.**
+- `units` rows gain 5 flag bits: `BURNING` 128, `FROZEN` 256, `HASTED` 512, `MIGHTY` 1024 and `SHIELDED` 2048. Row size doesn't change.
+- Events:
+  - `hit` gains `kind: 'hit' | 'splash' | 'burn' | 'zap' | 'shatter'` and `element`;
+  - new events `arc {from, to[]}`, `splash {x, y, r, element}`, `shatter {id, amount}`, `heal {from, to, amount}` and `cleanse {from, to}`.
+- `battle:reveal` stats carry `element`, `splashRadius` and `support`, and factory stats carry `minionElement`. The `minions` entry gains `medic` when it is fielded.
+- `fac` is unchanged.
+
+**Performance.**
+- Splash is one radius query per main hit.
+- A zap is at most 2 nearest-enemy queries.
+- Auras are one radius query per support unit per tick.
+- Burn is O(records), at most 8 per body.
+- Event volume in the worst case (about 96 code units + 40 minions, each hitting about once a second with splash and burns) is about 400 events/s. The client already batches per frame.
+- **Target unchanged: sim p99 < 8 ms/tick.** The timing pass adds an elements-and-support-heavy Ring 8 mix (§14).
+
+**Scoring and reports (with §9 Points, Badges, top units).**
+- **The ×5 rescale on its own changes no outcome.** HP, damage, prices and minion stats are all ×5, sudden death is a percentage, and geometry is unchanged. So every time-to-kill is identical, and so are the place points and the ratio bonuses (`round(max × mine/top)`). `tests/rescale.test.ts` proves it.
+- Damage metric, value destroyed and badges are as in §9 (M8.8 notes there).
+- **Battle report** (REST and MCP, past battles):
+  - per type: a damage split `{hit, splash, burn, zap, shatter}`, healing done and cleanses;
+  - aura **assist** (extra damage from my might + damage my shields prevented). It is display only: "Your War Drummer added 1,240 damage".
+  - `topUnits` still ranks by damage, and each entry gains `healing`.
+- UI numbers get thousands separators everywhere ($4,978, 12,480 dmg).
+
+**Config additions (M8.8):** `cost.powerFactor`, `cost.splash`, `cost.element`, `cost.heal` and `cost.aura`; the ×5 values of every money, HP and damage key; `stats.bounds.splashRadius` and `stats.bounds.support`; `factory.minions.medic`; `elements`; `support`; `economyVersion: 2` (full table in §6 M8.8). The schema's `superRefine` keeps every minion kind a legal soldier (the medic: damage 0, heal and reach inside the support bounds).
+
 ---
 
 ## 10. API and MCP
@@ -1056,7 +1559,8 @@ Both kit zips build the MCP URL from the **`Host` header of the download request
 | POST `/admin/players/:id/pin` | admin | `{pin}` | `{ok}` |
 | POST `/admin/players/:id/rotate-key` | admin | | `{apiKey}` (deferrable, §16) |
 | POST `/admin/players/:id/units` | admin | `{source, unitId?, baseVersion?, dryRun?}` | §7 result. Without `dryRun` it is an on-behalf submit (PLAN only, else `PHASE_CLOSED`). With `dryRun: true` it validates in any phase. A stale `baseVersion` → `UNIT_CHANGED` (409). |
-| GET/PUT `/admin/config` | admin | partial config | `{config, repriced:[…], invalidated:[…]}` (PUT allowed in LOBBY/PLAN/RESULTS; refused if a template would become invalid) |
+| GET/PUT `/admin/config` | admin | partial config | `{config, repriced:[…], invalidated:[…], economyReset:[…]}` (PUT allowed in LOBBY/PLAN/RESULTS; refused if a template would become invalid). M8.8: `economyReset` lists the $1,000-game override paths the v2 migration dropped at boot (the banner) |
+| DELETE `/admin/config/economy-reset` | admin | | M8.8: dismisses the economy-reset banner → the GET response with `economyReset: []` |
 | GET `/admin/overview` | admin | | everything, including sources (for the "show details" toggle), teams, and zone owners for this round |
 | GET `/admin/metrics` | admin | | diagnostics (M6): `{pid, phase, round, rssMb, heapUsedMb, heapTotalMb, externalMb, wsClients, battle: {round, players, units, simDone, ticks, tickMs: {p50, p99, p99Warm, max, mean, over8}, simWallMs, playback: {tick, speed, paused, stalls, stalledMs}} \| null}` for the running battle, else the last one. Used by `npm run loadtest` |
 | POST `/admin/wipe` | admin | `{confirm:"WIPE"}` | deletes `data/` and resets (players and so all Claude seat assignments go; the setup settings, incl. the seat password, stay) |
@@ -1144,6 +1648,22 @@ Selection and placement are **not** MCP tools. Players do those on the web page.
 | Validation errors | `BURST_NOT_INTEGER` (error), `W_ORDER_TARGET`, `W_BURST_NEVER_FULL` (warnings); `produces`/`burst` reuse `STAT_WRONG_TYPE`, `STAT_OUT_OF_RANGE`, `W_STAT_IGNORED`; `BAD_ACTION` texts for `command`. Each with `fix` and `playerHint`. |
 | `GET/PUT /admin/config` | `factory.minions.*`, the order radii, `stats.bounds.burst`; the template check is unchanged (the Basic Factory makes grunts). Admin quick settings gain per-kind HP, damage and speed, plus the brute's wall multiplier. |
 
+### 10.6 Elements, splash and support in the API (M8.8)
+
+| Where | Change |
+|---|---|
+| Shared types (`shared/protocol.ts`, `contract.ts`) | `Element` and `SupportKind`; `MinionKind` gains `medic`; `StatsSnapshot` gains `element`, `splashRadius`, `support` (`{kind, power, range}` or null) and `minionElement`; `StatusView` and `SupportView`; the `heal` action; `FRAME_FLAGS` gains `BURNING` 128, `FROZEN` 256, `HASTED` 512, `MIGHTY` 1024 and `SHIELDED` 2048; events `hit.kind`, `arc`, `splash`, `shatter`, `heal` and `cleanse`; `BADGE_IDS` gains `bestMedic` and `comboMaster`; `CostBreakdown` gains `heal`, `aura`, `power`, `splash` and `element`; report fields (damage split, healing, cleanses, assist); `UnitCardDTO.healUsed?` (from the dry run); unit records and replay headers gain `scaleVersion`. |
+| `GET /rules`, MCP `get_rules` | the ×5 budget, cap and bounds; the M8.8 coefficients (`powerFactor`, `splash`, `element`, `heal`, `aura`); `elements` and `support` with a one-line rule each (§5.4 table); the support bounds per kind; `factories.minionKinds.medic`; per kind × element `minionCost` / `minionValue`; the fighter rule for damage-0 units. |
+| `GET /contract`, MCP `get_unit_contract` | the §5.6 block (the §5 block after M8.8); templates at the ×5 scale; the "price in one paragraph" text (§6 M8.8); the strategy tips gain the CLAUDE.md teaching points 1-9 of §11 (M8.8 kit), one line each. |
+| `validate_unit`, `submit_unit`, `list_my_units`, `GET /units` | stats and breakdown with the new fields and parts; the new warnings; `W_OLD_SCALE` and `scaleVersion` on re-priced old designs. |
+| Visibility | `element`, `splashRadius`, `support` and `minionElement` are part of a design: hidden from opponents and the screen until START, like every stat. `status` exists only in battle views and frames. |
+| `battle:reveal`, frames, replay | §9.4 Frames. The replay header carries `scaleVersion`. Older replays have no new flags or events and play unchanged. |
+| Battle report (`GET /battles/:round/report`, MCP `get_battle_report`) | per type: the damage split `{hit, splash, burn, zap, shatter}`, `healing`, `cleanses` and `assist`; a hint when a heal-support type healed 0 ("Your Patch never healed anyone. Ask Claude to make it follow your soldiers."); `topUnits[].healing`; `score.healing` / `score.combos` when > 0; the MCP summary adds a "Healing: Patch healed 1,240 HP" line. Reports carry `scaleVersion: 2`; past battles from before M8.8 have none and are labelled "($1,000 game)". |
+| `BattleEndDTO` | badges `bestMedic` and `comboMaster`; ranking entries carry `healing` and `combos` when > 0 (what won the badge, display only); `scaleVersion: 2` (absent on results stored before M8.8). |
+| Validation errors | `W_HEAL_NEVER_USED`, `W_POWER_HIGH` and `W_OLD_SCALE`; `STAT_*` and `W_STAT_IGNORED` texts for the six new fields; `BAD_ACTION` text for `heal`; the new `NO_FIGHTERS` message. Each comes with a `fix` and a `playerHint`. |
+| `GET/PUT /admin/config` | the §6 M8.8 keys and `economyVersion`. The template check covers the four ×5 templates. The admin quick settings gain `cost.powerFactor`, `cost.splash`, the element factors, `cost.heal`, the aura prices, the medic minion (HP, speed, heal, reach) and an "Elements & support" group (`elements.fire.burnPct`, `elements.ice.slowPct` and `ticks`, `elements.lightning.chancePct` and `hopRange`, `elements.shatterPct`, `elements.splashPct`, `support.healRoomPctPerSecond`); the cost preview adds the Fire Soldier, Mortar Tower, Field Medic, War Drummer and Medic Tent. A banner shows when the v2 migration dropped old economy overrides (`economyReset` on GET/PUT `/admin/config` and the overview; `DELETE /admin/config/economy-reset` dismisses it). |
+| MCP descriptions and server `instructions` | one line: "units can have an element (fire, ice, lightning), splash and one support (heal, haste, might, shield); see get_unit_contract". No new tools. |
+
 
 ---
 
@@ -1230,7 +1750,7 @@ Players should never see an approval prompt on the normal (MCP) path; only the c
 - "Draw my ninja with a red headband and make it bigger."
 - "Make a tiny robot that's hard to block."
 - "My unit costs too much. Make it cheaper but still strong."
-- "Make a healer… wait, can units heal? Find out and make the best support unit you can." (Answer: no healing. Claude explains and suggests a tank instead.)
+- "Make a healer… wait, can units heal? Find out and make the best support unit you can." (Before M8.8 the answer was "no healing", and Claude suggested a tank instead. From M8.8 Claude builds a medic with `support: 'heal'`, §5.5.)
 - "Why did my units stand still last battle? Fix them."
 - "Make my soldiers wait near my towers until enemies come close."
 
@@ -1365,6 +1885,53 @@ export default class BasicFactory {
 - **CLAUDE.md 4c** gains a "Factories: minion kinds, orders and burst" part: the kinds table in player words (HP, damage, speed, role, minion price), the four orders with one return line each, the burst rules (stored inside, lost with the factory, count toward the caps, leave together, `release` early, burst is free), and three short examples: an archer factory that guards a tower (`produces = 'archer'`, `guard` the nearest own tower, fall back to `defend`), a runner factory that saves up 4 and rushes the weakest enemy (`burst = 4`, `swarm` the lowest-hp non-wall enemy), and a brute factory that swarms the enemy wall nearest to its own soldiers' path (`produces = 'brute'`, `swarm` a wall, else `attack`). Tips: "swarm/guard need a `targetId`: when there is none, return `{ action: 'command', order: 'attack' }`", "`self.factory.order` tells you when a swarm target died (it becomes 'attack')", "stored minions die with the factory: keep a burst factory at the back or behind walls", "burst 4 needs at least 4 minions per battle (productionInterval ≤ 1200)". **Section 5** gains the per-kind minion prices and the four example factory prices.
 - **`PROMPTS.md`** gains: "Make a factory that builds archers to guard my towers." · "Make a runner factory that saves up 4 and then rushes the weakest enemy." · "Make brutes that smash through walls."
 
+**M8.8 kit changes (elements, splash, support, ×5 economy).**
+- **Templates ×5** (server-owned, replaced at boot with a template version bump, §6 M8.8 migration). The header arithmetic is rewritten with the new formula:
+  - `basic_soldier.js` 600 HP / 50 dmg = **$529**;
+  - `basic_tower.js` 625 HP / 75 dmg / range **140** (was 180) = **$954**;
+  - `basic_wall.js` 2,000 HP = **$149**;
+  - `basic_factory.js` 1,500 HP = **$987**.
+
+  (The spec's prices were $522 / $970 / $149 / $982; the M8.8 balance retune, §14, moved them.)
+
+  The behaviour doesn't change. Commented-out options show the new stats: `// this.element = 'fire';` `// this.splashRadius = 40;` `// this.support = 'might'; this.supportPower = 30; this.supportRange = 100;` on the soldier and tower, and `// this.minionElement = 'ice';` and `// this.produces = 'medic';` on the factory.
+- **CLAUDE.md:**
+  - **§4** gets the §5.6 block when it lands.
+  - **§5** gets the M8.8 formula, the "price in one paragraph", the worked examples (Basic Soldier, Fire Soldier, Field Medic, War Drummer) and the per-kind × element minion prices.
+  - **§6** budget: "$5,000 per round, ≤ $2,500 per unit".
+  - A new **§4d "Elements, splash and support"** has the teaching points below and the Field Medic example.
+- **Teaching points** (CLAUDE.md §4d; `get_unit_contract` tips):
+  1. **Numbers are 5× bigger now:** $5,000 per army, up to $2,500 per unit, HP 50-2,500, damage 0-300. Range, speed, size and cooldown work exactly as before. Don't copy old numbers: 120 HP is a weakling now.
+  2. **Extremes are OK now:** a maxed stat costs 2× (it was 3×). What costs extra is being tough **and** strong at once (up to ×1.6). So pair a tank with a hitter instead of building one brick.
+  3. **One element per unit, ×1.2 price:**
+     - `'fire'` adds half the hit again as a 3 s burn. It is best on fast hitters.
+     - `'ice'` freezes for 2 s, making the target 35% slower at moving, reloading and building. It works even at damage 0, and it is best against a few big units.
+     - `'lightning'` gives a 35% chance to zap the nearest other enemy for the same damage. It is best against crowds.
+  4. **Combos:** fire on a frozen enemy = SHATTER (1.5× damage, and it thaws). Lightning on a burning enemy zaps one more. Read `enemy.status.frozen` and `enemy.status.burning`.
+  5. **Splash:** `this.splashRadius = 40` makes everyone within 40 px of the target take half, with your fire or ice (×1.53 price). If the enemy has splash, spread out (`enemy.splashRadius > 0`). Walls never burn, freeze, get zapped or take splash.
+  6. **Support (one per unit):**
+     - `heal` is an action: `return { action: 'heal', targetId: ally.id }` on a hurt, burning or frozen ally in `supportRange`. It uses your attack cooldown.
+     - `haste`, `might` and `shield` are auras: keep allies inside `supportRange`, and there is nothing to code.
+     - Two of the same aura don't add up; different ones do.
+  7. **Healing limits:** at most 5% of the ally's max HP per second, nothing after 50 s (sudden death), never walls or factories, never yourself. A heal on a burning or frozen ally only cleanses it, so fire is how you beat medics.
+  8. **Factories:** `this.minionElement = 'ice'` on archers, `'fire'` on brutes, `'lightning'` on burst runners; `this.produces = 'medic'` with the `guard` command on your tank.
+  9. **A unit with damage 0 can't win alone:** a side with only support units left is eliminated.
+- **Medic template** (CLAUDE.md §4d, also the bots' medic brain):
+
+  ```js
+  // Field Medic: cleanse burning/frozen allies first, then heal the most hurt one in reach
+  const need = allies.filter(a => a.type !== 'wall' && a.type !== 'factory' && gap(self, a) <= self.support.range
+    && (a.status.burning > 0 || a.status.frozen > 0 || (a.hp < a.maxHp && a.status.healRoom > 0)));
+  need.sort((a, b) => (b.status.burning + b.status.frozen > 0) - (a.status.burning + a.status.frozen > 0) || a.hp / a.maxHp - b.hp / b.maxHp);
+  if (need[0] && self.cooldownRemaining === 0) return { action: 'heal', targetId: need[0].id };
+  ```
+
+- **`PROMPTS.md`** gains three prompts. The real-Claude dry run must submit each one in ≤ 3 validate attempts:
+  1. "Make an ice tower called Frost Spire that slows the fastest enemy it can reach, and change my soldiers to fire so they attack frozen enemies first and shatter them. Tell me what the army costs."
+  2. "Build a medic soldier called Patch with no damage, heal 60 and reach 120. It follows my tank, puts out fires first and then heals whoever is hurt most. How many can I afford next to two Half Tanks?"
+  3. "My enemy clumps up with lots of small units. Give me a mortar tower with splash 40 that shoots the enemy with the most other enemies near it, and a War Drummer with a might aura that stays next to my soldiers."
+- **Every price and HP in CLAUDE.md, PROMPTS.md and the template headers** moves to the ×5 numbers in one change. `tests/starterkit.test.ts` checks the worked examples against `computeCost`.
+
 **/setup page** (open, for facilitators):
 - Big LAN URL + QR code (`http://<ip>:<port>/play`). If several interfaces are found, the admin picks the preferred one for the QR in /admin.
 - "Download Claude kit" (generic zip, address from the Host header).
@@ -1495,6 +2062,35 @@ Retro arcade look: dark background, a pixel font (bundled "Press Start 2P", OFL)
 - **Battle view frames:** `fac` entries without the M8.6 fields (older replays) read as stored 0, burst 1, attack.
 - **Admin quick settings:** per kind HP, damage and speed, and the brute wall multiplier (`factory.minions.<kind>.*`).
 
+### 12.6 Elements, splash and support in the UI (M8.8)
+
+Projector first. No effect is shown by colour alone: each also has a shape or an icon.
+
+| Effect | Look | Data |
+|---|---|---|
+| Burning | 3-4 flame particles rising, an orange flicker on the outline, a small orange "-N" per pulse | flag `BURNING`; `hit {kind:'burn'}` |
+| Frozen | sprite tinted cyan with a white frost outline, animation at 65% speed, a snowflake icon | flag `FROZEN` |
+| Zap | a jagged yellow polyline from the target to the victims for 150 ms, a white flash per victim; an overload is drawn thicker | `arc {from, to[]}` |
+| Shatter | 8 ice shards and "SHATTER!" pop text for 500 ms | `shatter {id, amount}` |
+| Splash | a ring expanding to R over 250 ms in the element colour (grey for normal), and a bigger projectile | `splash {x, y, r, element}` |
+| Projectiles | fireball (orange, with sparks), ice shard (cyan diamond), spark (yellow zig-zag) | `battle:reveal` stats |
+| Heal / cleanse | a green beam, "+N" and rising sparkles; a cleanse is a white beam and a smoke puff | `heal {from, to, amount}`, `cleanse {from, to}` |
+| Auras | a translucent ground ring at `supportRange` round the support unit, pulsing slowly: haste green with chevrons, might red, shield blue with hexes. Buffed allies show small icons above the HP bar | flags `HASTED`, `MIGHTY`, `SHIELDED` |
+| Damage numbers | ≥ 100 drawn 1.5× bigger, coloured by element (white, orange, cyan, yellow); heals green | `hit` events |
+| Legend | the first time an element or aura appears in a match, a 3 s corner legend: "fire burns · ice slows · lightning zaps · ice then fire = SHATTER" | client-side, once per match |
+
+- **/play unit cards and roster:**
+  - an element chip (🔥 / ❄️ / ⚡), "Splash 40", and a support chip ("💚 Heal 60 · 120 px", "🥁 Might 30%", …);
+  - the breakdown shows the power, splash, element, heal and aura lines (§6 M8.8);
+  - factory cards show the minion element on the kind chip, and the medic kind gets its own chip (💚 Medics);
+  - the `W_OLD_SCALE` badge "Old game numbers: ask Claude to ×5".
+- **Code editor (§12.1):** the live cost panel follows the M8.8 formula, and the squiggles use the §7 M8.8 codes. The editor has no pickers: players still change stats in the constructor or ask Claude.
+- **/play battle view and /screen:** the effects above. The unit list shows small status icons. Results and Past battles show the Best Medic and Combo Master badges, plus the report's damage split and healing. A unit report gets "Your War Drummer added 1,240 damage" (assist).
+- **Numbers:** thousands separators everywhere money or damage is shown ($4,978, 12,480 dmg), including the budget bar ("$4,637 / $5,000 — 363 left").
+- **Sprites:** medic minions get a built-in 12×12 sprite with a red cross (`MINION_SPRITES.medic`), tinted with the factory colour like the other kinds.
+- **Sound (§12.4):** a crackle for a burn, a chime for a freeze, a zap for an arc, a glass crash for a shatter and a soft rising tone for a heal. Same mute rules.
+- **Admin:** the M8.8 quick settings and the economy-reset banner (§10.6).
+
 ---
 
 ## 13. Tech stack and repo layout
@@ -1535,6 +2131,8 @@ pixel-clash/
 │   │   ├── sandbox/{processRunner,processChild}.ts              # only if M0's isolated-vm check fails
 │   │   ├── sim/{engine,actions,movement,projectiles,suddenDeath,ranking,frames,prng}.ts
 │   │   ├── sim/{walls,steering,factory,minion}.ts   # M8.5 (§9.3)
+│   │   ├── sim/pathing.ts                           # M8.7 (§9.3)
+│   │   ├── sim/{effects,support}.ts                 # M8.8 (§9.4): hit pipeline, burn, freeze, splash, zaps; auras, heals
 │   │   └── util/{lan,ratelimit,log}.ts       # lan.ts: startup printout, /screen QR, Origin allowlist
 │   ├── client/
 │   │   ├── vite.config.ts
@@ -1548,6 +2146,7 @@ pixel-clash/
 ├── tests/
 │   ├── fixtures/units/{good,bad,malicious}/*.js
 │   ├── cost.test.ts  validator.test.ts  sandbox.test.ts  sim.test.ts  balance.test.ts
+│   ├── elements.test.ts  support.test.ts  rescale.test.ts  migration.test.ts  elements-api.test.ts   # M8.8
 │   ├── api.test.ts  mcp.e2e.test.ts  privacy.test.ts  maps.test.ts  teams.test.ts
 │   ├── terminal-proxy.test.ts  claude-seats.test.ts
 │   └── load/loadtest.ts
@@ -1606,7 +2205,151 @@ Persistence: `data/state.json` (players, PIN hashes, keys, match state; debounce
 | `pathing.test.ts` (M8.7, unit + headless sim) | flow fields: open cells, 2×2 nodes for size 19-20, no diagonal corner cuts, wall nodes cost `WALL_STEP`, deterministic ties; **corner trap** (an L of walls between a soldier and an enemy tower): it routes round and attacks the tower, never piling into the corner (pathing `detour`, `blockedTicks` stays 0); **U opening away from the target**: the unit walks out of the cup and round; **one-cell gap**: size 10 goes through it, size 20 takes the long way round (2×2 nodes) and, with the long way sealed, presses on a wall and smashes it; **a wall destroyed mid-route** → the unit switches to the shorter way through the gap within `replanTicks`; **destination inside a sealed ring**: the unit walks to the ring wall nearest the target (`no-route`), presses on it, smashes it after 120 ticks and attacks the target; **shared fields**: 12 soldiers chasing one tower build one field and hit the cache for the rest; **minions with every order** (attack, defend, swarm, guard) route round an L; **determinism**: the same seed twice and shuffled placements give identical frames; the contract `pathing` field reaches `update()` |
 | `test:perf` additions (M8.7) | a **maze** worst case: 8 players on Ring 8, each with 10 soldiers + 2 factories (two kinds, all four orders) + 12 walls forming L, U and zig-zag pieces in front of their zone, minions at the cap, every update() looping over all enemies and chasing the nearest enemy (so most moves need a route): **sim p99 < 8 ms/tick**, threshold unchanged; the numbers go in `docs/balance.md` |
 | `balance.test.ts` (M8.7) | re-run on top of routing (units now go round open walls instead of smashing them). Routing exposed two bot archetypes whose walls only worked because units couldn't find a way round: the "sealed" fortress left its back flanks open on N/S/E/W zones (16 walls would close a whole edge zone, cap 12) and the walled sniper nest's front walls protected nothing. Both now enclose what they protect (fortress: a back pocket against the arena edge, or a 7-wall ring off the edge; nest: the towers closed into the back corner / back edge). With that, every M6/M8.5 assertion and cap holds unchanged (bricks 145/192, tanks 140/192), the six are battle-for-battle unchanged, and the stated outcomes hold (rush 0/16 vs the sealed fortress, 16/16 vs the open U; brutes 14-2 vs the fortress). Two kind-matrix rows sit just above 70%: walls + rush 183/256 (71.5%, its soldiers now leave round their own walls together and beat the bricks 11-5) and the grunt home guard 181/256 (70.7%, was 69.9%); no price-neutral config knob moves them under (`sim.replanTicks` 5-15, `factory.defendRadius` 140-180 tried), so they are capped exceptions at today's numbers (open item 7). Config unchanged apart from the new `sim.replanTicks`. Numbers in `docs/balance.md` |
+| `cost.test.ts` / `cost-curve.test.ts` (M8.8) | **cost.test.ts:** every row of §6 "Reference units (curve k = 1)", parsed from plan.md, exactly: cost, raw, linear, curve, heal, every factor and the aura. Heal sits inside the cooldown factor and the aura outside it (the Rapid Medic pays ×2 on its heal, but an aura at CD 10 pays the same aura). The splash factor table, element ×1.2 and the power factor corners. **cost-curve.test.ts:** monotonic in every priced stat **plus** `splashRadius`, `supportPower` and `supportRange`; convex per curved stat; maxed 2×, half 1.25×; slope ratio > 3; concentration at **65%** with element and splash variants; the explicit checks $6,660 > $3,072 and $2,462 > $2,244; k = 0 still fails; the power factor makes doubling strictly dearer; the messages follow `curveK` ("up to 2×"). The k = 2 parser and its heading go away |
+| `buildings-cost.test.ts` (M8.8) | every row of the §6 M8.8 wall table ($36 … $920); minion cost and value per kind × element; the medic ignores its element; every factory row ($407 … $2,434, legal; $3,026 rejected); burst is still free |
+| `rescale.test.ts` (M8.8, new) | at k = 2 with no new mechanics, a battle at the ×1 config and the same battle at ×5 give identical positions, events and ranking, with HP and damage exactly ×5 |
+| `elements.test.ts` (M8.8, new, headless) | **burn:** +50% over 6 pulses, records per owner, the phase is kept, credit after the attacker dies, kill credit, walls immune. **Freeze:** tempo 0.65 on moves, cooldowns and the factory timer; refreshes but never stacks; haste multiplies it; a frozen routed unit is not reported blocked. **Shatter:** ×1.5 and a thaw, also on a splash hit. **Zap:** one draw per lightning main hit; 35% ± 2% over 10,000 seeded hits; the nearest enemy within 100 px with instanceId ties; never walls; overload gives 2 hops. **Splash:** 50%, the edge rule, no walls, no allies; it carries fire and ice and never zaps. Wall hits are plain (the brute ×3 stays). Determinism; no-lightning battles are bit-identical to M8.7 |
+| `support.test.ts` (M8.8, new) | **`heal` validation:** an ally, not itself, not a wall or factory, within reach, cooldown 0, a target that needs it; otherwise an idle that keeps the cooldown. 5% heal room per window, shared by healers; cleanse-only; nothing from tick 3000; dead stays dead (hits land before heals). **Auras:** edge-to-edge radius; the strongest per kind; different kinds combine; never on the source; teammates count; disabled units keep their auras; start-of-tick snapshot. Shield applies to burn, zap, splash and shatter but not sudden death; might flows into burn and splash. **Medic minion AI** per order, routing round an L. **Damage-0 sides** are eliminated and crumble |
+| `validator.test.ts` (M8.8) | enum errors and near-miss fixes for `element`, `support` and `minionElement`; splash 81 and the supportPower bounds per kind; `STAT_MISSING`; `W_STAT_IGNORED` per type; the `W_ZERO_DAMAGE` line; `W_HEAL_NEVER_USED`; `W_POWER_HIGH`; `W_OLD_SCALE`; `heal` in the dry run (`BAD_ACTION`, `W_ACTION_NOT_FOR_TYPE`); fuzz (element as an object or a getter, splash NaN or −1); every ×5 bound (HP 49/2501, damage 301, wall 249/7501, factory 499/5001) |
+| `scoring.test.ts` / `top-units.test.ts` (M8.8) | burn, zap, splash and shatter count in the damage metric; healing never does; Best Medic and Combo Master, including ties and the > 0 rule; value destroyed uses element- and support-inclusive prices; assist is display only; `topUnits[].healing` |
+| `minion-kinds.test.ts` / `factory.test.ts` (M8.8) | `minionElement` is priced and carried on views and spawn events; minion hits apply it; the medic kind preset is legal (inside the soldier and support bounds); the ×5 minion stats come from config |
+| `config.test.ts` / `starterkit.test.ts` (M8.8) | the §5.6 block is identical in plan (§5), `shared/contract.ts` and the kit's CLAUDE.md; default.json mirrors `DEFAULT_CONFIG`; schema bounds for the new keys; templates valid at ×5; `migrateConfigPatch` v2 drops the listed keys; CLAUDE.md shows the new numbers, the teaching points and the three prompts |
+| `elements-api.test.ts` (M8.8, new) | a real battle with a fire tank, a lightning splash soldier and a Field Medic: cards (price, `healUsed`, breakdown lines), `NO_FIGHTERS` for a medic-only pick, the report's damage split per type, healing, Best Medic, the unit card's last-battle healing, `scaleVersion` on the result, report and replay, MCP `get_battle_report`'s healing line, and an old result without `scaleVersion` still served. `privacy.test.ts` adds a lightning splash shield soldier: no element, splash or support value reaches an opponent or the projector before START, and the reveal carries them |
+| `migration.test.ts` (M8.8, new) | old designs: below the new minimum → invalid with the ×5 fix; legal → `W_OLD_SCALE`; selections dropped with a toast; a running match keeps the old config until New match; v1 replays and reports still load and are labelled |
+| Client tests (M8.8) | flag bits → flame, frost and aura icons; arc, splash, shatter, heal and cleanse events draw and expire; the legend shows once per match; card chips and breakdown lines; thousands separators; old frames without the new bits |
+| `test:perf` / `loadtest.ts` (M8.8) | Ring 8: every player fields lightning + splash 80 + auras + 2 Storm Runners factories + medics, in the M8.7 maze layout: **sim p99 < 8 ms/tick** and ≤ 600 events/s. The perf pass of `npm test` runs it shortened |
+| `balance.test.ts` (M8.8) | See "M8.8 balance" below the table. Re-made ×5 archetypes, new specialist, element and support archetypes, the **`scoutsFilled` stress archetype**, the elemental counters as stated outcomes, and **no M8.7 exceptions** (open item 7) |
 | Real-Claude dry run | starting in M3 (submit path) and fully in M4: one laptop with Claude Code + the kit. Run the 6 example prompts and record how many tool calls it takes to reach a valid submit. Tune `fix` texts and CLAUDE.md until each prompt submits in ≤ 3 validate attempts. Include "make it cheaper" on an existing unit and check Claude passes `unitId`. |
+
+The Real-Claude dry run from M8.8 also runs the three §11 M8.8 prompts.
+
+### M8.8 balance (`balance.test.ts`, `tests/helpers/balance.ts`)
+
+**What the design spec measured.** The real harness ran on a frozen copy of `743f2bf`, which is **before** M8.7 routing:
+- `roundRobin`, 16 battles per pair (Corners 4 + Ring 8, 2 zone pairs, both orders, 2 seeds).
+- Units ran at HP ÷ 5 and damage ÷ 5, because the sim is scale-invariant.
+- "Old ×5" means today's formula with every money coefficient ×5 and k = 2.
+- "Fill" is a stress mode: each specialist keeps its copy count and raises HP to fill the budget.
+
+| Archetype | 9 soldier/tower archetypes: old ×5 → **M8.8** | 20 archetypes (M8.6 + 3 new): old ×5 → **M8.8** | fill stress (20): old → M8.8 |
+|---|---|---|---|
+| bricks | 90% → **83%** | 86% → **84%** | 74% → 69% |
+| tanks | 87%, unbeaten → **58%** | 84% → **69%** | 79% → 70% |
+| templates | 39% → 31% | 38% → 37% | 32% → 29% |
+| turtle | 58% → 66% | 50% → 53% | 47% → 47% |
+| scouts | 49% → 44% | 53% → 57% | 58% → **76%** (watch item) |
+| snipers | 41% → 58% | 49% → 59% | 69% → 68% |
+| **hugetanks** | 16% → 12% | 31% → **44%** | 25% → 40% |
+| **glass** | **0%** → **23%** | 22% → **47%** | |
+| **longbow** | 42% → 51% | 51% → **54%** | |
+| wallrush | | 74% → **67%** | 66% → 55% |
+| homeguard | | 71% → **61%** | 66% → 63% |
+| every other building/kind archetype | | ≤ 61% → ≤ 53% | ≤ 55% → ≤ 53% |
+
+What the results show:
+- Bricks fall from 86% to 84% and tanks from 84% to 69%.
+- Specialists become viable but don't dominate: the Glass Cannon goes from 0% to 23-47% and the longbow reaches 51-54%.
+- Every archetype except bricks is ≤ 67%, and every one has a losing matchup.
+- Three coefficients were forced by these sims:
+  - `cost.range` 1.2 → **1.45**: at 1.2 the longbow won 70.7%.
+  - The Basic Tower shortened to range 140 / HP 625, to keep 4 + 3 templates at $4,998.
+  - `cost.speed` 50 → **60**: filled scouts went from 82% to 76%.
+
+**What the M8.8 PR must do** (adapted to M8.7 routing, which landed after the spec's snapshot; done, and "M8.8 balance as landed" below says where it differs):
+1. **Refit every archetype at ×5**, priced from config so they refit when coefficients change.
+   - Bricks are the max-cost HP × damage unit (1,750 / 265).
+   - Copies are the most that fit, topped up with Basic Soldiers to ≥ 85% of the budget.
+   - `RUSH` becomes 9 Basic Soldiers.
+   - The building and kind archetypes drop whole soldiers (then walls) until they fit $5,000: `quad` 4 soldiers, `brutes` 2 soldiers, `archers` 2 walls, `wallrush` 8 soldiers.
+   - Keep the **M8.7 layouts**: the sealed fortress's back pocket or 7-wall ring, and the nest towers closed into the back.
+2. **New soldier/tower archetypes:**
+   - `hugetanks`: 2 Huge Tanks, $4,918;
+   - `glass`: 3 Glass Cannons + 1 Basic Soldier, $4,563;
+   - `longbow`: 2 Max Snipers + 1 Basic Soldier, $4,332;
+   - **`scoutsFilled`**: 11 Scouts at 390 HP. This is the scout-swarm stress archetype and the spec's watch item at 76%. It must stay ≤ 70% in the full matrix. If it doesn't, turn its knobs below.
+3. **Element and support archetypes** (armies from §6 "M8.8 example armies"). Each has a stated outcome that must hold in ≥ 9 of 16 battles:
+
+   | Key | Army | Stated outcome |
+   |---|---|---|
+   | `firesquad` | Fire squad | beats `healerball` (cleanse-only) |
+   | `shatter` | Shatter squad (bots: fire picks frozen targets first) | beats `bricks` and `bigFriends` |
+   | `frostnest` | Frost nest | beats `bricks` (ice is the anti-brick counter) |
+   | `storm` | Storm crowd | beats `scoutsFilled` or `runners` (lightning is the anti-swarm counter) |
+   | `mortars` | Mortar nest (bots: splash picks the enemy with the most enemies near it) | beats `scoutsFilled` (splash is the anti-swarm counter) |
+   | `healerball` | Healer ball | beats `templates`; loses to `firesquad` |
+   | `buffedrush` | Buffed rush | beats `turtle` or `longbow` |
+   | `shieldwall` | Shield wall | beats `glass` |
+   | `bigFriends` | Huge tank + friends | beats `tanks` |
+   | `elemfactories` | Elemental factories | beats `runners` |
+   | `medictent` | Medic tent + tanks (medics on `guard`) | |
+   | `blizzard` | Blizzard + fire | beats `buffedrush` |
+
+4. **Bots** (fake-runner brains that match the CLAUDE.md templates):
+   - medics cleanse first, then heal the lowest hp fraction in reach;
+   - fire units prefer frozen targets;
+   - splash units target the enemy with the most other enemies within their radius;
+   - banners follow the nearest fighting ally.
+
+   `heal` joins the fake runner's action type.
+5. **Assertions on the full matrix:**
+   - Nobody beats everyone, and everyone beats someone and loses to someone.
+   - Every archetype wins ≤ 70% of its round robin, with **no new exception keys**.
+   - **The M8.7 exceptions `wallrush` and `homeguard` are deleted** (open item 7) and `M87_EXCEPTIONS` goes away.
+   - `bricks` keeps its key, re-recorded at the measured value and never above today's caps. `tanks` is deleted from every matrix where it is ≤ 70%. The older bricks exception may stay.
+   - The stated outcomes hold.
+   - **No element dominates per dollar:** `firesquad`, `storm` and `frostnest` each play the same army made `normal`, with the leftover money spent on Basic Soldiers. Each result must be within 35-65% head to head.
+   - **No immortality:** in every battle with healers, no body gains more than 5% of its max HP per 60-tick window and no heal lands from tick 3000. Every `healerball` vs `healerball` battle ends with a death before tick 5400.
+   - A side of only damage-0 units is eliminated at once.
+   - Determinism with lightning: shuffled placements + the same seed give identical frames.
+   - The 6×6, 13×13 and 17×17 sub-matrices keep their structural assertions (walls-only never wins, the fortress/rush/brute/archer stated outcomes, Ring 8 free-for-all ≤ half the 1st places). Their numbers are re-recorded at ×5.
+6. **Runtime:** about 36 archetypes × 16 battles per pair is about 10,000 battles. The default suite runs 8 battles per pair (one seed), and `BALANCE_FULL=1` runs the full 16. `scripts/balance-matrix.ts` prints the new matrices for `docs/balance.md`.
+
+**Open item 7 (M8.7 caps) in M8.8.**
+- The ×5 retune is the "retune the Basic Soldier price / grunt stats" option that item 7 asked for:
+  - the Basic Soldier costs $522 instead of a pure-×5 $456 (+14%), so `wallrush` fields 8 soldiers, not 9;
+  - the grunt is 200 / 25, valued at $147 instead of a pure-×5 $140;
+  - `cost.factory` and the walls are re-priced.
+- Pre-routing, the spec measured wallrush 67% and homeguard 61%, against 74% and 71% under a pure ×5.
+- The PR re-measures on the routing engine. If either is still > 70%, turn these knobs in order. Each change is regenerated through `tables.mjs` and the §6 tables, and **no exception may be added**:
+  - **wallrush:** `cost.base` 50 → 55 (taxes count-heavy armies), then `cost.speed` 60 → 66.
+  - **homeguard:** `cost.factory.minionDiscount` 0.5 → 0.55, then grunt HP 200 → 180.
+- **scoutsFilled:** `cost.speed` 60 → 66 (measured direction: 50 → 60 took it from 82% to 76%), then `cost.base` 50 → 55.
+
+**M8.8 balance as landed (2026-10-24, `docs/balance.md` M8.8).** Measured on the routing engine, 16 battles per pair (`BALANCE_FULL=1`; the default suite plays 8, one seed). The 37-archetype round robin is shared out over worker processes (`tests/helpers/balanceWorker.ts`, `BALANCE_WORKERS`), about 90 s wall clock.
+- **Config retune (the spec's knobs, in its order):**
+  - On the spec's numbers the HP-padded scout swarm won 70.3% (405/576), so `cost.speed` 60 → **66** (its first knob): the padded scouts drop from 390 to 340 HP and win **58%**.
+  - Speed 66 makes the Basic Soldier $532 and 4 soldiers + 3 towers $5,038, so `cost.range` 1.45 → **1.38** gives the Basic Tower back $16 (the spec moved the tower itself for the same reason). Templates: **$529 + $954, 4 + 3 = $4,978**. The longbow army wins 65%.
+  - The grunt home guard took 9 of 16 kind free-for-alls (cap: half), so grunt HP 200 → **180** (its second knob; the first, `minionDiscount`, changes no battle of a fixed army): 8 of 16.
+  - The element and support constants are the spec's. `elements.lightning.chancePct` 30 and `elements.shatterPct` 30 were tried and moved the storm crowd and the shatter squad 1-3 points: their dominance was army shape.
+  - Every §6 table was re-printed from `final-retune/tables.mjs`, and every price in CLAUDE.md, the kit and the tests follows.
+- **Archetype and reference-unit fixes** (on the spec's config the storm crowd won 87%, bricks 83%, the shatter squad 77%, tanks 76%, walls + rush 74%, the buffed rush 71%; the shield wall 13% and the mortar nest 32%):
+  - **Frost Archer range 150 → 140** (§6 reference units): at 150 it sat just out of the 140-range Basic Tower's reach, and two of them beat any tower army alone (shatter squad 77% → 64%).
+  - **Storm crowd = 7 Lightning Soldiers** (89% of the budget, so no Basic Soldier filler by the §11.1 rule); with the filler it was the only 8-body soldier blob in the matrix.
+  - **Mortar battery** = 4 Mortar Towers (was 2 mortars + 3 soldiers + 4 walls in a line, 31% → 60%); **shield wall** = 2 Shield Bearers in front of 3 Basic Towers (the 6-wall line was walked round, 13% → 51%).
+  - Blizzard + fire, the frost nest and Huge Tank + friends keep their soldiers by their towers (`soldierBrain: 'hold'`), so the totem's freeze and the soldiers' fire meet (36% → 61%, 43% → 56%, 33% → 54%).
+  - New (the requested walled element nests): **fire splash nest** (6 walls closing in 2 Fire Mortars + 1 Basic Tower, $4,678) and **ice wall + snipers** (6 walls closing in a Frost Sniper, an Ice Tower and a Basic Tower, $4,798). Both beat every soldier blob 16-0.
+- **Refits at the retuned prices** (the rules of item 1): bricks 1,700 / 270 ($2,480; 1,750 / 265 is now $2,502), padded scouts 340 HP, the longbow army 2 Max Snipers + 2 soldiers (1 left it at 84.98%), the runner swarm 2 soldiers, storm runners 1 soldier (runner factories got dearer with speed), the factory swarm back to 4 soldiers (grunt factories got cheaper).
+- **Results (37 archetypes, 576 battles each):** every archetype ≤ 70% except **bricks 71%** (410/576; 73% = 188/256 in the 17), the one key left, below the M8.6 cap. **Walls + rush 64% and the grunt home guard 60%: their M8.7 exceptions are deleted** (open item 7), and so are the tank exceptions (66%). Next: snipers 65%, longbow 65%, wallrush 64%, shatter 64%, storm 61%, blizzard 61%, mortars 60%; bottom: runners 18%, medic tent 25%, mixed 29%. Everyone beats someone and loses to someone, nobody beats everyone, no walls-only win. The six need no exception (the turtle is unbeaten among them, drawing the bricks and the snipers, and loses to 11 in the full matrix).
+- **Stated outcomes:** as listed in item 3, except three spec guesses that don't hold on the routing engine and are re-recorded with the same intent: fire beats medics (the fire squad goes 5-11 against the healer ball because its towers stay home, but its normal twin goes 0-16, and the shatter squad and the fire splash nest win 16-0); the buffed rush beats templates and the shatter squad (not the turtle, 4-12, or the longbow, 2-14); Huge Tank + friends beats the bombard and the longbow (not 4 Half Tanks, 2-14). Also asserted: blizzard > bricks, fire splash nest > storm crowd, ice wall > walls + rush, medic tent > mixed.
+- **No element dominates per dollar** is checked over the whole field: each element army's round robin is at most 12 points above its normal twin's (fire squad 50% vs 40%, frost nest 56% vs 62%, shatter 64% vs 70%, storm 61% vs 82%). The spec's head-to-head form (35-65%) can't hold with whole Basic Soldiers: the twin has $400 less or one body more, and the deterministic bots decide almost every battle the same way (12-2-2 for the fire squad, 0-16 for the storm crowd).
+- **No immortality:** in 1,053 round-robin battles with heals the most any body got in a 60-tick window is exactly 5% of its max HP, the last heal lands in the frame at tick 2,996, and every healer-ball mirror ends with a death. Damage-0 sides are out at tick 0; lightning battles are deterministic whatever the placement order.
+- **Watch item, soldier spam (open item 10):** the 9-soldier rush ($4,761, not in the round robin, as since M6) wins 83% against the 37; it loses only to the sealed fortress, the walled nests and splash.
+- **Performance:** the M8.8 timing case (8 players with lightning splash 80, fire, medics, a drummer and 2 Storm Runner factories each, 12 maze walls) runs at p99 5.7 ms/tick and 127 events/s.
+
+**Risks and knobs** (in the order to turn them; all config):
+
+| Risk | Built-in guard | Knob, in order |
+|---|---|---|
+| Filled scouts (76% in the fill stress; 70.3% on the routing engine) | splash and lightning are the designed swarm counters | `cost.speed` 60 → 66 (**applied**, 58%), then `cost.base` 50 → 55 |
+| Soldier spam: the 9-soldier rush wins 83% (open item 10) | the sealed fortress, walled nests and splash beat it 16-0 | needs the Basic Soldier above $556 (8 per army): a template or budget decision, not a spec knob |
+| Bricks still the top classic archetype (71%, the one capped key) | power factor; ice is worth ≈ 61% of a unit against 2 bricks | `cost.powerFactor` 0.6 → 0.7 |
+| A healer ball stalls to the timeout | 5%/s heal room, cleanse-only on burning or frozen, no heals from 50 s, fragile and visible medics | `support.healRoomPctPerSecond` 5 → 4, then `cost.heal` 4.5 → 5.5 |
+| Stacked auras on glass cannons | the same kind never stacks; never on self; shield max 40% | `cost.aura.*` +1 each |
+| Ice lock on bricks or Huge Tanks | no stacking, 2 s, cleanse | `elements.ice.slowPct` 35 → 30 |
+| Blizzard Totem (damage-0 ice splash 60) | a 650-HP tower with no damage; ×1.99 price; not an attacker | `cost.splash` 0.7 → 0.8 |
+| Shatter squad | the shatter thaws; it needs two unit types aimed at one target | `elements.shatterPct` 50 → 30 |
+| Lightning variance | ≥ 100 hits per unit per battle, seeded, separate stream | `elements.lightning.chancePct` 35 → 30 |
+| Maxed grunt factory now legal ($2,434) | 2 factories max, 6 alive per player | `cost.factory.hp` |
 
 ### Dress-rehearsal checklist (on the event hardware, ≥ 1 day before)
 - [ ] Host OS: `npm ci && npm run build && npm start` works offline. isolated-vm loads (banner says `sandbox: isolated-vm`).
@@ -1617,6 +2360,7 @@ Persistence: `data/state.json` (players, PIN hashes, keys, match state; debounce
 - [ ] Projector at its real resolution: readability from the back of the room (also the 1200 arena zoomed out: seat badges and HP bars readable, 8 seat colours and 4 team rings distinguishable), and sound level.
 - [ ] Every admin control works once: map style override, team mode, team swap, pause, 2x, skip, force start with an un-ready player (and one with no placements: auto-place), kick during BATTLE, reset PIN, validate on behalf outside PLAN, submit on behalf in PLAN, config retune, replay, New match.
 - [ ] Failure drills: kill and restart the server mid-PLAN (state survives, and connected Claude Code sessions keep working without re-login); a seat with MCP removed submits via the `curl` fallback in CLAUDE.md; an infinite-loop unit in battle (that unit disabled, the rest of the army and the game continue).
+- [ ] M8.8: one round with elements, splash and support from real Claude prompts (the three §11 M8.8 prompts). On the projector, burn, frost, zaps, splash rings, heal beams and aura rings are readable from the back of the room, and the first-battle legend shows once.
 - [ ] Record the exact Node, isolated-vm and Claude Code versions that passed.
 - [ ] Print: prompt cards, the URL/QR poster, and a facilitator cheat sheet.
 
@@ -1647,6 +2391,7 @@ Persistence: `data/state.json` (players, PIN hashes, keys, match state; debounce
   | Projector issues | the battle is also visible on each `/play` page |
 | 8-player battle lags (playback shows "thinking…") | check CPU per tick in /admin; lower `caps.maxCopies` (e.g. 12 → 8) in the config editor during RESULTS or PLAN for the next round, and play at 1x. With walls and factories (M8.5) also lower `caps.maxWallCopies` (12 → 8) and `factory.maxAlivePerBattle` (40 → 24) |
 
+- **Before the event (M8.8):** run `npm run wipe` once the M8.8 build is installed. Rehearsal units and config overrides from the $1,000 game would otherwise come back as invalid or `W_OLD_SCALE` units and an economy-reset banner (§6 M8.8 migration).
 - **After the event:** run `npm run wipe` (or admin Wipe) on the game server. This deletes players, PIN hashes, keys, unit sources, and replays. On the Claude box, run `docker compose down -v` to remove kit folders, keys, chat history and logins. Player laptops hold nothing. Only the Claude box talks to the internet (Anthropic); game data never leaves the LAN.
 
 ---
@@ -1671,6 +2416,7 @@ Order: de-risk first (isolated-vm and the MCP path), then a vertical slice that 
 | M8.5 | **Walls, factories and minions (§5.2, §6, §7, §9.3, §10.5, §11, §12.5)**. Added after the plan was built; it runs **before** the M8 dress rehearsal, which then includes one round with walls and factories | Contract: §5.2's block replaces §5's in `plan.md` and `shared/contract.ts` together (`config.test.ts` keeps them identical), `UnitType` + `BodyType`, `SelfView.blockedBy/blockedTicks/factory`, `rally`/`hold` actions. Config keys of §9.3 with zod limits; `caps.maxTypes` replaced. `shared/cost.ts` per-type pricing with the factory production part; `bounds.ts` per-type guards and the new codes; validator per type (walls skip the dry run, factory dry run). Templates `basic_wall.js` and `basic_factory.js` with sprites, pre-registered (migration: existing players get them on server start), soldier/tower templates wall-aware with unchanged stats. Sim: wall grid, steering, wall push, spatial hash, factory production, minion AI, fighters-based elimination with crumble, living value and value destroyed per type, frames (`fac`, wall deltas, `spawn`/`crumble`, `blocked` flag), reveal `minion`. Services: selection 4 + 4, copy caps per group, `NO_FIGHTERS`, `W_TRAPPED`, auto-place rules, selection fallback, armory with buildings, reports (`minionsMade`, stuck hint), `topUnits` for factories. REST/MCP texts, `get_rules`/`get_unit_contract`, kit CLAUDE.md 4c/5/6 and PROMPTS. UI §12.5 (grouped roster and palette, wall blocks, factory ring, rally flag, minions, crumble). Tests: every M8.5 row of §14 green, the existing suites unchanged (soldier/tower prices, maps, teams, privacy); **balance with the two new archetypes passes**; **buildings worst case p99 < 8 ms/tick**; `npm test`, `npm run typecheck` and `npm run build` green. On the LAN: a 4-player round with walls and factories from real Claude prompts ("build me a wall", "make a factory"), each reaching a valid submit in ≤ 3 validate attempts. |
 | M8.6 | **Minion kinds, squad orders and burst (§5.3, §6, §7, §9.3, §10.5, §11, §12.5)**: requested after M8.5 ("factories felt limited"); runs before the dress rehearsal | Contract (`MinionKind`, `MinionOrder`, `produces`, `burst`, FactoryView additions, `command`/`release`) in `plan.md`, `shared/contract.ts` and CLAUDE.md together. Config `factory.minions.*`, order radii, `stats.bounds.burst`, migration of `factory.minion`. Per-kind cost; validator `produces`/`burst`/`command`. Sim: kinds, wall multiplier, order AI and fallbacks, store/release, frames and events. Server rules/contract/MCP texts, reveal `minions`, report `storedLost`. Kit: basic_factory comments, CLAUDE.md 4c/5, PROMPTS. Client: card chip, kind sprites, stored badge, release effect, order flag, admin settings. Tests: every M8.6 row of §14, balance archetypes, timing pass under 8 ms; bots use kinds/orders/burst; three real Claude prompts reach a valid submit in ≤ 3 validates. |
 | M8.7 | **Routing round walls (§5, §9.3)**: requested after M8.6 ("units get stuck in corners when they could path around"); runs before the dress rehearsal | `sim/pathing.ts` (flow fields, size classes, smoothing, re-planning, no-route wall pick) under the existing steering for soldiers and minions; `SelfView.pathing` in `plan.md`, `shared/contract.ts` and CLAUDE.md together; the narrowed `blockedBy`/`blockedTicks` meaning; `sim.replanTicks`; `pathing.test.ts`, the maze timing case (p99 < 8 ms/tick) and the balance test green; browser check on /screen that units walk round L and U walls |
+| M8.8 | **Elements, splash, support and the ×5 economy (§5.4-§5.6, §6 M8.8, §7, §9.4, §10.6, §11, §12.6, §14)**: requested after M8.7 ("additional damage types … area damage … all cost more … update the starting cash and the scaling"; "don't penalise extremes so heavily"; "units can support other units"). It runs before the dress rehearsal. The design spec called this milestone "M9". | **Contract:** the §5.6 block replaces §5 in `plan.md`, `shared/contract.ts` and `CLAUDE.md.tmpl` in one change. **Config:** every §6 M8.8 key and schema, `economyVersion` 2 and the `migrateConfigPatch` v2 step. **Cost:** `shared/cost.ts` reproduces every §6 M8.8 table, and the k = 2 tables and parser are deleted. **Bounds and validator:** the six fields, the new warnings, and `heal` in the dry run. **Sim:** the §9.4 pipeline, tick order, tempo, heal room, auras, medic AI, `elementRng`, damage-0 elimination, frames and events, scoring, badges and report fields. **Templates and kit:** ×5 templates with a template version bump; re-price with `W_OLD_SCALE` / invalid and `scaleVersion`; CLAUDE.md 4d/5/6, the teaching points, the medic example and the three PROMPTS. **Client:** §12.6. **Balance:** re-recorded on the routing engine, with **both M8.7 exceptions removed and no new exception keys** (open item 7). **Tests:** every M8.8 row of §14; the timing pass p99 < 8 ms/tick; `npm test`, `npm run typecheck` and `npm run build` green. **Real Claude:** the three prompts each reach a valid submit in ≤ 3 validate attempts. **Browser check:** burn, frost, zaps, splash, heals and auras on /screen. |
 | M8 | Dress rehearsal | The full §14 checklist is ticked on the event hardware. Printed materials are ready. |
 
 **Explicitly deferrable** ("if time" at the end of M7, cut first): replay scrubbing, drag-drop placement (tap-to-place stays), wall tap-drag painting (M8.5; tap per cell stays), the live re-price preview UI (`PUT /admin/config` stays), Rotate key, and the `processRunner` fallback unless M0 failed.
@@ -1688,8 +2434,8 @@ If time runs short, keep the order and cut only from inside M7 and the deferrabl
 | Topology | LAN web server. Players join by name + PIN on their own laptops to manage their profile, select units, and place them. |
 | Unit submission | Players only prompt Claude Code. Claude submits through **MCP** (and REST). No file upload. |
 | Audience | Players aged about 9-13. They prompt; they don't hand-write code. |
-| Cost formula | `(Base + Σ c_i·x_i·(1 + k·(x_i/max_i)²)) × max(1, 60/Cooldown)`: each stat term is convex with **k = 2** (`cost.curveK`), so a maxed stat costs 3× its linear price and one big unit costs more than two halves. Coefficients are tunable and retuned for the curve to Base 10 / HP 0.25 / Dmg 1.5 / Range 0.2 / Speed 12 / Size 0.5 (stat bounds tightened alongside, §5/§6). |
-| Budget | $1,000 per round. Designs are free. Each copy costs its unit cost. ≤3 types per round (**superseded 2026-10-23**: ≤4 unit + ≤4 building types, M8.5). ≤$500 per unit. 4-8 units is the target. |
+| Cost formula | `(Base + Σ c_i·x_i·(1 + k·(x_i/max_i)²)) × max(1, 60/Cooldown)`: each stat term is convex with **k = 2** (`cost.curveK`), so a maxed stat costs 3× its linear price and one big unit costs more than two halves. Coefficients are tunable and retuned for the curve to Base 10 / HP 0.25 / Dmg 1.5 / Range 0.2 / Speed 12 / Size 0.5 (stat bounds tightened alongside, §5/§6). **Superseded by M8.8** (2026-10-23): k = 1, a power factor, element, splash and support terms, and ×5 coefficients (§6 M8.8). |
+| Budget | $1,000 per round. Designs are free. Each copy costs its unit cost. ≤3 types per round (**superseded 2026-10-23**: ≤4 unit + ≤4 building types, M8.5). ≤$500 per unit. 4-8 units is the target. **Superseded by M8.8:** $5,000 per round and ≤ $2,500 per unit (everything ×5). |
 | Rounds | PLAN (only submission window) → PLACEMENT → BATTLE → RESULTS, × N (default 3). Points by place, **plus** damage and value-destroyed bonuses (§9), and badges. Place points are (P − 1) … 0 and the bonus maxima 2 and 1 are scaled × P/4, so 4 players still get 3/2/1/0 + 0-2 + 0-1 (§9.2). |
 | Battle | 90 s visible countdown. On timeout, rank by the total cost of living units. |
 | Privacy | Everything hidden until the host presses START. |
@@ -1701,7 +2447,7 @@ If time runs short, keep the order and cut only from inside M7 and the deferrabl
 | Old plan | Stray `ß` removed. The browser-Web-Worker sandbox, file:// notes, and the paste-primary upload were dropped and replaced by the server sandbox and MCP. |
 
 ### Defaults chosen here (change in config if wanted)
-Max 8 designs (templates don't count) and 12 placed copies per player. 4-digit PINs. Templates pre-registered for every player. Selection carries over when a player doesn't choose. PLACEMENT never auto-starts; an empty player is auto-placed at lock. Reveal at START to everyone (projector and players): fielded unit names/stats and placements. Source code is never shown. Melee is range ≤ 50 with instant hit. Range is edge to edge. Stat bounds tightened to HP ≤ 500 and damage ≤ 60. Sudden-death safe circle from 50 s (tuned in M6), radii scaled with the arena. Zones rotate each round (in team mode whole teams rotate as blocks). Battle results are released when playback ends; Skip ranks at the current playback tick. A kick during BATTLE takes effect after the battle. Submit on behalf is PLAN-only (validate on behalf any time). MCP is stateless with the generic kit pre-installed as the primary path. No healing or abilities beyond move and attack (M8.5 adds a factory's rally and hold, §5.2).
+Max 8 designs (templates don't count) and 12 placed copies per player. 4-digit PINs. Templates pre-registered for every player. Selection carries over when a player doesn't choose. PLACEMENT never auto-starts; an empty player is auto-placed at lock. Reveal at START to everyone (projector and players): fielded unit names/stats and placements. Source code is never shown. Melee is range ≤ 50 with instant hit. Range is edge to edge. Stat bounds tightened to HP ≤ 500 and damage ≤ 60. Sudden-death safe circle from 50 s (tuned in M6), radii scaled with the arena. Zones rotate each round (in team mode whole teams rotate as blocks). Battle results are released when playback ends; Skip ranks at the current playback tick. A kick during BATTLE takes effect after the battle. Submit on behalf is PLAN-only (validate on behalf any time). MCP is stateless with the generic kit pre-installed as the primary path. No healing or abilities beyond move and attack (M8.5 adds a factory's rally and hold, §5.2; **superseded by M8.8**: elements, splash, heal and auras, §5.4-§5.5).
 
 ### Resolved in the follow-up interview (2026-10-20)
 
@@ -1822,6 +2568,26 @@ Max 8 designs (templates don't count) and 12 placed copies per player. 4-digit P
 | Balance | Open walls no longer stop melee, so the bot archetypes that relied on it now enclose what they protect (sealed fortress, walled sniper nest); every earlier cap holds; walls + rush (71.5%) and the grunt home guard (70.7%) sit just over 70% in the 17-archetype matrix and are capped exceptions pending a decision (open item 7). |
 | Blocked meaning | `blockedBy`/`blockedTicks` count only ticks a wall **stopped** the body (pressing on its no-route wall, or < 25% of a step made), so a sliding detour no longer triggers smashing. New `SelfView.pathing`: `'direct' \| 'detour' \| 'no-route'`. |
 
+### Resolved in the elements and support request (2026-10-23)
+
+| Topic | Decision |
+|---|---|
+| Requests | (1) "Add in additional damage types for all units - fire (damage over time), ice (slows), lightning (chance to arc to nearby units). Also, units can optionally have area damage. All cost more. We might need to update the starting cash, and the scaling…" (2) "don't penalise extremes so heavily." (3) "a mechanic that allows units to support other units (healing, faster, stronger, more damage, etc)." Built as **M8.8**. |
+| Design process | Three designers (fun-first, balance-math-first, simplicity-first) and a judge. Simplicity-first won and was the base; auras, the medic, two badges and the visuals came from fun-first; whole-unit factors, the power factor, support pricing and the migration came from balance-math-first. The user approved the final spec "as specced" (`/home/vscode/pixel-clash-design/elements-spec/elements-spec.md`). |
+| Elements | **One element per unit**: `normal` (default), `fire` (+50% as a 3 s burn), `ice` (35% slower for 2 s: moving, reloading, building) or `lightning` (35% chance to zap the nearest other enemy within 100 px). Walls are immune. |
+| Combos | Two simple ones: **shatter** (fire on frozen = ×1.5 and a thaw) and **overload** (a zap from a burning target hops once more). |
+| Area damage | Optional `splashRadius` 0-80: other enemies within R of the target take 50% and get the fire or ice. No falloff, no splash on walls, no zap from a splash. |
+| Support | One kind per unit. `heal` is an **action** sharing the attack cooldown, capped at 5% of max HP per second, cleanse-only on burning or frozen allies, never walls, factories or self, nothing in sudden death. `haste`, `might` and `shield` are passive **auras** (the strongest per kind applies, kinds combine, shield ≤ 40%). Damage-0 units are not fighters. |
+| Factory minions | `minionElement` gives a factory's minions an element (×1.2 on minionValue); a new `medic` minion kind heals. |
+| Economy | **×5**: budget $5,000, unit cap $2,500, HP 50-2,500, damage 0-300, walls 250-7,500, factories 500-5,000; geometry and time unchanged. Templates $529 / $954 / $149 / $987 (the Basic Tower is now 625 HP / range 140; the M8.8 balance retune moved the spec's $522 / $970 / $982). |
+| Softer extremes | Curve k 2 → **1** (a maxed stat costs 2×, not 3×). A **power factor** ×(1 + 0.6·HP/2500·damage/300) charges only units that are tough and strong at once. Bounds are not widened beyond ×5. |
+| Pricing of effects | Whole-unit multipliers from measured fight geometry: element ×1.2, splash ×(1 + 0.7·ρ(2 − ρ)). The heal term sits inside the cooldown factor and auras are added after the factors. |
+| Determinism | Lightning draws from its own seeded stream once per lightning main hit, so a battle without lightning is unchanged. Everything else is a pure function of state. |
+| Migration | Templates replaced at boot; stored designs re-priced (invalid below the new minimum, `W_OLD_SCALE` otherwise, never silently ×5); old economy config overrides dropped by `migrateConfigPatch` v2; replays keep `scaleVersion`. Wipe before the event. |
+| Pathing (landed meanwhile) | The spec was frozen at `743f2bf`, before M8.7 routing. Adaptations: moves are `speed × tempo` along the same flow field; the waypoint and "stopped" checks use the effective step; medics route like every minion; balance must be re-recorded on the routing engine. |
+| Open item 7 | Resolved by M8.8. The ×5 retune re-prices the Basic Soldier (+14% over a pure ×5) and the grunt. The PR must remove the `wallrush` and `homeguard` exceptions and add no new exception keys. If re-measurement still puts them over 70%, use the §14 M8.8 knobs. **As landed:** walls + rush 64% and the grunt home guard 60%; both exceptions deleted, no new key (§14 "M8.8 balance as landed"). |
+| Balance retune (2026-10-24) | Measured on the routing engine, the spec's numbers left the HP-padded scout swarm at 70.3% and the grunt home guard at 9 of 16 kind free-for-alls, so the spec's knobs were turned in its order: `cost.speed` 60 → **66**, grunt HP 200 → **180**, and `cost.range` 1.45 → **1.38** to keep 4 soldiers + 3 towers inside $5,000 (templates $529 + $954 = $4,978). Every §6 table was re-printed (`final-retune/`). The Frost Archer's range went 150 → 140 (it out-ranged the 140-range Basic Tower). Bot archetypes re-made where their army shape, not their effect, decided (storm crowd without a filler soldier, mortar battery, shield wall without a wall line, tower-holding soldiers for blizzard, frost nest and Huge Tank + friends) and the requested walled nests added: 37 archetypes, every one ≤ 70% except bricks (71%). |
+
 ### Open items
 1. **isolated-vm on the game server's host OS**: confirmed only by the M0 check. (It already works in the devcontainer on Node 24 / arm64 with isolated-vm 6.1.2.) Otherwise the process fallback is built and used, with its documented residual risk.
 2. **Claude box OS and Docker setup**, and whether players may ever see an approval prompt (`acceptEdits` decision in the M0 spike).
@@ -1829,4 +2595,7 @@ Max 8 designs (templates don't count) and 12 placed copies per player. 4-digit P
 4. **ttyd behind the proxy** (M7.5 spike): `location.search` → ws URL for the pane id, no auto-reconnect on close 1000, and `-O` with rewritten headers on ttyd 1.7.7. If the pane id doesn't reach the ws URL, /play tells its own connection apart by the `since` timestamp of the `terminal` push right after its iframe loads.
 5. **Wall and factory balance** (M8.5): the wall HP price (0.06), the minion stats and the 0.5 minion discount were checked by the M8.5 balance test (7 building archetypes, `docs/balance.md`) and kept: every building archetype sits at 19-58% round-robin wins, and price sweeps don't change who wins (sealing matters, not wall HP price). Watch items: a sealed fortress beats chase-nearest melee armies outright (focus fire on one wall is the counterplay), and in long Ring 8 free-for-alls the armies that stay home outlast the rest, so the corner zones rarely win those (rotation evens it). Retune in config, not the soldier/tower numbers. Also check on the projector that wall blocks and 40 minions stay readable on the 1200 arena.
 6. **Minion kind balance** (M8.6): the first-guess kind stats passed the M8.6 balance test unchanged (17 archetypes, `docs/balance.md`): archers 33%, runners 13%, brutes 44%, the grunt home guard 69.9% round-robin wins. Watch items: the **home guard** (towers + grunts on `defend`) sits just under the 70% cap and takes exactly half the 1st places of the kind free-for-all (staying home outlasts, as with the turtle); the **runner swarm** is weak as a general plan (swarm-the-weakest runs every runner past the defenders; runner stats hardly change it), it is a sniper-hunting trick and CLAUDE.md says so; bricks and tanks beat every minion army (big bodies, as in M8.5). Retune `factory.minions.<kind>` or `factory.defendRadius` in config, not the soldier/tower numbers.
-7. **Routing balance** (M8.7): with units routing round walls, walls + rush (183/256, 71.5%) and the grunt home guard (181/256, 70.7%) exceed the 70% round-robin cap in the 17-archetype matrix by 4 and 2 battles; they are capped exceptions in `balance.test.ts`. Config can't fix them without touching soldier prices or minion stats (both change §6 tables, templates and CLAUDE.md). Decide before the event: accept, or retune the Basic Soldier price / grunt stats. Watch item: walls that don't enclose anything are now only obstacles (CLAUDE.md says so).
+7. **Routing balance** (M8.7) → **resolved by M8.8** (§14 "M8.8 balance as landed": walls + rush 64%, home guard 60%; both exceptions deleted). Original note: with units routing round walls, walls + rush (183/256, 71.5%) and the grunt home guard (181/256, 70.7%) exceed the 70% round-robin cap in the 17-archetype matrix by 4 and 2 battles; they are capped exceptions in `balance.test.ts`. Config can't fix them without touching soldier prices or minion stats (both change §6 tables, templates and CLAUDE.md). Decide before the event: accept, or retune the Basic Soldier price / grunt stats. Watch item: walls that don't enclose anything are now only obstacles (CLAUDE.md says so).
+8. **Elements and support balance** (M8.8): re-recorded on the routing engine (§14 "M8.8 balance as landed", `docs/balance.md`): every archetype ≤ 70% except bricks (71%, the one capped key); the padded scouts 58% after `cost.speed` 66. Watch items: bricks, healer balls (no stall measured: every mirror ends with a death, heals cap at exactly 5%/s), lightning variance on small armies, and the weak minion armies (runners 18%, medic tent 25%). The knobs are in §14 M8.8 and are all config. Also check on the projector that 400 effect events/s stay readable.
+9. **Real-Claude fluency with the ×5 numbers** (M8.8): Claude may copy old $1,000-game numbers from memory or old units. CLAUDE.md teaching point 1, `W_OLD_SCALE` and the ×5 bounds errors should steer it. The three M8.8 prompts must each submit in ≤ 3 validate attempts.
+10. **Soldier spam** (M8.8 balance): the 9-soldier rush ($4,761, outside the round robin as since M6) wins 83% against the 37 archetypes; only the sealed fortress, the walled nests (snipers, fire splash, ice) and splash (mortars, bombard) beat it. The counters exist and are cheap, so it is a watch item, not a block. Fixing it needs the Basic Soldier above $556 (8 per army): `cost.speed` ≈ 82 with `cost.range` ≈ 1.25 got the storm crowd to 62% but pushed the snipers and the longbow to 71-72% and the scouts to 23-37%. Decide before the event: accept (and tell players "spread out against splash"), or change the Basic Soldier template / the budget.
