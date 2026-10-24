@@ -1,13 +1,5 @@
 // Basic Wall: the starter wall template (Pixel Clash).
-//
-// A wall is a solid 40x40 block that fills its cell. It can't move or attack and runs no code,
-// it just stops everybody (your own units too, so leave a gap!) until it is smashed.
-// Walls don't count as survivors at the end: you still need fighters.
-//
-// Cost = 20 + maxHealth*0.0375 * (1 + (maxHealth/12000)^2)
-//      = 20 + 120 * 1.0711 = 148.53  ->  $149   (walls never cost more for extra copies)
-//
-// No imports, no timers, no network, no async.
+// (Notes on cost and options are at the bottom of this file.)
 
 export default class BasicWall {
   constructor() {
@@ -46,3 +38,16 @@ export default class BasicWall {
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Notes
+// ---------------------------------------------------------------------------
+//
+// A wall is a solid 40x40 block that fills its cell. It can't move or attack and runs no code,
+// it just stops everybody (your own units too, so leave a gap!) until it is smashed.
+// Walls don't count as survivors at the end: you still need fighters.
+//
+// Cost = 20 + maxHealth*0.0375 * (1 + (maxHealth/12000)^2)
+//      = 20 + 120 * 1.0711 = 148.53  ->  $149   (walls never cost more for extra copies)
+//
+// No imports, no timers, no network, no async.

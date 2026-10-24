@@ -89,9 +89,9 @@ describe('sprite() range (lezer tree)', () => {
       expect(text.endsWith('}')).toBe(true);
       expect(text).toContain('frames:');
       expect(text).not.toContain('update(');
-      // The class's own closing brace is outside.
+      // The class's own closing brace is outside (the template's notes comment may follow it).
       const loc = findSprite(src);
-      expect(loc.kind === 'found' && src.slice(loc.range.to).trim()).toBe('}');
+      expect(loc.kind === 'found' && src.slice(loc.range.to).trim().startsWith('}')).toBe(true);
     }
   });
 

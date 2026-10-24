@@ -49,6 +49,12 @@ Other tools: `get_rules` (numbers for everything), `get_unit_contract` (the late
 
 A unit file has **one default-exported class**. The constructor sets the stats as plain properties on `this` (`this.damage = 50`, not getters). `update()` is called every tick and returns one action (walls have no `update()`, see **4c**). `sprite()` returns the unit's pixel art. Plain JavaScript is best (TypeScript syntax is tolerated).
 
+**File layout (the player reads these files, so keep them in this order):**
+1. At most a one-line comment naming the unit.
+2. `export default class …` with the **constructor first** (the stats are the first thing the player sees).
+3. `update()` next (soldiers, towers and factories).
+4. `sprite()` **last**. Keep all the pixel art (the palette, every frame and any row helpers) **inside `sprite()`**: no palette or pixel-row constants above the class, and no long comment blocks before it (put longer notes at the bottom of the file, after the class).
+
 ```ts
 export type UnitType = 'soldier' | 'tower' | 'wall' | 'factory';   // §5.2
 export type BodyType = UnitType | 'minion'; // minions are made by factories: you see them, you never submit one

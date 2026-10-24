@@ -1,29 +1,5 @@
 // Basic Soldier: the starter soldier template (Pixel Clash).
-//
-// Every unit is ONE class that is the default export. The constructor sets
-// the stats as plain properties on `this`; the game reads them once, when the
-// unit is checked, and works out the cost from them. Changing stats later
-// (inside update) has no effect.
-//
-// Cost = (50 + each stat's price) * max(1, 60 / attackCooldown) * power * splash * element,
-// where a stat's price is its normal price (maxHealth*0.1875, damage*1.875, range*1.38,
-// speed*90, (size - 6)*8) times 1 + (stat/max)^2: a maxed stat costs 2x.
-// power = 1 + 2 * (maxHealth/4000) * (damage/240): tough AND strong costs more (up to x3).
-//      = (50 + 294.66 + 110.72 + 56.18 + 147.15 + 34.61) * 1 * 1.163 = 693.32 * 1.163 = 806.56  ->  $807
-// Up to 12 fighters per army: copy 4 of the SAME design costs 15% more, copy 5 30% more,
-// and so on (walls never cost more).
-//
-// Options (all optional; this template uses none of them):
-//   this.element = 'fire';      'normal' (default), 'fire' (burns +50% over 3 s; x1.3), 'ice' (slows
-//                               35% for 2 s; x1.75) or 'lightning' (35% chance to zap a 2nd enemy; x1.3).
-//                               Burning enemies take +25% from your other hits, frozen ones +25% too.
-//   this.splashRadius = 40;     0-80 px: other enemies this close to the target take half: x1.6 at 40
-//   this.support = 'heal';      'heal' (return { action: 'heal', targetId }), or an aura that
-//   this.supportPower = 60;     works by itself: 'haste', 'might' or 'shield' (power in %)
-//   this.supportRange = 120;    heal reach / aura radius in px, edge to edge
-//
-// No imports, no timers, no network, no async: the unit only gets what the
-// game passes to update().
+// (Notes on cost and options are at the bottom of this file.)
 
 export default class BasicSoldier {
   constructor() {
@@ -228,3 +204,32 @@ export default class BasicSoldier {
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Notes
+// ---------------------------------------------------------------------------
+//
+// Every unit is ONE class that is the default export. The constructor sets
+// the stats as plain properties on `this`; the game reads them once, when the
+// unit is checked, and works out the cost from them. Changing stats later
+// (inside update) has no effect.
+//
+// Cost = (50 + each stat's price) * max(1, 60 / attackCooldown) * power * splash * element,
+// where a stat's price is its normal price (maxHealth*0.1875, damage*1.875, range*1.38,
+// speed*90, (size - 6)*8) times 1 + (stat/max)^2: a maxed stat costs 2x.
+// power = 1 + 2 * (maxHealth/4000) * (damage/240): tough AND strong costs more (up to x3).
+//      = (50 + 294.66 + 110.72 + 56.18 + 147.15 + 34.61) * 1 * 1.163 = 693.32 * 1.163 = 806.56  ->  $807
+// Up to 12 fighters per army: copy 4 of the SAME design costs 15% more, copy 5 30% more,
+// and so on (walls never cost more).
+//
+// Options (all optional; this template uses none of them):
+//   this.element = 'fire';      'normal' (default), 'fire' (burns +50% over 3 s; x1.3), 'ice' (slows
+//                               35% for 2 s; x1.75) or 'lightning' (35% chance to zap a 2nd enemy; x1.3).
+//                               Burning enemies take +25% from your other hits, frozen ones +25% too.
+//   this.splashRadius = 40;     0-80 px: other enemies this close to the target take half: x1.6 at 40
+//   this.support = 'heal';      'heal' (return { action: 'heal', targetId }), or an aura that
+//   this.supportPower = 60;     works by itself: 'haste', 'might' or 'shield' (power in %)
+//   this.supportRange = 120;    heal reach / aura radius in px, edge to edge
+//
+// No imports, no timers, no network, no async: the unit only gets what the
+// game passes to update().

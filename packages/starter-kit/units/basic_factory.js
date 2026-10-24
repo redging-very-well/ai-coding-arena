@@ -1,36 +1,5 @@
 // Basic Factory: the starter factory template (Pixel Clash).
-//
-// A factory never moves or attacks. Every productionInterval ticks it builds a minion
-// (up to 12 a battle), at most 4 alive per factory. update() decides what the minions do.
-//
-// Options (all optional; this template uses the defaults):
-//   this.produces = 'grunt'   which minion it builds (the price follows):
-//       'grunt'  360 HP, 20 damage, melee, speed 1.5   $177 each (the default)
-//       'archer' 240 HP, 20 damage, shoots from 110 px  $216 each
-//       'runner' 480 HP, 24 damage, melee, speed 2.6   $263 each
-//       'brute' 1100 HP, 32 damage (x3 on walls), slow $263 each
-//       'medic'  300 HP, never attacks: heals 60 HP     $248 each (cleanses burning/frozen
-//                within 60 px of it                     friends first; not a fighter on its own)
-//   this.minionElement = 'normal'  'fire' or 'lightning' (x1.3) or 'ice' (x1.75) for every
-//                             minion's price (medics ignore it)
-//   this.burst = 1            1-4: save up minions INSIDE and send them out together
-//                             (free, but stored minions are lost if the factory dies)
-//
-// What update() can return:
-//   { action: 'rally', destination: { x, y } }              attack, gathering at that spot
-//   { action: 'command', order: 'attack' }                   hunt the nearest enemies (default)
-//   { action: 'command', order: 'defend' }                   stay near the factory
-//   { action: 'command', order: 'swarm', targetId: e.id }    all minions go for ONE enemy
-//   { action: 'command', order: 'guard', targetId: a.id }    stay next to an ally (e.g. a tower)
-//   { action: 'release' }                                    send stored minions out now
-//   { action: 'hold' }                                       pause building for a tick
-//
-// Cost = body + production
-//   body       = 50 + maxHealth*0.075 * (1 + (maxHealth/8000)^2) = 50 + 196.2 = 246.2  ->  $247
-//   production = 11 minions (one every 10 s in a 120 s battle) x $177 (half price: they arrive late) = $1,947
-//   total      = $2,194
-//
-// No imports, no timers, no network, no async.
+// (Notes on cost and options are at the bottom of this file.)
 
 export default class BasicFactory {
   constructor() {
@@ -92,3 +61,39 @@ export default class BasicFactory {
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Notes
+// ---------------------------------------------------------------------------
+//
+// A factory never moves or attacks. Every productionInterval ticks it builds a minion
+// (up to 12 a battle), at most 4 alive per factory. update() decides what the minions do.
+//
+// Options (all optional; this template uses the defaults):
+//   this.produces = 'grunt'   which minion it builds (the price follows):
+//       'grunt'  360 HP, 20 damage, melee, speed 1.5   $177 each (the default)
+//       'archer' 240 HP, 20 damage, shoots from 110 px  $216 each
+//       'runner' 480 HP, 24 damage, melee, speed 2.6   $263 each
+//       'brute' 1100 HP, 32 damage (x3 on walls), slow $263 each
+//       'medic'  300 HP, never attacks: heals 60 HP     $248 each (cleanses burning/frozen
+//                within 60 px of it                     friends first; not a fighter on its own)
+//   this.minionElement = 'normal'  'fire' or 'lightning' (x1.3) or 'ice' (x1.75) for every
+//                             minion's price (medics ignore it)
+//   this.burst = 1            1-4: save up minions INSIDE and send them out together
+//                             (free, but stored minions are lost if the factory dies)
+//
+// What update() can return:
+//   { action: 'rally', destination: { x, y } }              attack, gathering at that spot
+//   { action: 'command', order: 'attack' }                   hunt the nearest enemies (default)
+//   { action: 'command', order: 'defend' }                   stay near the factory
+//   { action: 'command', order: 'swarm', targetId: e.id }    all minions go for ONE enemy
+//   { action: 'command', order: 'guard', targetId: a.id }    stay next to an ally (e.g. a tower)
+//   { action: 'release' }                                    send stored minions out now
+//   { action: 'hold' }                                       pause building for a tick
+//
+// Cost = body + production
+//   body       = 50 + maxHealth*0.075 * (1 + (maxHealth/8000)^2) = 50 + 196.2 = 246.2  ->  $247
+//   production = 11 minions (one every 10 s in a 120 s battle) x $177 (half price: they arrive late) = $1,947
+//   total      = $2,194
+//
+// No imports, no timers, no network, no async.
