@@ -54,295 +54,32 @@ import {
   type MapStyle,
   type MapZone,
   type MinionKind,
-  type OtherView,
   type PlacementDTO,
-  type SelfView,
   type StatsSnapshot,
   type SupportView,
   type UnitStats,
-  type WorldView,
 } from '@pixel-clash/shared';
 import type { PlayerRunner, RunnerPlayer, SpawnResult, TickInput, TickResult, UnitOutput } from '../../packages/server/src/sandbox/runner.js';
 import { runBattle, type BattlePlayerSetup, type BattleResult, type BattleUnitDesign } from '../../packages/server/src/sim/engine.js';
 import { frontCells } from '../../packages/server/src/sim/autoPlace.js';
 import { mulberry32 } from '../../packages/server/src/sim/prng.js';
 
-type Rng = () => number;
-type Action =
-  | { action: 'idle' }
-  | { action: 'move'; destination: { x: number; y: number } }
-  | { action: 'attack'; targetId: string }
-  | { action: 'heal'; targetId: string }
-  | { action: 'rally'; destination: { x: number; y: number } }
-  | { action: 'command'; order: 'attack' | 'defend' | 'swarm' | 'guard'; targetId?: string }
-  | { action: 'release' }
-  | { action: 'hold' };
-type BrainFn = (self: SelfView, enemies: OtherView[], world: WorldView, rng: Rng, allies: OtherView[]) => Action;
 
-const gap = (a: { x: number; y: number; radius: number }, b: { x: number; y: number; radius: number }) =>
-  Math.hypot(b.x - a.x, b.y - a.y) - a.radius - b.radius;
+import { sandboxRunner, type BalanceRunnerKind } from './brainUnits.js';
+import { actFor, type BrainOptions, type FactoryBrain, type Rng, type SoldierBrain } from './brains.js';
 
-/** Other non-wall enemies a splash of radius r on `t` would reach (§5.4: centre to edge). */
-const clumpAround = (t: OtherView, enemies: OtherView[], r: number): number => {
-  let n = 0;
-  for (const e of enemies) if (e !== t && e.type !== 'wall' && Math.hypot(e.x - t.x, e.y - t.y) - e.radius <= r) n++;
-  return n;
-};
+export type { FactoryBrain, SoldierBrain } from './brains.js';
+export type { BalanceRunnerKind } from './brainUnits.js';
 
 /**
- * M8.8 target picks (the CLAUDE.md examples): a fire unit hits a frozen enemy
- * first (SHATTER); a splash unit hits the enemy with the most other enemies
- * round it. `reach` is how far it looks (a tower: its range; a soldier: a step
- * further). Null = no special pick (the template's nearest).
+ * The lean in-process runner of the balance tooling: a sandbox stand-in that
+ * runs the brains (helpers/brains.ts) as plain functions, with no isolate, no
+ * IPC and no deep copies (the brains never mutate their inputs). Every
+ * instance runs the brain for its type; the PRNG is seeded per player (§8),
+ * the same mulberry32 sequence as the sandbox's Math.random. Trusted bot code
+ * only. tests/balance-parity.test.ts checks it gives the same battles,
+ * bit for bit, as the real isolated-vm runner on the same brains.
  */
-function elementalPick(self: SelfView, enemies: OtherView[], reach: number): OtherView | null {
-  if (self.element !== 'fire' && self.splashRadius <= 0) return null;
-  let best: OtherView | null = null;
-  let bestScore = -1;
-  let bestGap = Infinity;
-  for (const e of enemies) {
-    if (e.type === 'wall') continue;
-    const g = gap(self, e);
-    if (g > reach) continue;
-    const score = (self.element === 'fire' && e.status.frozen > 0 ? 100 : 0) + (self.splashRadius > 0 ? clumpAround(e, enemies, self.splashRadius) : 0);
-    if (score > bestScore || (score === bestScore && g < bestGap)) {
-      best = e;
-      bestScore = score;
-      bestGap = g;
-    }
-  }
-  return best && bestScore > 0 ? best : null;
-}
-
-/**
- * "Chase nearest" (basic_soldier.js): walk to the nearest enemy that isn't a
- * wall (the nearest wall when only walls are left), hit it when in range;
- * stuck behind an enemy wall for 120 ticks: smash it (M8.5). The seed only
- * breaks near-ties (enemies within 8 px of the nearest gap), so seeds give
- * slightly different but sensible fights. M8.8: fire and splash soldiers make
- * their elemental pick among the enemies within a step of their range.
- */
-const chaseNearest: BrainFn = (self, enemies, world, rng) => {
-  if (enemies.length === 0) return { action: 'move', destination: world.center };
-  const hit = (target: OtherView): Action => {
-    if (gap(self, target) <= self.range) return self.cooldownRemaining === 0 ? { action: 'attack', targetId: target.id } : { action: 'idle' };
-    return { action: 'move', destination: { x: target.x, y: target.y } };
-  };
-  if (self.blockedTicks >= 120) {
-    const wall = enemies.find((e) => e.id === self.blockedBy);
-    if (wall) return hit(wall);
-  }
-  const pick = elementalPick(self, enemies, self.range + 20);
-  if (pick) return hit(pick);
-  const fighters = enemies.filter((e) => e.type !== 'wall');
-  const pool = fighters.length > 0 ? fighters : enemies;
-  let best = Infinity;
-  for (const e of pool) best = Math.min(best, gap(self, e));
-  const near = pool.filter((e) => gap(self, e) <= best + 8);
-  return hit(near[Math.floor(rng() * near.length)] ?? pool[0]!);
-};
-
-/**
- * M8.8 "hold" soldiers (an army built round a tower, like Blizzard + fire):
- * stay by the nearest own tower and fight what comes within 160 px of it, so
- * the tower's freeze and the soldiers' fire land on the same enemies. With no
- * tower left they chase like the template.
- */
-const HOLD_RADIUS = 160;
-const holdNearTower: BrainFn = (self, enemies, world, rng, allies) => {
-  let anchor: OtherView | null = null;
-  let best = Infinity;
-  for (const a of allies) {
-    if (a.type !== 'tower') continue;
-    const d = Math.hypot(a.x - self.x, a.y - self.y);
-    if (d < best) {
-      best = d;
-      anchor = a;
-    }
-  }
-  if (!anchor) return chaseNearest(self, enemies, world, rng, allies);
-  const near = enemies.filter((e) => e.type !== 'wall' && Math.hypot(e.x - anchor.x, e.y - anchor.y) - e.radius <= HOLD_RADIUS);
-  if (near.length > 0) return chaseNearest(self, near, world, rng, allies);
-  if (gap(self, anchor) > 30) return { action: 'move', destination: { x: anchor.x, y: anchor.y } };
-  return { action: 'idle' };
-};
-
-/** A body a heal can land on (§5.5: never walls or factories). */
-const healable = (a: OtherView): boolean => a.type !== 'wall' && a.type !== 'factory';
-/** §5.5: hurt with heal room left, or burning, or frozen. */
-const needsHeal = (a: OtherView): boolean => a.status.burning > 0 || a.status.frozen > 0 || (a.hp < a.maxHp && a.status.healRoom > 0);
-
-/**
- * CLAUDE.md Field Medic: cleanse burning or frozen allies first, then heal the
- * most hurt one (lowest hp fraction) in reach. Null when there is nobody to heal.
- */
-function healPick(self: SelfView, allies: OtherView[]): Action | null {
-  const s = self.support;
-  if (!s || s.kind !== 'heal' || self.cooldownRemaining > 0) return null;
-  let best: OtherView | null = null;
-  let bestKey = Infinity;
-  for (const a of allies) {
-    if (a.id === self.id || !healable(a) || !needsHeal(a) || gap(self, a) > s.range) continue;
-    const key = (a.status.burning + a.status.frozen > 0 ? 0 : 1) + a.hp / a.maxHp;
-    if (key < bestKey) {
-      best = a;
-      bestKey = key;
-    }
-  }
-  return best ? { action: 'heal', targetId: best.id } : null;
-}
-
-/** The nearest ally that fights (a soldier, tower or minion without support; else any ally that isn't a wall or factory). */
-function nearestFighter(self: SelfView, allies: OtherView[]): OtherView | null {
-  let best: OtherView | null = null;
-  let bestKey = Infinity;
-  for (const a of allies) {
-    if (a.id === self.id || !healable(a)) continue;
-    const key = (a.support === null ? 0 : 100_000) + Math.hypot(a.x - self.x, a.y - self.y);
-    if (key < bestKey) {
-      best = a;
-      bestKey = key;
-    }
-  }
-  return best;
-}
-
-/**
- * M8.8 support soldiers (the CLAUDE.md medic and banner): heal first; else
- * stay with the nearest fighting ally (inside half the support range, so the
- * aura or heal reaches it), hitting enemies that come close if it has damage.
- */
-const supportSoldier: BrainFn = (self, enemies, world, rng, allies) => {
-  const heal = healPick(self, allies);
-  if (heal) return heal;
-  const friend = nearestFighter(self, allies);
-  if (!friend) return self.damage > 0 ? chaseNearest(self, enemies, world, rng, allies) : { action: 'move', destination: world.center };
-  if (self.damage > 0) {
-    let target: OtherView | null = null;
-    let best = Infinity;
-    for (const e of enemies) {
-      const g = gap(self, e);
-      if (e.type !== 'wall' && g < best) {
-        best = g;
-        target = e;
-      }
-    }
-    if (target && best <= self.range) return self.cooldownRemaining === 0 ? { action: 'attack', targetId: target.id } : { action: 'idle' };
-    if (target && best <= self.range + 40 && gap(self, friend) <= (self.support?.range ?? 0)) return { action: 'move', destination: { x: target.x, y: target.y } };
-  }
-  if (gap(self, friend) > (self.support?.range ?? 40) / 2) return { action: 'move', destination: { x: friend.x, y: friend.y } };
-  return { action: 'idle' };
-};
-
-/**
- * basic_tower.js: shoot the nearest enemy in range; a wall only when nothing
- * else is in range. M8.8: a healing tower heals first; fire and splash towers
- * make their elemental pick.
- */
-const shootNearest: BrainFn = (self, enemies, _world, _rng, allies) => {
-  if (self.cooldownRemaining > 0) return { action: 'idle' };
-  const heal = healPick(self, allies);
-  if (heal) return heal;
-  const pick = elementalPick(self, enemies, self.range);
-  if (pick) return { action: 'attack', targetId: pick.id };
-  let target: OtherView | null = null;
-  let best = Infinity;
-  let wall: OtherView | null = null;
-  let bestWall = Infinity;
-  for (const e of enemies) {
-    const g = gap(self, e);
-    if (g > self.range) continue;
-    if (e.type === 'wall') {
-      if (g < bestWall) {
-        bestWall = g;
-        wall = e;
-      }
-    } else if (g < best) {
-      best = g;
-      target = e;
-    }
-  }
-  const t = target ?? wall;
-  return t ? { action: 'attack', targetId: t.id } : { action: 'idle' };
-};
-
-/** basic_factory.js: rally the minions on the nearest enemy that isn't a wall (else the centre). */
-const rallyNearest: BrainFn = (self, enemies, world) => {
-  let spot = world.center;
-  let best = Infinity;
-  for (const e of enemies) {
-    if (e.type === 'wall') continue;
-    const d = Math.hypot(e.x - self.x, e.y - self.y);
-    if (d < best) {
-      best = d;
-      spot = { x: e.x, y: e.y };
-    }
-  }
-  return { action: 'rally', destination: spot };
-};
-
-/** A factory that never builds: it holds every tick. */
-const holdForever: BrainFn = () => ({ action: 'hold' });
-
-/** CLAUDE.md example: archers that guard the nearest own tower (else stay home). Needs the allies. */
-const guardTower: BrainFn = (self, _enemies, _world, _rng, allies) => {
-  let tower: OtherView | null = null;
-  let best = Infinity;
-  for (const a of allies) {
-    if (a.type !== 'tower') continue;
-    const d = Math.hypot(a.x - self.x, a.y - self.y);
-    if (d < best) {
-      best = d;
-      tower = a;
-    }
-  }
-  return tower ? { action: 'command', order: 'guard', targetId: tower.id } : { action: 'command', order: 'defend' };
-};
-
-/** M8.8 CLAUDE.md example: "medics with command guard on your tank": guard the toughest own soldier (else stay home). */
-const guardTank: BrainFn = (self, _enemies, _world, _rng, allies) => {
-  let tank: OtherView | null = null;
-  for (const a of allies) {
-    if (a.type !== 'soldier') continue;
-    if (!tank || a.maxHp > tank.maxHp || (a.maxHp === tank.maxHp && Math.hypot(a.x - self.x, a.y - self.y) < Math.hypot(tank.x - self.x, tank.y - self.y))) tank = a;
-  }
-  return tank ? { action: 'command', order: 'guard', targetId: tank.id } : { action: 'command', order: 'defend' };
-};
-
-/** CLAUDE.md example: everyone at the weakest enemy that isn't a wall (lowest hp, then id). */
-const swarmWeakest: BrainFn = (_self, enemies) => {
-  let weakest: OtherView | null = null;
-  for (const e of enemies) {
-    if (e.type === 'wall') continue;
-    if (!weakest || e.hp < weakest.hp) weakest = e;
-  }
-  return weakest ? { action: 'command', order: 'swarm', targetId: weakest.id } : { action: 'command', order: 'attack' };
-};
-
-/** CLAUDE.md example: brutes swarm the enemy wall nearest the factory, then hunt like the template. */
-const swarmWall: BrainFn = (self, enemies, world, rng) => {
-  let wall: OtherView | null = null;
-  let best = Infinity;
-  for (const e of enemies) {
-    if (e.type !== 'wall') continue;
-    const d = Math.hypot(e.x - self.x, e.y - self.y);
-    if (d < best) {
-      best = d;
-      wall = e;
-    }
-  }
-  return wall ? { action: 'command', order: 'swarm', targetId: wall.id } : rallyNearest(self, enemies, world, rng, []);
-};
-
-/** Keep the minions home. */
-const defendHome: BrainFn = () => ({ action: 'command', order: 'defend' });
-
-/** M8.8: how an army's fighting soldiers play: chase nearest (the template) or hold by their towers. */
-export type SoldierBrain = 'chase' | 'hold';
-
-export type FactoryBrain = 'rally' | 'guard' | 'guardTank' | 'swarm' | 'breach' | 'defend';
-
-/** A sandbox stand-in: every instance runs the brain for its type; the PRNG is seeded per player (§8). */
 export class BrainRunner implements PlayerRunner {
   readonly loadErrors = new Map<string, { message: string; line?: number }>();
   disposed = false;
@@ -350,12 +87,7 @@ export class BrainRunner implements PlayerRunner {
 
   constructor(
     readonly player: RunnerPlayer,
-    /** The factories hold every tick (they never build: the dormant-factory turtle). */
-    private readonly holdFactories = false,
-    /** M8.6: the factories' order brain (default: rally on the nearest enemy, the template); M8.8: or one per factory design. */
-    private readonly factoryBrain: FactoryBrain | Partial<Record<string, FactoryBrain>> = 'rally',
-    /** M8.8: the fighting soldiers' brain (default: chase nearest, the template). */
-    private readonly soldierBrain: SoldierBrain = 'chase',
+    private readonly opts: BrainOptions = {},
   ) {
     this.rng = mulberry32(player.seed);
   }
@@ -366,13 +98,7 @@ export class BrainRunner implements PlayerRunner {
 
   async tick(input: TickInput): Promise<TickResult> {
     const outputs: UnitOutput[] = [];
-    for (const self of input.selves) {
-      const fb = typeof this.factoryBrain === 'string' ? this.factoryBrain : (this.factoryBrain[self.unitId] ?? 'rally');
-      const factory = this.holdFactories ? holdForever : FACTORY_BRAINS[fb];
-      const soldier = this.soldierBrain === 'hold' ? holdNearTower : chaseNearest;
-      const brain = self.type === 'tower' ? shootNearest : self.type === 'factory' ? factory : self.support ? supportSoldier : soldier;
-      outputs.push({ instanceId: self.id, action: brain(self, input.enemies, input.world, this.rng, input.allies) });
-    }
+    for (const self of input.selves) outputs.push({ instanceId: self.id, action: actFor(self, input.enemies, input.allies, input.world, this.rng, this.opts) });
     return { status: 'ok', outputs, elapsedMs: 0, slow: false, forged: 0 };
   }
 
@@ -380,15 +106,6 @@ export class BrainRunner implements PlayerRunner {
     this.disposed = true;
   }
 }
-
-const FACTORY_BRAINS: Record<FactoryBrain, BrainFn> = {
-  rally: rallyNearest,
-  guard: guardTower,
-  guardTank,
-  swarm: swarmWeakest,
-  breach: swarmWall,
-  defend: defendHome,
-};
 
 // ---------------------------------------------------------------------------
 // Unit designs and $5,000 archetypes (M8.8)
@@ -755,6 +472,15 @@ function backRowOnEdge(zone: MapZone): boolean {
   return true;
 }
 
+/** The brain options of an archetype (how its army plays). */
+export function brainOptions(a: Archetype): BrainOptions {
+  return {
+    ...(a.holdFactories === true ? { holdFactories: true } : {}),
+    ...(a.factoryBrain !== undefined ? { factoryBrain: a.factoryBrain } : {}),
+    ...(a.soldierBrain !== undefined ? { soldierBrain: a.soldierBrain } : {}),
+  };
+}
+
 /** Designs + front-first placements for an archetype in a zone. */
 function deploy(a: Archetype, zone: MapZone, config: GameConfig): { units: BattleUnitDesign[]; placements: PlacementDTO[] } {
   const centred = zoneCentredOnLine(zone);
@@ -825,21 +551,35 @@ export interface BalanceBattle {
 }
 
 /** Run one battle with the given entrants on `style` with `players` zones. */
-export async function balanceBattle(style: MapStyle, players: number, entrants: Entrant[], seed: number, config: GameConfig = BALANCE_CONFIG, hashFrames = false): Promise<BalanceBattle> {
+export async function balanceBattle(
+  style: MapStyle,
+  players: number,
+  entrants: Entrant[],
+  seed: number,
+  config: GameConfig = BALANCE_CONFIG,
+  hashFrames = false,
+  /** Who runs the brains: the lean in-process runner (default) or a real sandbox (the parity check, a confirmation pass). */
+  runner: BalanceRunnerKind = 'lean',
+): Promise<BalanceBattle> {
   const map: MapLayout = mapFor(style, players);
-  const setups: BattlePlayerSetup[] = entrants.map((e, seat) => {
+  const runners: PlayerRunner[] = [];
+  const setups: BattlePlayerSetup[] = [];
+  for (const [seat, e] of entrants.entries()) {
     const zone = map.zones[e.zone]!;
     const { units, placements } = deploy(e.archetype, zone, config);
-    return {
+    const player = { playerId: `p${seat}`, seat, seed: seed + seat };
+    const r = runner === 'lean' ? new BrainRunner(player, brainOptions(e.archetype)) : await sandboxRunner(runner, player, units, brainOptions(e.archetype));
+    runners.push(r);
+    setups.push({
       playerId: `p${seat}`,
       seat,
       zone,
       ...(e.teamId !== undefined ? { teamId: e.teamId } : {}),
       units,
       placements: e.reversePlacements ? [...placements].reverse() : placements,
-      runner: new BrainRunner({ playerId: `p${seat}`, seat, seed: seed + seat }, e.archetype.holdFactories === true, e.archetype.factoryBrain, e.archetype.soldierBrain),
-    };
-  });
+      runner: r,
+    });
+  }
   let firstContactTick: number | null = null;
   let firstSuddenDeathTick: number | null = null;
   const suddenDeathBy: Array<number | null> = entrants.map(() => null);
@@ -853,41 +593,46 @@ export async function balanceBattle(style: MapStyle, players: number, entrants: 
     for (let i = 0; i < text.length; i++) frameHash = (Math.imul(frameHash, 31) + text.charCodeAt(i)) | 0;
   };
   const started = performance.now();
-  const result = await runBattle({
-    players: setups,
-    map,
-    config,
-    seed,
-    yieldEveryTicks: 0,
-    onFrame: (f) => {
-      if (hashFrames) hashFrame(f);
-      for (const [id, , , hp] of f.units) if (!maxHp.has(id)) maxHp.set(id, hp);
-      for (const ev of f.events) {
-        if (ev.type === 'hit') {
-          firstContactTick ??= f.t;
-          if (ev.kind === 'burn') effects[seatOf(ev.instanceId)]!.burnDamage += ev.damage;
-        } else if (ev.type === 'heal') {
-          heals.push({ t: f.t, from: ev.from, to: ev.to, amount: ev.amount });
-          effects[seatOf(ev.from)]!.healed += ev.amount;
-        } else if (ev.type === 'cleanse') effects[seatOf(ev.from)]!.cleanses++;
-        else if (entrants.length === 2 && ev.type === 'shatter') effects[1 - seatOf(ev.id)]!.shatters++;
-        else if (entrants.length === 2 && ev.type === 'arc') {
-          // In a duel the struck target's enemy made the zap.
-          const e = effects[1 - seatOf(ev.from)]!;
-          e.arcs++;
-          if (ev.to.length > 1) e.overloads++;
+  let result: BattleResult;
+  try {
+    result = await runBattle({
+      players: setups,
+      map,
+      config,
+      seed,
+      yieldEveryTicks: 0,
+      onFrame: (f) => {
+        if (hashFrames) hashFrame(f);
+        for (const [id, , , hp] of f.units) if (!maxHp.has(id)) maxHp.set(id, hp);
+        for (const ev of f.events) {
+          if (ev.type === 'hit') {
+            firstContactTick ??= f.t;
+            if (ev.kind === 'burn') effects[seatOf(ev.instanceId)]!.burnDamage += ev.damage;
+          } else if (ev.type === 'heal') {
+            heals.push({ t: f.t, from: ev.from, to: ev.to, amount: ev.amount });
+            effects[seatOf(ev.from)]!.healed += ev.amount;
+          } else if (ev.type === 'cleanse') effects[seatOf(ev.from)]!.cleanses++;
+          else if (entrants.length === 2 && ev.type === 'shatter') effects[1 - seatOf(ev.id)]!.shatters++;
+          else if (entrants.length === 2 && ev.type === 'arc') {
+            // In a duel the struck target's enemy made the zap.
+            const e = effects[1 - seatOf(ev.from)]!;
+            e.arcs++;
+            if (ev.to.length > 1) e.overloads++;
+          }
         }
-      }
-      // A unit outside the safe circle (with damage on) is losing HP to sudden death.
-      if (config.suddenDeath.damagePctPerSecond <= 0) return;
-      for (const [id, , , , flags] of f.units) {
-        if (!(flags & FRAME_FLAGS.OUTSIDE_SAFE_ZONE)) continue;
-        firstSuddenDeathTick ??= f.t;
-        const seat = seatOf(id);
-        suddenDeathBy[seat] ??= f.t;
-      }
-    },
-  });
+        // A unit outside the safe circle (with damage on) is losing HP to sudden death.
+        if (config.suddenDeath.damagePctPerSecond <= 0) return;
+        for (const [id, , , , flags] of f.units) {
+          if (!(flags & FRAME_FLAGS.OUTSIDE_SAFE_ZONE)) continue;
+          firstSuddenDeathTick ??= f.t;
+          const seat = seatOf(id);
+          suddenDeathBy[seat] ??= f.t;
+        }
+      },
+    });
+  } finally {
+    for (const r of runners) r.dispose();
+  }
   const ms = performance.now() - started;
   const placeOf = new Map(result.ranking.map((r) => [r.playerId, r.place]));
   const lost = entrants.map((_, i) => result.units.filter((u) => u.playerId === `p${i}` && u.type !== 'minion' && !u.survived).length);

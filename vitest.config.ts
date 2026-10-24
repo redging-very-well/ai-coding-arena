@@ -6,8 +6,9 @@ const PERF = process.env.PIXEL_CLASH_PERF;
 const TIMING_FILES = ['tests/integration.test.ts', 'tests/sandbox.test.ts', 'tests/buildings-perf.test.ts'];
 // The balance round robin shares thousands of battles out over its own worker
 // processes (helpers/balance.ts playPairs); inside the parallel main pass they
-// oversubscribe the CPU and push timed tests elsewhere past their limits.
-const BALANCE_FILES = ['tests/balance.test.ts'];
+// oversubscribe the CPU and push timed tests elsewhere past their limits. The
+// runner parity check plays isolated-vm battles, so it runs there too.
+const BALANCE_FILES = ['tests/balance.test.ts', 'tests/balance-parity.test.ts'];
 
 export default defineConfig({
   resolve: {
