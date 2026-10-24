@@ -585,3 +585,54 @@ Chromium pages.
 - **Ties in the admin ranking read "2nd, 2nd, 4th".** That is how places are shared, as before.
 - **The "Place your army!" toast covers the top of the placement panel for a few seconds.** This
   is unchanged from M8.6.
+
+## Unit guide (📖 button, overlay and /guide)
+
+### How it was run
+
+- A built server (`npm run build`) on port 18170 with a fresh data dir. The Claude box address and
+  seat password were set in /admin, but no ttyd was running, so the iframe showed the friendly
+  "Waking up Claude…" page (the 502s in the console come from that).
+- Playwright 1.63 Chromium, scripts outside the repo (`scratchpad/guide/shot.cjs`, `extra.cjs`).
+  Each viewport got its own player, logged in, with a Claude seat.
+- Viewports: 1366×768 (tabs layout), 1920×1080 (split view), 768×1024 (tablet).
+
+### Checked and working
+
+- **The terminal is not reloaded.** The script marked the iframe element (`data-qa`) and its
+  window (`window.__qa`), then opened the guide, searched, jumped around, opened /guide in a new
+  tab, and closed the guide with Esc, then ✕. Both marks survived at both sizes, so the iframe was
+  never remounted or reloaded.
+- **Placement:** in the split view the overlay covers only the Game column, and Claude stays
+  usable next to it (`1920-1-open.png`). With tabs it covers both panes below the tab bar
+  (`1366-1-open.png`). Picking a tab closes it.
+- **Search:** "splash" finds 22 matches in 5 sections. Sections without a match are greyed out in
+  the contents, and the hit counts show beside the others. In the Stats tables only the
+  `splashRadius` rows stay, with the matches highlighted (`1366-2-search.png`).
+- **Contents:** clicking "How cost works" lands on the section heading (`1366-3-cost.png`). The
+  current section is highlighted while scrolling. Below 820 px the contents become a sticky chip
+  row that keeps the current chip in view (`768-8-cost.png`, `768-9-view.png`).
+- **Open in new tab ↗** opens `/guide#stats` with all 11 sections, scrolled to Stats
+  (`1366-5-newtab.png`). `/guide#factories` on a tablet lands on Factories
+  (`768-10-page-factories.png`). Print preview is light, without the toolbar or contents, and the
+  tables are readable (`1366-6-print.png`).
+- **Live retune:** with the overlay open, `PUT /admin/config {caps: {budget: 5500}}` updated
+  Budget & limits to $5,500 within 1.5 s, and "New numbers from the host!" showed
+  (`1920-7-retuned.png`).
+- **Prices:** the live example table matches the cards: Basic Soldier $529, Basic Tower $954,
+  Basic Wall $149, Basic Factory $987. The Maxed Monster is flagged "too much!".
+- No page errors at any size.
+
+### Bugs found and fixed
+
+| # | Where | Bug | Fix | Evidence |
+|---|---|---|---|---|
+| 34 | Guide contents | A click on "How cost works" left the view in the middle of Factories & minions, with both entries highlighted. The smooth scroll over the long guide hadn't finished. | Contents clicks jump instantly (`GuideView.tsx`). | `1366-3-cost.png` (after) |
+| 35 | Guide overlay, narrow | In the chip-row layout the overlay's `max-height` rule for the sidebar contents also applied, which squashed the chips into an 18 px strip. It also covered the section heading after a jump. | A more specific rule inside the container query resets the height. Sections get a `scroll-margin-top` there (`guide.css`). | `768-8-cost.png` |
+| 36 | Guide overlay, 768 px | At exactly 768 px the sidebar contents still showed and squeezed the tables. | The chip-row breakpoint is now 820 px (container query). | `768-9-view.png` |
+
+### Notes (not fixed)
+
+- With tabs, the Claude tab stays highlighted while the guide covers the panes. Picking either tab
+  closes the guide, so this was left as is.
+- The cost steps are numbered inside a bulleted list ("• 1. Start price…"), which reads fine.
