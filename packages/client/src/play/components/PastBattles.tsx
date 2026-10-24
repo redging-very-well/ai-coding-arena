@@ -103,6 +103,10 @@ export function PastBattles({ onClose }: { onClose: () => void }) {
       {!end && !error && <p class="dim">Loading round {round}…</p>}
       {end && (
         <>
+          {/* M8.8 (§6): results from before the ×5 economy carry no scaleVersion. */}
+          {end.scaleVersion === undefined && (
+            <p class="dim small old-game">($1,000 game) This round was played before prices and stats went up 5×, so its numbers are smaller.</p>
+          )}
           <table class="past-ranking">
             <thead>
               <tr>
@@ -152,7 +156,7 @@ export function PastBattles({ onClose }: { onClose: () => void }) {
         <div class="past-report">
           <h3>My army</h3>
           <p>
-            {report.survived} unit{report.survived === 1 ? '' : 's'} still standing · {Math.round(report.damageDealt)} damage · {report.kills} KO
+            {report.survived} unit{report.survived === 1 ? '' : 's'} still standing · {Math.round(report.damageDealt).toLocaleString('en-US')} damage · {report.kills} KO
             {report.kills === 1 ? '' : 's'}
             {report.strikes > 0 ? ` · ⚠️ ${report.strikes} strike${report.strikes === 1 ? '' : 's'}` : ''}
             {report.disabled > 0 ? ` · 💤 ${report.disabled} napped` : ''}

@@ -371,7 +371,7 @@ export function copiesOf(placements: readonly PlacementDTO[]): Map<string, numbe
   return m;
 }
 
-/** "$937 / $1,000 — 63 left" pieces. */
+/** "$4,370 / $5,000 — $630 left" pieces. */
 export function budgetText(spent: number, budget: number): string {
   const f = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
   const left = budget - spent;
@@ -695,7 +695,8 @@ export function combatChips(stats: Pick<StatsSnapshot, 'type'> & Partial<Pick<St
   if (splash > 0) out.push({ key: 'splash', tone: 'splash', icon: '💥', label: `Splash ${splash}`, title: `Every other enemy within ${splash} px of the target takes half the hit` });
   const sup = supportOf(stats);
   if (sup) {
-    const label = sup.kind === 'heal' ? `Heal ${sup.power}` : `${SUPPORT_NAME[sup.kind]} ${sup.power}%`;
+    // §12.6: the heal chip shows its reach (phones and the projector never show the title).
+    const label = sup.kind === 'heal' ? `Heal ${sup.power} · ${sup.range} px` : `${SUPPORT_NAME[sup.kind]} ${sup.power}%`;
     const title =
       sup.kind === 'heal'
         ? `Heals an ally ${sup.power} HP within ${sup.range} px (puts out fire and thaws ice first)`
@@ -770,7 +771,7 @@ export function factoryReportLines(report: Pick<BattleReportDTO, 'types'> | null
 /**
  * M8.8 report lines per unit type (§9.4 reports): how its damage was dealt
  * (burn, splash, zaps, shatters), what it healed and cleansed, and what its
- * auras added ("📯 War Drummer added 1,240 damage"). Plain hit-only types get none.
+ * auras helped with ("📯 War Drummer's aura helped with 1,240 damage"). Plain hit-only types get none.
  */
 export function effectReportLines(report: Pick<BattleReportDTO, 'types'> | null | undefined): string[] {
   const out: string[] = [];
@@ -791,7 +792,8 @@ export function effectReportLines(report: Pick<BattleReportDTO, 'types'> | null 
       const bits = [heal >= 1 ? `healed ${n(heal)} HP` : '', cleanses > 0 ? `put out ${cleanses} fire${cleanses === 1 ? '' : 's'} or freeze${cleanses === 1 ? '' : 's'}` : ''].filter(Boolean);
       out.push(`💚 ${t.name} ${bits.join(' and ')}`);
     }
-    if ((t.assist ?? 0) >= 1) out.push(`📯 ${t.name}'s aura added ${n(t.assist!)} damage (more hits and less taken)`);
+    // assist = might's extra damage + what shield auras blocked, so the line names both (a shield adds no damage).
+    if ((t.assist ?? 0) >= 1) out.push(`📯 ${t.name}'s aura helped with ${n(t.assist!)} damage (extra damage dealt or damage blocked)`);
   }
   return out;
 }

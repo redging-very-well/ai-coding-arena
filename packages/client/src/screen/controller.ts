@@ -23,7 +23,7 @@ import {
 } from '@pixel-clash/shared';
 import { api, request } from '../common/api.js';
 import { SoundEngine, type AudioState } from '../common/audio.js';
-import { ArenaRenderer, bodyOf } from '../common/render/arena.js';
+import { ArenaRenderer, bodyOf, prefersReducedMotion } from '../common/render/arena.js';
 import { isBigHit } from '../common/render/fx.js';
 import { MUTE_KEY_SCREEN, countdownCue, revealCue, shotPitch } from '../common/sfx.js';
 import { GameSocket, type WsStatus } from '../common/ws.js';
@@ -83,14 +83,7 @@ export interface ScreenSnapshot {
 const PRE_BATTLE: readonly Phase[] = ['LOBBY', 'PLAN', 'PLACEMENT'];
 const TOAST_MS = 4500;
 
-/** prefers-reduced-motion (no shake or bob, fewer particles; CSS handles the rest). */
-export function prefersReducedMotion(): boolean {
-  try {
-    return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  } catch {
-    return false;
-  }
-}
+export { prefersReducedMotion };
 
 export class ScreenController {
   readonly arena: ArenaRenderer;

@@ -245,7 +245,7 @@ export const LEGEND_TEXT: Readonly<Record<LegendKey, string>> = {
   lightning: 'lightning zaps',
   shatter: 'ice then fire = SHATTER',
   splash: 'splash hits everyone near',
-  heal: 'medics heal (fire stops them)',
+  heal: 'medics heal (or put out fire and ice)',
   haste: 'green ring = faster',
   might: 'red ring = stronger',
   shield: 'blue ring = tougher',
@@ -481,7 +481,7 @@ export class EffectLayer {
     ctx.globalAlpha = 1;
   }
 
-  /** Arcs, beams and pop text: drawn over everything. */
+  /** Arcs and beams: drawn over the bodies. */
   drawOver(ctx: EffectCanvas, now: number, zoom: number): void {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -531,6 +531,11 @@ export class EffectLayer {
     }
     ctx.lineCap = 'butt';
     ctx.lineJoin = 'miter';
+    ctx.globalAlpha = 1;
+  }
+
+  /** "SHATTER!" / "OVERLOAD!": drawn last, over the damage numbers, so a crowded fight can't hide them. */
+  drawPops(ctx: EffectCanvas, now: number, zoom: number): void {
     const fontPx = Math.max(12, Math.round(10 * zoom));
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';

@@ -123,7 +123,7 @@ export function UnitCard(props: UnitCardProps) {
             )}
             {oldScale && (
               <span class="tag old-scale" title="Made for the old $1,000 game: its numbers are 5× too small now">
-                old $1,000 numbers
+                Old game numbers: ask Claude to ×5
               </span>
             )}
             {u.warnings.length > 0 && (

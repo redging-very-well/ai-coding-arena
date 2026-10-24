@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { AdminConfigResponse, GameConfig } from '@pixel-clash/shared';
 import { ApiError, api, type DeepPartial } from '../common/api.js';
-import { cx } from '../common/ui.js';
+import { cx, formatMoney } from '../common/ui.js';
 import { useAdmin } from './context.js';
 import { configDiff, parseConfigText } from './configDiff.js';
 import { errorText, stateKey } from './useAdmin.js';
@@ -458,17 +458,17 @@ function PreviewTable({ preview }: { preview: CostPreview | null }) {
           {rows.map((r) => (
             <tr key={r.key} class={cx(r.overCap && 'qs-over')}>
               <td>{r.label}</td>
-              <td class="qs-cost">${r.cost}</td>
+              <td class="qs-cost">{formatMoney(r.cost)}</td>
               <td>
                 {!r.overCap && !r.outOfBounds ? (
                   <span class="qs-badge qs-badge-ok">OK</span>
                 ) : r.template ? (
                   <span class="qs-badge qs-badge-bad">
-                    {r.overCap ? `Over the $${cap} cap` : `Outside the stat bounds (${r.outOfBounds})`}: save will be refused (starter template)
+                    {r.overCap ? `Over the ${formatMoney(cap)} cap` : `Outside the stat bounds (${r.outOfBounds})`}: save will be refused (starter template)
                   </span>
                 ) : (
                   <span class="qs-badge qs-badge-warn">
-                    {r.overCap ? `Over the $${cap} cap` : 'Outside the stat bounds'}: would be rejected
+                    {r.overCap ? `Over the ${formatMoney(cap)} cap` : 'Outside the stat bounds'}: would be rejected
                   </span>
                 )}
               </td>
@@ -477,7 +477,7 @@ function PreviewTable({ preview }: { preview: CostPreview | null }) {
         </tbody>
       </table>
       <p class={cx('qs-army', army.overBudget && 'warn-text')}>
-        {army.soldiers} soldiers + {army.towers} towers = <b>${army.total}</b> of ${budget}
+        {army.soldiers} soldiers + {army.towers} towers = <b>{formatMoney(army.total)}</b> of {formatMoney(budget)}
         {army.overBudget ? ' (over budget!)' : ''}
       </p>
     </div>

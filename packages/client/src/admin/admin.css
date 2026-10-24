@@ -240,6 +240,20 @@ code,
   font-weight: 600;
   border-bottom: 2px solid var(--bad);
 }
+.banner-warn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  background: #713f12;
+  color: #fff;
+  padding: 10px 16px;
+  border-bottom: 2px solid var(--warn);
+}
+.banner-warn code {
+  overflow-wrap: anywhere;
+}
 .notices {
   position: fixed;
   right: 16px;

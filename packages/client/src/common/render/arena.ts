@@ -160,7 +160,11 @@ export interface ArenaOptions {
    * damage numbers, death pops, screen shake on big hits, idle bob.
    */
   fx?: boolean;
-  /** prefers-reduced-motion: no shake or bob, fewer particles (default false). */
+  /**
+   * prefers-reduced-motion: no shake or bob, fewer particles, and the M8.8
+   * effects (lightning, burn flicker, aura pulse, splash rings) held still.
+   * Default: the viewer's prefers-reduced-motion setting.
+   */
   reducedMotion?: boolean;
   /**
    * Factory rally flags (§12.5): every factory's ('all', the projector),
@@ -381,6 +385,15 @@ export function dropProgress(elapsedMs: number, index: number): number {
   return (elapsedMs - index * DROP_STAGGER_MS) / DROP_MS;
 }
 
+/** prefers-reduced-motion (no shake or bob, fewer particles, still M8.8 effects; CSS handles the rest). */
+export function prefersReducedMotion(): boolean {
+  try {
+    return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+}
+
 /** Height (CSS px) above its spot of a dropping unit at progress `t` (ease-in fall from 260 px). */
 export function dropLift(t: number): number {
   if (t >= 1) return 0;
@@ -436,13 +449,16 @@ export class ArenaRenderer {
   /** The font last set on the context this frame (setting ctx.font re-parses it: costly ×96 badges). */
   private font = '';
 
+  private options: ArenaOptions;
+
   constructor(
     readonly canvas: HTMLCanvasElement,
-    private options: ArenaOptions = {},
+    options: ArenaOptions = {},
   ) {
+    this.options = { ...options, reducedMotion: options.reducedMotion ?? prefersReducedMotion() };
     this.ctx = pixelContext(canvas);
-    this.fx.options = { reducedMotion: !!options.reducedMotion };
-    this.effects.reducedMotion = !!options.reducedMotion;
+    this.fx.options = { reducedMotion: !!this.options.reducedMotion };
+    this.effects.reducedMotion = !!this.options.reducedMotion;
     this.view = fitIso(1, 1, this.fitOptions());
     this.resize(true);
   }
@@ -1182,8 +1198,9 @@ export class ArenaRenderer {
     if (this.options.fx) {
       this.fx.draw(ctx, now, Math.max(11, Math.round(9 * view.zoom)));
       this.effects.drawLegend(ctx, now, height, view.zoom);
-      this.font = '';
     }
+    this.effects.drawPops(ctx, now, view.zoom);
+    this.font = '';
     this.options.overlay?.(ctx, view, this, now);
     ctx.restore();
   }

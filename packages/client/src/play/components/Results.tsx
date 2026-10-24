@@ -64,7 +64,7 @@ function Scoreboard({ game, meId }: { game: GameStateDTO; meId: string | undefin
               )}
             </span>
             <span class="sb-dmg" title="Damage this game (breaks ties)">
-              💥 {Math.round(s.damage ?? 0)}
+              💥 {Math.round(s.damage ?? 0).toLocaleString('en-US')}
             </span>
             <span class="sb-pts">{s.points} pts</span>
           </li>
@@ -150,7 +150,7 @@ export function Results() {
           <div>
             <div class="pixel big">{teamMode ? `On your own you finished ${ordinal(myPlace)}!` : `You finished ${ordinal(myPlace)}!`}</div>
             <div class="dim">
-              {myEntry.points} points and {Math.round(myEntry.damage ?? 0)} damage in total. Great battles!
+              {myEntry.points} points and {Math.round(myEntry.damage ?? 0).toLocaleString('en-US')} damage in total. Great battles!
             </div>
           </div>
         </div>

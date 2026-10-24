@@ -268,7 +268,7 @@ main.join {
 .combat-chip.sup-might { border-color: #ff5a5a; background: #331010; }
 .combat-chip.sup-shield { border-color: #5aa8ff; background: #0e2036; }
 .tag.support-only { border-color: #5cf08a; }
-.tag.old-scale { background: #3a3110; border-color: var(--warn); color: var(--warn); }
+.tag.old-scale { background: #3a3110; border-color: var(--warn); color: var(--warn); white-space: normal; }
 .tag.type-wall { border-color: #8a8f98; }
 .tag.type-factory { border-color: #c0a060; }
 .unit-card {

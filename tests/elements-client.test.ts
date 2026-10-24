@@ -5,7 +5,7 @@
 // /play cards (element, splash and support chips, the new price rows and
 // notes, report lines); money formatting at the $5,000 scale.
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_CONFIG,
   FRAME_FLAGS,
@@ -17,7 +17,7 @@ import {
   type SpriteSpec,
   type StatsSnapshot,
 } from '@pixel-clash/shared';
-import { combatLook, revealLegendKeys } from '../packages/client/src/common/render/arena.js';
+import { ArenaRenderer, combatLook, revealLegendKeys } from '../packages/client/src/common/render/arena.js';
 import {
   ARC_MS,
   BOLT_STEPS,
@@ -238,6 +238,9 @@ describe('the pooled effect layer (8-player caps)', () => {
     const ctx = fakeCanvas();
     fx.drawGround(ctx, 100, 1);
     fx.drawOver(ctx, 50, 1);
+    expect(ctx.calls.fillText ?? 0).toBe(0);
+    // Pop text is its own pass, drawn after the damage numbers so they can't cover it.
+    fx.drawPops(ctx, 50, 1);
     expect(ctx.calls.ellipse).toBe(1);
     expect(ctx.calls.fillText).toBe(1);
     // The beam (3 strokes) + the bolt (3 strokes: outline, colour, core) + the ring (2).
@@ -357,7 +360,7 @@ describe('/play cards and the price breakdown (M8.8)', () => {
     expect(chips.map((c) => [c.key, c.label])).toEqual([
       ['element', 'Ice'],
       ['splash', 'Splash 40'],
-      ['support', 'Heal 60'],
+      ['support', 'Heal 60 · 120 px'],
     ]);
     expect(chips[0]!.title).toMatch(/freezes/);
     expect(combatChips(snap({ support: { kind: 'haste', power: 30, range: 100 } }))[0]!.label).toBe('Haste 30%');
@@ -425,7 +428,7 @@ describe('/play cards and the price breakdown (M8.8)', () => {
     expect(effectReportLines(report)).toEqual([
       'Fire Soldier: 🔥 1,000 burn (of 3,000 damage)',
       '💚 Field Medic healed 1,240 HP and put out 2 fires or freezes',
-      "📯 War Drummer's aura added 1,240 damage (more hits and less taken)",
+      "📯 War Drummer's aura helped with 1,240 damage (extra damage dealt or damage blocked)",
     ]);
     expect(effectReportLines(null)).toEqual([]);
   });
@@ -449,5 +452,26 @@ describe('the code editor marks the new stats', () => {
     const { diagnostics, banner } = toDiagnostics(result, src);
     expect(banner).toEqual([]);
     expect(diagnostics.map((d) => src.slice(d.from, d.to))).toEqual(["'lightening'", '120', '999']);
+  });
+});
+
+describe('reduced motion reaches every arena (M8.8 effects on /play)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** An arena on a do-nothing canvas, with prefers-reduced-motion set to `reduce`. */
+  function arenaWith(reduce: boolean, options: ConstructorParameters<typeof ArenaRenderer>[1] = {}): ArenaRenderer {
+    vi.stubGlobal('window', { devicePixelRatio: 1 });
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: reduce && q === '(prefers-reduced-motion: reduce)' }));
+    const ctx = new Proxy({} as Record<string, unknown>, { get: (t, k) => (k in t ? t[k as string] : () => undefined), set: (t, k, v) => ((t[k as string] = v), true) });
+    const canvas = { width: 0, height: 0, getContext: () => ctx, getBoundingClientRect: () => ({ width: 320, height: 240 }) };
+    return new ArenaRenderer(canvas as unknown as HTMLCanvasElement, options);
+  }
+
+  it('an arena built without reducedMotion (the /play battle, replay and mini-map) follows prefers-reduced-motion', () => {
+    // The /play store and the mini-map pass no reducedMotion: the default is the viewer's setting.
+    expect(arenaWith(true, { fit: { margin: 4, pad: 24 }, rallyFlags: 'mine' }).effects.reducedMotion).toBe(true);
+    expect(arenaWith(false, { fit: { margin: 4, pad: 24 }, rallyFlags: 'mine' }).effects.reducedMotion).toBe(false);
+    // An explicit option still wins.
+    expect(arenaWith(true, { reducedMotion: false }).effects.reducedMotion).toBe(false);
   });
 });
