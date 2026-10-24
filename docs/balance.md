@@ -8,6 +8,9 @@ number below with:
 npx tsx --conditions=source scripts/balance-matrix.ts
 ```
 
+For quick checks and config experiments use `npm run balance` (early stopping and a
+result cache; see [Fast balance runs](#fast-balance-runs-tooling-2026-10-24) at the end).
+
 **M8.8:** every archetype was refit to the ×5 economy and the matrix grew to 37 archetypes;
 the current numbers are in [Elements, splash, support and the ×5 economy (M8.8)](#elements-splash-support-and-the-5-economy-m88)
 at the end. The sections before it are the $1,000-game history (the sim is
@@ -1013,3 +1016,182 @@ that splashes the biggest clump, Brawlers), `splash` (Mortars behind a wall line
 (a Medic that cleanses then heals, a War Drummer, a Shield Bearer) and `medics` (a Medic Tent
 guarding the toughest soldier, a Fire Grunts factory, Brawlers). Every design validates with
 no warnings ($603-$1,292).
+
+## Fast balance runs (tooling, 2026-10-24)
+
+A balance investigation used to cost about 4 minutes per round robin ($10,000
+economy, 39 archetypes) and 99 s for the balance test file. Three things make
+re-runs and config experiments much cheaper. None of them changes the sim or
+the config.
+
+**1. The lean runner, checked against the real sandbox.** The round robins already
+played the archetype brains as plain functions in the worker processes (the
+`BrainRunner`, no isolate and no IPC). The brains now live in a
+self-contained `tests/helpers/brains.ts`. `tests/helpers/brainUnits.ts` turns that
+same file into unit code: the validator's transpile plus a unit class whose
+`update()` calls the brain. So the same code also runs on the real runners:
+isolated-vm in a child process, the server default, and node:vm (`inproc-unsafe`).
+`balanceBattle(..., runner)` takes `'lean' | 'vm' | 'ivm'`.
+
+`tests/balance-parity.test.ts` runs in the balance pass. It plays 10 matchups on
+all three runners, with every brain covered: chase, hold, towers, medics and
+auras, all six factory orders plus hold, walls, elements and splash, on both maps
+and both seeds. Every frame must hash the same, and the result must be identical.
+It is. Per battle, the lean runner is about 10× faster than node:vm and about 14×
+faster than isolated-vm (5 battles: 0.22 s, 2.3 s and 3.1 s). Caveats:
+- The sandbox runs use generous limits (`BALANCE_SANDBOX_LIMITS`). With the real
+  6/12 ms limits, a loaded machine could hand out slow strikes. Those come from
+  the host, not the code.
+- The lean runner passes each unit the ally list with itself in it. The harness
+  leaves it out. No brain looks at itself among its allies, and the parity test
+  holds that.
+
+**2. The result cache** (`tests/helpers/balanceCache.ts`, `.balance-cache/`,
+gitignored). Battles are deterministic, so every round-robin duel and every
+`balanceBattle` result is kept on disk. The key has four parts:
+- **Engine hash:** the files under `packages/server/src/sim`, `packages/server/src/sandbox`
+  and `packages/shared/src`, plus the transpile step, the balance harness, the brains,
+  the V8 version and the CPU architecture.
+- **Config fields a battle reads:** everything except caps, plan timers, match size
+  and rate limits. Prices count only through each army's priced designs and the
+  minion values. So a price only factories pay replays only the battles with factories.
+- **Both armies as deployed:** designs, costs, placements and brains.
+- **The battle itself:** map, zone pair, seed and runner.
+
+Any edit to an engine file starts a fresh cache, and the six newest engine
+versions are kept. `BALANCE_CACHE=0` turns the cache off, and
+`BALANCE_CACHE_DIR` moves it. The balance test uses the cache too and asserts
+the same rules on the cached records. Run it with `BALANCE_CACHE=0` to replay
+everything. The `ms` engine times of a cached battle are from its first run.
+
+**3. Early stopping** (`tests/helpers/balanceFast.ts`, rules in
+`tests/helpers/balanceRules.ts`). The rules are the balance test's round-robin rules:
+- the 70% cap and the recorded bricks exceptions;
+- beats someone, doesn't beat everyone, loses to someone (on the 6, 13, 17 and 37 matrices);
+- the shape checks and the stated outcomes.
+
+A matchup is a fixed set of 8 battles (16 with both seeds), so after k of them
+the rest can only move the counts so far. Each rule is decided as soon as it
+can't change. Battles are played only for the matchups some open rule still
+depends on: 2 per matchup up front, then 2 more per round. Each matchup plays in
+a spread order, so both maps and both zone pairs come first.
+- `--exact`: decided only when no outcome of the unplayed battles can change the
+  rule. This gives the full matrix's verdicts by construction, and
+  `tests/balance-fast.test.ts` checks it on 40 random matrices. It saves little
+  here (87% of the battles), because 8 archetypes sit at 60-70% and only the
+  last battles decide their caps.
+- `--fast`: also decided when the rule holds (or fails) with probability
+  ≥ 1 − alpha. Alpha defaults to 0.001. The model is a Jeffreys-prior Dirichlet
+  model of each matchup: exact odds for one matchup, a normal approximation for
+  a row's total wins. It is a heuristic, because the battles of a matchup are
+  not random draws. So it was checked with `--verify`, which plays the full
+  matrix too and compares every verdict. It was run on the committed config and
+  eight patched configs, six of which fail 1 to 30 rules:
+  - fire ×2 / shatter 150%;
+  - no ice;
+  - splash 100%;
+  - sudden death 1%/s;
+  - heal room 15%/s;
+  - lightning 80%;
+  - ice 70% for 4 s;
+  - sudden death 20%/s from 30 s.
+
+  **Same verdict on all 326 rules in all nine configs**, using 45% of the battles
+  overall (36.5% on the committed config, 23% with both seeds). Priors 0.25-1 and
+  alpha 0.01-0.0001 also gave no difference (41-51% of the battles). An earlier
+  three-outcome win model was biased against lopsided matchups and got two caps
+  wrong on the weak sudden-death config. That is why every new model has to pass
+  the `--verify` sweep.
+
+The battle-level checks (no wall-only wins, the heal limits) only see the
+battles that were played. The balance test still checks every battle.
+
+### Timings (37 archetypes, committed config, quiet 10-core box)
+
+| run | before | after |
+|---|---|---|
+| balance test file (`PIXEL_CLASH_PERF=balance vitest run tests/balance.test.ts`) | 99 s | cold 92 s, **warm 0.7 s** |
+| full matrix, both seeds (10,656 battles) | 103 s (8 workers, fixed shards) | cold 99-106 s (9 workers, one battle at a time), **warm 0.4 s** |
+| full matrix, seed 11 (5,328 battles) | about 50 s | cold: `--full` 42-50 s, `--exact` 46 s (87%), **`--fast` 22 s (42%)**; warm under 1 s |
+| both seeds, `--fast`, cold | | **32 s** (27% of the battles) |
+
+Cold full runs are no faster: the engine is the work (about 28 µs per tick, so
+779 s of CPU for the 2-seed matrix), and the lean runner was already in use.
+The gains come from:
+- never replaying a battle (the cache, which also covers re-runs after a config
+  change that leaves some battles alone);
+- not playing battles that can't change a verdict (early stopping, 3-4× fewer).
+
+For the $10,000 retune, that is about 4 minutes per round robin cold →
+about 1.5 minutes with `--fast` (estimated from the battle share), and seconds for
+anything already played.
+
+### Usage
+
+```
+npm run balance                                   # exact early stopping, the test's seed (8 battles per pair)
+npm run balance -- --fast                         # statistical early stopping (the quick one)
+npm run balance -- --fast --config patch.json     # try a config patch (file or inline JSON)
+npm run balance -- --fast --config '{"elements":{"splashPct":60}}'
+npm run balance -- --archetypes bricks,tanks,turtle,scouts,snipers,templates
+npm run balance -- --seeds 11,4242                # 16 battles per pair (what this file records)
+npm run balance -- --full --runner ivm            # confirmation pass on the real sandbox (slow, about 14×)
+npm run balance -- --fast --verify                # also play the full matrix and diff the verdicts
+npm run balance -- --all --top 15 --json out.json --no-cache --workers 10 --alpha 0.001
+```
+
+The CLI prints:
+- the overall rates (an estimate with [lowest, highest] possible while battles are unplayed);
+- every stated outcome and shape check with its W-D-L;
+- the caps and structure verdicts;
+- the battles needed, played and cached.
+
+It exits 1 when a rule fails. A config patch is checked by the config schema.
+Archetypes and their rules come from `tests/helpers/balance.ts` and
+`tests/helpers/balanceRules.ts`. A matrix rule applies only when all of its
+archetypes are in the run, and a custom `--archetypes` selection gets its own
+70% / structure rules. The twins, free-for-all, Lanes and turtle-vs-rush checks
+stay in the test.
+
+## Exploit search (`npm run balance:exploit`, 2026-10-24)
+
+`scripts/balance-exploit.ts` runs an evolutionary search over whole armies a
+player could submit:
+- up to 4 soldier designs and 4 tower designs;
+- each design picks HP, damage, range, speed, cooldown, size, element and splash,
+  plus its copies and the hold-by-the-tower brain;
+- every design passes the shared `checkStats` bounds and is priced by
+  `computeCost`, and the army fits the budget, unit cost cap, copy cap and type caps.
+
+The search starts from the template rush, the bricks and the turtle plus random
+armies. Fitness is the win rate against the 37 round-robin archetypes, using 4
+battles per opponent from the spread order, on the lean runner with the cache.
+The best builds are then played in full (16 battles per opponent) and reported
+with their best counters. A build above the 70% cap fails the run (exit code 1).
+Support units, walls and factories are not searched yet.
+
+```
+npm run balance:exploit                                  # 8 generations × 20 armies, seed 1
+npm run balance:exploit -- --generations 12 --population 24 --seed 3 --config patch.json --top 5 --json out.json
+```
+
+**First run (committed $5,000 config, seed 1, 8 generations × 20 armies, 128 armies,
+20,276 battles, 128 s).** Five builds come out above 70% against the 37 archetypes
+(16 battles per opponent, both seeds):
+
+| win rate | army | cost | best counters |
+|---|---|---|---|
+| **86.0%** | 1 ice splash-60 soldier (850 HP, 145 dmg, range 130, speed 0.6, cooldown 80) + 2 glass sniper towers (300 HP, 140 dmg, range 170, cooldown 35) | $4,528 | only the sniper nest (2-4-10) |
+| 83.8% | 2 brick-like soldiers (1,700 HP, 255 dmg, cooldown 55, size 12) | $4,924 | the walled nests, fortress, snipers |
+| 82.4% | 8 Basic Soldiers + 1 tower (400 HP, 130 dmg, range 170, cooldown 85) | $4,977 | tanks, mortars, bombard, blizzard |
+| 81.8% | the first build with a plain splash soldier and range-220 towers | $4,892 | bricks, snipers, bunker, home guard |
+
+Two of these were already known:
+- The template rush (open item 10) shows up again as 8 soldiers + 1 tower.
+- Bricks with a shorter cooldown and a smaller body are the same bricks.
+
+The new one is a **3-copy ice-splash brawler behind two fast-firing glass sniper
+towers** that almost nothing in the archetype pool beats. It is measured against
+"chase nearest" bots, so a real player's targeting may answer it better. It is
+still the first thing to check in the $10,000 retune: splash and ice prices, and
+the tower cooldown price.

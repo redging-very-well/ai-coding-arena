@@ -2389,6 +2389,22 @@ What the results show:
 | Lightning variance | ≥ 100 hits per unit per battle, seeded, separate stream | `elements.lightning.chancePct` 35 → 30 |
 | Maxed grunt factory now legal ($2,434) | 2 factories max, 6 alive per player | `cost.factory.hp` |
 
+### Fast balance tooling (`npm run balance`, `npm run balance:exploit`; 2026-10-24)
+
+Balance runs for retuning must take minutes, not hours (`docs/balance.md` "Fast balance runs"). None of these tools changes the sim or the config:
+- **Lean runner, checked for parity.** The round robins play the archetype brains (`tests/helpers/brains.ts`) as plain functions in-process. `tests/balance-parity.test.ts` runs in the balance pass and plays the same brains as transpiled unit code on isolated-vm and node:vm. It requires identical frames and results on 10 matchups that cover every brain. The lean runner is about 14× faster than isolated-vm per battle. `--runner ivm` gives a confirmation pass on the real sandbox.
+- **Result cache** (`.balance-cache/`, gitignored). The key covers:
+  - an engine hash of the sim, sandbox and shared sources plus the harness;
+  - the config fields a battle reads (prices only through the priced armies);
+  - both deployed armies, the map, the zone pair and the seed.
+
+  An unchanged balance test file takes 0.7 s instead of 99 s; `BALANCE_CACHE=0` replays everything.
+- **Early stopping** (`tests/helpers/balanceFast.ts`). It applies the test's round-robin rules (`tests/helpers/balanceRules.ts`), with two modes:
+  - `--exact` decides a rule when the unplayed battles can no longer change it, so it gives the same verdicts as the full matrix.
+  - `--fast` also decides a rule when it is 99.9% likely. It gave the same verdict on all 326 rules in nine configs (committed + 8 patches, 6 of them failing) with 23-55% of the battles.
+- **`npm run balance`** prints overall rates, stated outcomes and caps. It takes `--config patch.json`, `--archetypes`, `--seeds`, `--full|--exact|--fast`, `--no-cache`, `--runner` and `--verify`. A config patch takes about 20-30 s cold (`--fast`) and well under a second warm.
+- **`npm run balance:exploit`** is an evolutionary search over legal armies of soldiers and towers (shared `checkStats` bounds and `computeCost`, budget and caps) against the archetype pool. It reports the strongest builds, their counters and any build above 70%. Run it as a pre-event check after any retune.
+
 ### Dress-rehearsal checklist (on the event hardware, ≥ 1 day before)
 - [ ] Host OS: `npm ci && npm run build && npm start` works offline. isolated-vm loads (banner says `sandbox: isolated-vm`).
 - [ ] Router up. Both the game server and the Claude box have reserved IPs. Firewalls allow inbound TCP 8080 (game server) and 7781-7788 (Claude box, at least from the game server). Player laptops reach `/play`; /admin shows every seat **up**. Containers on the Claude box reach the game server's `/mcp` **and** Anthropic.
