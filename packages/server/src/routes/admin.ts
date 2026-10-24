@@ -172,7 +172,17 @@ export function adminRoutes(game: Game): Router {
   });
 
   r.get('/config', (_req, res) => {
-    const out: AdminConfigResponse = { config: game.config, repriced: [], invalidated: [] };
+    const out: AdminConfigResponse = { config: game.config, repriced: [], invalidated: [], economyReset: game.store.economyReset.slice() };
+    res.json(out);
+  });
+
+  // M8.8 (§6 migration): the facilitator dismisses the "economy overrides were reset" banner.
+  r.delete('/config/economy-reset', (_req, res) => {
+    if (game.store.economyReset.length > 0) {
+      game.store.economyReset = [];
+      game.store.save();
+    }
+    const out: AdminConfigResponse = { config: game.config, repriced: [], invalidated: [], economyReset: [] };
     res.json(out);
   });
 
@@ -207,7 +217,7 @@ export function adminRoutes(game: Game): Router {
     const { repriced, invalidated } = game.units.repriceAll(next);
     game.store.save();
     game.notifier.stateChanged();
-    const out: AdminConfigResponse = { config: next, repriced, invalidated };
+    const out: AdminConfigResponse = { config: next, repriced, invalidated, economyReset: game.store.economyReset.slice() };
     res.json(out);
   });
 

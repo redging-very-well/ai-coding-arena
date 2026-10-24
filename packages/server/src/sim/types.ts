@@ -13,7 +13,19 @@
 //     team mode (every setup carries a `teamId`) a side is a team. Allies,
 //     friendly fire, elimination, End and ranking work on sides.
 
-import type { BodyType, MinionKind, MinionOrder, PlacementDTO, Point, RankingEntryDTO, StatsSnapshot, TeamRoundRankDTO, ZoneRef } from '@pixel-clash/shared';
+import type {
+  BodyType,
+  DamageSplitDTO,
+  Element,
+  MinionKind,
+  MinionOrder,
+  PlacementDTO,
+  Point,
+  RankingEntryDTO,
+  StatsSnapshot,
+  TeamRoundRankDTO,
+  ZoneRef,
+} from '@pixel-clash/shared';
 import type { PlayerRunner } from '../sandbox/runner.js';
 
 /** Deterministic string order used for instanceIds and playerIds. */
@@ -129,6 +141,8 @@ export interface FactoryState {
   released: number;
   /** M8.6 (§5.3): the minion kind it builds. */
   kind: MinionKind;
+  /** M8.8 (§5.4): its minions' element (`minionElement`; medics: normal). Absent = normal. */
+  element?: Element;
   /** Minions saved up inside before they leave together (1 = each leaves at once). */
   burst: number;
   /** Built minions waiting inside (no bodies; lost with the factory). */
@@ -152,6 +166,34 @@ export interface FactoryState {
   /** Minions it made that died (report). */
   minionsLost: number;
 }
+
+/** M8.8 (§9.4 Fire: burn): one burn on a body, per owning player (at most 8 per body). */
+export interface BurnRecord {
+  /** The player whose fire hits made it. */
+  ownerId: string;
+  /** That player's seat (pulses of different owners land in seat order). */
+  seat: number;
+  /** HP the burn will still take (before shields). */
+  pool: number;
+  pulsesLeft: number;
+  /** Tick of the next pulse: 30 ticks apart, counted from the record's first hit. */
+  nextPulseTick: number;
+  /** The owner's last fire attacker: pulses credit it (its owner and type), even after it died. */
+  source: SimUnit;
+}
+
+/** M8.8 (§5.5 Auras): the strongest aura of each kind on a body this tick, in %, and who gives it. */
+export interface AuraState {
+  haste: number;
+  might: number;
+  shield: number;
+  hasteSrc: SimUnit | null;
+  mightSrc: SimUnit | null;
+  shieldSrc: SimUnit | null;
+}
+
+/** M8.8 (§9.4 Scoring and reports): effective damage per kind. */
+export type DamageSplit = DamageSplitDTO;
 
 /** One unit on the field (engine-internal, mutable). */
 export interface SimUnit {
@@ -218,6 +260,22 @@ export interface SimUnit {
   minion?: { factory: SimUnit; n: number; kind?: MinionKind };
   /** Walls: hp as last listed in a frame (walls are only listed when it changed, §9.3 Frames). */
   frameHp?: number;
+  // M8.8 (§9.4). Optional so plain test fixtures stay valid; the engine always sets them.
+  // `cooldownRemaining` is a float that drops by the tempo (views show Math.ceil).
+  /** Ticks until the freeze ends (0 = not frozen). */
+  frozen?: number;
+  /** Burns on the body, one per owning player, in seat order. */
+  burns?: BurnRecord[];
+  /** HP it can still be healed in this 60-tick window (5% of max HP; 0 for walls and factories, and from sudden death). */
+  healRoom?: number;
+  /** The auras on it this tick (computed at the start of the tick). */
+  aura?: AuraState;
+  /** Report: HP its heals restored, heals spent on cleanses, shatters + overload zaps, aura assist, damage by kind. */
+  healing?: number;
+  cleanses?: number;
+  combos?: number;
+  assist?: number;
+  damageSplit?: DamageSplit;
 }
 
 /** A homing projectile in flight (§9 Attacks). */
@@ -227,7 +285,14 @@ export interface Projectile {
   y: number;
   ownerId: string; // attacker instanceId
   targetId: string;
+  /** Fixed at fire time: the wall multiplier and (M8.8) the attacker's might are baked in. */
   damage: number;
+  /** M8.8: the attacker's element and splash radius at fire time (absent = normal / 0). */
+  element?: Element;
+  splash?: number;
+  /** M8.8: the might % baked into `damage`, and the aura that gave it (assist). */
+  might?: number;
+  mightSrc?: SimUnit | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +306,9 @@ export interface UnitCounters {
   valueDestroyed: number;
   strikes: number;
   disabled: boolean;
+  /** M8.8: HP healed and combos (Best Medic, Combo Master); absent = 0. */
+  healing?: number;
+  combos?: number;
 }
 
 /** Every unit's and player's counters as of one recorded frame. */
@@ -309,6 +377,16 @@ export interface UnitReport {
   disabled: boolean;
   disabledReason?: DisableReason;
   errors: UnitErrorRecord[];
+  /** M8.8: not a fighter even while alive (damage-0 units, medic minions, medic factories, §9.4). */
+  nonFighter?: boolean;
+  /** M8.8: a heal-support unit or a medic factory (the "never healed anyone" hint). */
+  healer?: boolean;
+  /** M8.8: HP its heals restored, cleanses, shatters + overload zaps, aura assist, damage by kind. */
+  healing?: number;
+  cleanses?: number;
+  combos?: number;
+  assist?: number;
+  damageSplit?: DamageSplit;
 }
 
 export type BattleEndReason = 'elimination' | 'timeout' | 'stopped';

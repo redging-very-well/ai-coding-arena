@@ -28,7 +28,9 @@ import {
   playerHintFor,
   playerHintForIssue,
   nearMaxWarnings,
+  powerHighWarning,
   pricingOf,
+  supportOf,
   tooExpensiveError,
   type GameConfig,
   type MinionOrder,
@@ -208,6 +210,8 @@ async function runSandboxSteps(
 
   // M8.6: the squad orders a factory's update() gave in the dry run (for its card, §12.5).
   let orders: MinionOrder[] | undefined;
+  // M8.8: whether a heal-support unit's update() healed in the dry run (for its card).
+  let healUsed: boolean | undefined;
   // 9-10. Dry-run update() (unless sprite() took the sandbox down). Walls have
   // no code that runs in battle: an update() on one is ignored (§5.2).
   if (stats.type === 'wall') {
@@ -224,8 +228,11 @@ async function runSandboxSteps(
     errors.push(...dr.errors);
     warnings.push(...dr.warnings);
     if (stats.type === 'factory') orders = dr.orders;
+    healUsed = dr.healUsed;
   }
   // Pricing tips last: they are the least urgent (the player hint uses warnings[0]).
+  const power = powerHighWarning(stats, priced, ctx.config.cost, ctx.config.stats.bounds, pricing);
+  if (power) warnings.push(power);
   warnings.push(...nearMaxWarnings(stats, priced, ctx.config.cost, ctx.config.stats.bounds, pricing));
 
   if (errors.length > 0) {
@@ -241,6 +248,7 @@ async function runSandboxSteps(
       breakdown: priced.breakdown,
       sprite: sp.sprite,
       ...(orders ? { orders } : {}),
+      ...(healUsed !== undefined ? { healUsed } : {}),
     },
     warnings,
     playerHint: warnings[0] ? `${SUCCESS_PLAYER_HINT} ${playerHintFor(warnings[0].code)}` : SUCCESS_PLAYER_HINT,
@@ -467,14 +475,20 @@ function exampleFor(field: string): string {
   const eg: Record<string, string> = {
     name: '"Swift Ninja"',
     type: '"soldier"',
-    maxHealth: '120',
-    damage: '10',
+    maxHealth: '600',
+    damage: '50',
     range: '40',
     speed: '1.5',
     attackCooldown: '60',
     productionInterval: '900',
     produces: "'archer'",
+    minionElement: "'fire'",
     burst: '3',
+    element: "'ice'",
+    splashRadius: '40',
+    support: "'heal'",
+    supportPower: '60',
+    supportRange: '120',
     color: '"#33CC66"',
     size: '10',
     shape: '"circle"',
@@ -511,13 +525,16 @@ function statWarnings(stats: StatsSnapshot, config: GameConfig): ValidationWarni
   }
   // Walls and factories can't attack (§5.2): no damage or cooldown advice for them.
   if (stats.type === 'wall' || stats.type === 'factory') return out;
-  if (stats.damage === 0) {
+  // M8.8: a pure support unit (a medic, a banner, a healing shrine) has damage 0 on purpose.
+  if (stats.damage === 0 && !supportOf(stats)) {
     out.push({
       code: 'W_ZERO_DAMAGE',
       field: 'damage',
       value: 0,
-      message: 'damage is 0, so this unit can never hurt anything.',
-      fix: 'If it should fight, set this.damage to a number above 0, e.g. this.damage = 10.',
+      message:
+        'damage is 0, so this unit can never hurt anything. Fire, lightning and splash scale with damage, so they do nothing at damage 0 (ice still freezes). ' +
+        "A side with only damage-0 units left is out of the battle.",
+      fix: 'If it should fight, set this.damage to a number above 0, e.g. this.damage = 50.',
     });
   }
   const ref = config.cost.referenceCooldown;

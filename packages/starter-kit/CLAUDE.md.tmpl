@@ -24,11 +24,11 @@ Player: {{PLAYER_NAME}}
 1. Call `get_game_state` to see the phase, time left and `submissionsOpen`.
 2. Write or edit `units/<short_name>.js` (one unit per file, e.g. `units/ninja.js`). To change an existing unit, first fetch its latest code with `get_unit_source` (see **Revising a unit**). To build on a starter unit, copy `units/basic_soldier.js`, `units/basic_tower.js`, `units/basic_wall.js` or `units/basic_factory.js` to a **new** file and give it a **new name** (never edit the starter files themselves).
 3. Call `validate_unit` with the file's full text as `source` (and `unitId` plus `baseVersion` when revising, see below). Nothing is stored. For a new unit, don't reuse the unitId the check mentions: submit without one.
-4. If it fails, read each error's `fix` field and change the file exactly as it says, then validate again. Warnings are tips: follow them when they make sense.
+4. If it fails, read each error's `fix` field and change the file exactly as it says, then validate again. Warnings are tips: follow them when they make sense. `W_OLD_SCALE` on a unit in `list_my_units` means it was made for the old $1,000 game: multiply its maxHealth and damage by 5 when the player wants to use it.
 
    **Don't check the file yourself with commands** (no `python`, `node`, `awk`, `wc` or scripts to count sprite rows or test the code). `validate_unit` checks everything, including every sprite row, and says exactly what to fix. Any command that isn't pre-approved pops up a permission question on the player's screen. To check or test a unit, use only the pixel-clash tools and the file read/write/edit tools (or the §9 `curl` commands if the tools are missing).
 5. When it validates: if `submissionsOpen` is true (Plan phase), call `submit_unit` with the same `source` (and `unitId` plus `baseVersion` when revising). If submissions are closed, tell the player "It's ready! When the Plan phase starts, tell me and I'll send it." (you won't be told when it starts, so wait for the player).
-6. Tell the player the unit's name and **cost** (e.g. "Your Ninja costs $180"), and remind them to **select it and place it on the web page**.
+6. Tell the player the unit's name and **cost** (e.g. "Your Ninja costs $900"), and remind them to **select it and place it on the web page**.
 
 **Revising a unit:** the player may have changed the unit themselves on the web page since you last saw it, so ALWAYS do this when changing an existing unit:
 
@@ -45,13 +45,15 @@ Other tools: `get_rules` (numbers for everything), `get_unit_contract` (the late
 
 ## 4. The unit contract
 
-A unit file has **one default-exported class**. The constructor sets the stats as plain properties on `this` (`this.damage = 10`, not getters). `update()` is called every tick and returns one action (walls have no `update()`, see **4c**). `sprite()` returns the unit's pixel art. Plain JavaScript is best (TypeScript syntax is tolerated).
+A unit file has **one default-exported class**. The constructor sets the stats as plain properties on `this` (`this.damage = 50`, not getters). `update()` is called every tick and returns one action (walls have no `update()`, see **4c**). `sprite()` returns the unit's pixel art. Plain JavaScript is best (TypeScript syntax is tolerated).
 
 ```ts
 export type UnitType = 'soldier' | 'tower' | 'wall' | 'factory';   // §5.2
 export type BodyType = UnitType | 'minion'; // minions are made by factories: you see them, you never submit one
-export type MinionKind = 'grunt' | 'archer' | 'runner' | 'brute';  // what a factory builds (§5.3)
+export type MinionKind = 'grunt' | 'archer' | 'runner' | 'brute' | 'medic'; // what a factory builds (§5.3, medic §5.5)
 export type MinionOrder = 'attack' | 'defend' | 'swarm' | 'guard'; // what a factory's minions do (§5.3)
+export type Element = 'normal' | 'fire' | 'ice' | 'lightning';     // §5.4: one per unit
+export type SupportKind = 'heal' | 'haste' | 'might' | 'shield';  // §5.5: one per unit
 export type MapStyle = 'duel' | 'triangle' | 'corners' | 'ring' | 'lanes' | 'islands'; // §9.2
 export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 
@@ -59,16 +61,22 @@ export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 export interface UnitStats {
   name: string;          // 1-24 chars, shown on screen
   type: UnitType;        // soldiers move; towers, walls and factories are buildings and never move
-  maxHealth: number;     // soldier/tower 10-500, wall 50-1500, factory 100-1000
-  damage?: number;       // soldier/tower: required, 0-60. wall/factory: leave it out (they can't attack)
+  maxHealth: number;     // soldier/tower 50-2500, wall 250-7500, factory 500-5000
+  damage?: number;       // soldier/tower: required, 0-300. wall/factory: leave it out (they can't attack)
   range?: number;        // soldier/tower: required, 20-300 px, EDGE to edge (gap between the two bodies). wall/factory: leave it out
   speed?: number;        // soldier: required, 0.5-5 px per tick (60 ticks = 1 s). tower/wall/factory: 0 or leave it out
-  attackCooldown?: number;// soldier/tower: required, integer ticks between attacks. wall/factory: leave it out
+  attackCooldown?: number;// soldier/tower: required, integer ticks between attacks (and heals). wall/factory: leave it out
+  element?: Element;     // soldier/tower, optional (default 'normal'): fire burns, ice freezes, lightning zaps. Price ×1.2
+  splashRadius?: number; // soldier/tower, optional (default 0 = one target): 0-80 px; other enemies this close to the target take half
+  support?: SupportKind; // soldier/tower, optional: heal = an action you return; haste/might/shield = an aura that works by itself
+  supportPower?: number; // required with support. heal: HP per heal 10-250. haste/might: 5-50 (%). shield: 5-40 (%)
+  supportRange?: number; // required with support, EDGE to edge. heal: 20-200 px reach. haste/might/shield: 40-150 px aura
   productionInterval?: number; // factory only, required: integer ticks between two minions, 600-1800 (10-30 s)
   produces?: MinionKind; // factory only, optional (default 'grunt'): the minion it builds; the price follows (§6)
+  minionElement?: Element; // factory only, optional (default 'normal'): the element of every minion it builds (medics ignore it)
   burst?: number;        // factory only, optional (default 1): integer 1-4; minions wait inside until this many are ready, then leave together
   color: string;         // "#RRGGBB": projectiles, particles, fallback sprite; a wall's block colour; a factory's minion colour
-  size?: number;         // soldier/tower: body radius in px = hitbox AND drawn size, 6-20 (default 10 / 14), $0.5 per px above 6. Walls always fill their 40 px cell, factories are always 18: size is ignored for them.
+  size?: number;         // soldier/tower: body radius in px = hitbox AND drawn size, 6-20 (default 10 / 14), $8 per px above 6. Walls always fill their 40 px cell, factories are always 18: size is ignored for them.
   shape?: Shape;         // optional; only used by the fallback sprite when sprite() is missing
 }
 
@@ -86,6 +94,18 @@ export interface SpriteSpec {
   };
 }
 
+/** What is on a body right now. Every number is 0 when nothing applies. */
+export interface StatusView {
+  burning: number;   // ticks until the burn ends (max 180)
+  burnLeft: number;  // HP the burn will still take
+  frozen: number;    // ticks until the freeze ends (max 120): moves, reloads and builds 35% slower
+  haste: number;     // % from the strongest haste aura on it
+  might: number;     // % from the strongest might aura on it
+  shield: number;    // % from the strongest shield aura on it
+  healRoom: number;  // HP it can still be healed this second (0: full, a wall/factory, the cap is used, or sudden death)
+}
+export interface SupportView { kind: SupportKind; power: number; range: number }
+
 export interface FactoryView {
   productionInterval: number;
   nextMinionIn: number;  // ticks until the next minion (it waits while you hold, or while the factory is full)
@@ -94,6 +114,7 @@ export interface FactoryView {
   stored: number;        // built minions waiting inside: safe from attacks, but LOST if the factory is destroyed
   burst: number;         // stored minions leave together when stored reaches burst (or on { action: 'release' })
   produces: MinionKind;
+  minionElement: Element;
   order: MinionOrder;    // starts 'attack'; a swarm whose target died becomes 'attack', a guard whose ally died 'defend'
   orderTargetId: string | null; // swarm: the enemy, guard: the ally, else null
   rally: { x: number; y: number }; // where 'attack' minions go; starts at world.center
@@ -103,8 +124,10 @@ export interface SelfView {
   unitId: string;        // the design this copy was made from
   ownerId: string; teamId: number; type: UnitType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number;
-  damage: number; range: number; speed: number;
-  attackCooldown: number; cooldownRemaining: number; // 0 = can attack this tick
+  damage: number; range: number; speed: number; // the BASE stats: might, haste and a freeze change them in battle (status)
+  attackCooldown: number; cooldownRemaining: number; // 0 = can attack (or heal) this tick
+  element: Element; splashRadius: number; support: SupportView | null;
+  status: StatusView;
   blockedBy: string | null; // id of the wall that stopped my last move, else null
   blockedTicks: number;     // ticks in a row a wall has stopped me (no progress; 0 = free)
   pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls by a route the game found, or walled off (smash self.blockedBy)
@@ -113,10 +136,15 @@ export interface SelfView {
 export interface OtherView {
   id: string; ownerId: string; teamId: number; type: BodyType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number; range: number;
+  element: Element;      // a minion's is its factory's minionElement; walls and factories 'normal'
+  splashRadius: number;  // spread out against splash
+  support: SupportView | null; // find the enemy medic
+  status: StatusView;
 }
 // A wall has radius 20: for range it counts as a circle of radius 20 (so inRange works unchanged),
 // but its body blocks the whole 40×40 square. Walls and factories have range 0.
-// A minion's name is its kind: 'Grunt', 'Archer', 'Runner' or 'Brute'. Stored minions are invisible.
+// A minion's name is its kind: 'Grunt', 'Archer', 'Runner', 'Brute' or 'Medic'. Stored minions are invisible.
+// cooldownRemaining is Math.ceil of an internal float that counts down by the tempo: 0.65 frozen, ×(1 + haste%) hasted.
 export interface WorldView {
   width: number; height: number;        // arena size this battle: 800 (2-4 players), 1040 (5-6), 1200 (7-8), §9.2
   tick: number; ticksLeft: number;
@@ -134,6 +162,7 @@ export type Action =
   | { action: 'idle' }
   | { action: 'move'; destination: { x: number; y: number } }   // soldiers
   | { action: 'attack'; targetId: string }                     // soldiers and towers
+  | { action: 'heal'; targetId: string }                       // support 'heal' only: heal one ally in supportRange (uses the attack cooldown)
   | { action: 'rally'; destination: { x: number; y: number } }  // factories: order 'attack' and send my minions here
   | { action: 'command'; order: MinionOrder; targetId?: string; destination?: { x: number; y: number } } // factories: squad order; swarm/guard need targetId
   | { action: 'release' }                                       // factories: send the stored minions out now
@@ -153,13 +182,16 @@ For soldiers and towers (walls and factories: see **4c**):
 |---|---|
 | name | text, 1-24 characters (shown on screen) |
 | type | `'soldier'` (moves) or `'tower'` (never moves); also `'wall'` and `'factory'` (4c) |
-| maxHealth | 10-500 (walls 50-1500, factories 100-1000) |
-| damage | 0-60 per hit (0 is allowed but gives a warning) |
+| maxHealth | 50-2500 (walls 250-7500, factories 500-5000) |
+| damage | 0-300 per hit (0 is allowed: a pure support unit; see **4d**) |
 | range | 20-300 px, **edge to edge** (the gap between the two bodies) |
 | speed | soldier: 0.5-5 px per tick. tower: exactly 0 |
 | attackCooldown | whole number, 10-600 ticks between attacks (60 = once per second) |
 | color | `"#RRGGBB"`, e.g. `"#33CC66"` |
-| size | optional, 6-20 px body radius = hitbox and drawn size. Default soldier 10, tower 14. Costs $0.5 per px above 6 (more near the max) |
+| size | optional, 6-20 px body radius = hitbox and drawn size. Default soldier 10, tower 14. Costs $8 per px above 6 (more near the max) |
+| element | optional: `'normal'` (default), `'fire'`, `'ice'` or `'lightning'` (**4d**) |
+| splashRadius | optional, 0-80 px (default 0 = one target) (**4d**) |
+| support | optional: `'heal'`, `'haste'`, `'might'` or `'shield'`, with `supportPower` (heal 10-250 HP per heal; haste and might 5-50 %; shield 5-40 %) and `supportRange` (heal 20-200 px reach; auras 40-150 px), edge to edge (**4d**) |
 | shape | optional: `'circle'`, `'square'`, `'triangle'` or `'diamond'` (only used when there is no sprite) |
 
 ### Engine rules
@@ -169,7 +201,8 @@ For soldiers and towers (walls and factories: see **4c**):
 3. **`update(self, enemies, allies, world)` runs once per tick** (60 ticks = 1 second) with fresh copies of the data. Changing the inputs does nothing.
 4. **The returned action is only a request; the engine checks it:**
    - `{ action: 'attack', targetId }`: the target must be a living enemy (a different `teamId`), in range (`Math.hypot(dx, dy) - self.radius - target.radius <= self.range`, edge to edge), and `self.cooldownRemaining` must be 0. Otherwise the unit idles. Attacking never moves the unit. Bodies that touch are always in range.
-   - Cooldown: `cooldownRemaining` is 0 at the start, so a unit can fire on its first tick. Firing sets it to `attackCooldown`, and it drops by 1 each tick.
+   - Cooldown: `cooldownRemaining` is 0 at the start, so a unit can fire on its first tick. Firing (or healing) sets it to `attackCooldown`, and it drops by 1 each tick (0.65 while frozen, more while hasted).
+   - `{ action: 'heal', targetId }`: units with `support: 'heal'` only (**4d**). The target must be a living ally (not yourself, a wall or a factory) within `supportRange` (edge to edge) that is hurt, burning or frozen, and `self.cooldownRemaining` must be 0. Otherwise the unit idles and keeps its cooldown.
    - `{ action: 'move', destination: { x, y } }`: soldiers only. The unit walks at most `speed` px per tick straight toward the destination (clamped to the arena). If a wall is in the way it slides along the wall. Towers ignore moves.
    - `{ action: 'rally', destination: { x, y } }` and `{ action: 'hold' }`: factories only (4c). Any other type that returns them just waits, and a factory that returns `move` or `attack` just keeps building.
    - `{ action: 'idle' }`, `undefined`, anything malformed, or a thrown error all mean idle. **Errors also count strikes; too many and the unit is switched off** for the rest of the battle.
@@ -268,13 +301,13 @@ export default class Knight {
 
 | Type | Group | What it does | Needs | `update()` |
 |---|---|---|---|---|
-| **soldier** | unit | moves and fights | name, type, maxHealth (10-500), damage, range, speed (0.5-5), attackCooldown, color | required |
+| **soldier** | unit | moves and fights | name, type, maxHealth (50-2500), damage, range, speed (0.5-5), attackCooldown, color; optional element, splashRadius, support (**4d**) | required |
 | **tower** | building | stays put and shoots | the same, with `speed = 0` | required |
-| **wall** | building | a big solid block that stops everyone; can't attack | name, type, maxHealth (**50-1500**), color. Leave out damage, range, speed, attackCooldown, size | **none** (one is ignored) |
-| **factory** | building | stays put and builds **minions**; can't attack | name, type, maxHealth (**100-1000**), **productionInterval** (whole ticks between minions, **600-1800**), color; optional **produces** (minion kind) and **burst** (1-4). Leave out damage, range, speed, attackCooldown, size | required: gives the minions their orders |
+| **wall** | building | a big solid block that stops everyone; can't attack | name, type, maxHealth (**250-7500**), color. Leave out damage, range, speed, attackCooldown, size | **none** (one is ignored) |
+| **factory** | building | stays put and builds **minions**; can't attack | name, type, maxHealth (**500-5000**), **productionInterval** (whole ticks between minions, **600-1800**), color; optional **produces** (minion kind), **minionElement** and **burst** (1-4). Leave out damage, range, speed, attackCooldown, size | required: gives the minions their orders |
 
 - **Walls** fill their whole 40 × 40 px cell (for range they count as a circle of radius 20). They block **every** body: enemies, your own units and your teammates' units. A wall's `color` is its block colour, and its `sprite()` textures the block's sides (see `units/basic_wall.js`).
-- **Factories** are a circle of radius 18. Every `productionInterval` ticks a factory builds one **Minion** (40 HP, 5 damage, melee, speed 1.5, size 8), at most 4 alive per factory. Minions have built-in brains (you never write their code): they chase enemies near them or near the rally point, otherwise they walk to the rally point. An enemy wall that blocks them for 2 s gets smashed, so minions can break into a walled-in enemy. The factory's `update()` returns `{ action: 'rally', destination: { x, y } }` to move the rally point (it starts at `world.center` and stays until changed) or `{ action: 'hold' }` to pause building for a tick. `self.factory` shows `nextMinionIn`, `minionsLeft`, `minionsAlive`, `maxAlive` and `rally`. The factory's `color` is also its minions' colour. See `units/basic_factory.js`. Destroying a factory stops it; its minions keep going. A factory that holds too long (or is walled in so no minion can get out) stops counting as a fighter once it no longer has time to build one.
+- **Factories** are a circle of radius 18. Every `productionInterval` ticks a factory builds one **Minion** (a grunt: 180 HP, 25 damage, melee, speed 1.5, size 8), at most 4 alive per factory. Minions have built-in brains (you never write their code): they chase enemies near them or near the rally point, otherwise they walk to the rally point. An enemy wall that blocks them for 2 s gets smashed, so minions can break into a walled-in enemy. The factory's `update()` returns `{ action: 'rally', destination: { x, y } }` to move the rally point (it starts at `world.center` and stays until changed) or `{ action: 'hold' }` to pause building for a tick. `self.factory` shows `nextMinionIn`, `minionsLeft`, `minionsAlive`, `maxAlive` and `rally`. The factory's `color` is also its minions' colour. See `units/basic_factory.js`. Destroying a factory stops it; its minions keep going. A factory that holds too long (or is walled in so no minion can get out) stops counting as a fighter once it no longer has time to build one.
 - **A factory's `productionInterval` sets how many minions it buys:** 600 = 8 minions, 900 = 5, 1200 = 4, 1800 = 2 per battle, and the price follows (section 5).
 - `enemies` and `allies` can now hold `type: 'wall'`, `'factory'` and `'minion'` bodies. Walls and factories have `range` 0.
 - **Getting past walls:** just `move` to where you want to go. When walls are in the way, the game walks your soldier (and minions) **round them by the shortest open way**, through gaps one cell wide (two cells for size 19-20). `self.pathing` says how the last move went: `'direct'` (straight there), `'detour'` (going round walls) or `'no-route'` (walls close the way off completely: the unit walks to the best wall to break and waits there). `self.blockedBy` is the id of the wall that stopped it (or `null`) and `self.blockedTicks` counts the ticks it has been stopped; a unit that is just walking round a wall is not stopped.
@@ -283,7 +316,7 @@ Tips:
 - **Walls block your own units too: leave a gap** of one empty cell (two for size 19-20) so your soldiers and minions can get out. The web page warns when a unit is walled in.
 - **Walls protect fighters, they don't win.** Walls are worth $0 at the end, and a player with only walls left is out. Every army needs at least one soldier, tower or factory.
 - **When choosing targets, skip `enemy.type === 'wall'`**, unless `self.blockedBy` is an enemy wall (it is still in `enemies`) and `self.blockedTicks` is high (120 = 2 s): then smash it. With `self.pathing === 'no-route'` the unit can't get there any other way, so you may smash at once.
-- **Minions** show up in `enemies` as `type: 'minion'`: weak (40 HP) but many.
+- **Minions** show up in `enemies` as `type: 'minion'`: weaker (a grunt has 180 HP) but many.
 - **Shots fly over walls**, so towers behind walls still shoot. Walls are great for funnelling enemies past your towers.
 - **Enemies walk round walls too.** A wall with a way round it only makes them walk further; to keep them out, close the gap completely (they then have to smash a wall).
 - **Factories pay off over time:** their minions arrive during the battle, so a factory is a slow start and a strong finish. Rally minions at the nearest enemy to attack, or just in front of your towers to defend.
@@ -294,10 +327,13 @@ Tips:
 
 | `produces` | Name in `enemies` | HP | Damage | Range | Speed | Size | Price per minion | Good for |
 |---|---|---|---|---|---|---|---|---|
-| `'grunt'` (default) | Grunt | 40 | 5 | 20 (melee) | 1.5 | 8 | $28 | a cheap, steady stream |
-| `'archer'` | Archer | 24 | 5 | **110** (shoots) | 1.2 | 7 | $35 | shooting from behind walls, towers or soldiers |
-| `'runner'` | Runner | 28 | 4 | 20 (melee) | **2.6** | 6 | $38 | reaching far targets first |
-| `'brute'` | Brute | **100** | 8 (**×3 on walls**) | 20 (melee) | 0.9 | 11 | $35 | smashing walls, soaking hits |
+| `'grunt'` (default) | Grunt | 180 | 25 | 20 (melee) | 1.5 | 8 | $148 | a cheap, steady stream |
+| `'archer'` | Archer | 120 | 25 | **110** (shoots) | 1.2 | 7 | $195 | shooting from behind walls, towers or soldiers |
+| `'runner'` | Runner | 140 | 20 | 20 (melee) | **2.6** | 6 | $185 | reaching far targets first |
+| `'brute'` | Brute | **550** | 40 (**×3 on walls**) | 20 (melee) | 0.9 | 11 | $213 | smashing walls, soaking hits |
+| `'medic'` | Medic | 150 | 0 (**heals 40 HP**, reach 60) | 20 | 1.4 | 7 | $209 | keeping your army alive (never attacks; see **4d**) |
+
+**`this.minionElement`** (optional, default `'normal'`): `'fire'`, `'ice'` or `'lightning'` gives every minion of the factory that element (×1.2 on the minion price; medics ignore it). Minions never splash.
 
 Archers' shots fly over walls. Brutes hit walls three times as hard and start smashing a wall that blocks them after 0.5 s (other kinds wait 2 s). Any other value for `produces` is an error (use exactly one of the four words, in quotes).
 
@@ -372,83 +408,177 @@ Factory tips:
 - A burst factory is a juicy target (its stored minions die with it): keep it at the back of your zone or behind walls, or release early when it is hurt (`self.hp < self.maxHp / 2`).
 - Two burst-4 factories share the per-player limit (6 alive, fewer with 7-8 players), so the second one may send out fewer at once. That's fine.
 
+## 4d. Elements, splash and support
+
+1. **Numbers are 5× bigger now:** $5,000 per army, up to $2,500 per unit, HP 50-2,500, damage 0-300. Range, speed, size and cooldown work exactly as before. Don't copy old numbers: 120 HP is a weakling now.
+2. **Extremes are OK now:** a maxed stat costs 2×. What costs extra is being tough **and** strong at once (up to ×1.6, the power factor). So pair a tank with a hitter instead of building one brick.
+3. **One element per unit, ×1.2 price** (`this.element`):
+   - `'fire'` adds half the hit again as a 3 s burn. It is best on fast hitters.
+   - `'ice'` freezes for 2 s, making the target 35% slower at moving, reloading and building. It works even at damage 0, and it is best against a few big units.
+   - `'lightning'` gives a 35% chance to zap the nearest other enemy (within 100 px) for the same damage. It is best against crowds.
+4. **Combos:** fire on a frozen enemy = SHATTER (1.5× damage, and it thaws). Lightning on a burning enemy zaps one more. Read `enemy.status.frozen` and `enemy.status.burning`.
+5. **Splash:** `this.splashRadius = 40` makes everyone within 40 px of the target take half, with your fire or ice (×1.53 price; ×1.7 at 80). If the enemy has splash, spread out (`enemy.splashRadius > 0`). Walls never burn, freeze, get zapped or take splash.
+6. **Support (one per unit):** `this.support` with `this.supportPower` and `this.supportRange` (edge to edge).
+   - `'heal'` is an action: `return { action: 'heal', targetId: ally.id }` on a hurt, burning or frozen ally in `supportRange`. It uses your attack cooldown, so a unit with damage can heal or hit on each cooldown.
+   - `'haste'` (faster moving and reloading), `'might'` (more damage) and `'shield'` (less damage taken) are auras: keep allies inside `supportRange`, and there is nothing to code.
+   - Two of the same aura don't add up (the strongest counts); different ones do.
+7. **Healing limits:** at most 5% of the ally's max HP per second, nothing after 50 s (sudden death), never walls or factories, never yourself. A heal on a burning or frozen ally only cleanses it, so fire is how you beat medics.
+8. **Factories:** `this.minionElement = 'ice'` on archers, `'fire'` on brutes, `'lightning'` on burst runners; `this.produces = 'medic'` with the `guard` command on your tank.
+9. **A unit with damage 0 can't win alone:** a side with only support units left (damage 0, or medic factories) is out of the battle.
+
+Everyone sees `self.status` and `enemy.status` (`burning`, `burnLeft`, `frozen`, `haste`, `might`, `shield`, `healRoom`), `element`, `splashRadius` and `support` (`{ kind, power, range }` or `null`), so "kill the medic first" is easy: `enemies.find(e => e.support && e.support.kind === 'heal')`.
+
+**Field Medic** (soldier, maxHealth 500, damage 0, range 20, speed 1.5, size 10, `support = 'heal'`, `supportPower = 60`, `supportRange = 120`: **$759**). It puts out fires first, then heals the most hurt ally in reach, and otherwise walks behind the toughest ally ("Make a medic that heals my tanks"). Medics have no damage, so field them next to fighters:
+
+```js
+// Field Medic: cleanse burning/frozen allies first, then heal the most hurt one in reach
+update(self, enemies, allies, world) {
+  const gap = (a, b) => Math.hypot(b.x - a.x, b.y - a.y) - a.radius - b.radius;
+  const need = allies.filter(a => a.id !== self.id && a.type !== 'wall' && a.type !== 'factory' && gap(self, a) <= self.support.range
+    && (a.status.burning > 0 || a.status.frozen > 0 || (a.hp < a.maxHp && a.status.healRoom > 0)));
+  need.sort((a, b) => (b.status.burning + b.status.frozen > 0) - (a.status.burning + a.status.frozen > 0) || a.hp / a.maxHp - b.hp / b.maxHp);
+  if (need[0] && self.cooldownRemaining === 0) return { action: 'heal', targetId: need[0].id };
+  // Follow the toughest ally (the tank), staying just behind it.
+  let tank = null;
+  for (const a of allies) {
+    if (a.id === self.id || a.type === 'wall' || a.type === 'factory' || a.type === 'tower') continue;
+    if (!tank || a.maxHp > tank.maxHp) tank = a;
+  }
+  if (tank) return gap(self, tank) > 30 ? { action: 'move', destination: { x: tank.x, y: tank.y } } : { action: 'idle' };
+  return { action: 'move', destination: world.center }; // nobody to follow: join the fight
+}
+```
+
+More examples (put the constructor lines next to the template's stats):
+
+```js
+// Frost Spire: an ice tower with splash that freezes the enemy closest to my base, and everyone near it.
+// constructor: start from units/basic_tower.js, then this.element = 'ice'; this.splashRadius = 40; this.attackCooldown = 60;  ($1,309)
+update(self, enemies, allies, world) {
+  const gap = (a, b) => Math.hypot(b.x - a.x, b.y - a.y) - a.radius - b.radius;
+  let best = null;
+  for (const e of enemies) {
+    if (e.type === 'wall' || gap(self, e) > self.range) continue;
+    const toBase = Math.hypot(e.x - world.myCorner.x, e.y - world.myCorner.y);
+    if (!best || toBase < best.toBase) best = { e, toBase };
+  }
+  if (best && self.cooldownRemaining === 0) return { action: 'attack', targetId: best.e.id };
+  return { action: 'idle' };
+}
+```
+
+```js
+// Fire soldier that SHATTERS: frozen enemies first, then the nearest one.
+// constructor: start from units/basic_soldier.js, then this.element = 'fire';  ($635)
+// pick the target like this (inside update):
+let target = null;
+for (const e of enemies) {
+  if (e.type === 'wall') continue;
+  const d = Math.hypot(e.x - self.x, e.y - self.y);
+  const score = d - (e.status.frozen > 0 ? 1000 : 0); // a frozen enemy always wins
+  if (!target || score < target.score) target = { e, score };
+}
+```
+
+```js
+// Fire archers from my factory that guard my nearest tower.
+// constructor: start from units/basic_factory.js, then this.produces = 'archer'; this.minionElement = 'fire';  ($1,417)
+// update(): the "archers that guard the nearest of my towers" example in 4c.
+```
+
+Tips:
+- **Pick the element for the job:** fire on fast hitters (it is wasted on snipers: they kill before the burn lands), ice against a few big units (and to set up shatters), lightning against crowds and minions.
+- **A good combo army:** one ice unit to freeze plus fire units that hit frozen enemies first (shatter), or lightning units next to fire ones (overload zaps).
+- **Kill the medic first:** `enemies.find(e => e.support && e.support.kind === 'heal')`. Fire beats healing, because every burn costs the enemy medic a heal.
+- **Auras need company:** keep a War Drummer (`might`) or Wind Banner (`haste`) next to your fighters, e.g. walk to the middle of your soldiers.
+- **Spread out against splash** (`enemy.splashRadius > 0`): keep your units more than that far apart.
+
 ## 5. Cost
 
 Every unit has a price in $. The game works it out from the stats. Each stat has a normal (linear) price, and the closer a stat gets to its max, the more extra it costs:
 
 ```
-stat price = normal price × (1 + 2 × (stat / max)²)
+stat price = normal price × (1 + 1 × (stat / max)²)
 
-  maxHealth: maxHealth × 0.25      (max 500)
-  damage:    damage × 1.5          (max 60)
-  range:     range × 0.2           (max 300)
-  speed:     speed × 12            (max 5)
-  size:      (size − 6) × 0.5      (max 20, so (size − 6) max 14)
+  maxHealth: maxHealth × 0.3       (max 2500)
+  damage:    damage × 1.5          (max 300)
+  range:     range × 1.38          (max 300)
+  speed:     speed × 66            (max 5)
+  size:      (size − 6) × 8        (max 20, so (size − 6) max 14)
 
-cost = (10 + the five stat prices) × max(1, 60 / attackCooldown)
+cost = (50 + the five stat prices + heal) × max(1, 60 / attackCooldown) × power × splash × element + aura
+
+  power   = 1 + 0.6 × (maxHealth / 2500) × (damage / 300)       up to ×1.6: tough AND strong
+  splash  = 1 + 0.7 × ρ × (2 − ρ), ρ = splashRadius / 80          ×1.53 at 40 px, ×1.7 at 80
+  element = 1 (normal) or 1.2 (fire, ice, lightning)
+  heal    = 4.5 × supportPower × (1 + (supportPower / 250)²) × reach(supportRange / 200)
+  aura    = c × supportPower × (1 + (supportPower / max)²) × reach(supportRange / 150)   c: haste 5, might 4, shield 7; max 50 (shield 40)
+  reach(r) = 0.5 + r × (2 − r)                                    0.5 at 0, 1.5 at the max
 ```
 
-rounded **up** to whole dollars. If `size` is left out it is priced at the default (soldier 10, tower 14). The coefficients can be changed by the grown-ups during the event, so trust the `cost` and `breakdown` that `validate_unit` returns (or `get_rules`) over these numbers. The `breakdown.parts` list says, for each stat, how much is its normal price and how much is the extra for being near the max.
+In one paragraph: each stat costs its normal price, more near its max (up to 2× at the max). Healing adds a price too. Then multiply: fast attacks (60 / cooldown), being both tough and strong (up to ×1.6), splash (×1.53 at 40 px, ×1.7 at 80) and an element (×1.2). An aura is added at the end.
+
+The cost is rounded **up** to whole dollars. If `size` is left out it is priced at the default (soldier 10, tower 14). The coefficients can be changed by the grown-ups during the event, so trust the `cost` and `breakdown` that `validate_unit` returns (or `get_rules`) over these numbers. The `breakdown.parts` list says, for each stat, how much is its normal price and how much is the extra for being near the max.
 
 Worked examples:
 
-- **Basic Soldier** (maxHealth 120, damage 10, range 40, speed 1.5, size 10, attackCooldown 60):
-  maxHealth 30 × (1 + 2 × 0.24²) = 33.46, damage 15.83, range 8.28, speed 21.24, size 2.33.
-  10 + 33.46 + 15.83 + 8.28 + 21.24 + 2.33 = 91.14, times max(1, 60/60) = 1 → **$92**.
-- **Big Tank** (maxHealth 500, damage 20, range 40, speed 0.8, size 20, attackCooldown 60):
-  maxHealth is at its max, so it costs 125 × 3 = 375 instead of 125. Size 20 is maxed too: 7 × 3 = 21.
-  10 + 375 + 36.67 + 8.28 + 10.09 + 21 = 461.04 → **$462**. With maxHealth 250 instead it would be only **$180**.
-- **Basic Tower** (maxHealth 150, damage 15, range 180, speed 0, size 14, attackCooldown 45): 148.09 × 60/45 → **$198**.
-- **Speedy Scout** (maxHealth 60, damage 6, range 30, speed 4, size 6, attackCooldown 20): 150.17 × 3 → **$451**. With attackCooldown 10 it would be × 6 = $902: **too expensive** (max $500).
+- **Basic Soldier** (maxHealth 600, damage 50, range 40, speed 1.5, size 10, attackCooldown 60):
+  maxHealth 180 × (1 + 0.24²) = 190.37, damage 77.08, range 56.18, speed 107.91, size 34.61.
+  50 + 190.37 + 77.08 + 56.18 + 107.91 + 34.61 = 516.15, times max(1, 60/60) = 1, times power 1.024 → **$529**.
+- **Fire Soldier** (the same with `element = 'fire'`): 516.15 × 1.024 × 1.2 → **$635**. Fire costs $106 on a template.
+- **Half Tank** (maxHealth 1250, damage 100, range 40, speed 0.8, size 20, attackCooldown 60): **$1,122**. **Huge Tank** (maxHealth 2500): **$2,462**.
+- **Basic Tower** (maxHealth 625, damage 75, range 140, speed 0, size 14, attackCooldown 45): 688.92 × 60/45 × 1.0375 → **$954**.
+- **Speedy Scout** (maxHealth 300, damage 30, range 30, speed 4, size 6, attackCooldown 20): 661.52 × 3 × 1.01 → **$1,999**. With attackCooldown 10 it would be × 6 = $3,998: **too expensive** (max $2,500).
+- **Field Medic** (4d): body 376.24 + heal 382.64 → **$759**. **War Drummer** (the same body with `support = 'might'`, `supportPower = 30`, `supportRange = 100`): 376.24 + aura 226.67 → **$603**.
 
-**Walls and factories** use the same curve, on their health only (they can't attack, so there is no cooldown factor):
+**Walls and factories** use the same curve, on their health only (they can't attack, so there are no factors):
 
 ```
-wall:    cost = 4 + maxHealth × 0.06 × (1 + 2 × (maxHealth / 1500)²)
+wall:    cost = 20 + maxHealth × 0.06 × (1 + (maxHealth / 7500)²)
 factory: cost = body + production
-         body       = 10 + maxHealth × 0.12 × (1 + 2 × (maxHealth / 1000)²)   (rounded up)
-         production = minions per battle × price per minion   (grunt $28: half the $55 price of a minion, they arrive late; other kinds below)
+         body       = 50 + maxHealth × 0.12 × (1 + (maxHealth / 5000)²)   (rounded up)
+         production = minions per battle × price per minion   (grunt $148: half the $296 price of a minion, they arrive late; other kinds below)
          minions per battle = min(8, floor(5399 / productionInterval))
 ```
 
-- **Basic Wall** (maxHealth 400): 4 + 24 × 1.1422 = 31.41 → **$32**. A 1000-HP castle wall costs $118; a maxed 1500-HP wall $274.
-- **Basic Factory** (maxHealth 300, productionInterval 900): body 10 + 42.48 = 52.48 → $53, plus 5 minions × $28 = $140 → **$193**. With productionInterval 600 it builds 8 minions: $53 + $224 = **$277**.
-- **The minion kind sets the price per minion** (`produces`, 4c): grunt $28 (half of $55), archer $35 (half of $69), runner $38 (half of $76), brute $35 (half of $69), each half the price of that minion priced as a soldier. Same factory (maxHealth 300, productionInterval 900, 5 minions): grunts **$193**, archers $53 + $175 = **$228**, runners $53 + $190 = **$243**, brutes $53 + $175 = **$228**. With productionInterval 600 (8 minions): archers **$333**, runners **$357**, brutes **$333**. `burst` never changes the price.
+- **Basic Wall** (maxHealth 2000): 20 + 120 × 1.0711 = 148.53 → **$149**. A 4000-HP wall costs $329; a maxed 7500-HP wall $920.
+- **Basic Factory** (maxHealth 1500, productionInterval 900): body 50 + 196.2 = 246.2 → $247, plus 5 minions × $148 = $740 → **$987**. With productionInterval 600 it builds 8 minions: $247 + $1,184 = **$1,431**.
+- **The minion kind sets the price per minion** (`produces`, 4c): grunt $148, archer $195, runner $185, brute $213, medic $209, each half the price of that minion priced as a soldier. `minionElement` fire, ice or lightning makes it ×1.2 first (fire grunt $178, ice archer $234, lightning runner $222, fire brute $256). `burst` never changes the price.
 
 Tips:
-- **Maxing a stat costs 3×: spread your stats.** A stat at its max costs 3 times its normal price, and one at half its max costs 1.5 times. Two medium units are cheaper than one giant one, and usually win. If a stat is at 80% of its max or more, `validate_unit` gives the tip `W_STAT_NEAR_MAX`.
+- **Maxing a stat costs 2×, being tough AND strong costs up to ×1.6 more.** A stat at its max costs twice its normal price, and one at half its max costs 1.25 times. If a stat is at 80% of its max or more, `validate_unit` gives the tip `W_STAT_NEAR_MAX`; a power factor of ×1.25 or more gives `W_POWER_HIGH`.
 - **Cooldown below 60 multiplies the whole cost.** Halving the cooldown doubles the price.
 - **Cooldown above 60 gives no discount.** It costs the same as 60 but attacks less often, so use 60 instead of anything slower.
-- Speed is pricey (12 per px/tick, more near the max). Range is cheap per pixel but adds up.
-- A unit can cost at most **$500**. If it is too expensive, the error says which stat costs the most and how much lowering it saves: lower that one.
+- Speed is pricey (66 per px/tick, more near the max). Range costs 1.38 per pixel.
+- A unit can cost at most **$2,500**. If it is too expensive, the error names the biggest lever (cooldown, power, splash, element, support, then the priciest stat) and how much changing it saves.
 
 ## 6. Budget and battle rules
 
-- **$1,000 per round** to place units. Each copy placed costs the unit's price. Unspent money doesn't carry over.
-- Up to **4 unit types** (soldiers) **and 4 building types** (towers, walls, factories) per round, at most **$500** per unit, and at most **8 designs** (revisions and the four starter templates don't count).
+- **$5,000 per round** to place units. Each copy placed costs the unit's price. Unspent money doesn't carry over.
+- Up to **4 unit types** (soldiers) **and 4 building types** (towers, walls, factories) per round, at most **$2,500** per unit, and at most **8 designs** (revisions and the four starter templates don't count).
 - At most **12 fighters** placed (soldiers, towers and factories; at most **2 factories**) plus at most **12 walls**.
 - **4-8 fighters plus a few walls is a good army.**
 - Units can only be **submitted in the Plan phase**. You can validate at any time.
+- Units can have **one element** (fire, ice or lightning), **splash** and **one support** (heal, haste, might or shield): see **4d**. There are no other special powers (no flying, no teleporting, no stealth): if the player asks for something like that, explain it kindly and suggest the closest thing that works (e.g. a fast lightning soldier instead of a teleporter).
 - A battle lasts 90 seconds. **Sudden death:** after 50 seconds a safe circle (`world.safeZone`, centred on `world.center`) shrinks toward the middle. Units outside it lose 7% of their max health every second, so armies are forced to meet. Smart units move inside `world.safeZone` late in the battle. These are the default numbers: `get_rules` (`suddenDeath`) has the exact ones if the host changes them.
-- When time runs out, the player (or team) whose living units are worth the most money wins the round (walls count $0; a factory counts just its body, since minions it never built are worth nothing then; each living minion $28). Otherwise the last army (or team) standing wins. A player with only walls left is out.
+- When time runs out, the player (or team) whose living units are worth the most money wins the round (walls count $0; a factory counts just its body, since minions it never built are worth nothing then; each living minion its price, e.g. a grunt $148). Otherwise the last army (or team) standing wins. A player with only walls (or only damage-0 support units) left is out.
 
 ### How points work
 
 Every round, each player scores **place points + damage bonus + value bonus**:
 
 - **Place points:** 1st gets (number of players − 1), then one less per place, down to 0 for last: with 4 players 3, 2, 1, 0; with 2 players 1, 0; with 8 players 7 down to 0 (players who tie share the better place). In team mode every member gets the team's place points.
-- **Damage bonus (0-2 with 4 players):** `round(2 × players/4 × myDamage / topDamage)`, always your own (also in teams). Damage counts only what really hurts: a 40-damage hit on an enemy with 15 health left counts 15. Shots count when they land, even if the shooter is already gone.
+- **Damage bonus (0-2 with 4 players):** `round(2 × players/4 × myDamage / topDamage)`, always your own (also in teams). Damage counts only what really hurts: a 200-damage hit on an enemy with 75 health left counts 75. Shots count when they land, even if the shooter is already gone.
 - **Value bonus (0-1 with 4 players):** `round(1 × players/4 × myValueDestroyed / topValueDestroyed)`. When one of your hits knocks out an enemy unit, you score that unit's full price.
 - Rounding is half-up (0.5 rounds up). Sudden-death damage counts for nobody.
-- **Badges** (just for fun, no points): 🏆 Last Standing (1st place; in teams every member of the winning team), 💥 Biggest Hitter (most damage), 🗡️ Giant Slayer (most enemy value knocked out), 🛡️ Iron Wall (most army value still standing at the end).
+- **Badges** (just for fun, no points): 🏆 Last Standing (1st place; in teams every member of the winning team), 💥 Biggest Hitter (most damage), 🗡️ Giant Slayer (most enemy value knocked out), 🛡️ Iron Wall (most army value still standing at the end), 💚 Best Medic (most HP healed) and ⚡ Combo Master (most shatters and overload zaps). Burns, splash, zaps and shatters count as damage; healing never does.
 - The match winner has the most points after all rounds; equal points are decided by total damage. In team mode there is also a team table (the average of the members' points).
 
 **Strategy tip:** the bonuses are worth about as much as 1st place, so **aggressive units score damage points even if they don't survive**. An army that hits hard and comes 2nd can beat a turtle that hides and survives. A good mix is a few hard hitters to rack up damage plus something tough to stay standing. The exact numbers are in `get_rules` (`scoring`).
-- There is no healing, no shields and no special powers: soldiers move and attack, towers attack, walls block and factories build minions (grunts, archers, runners or brutes) and give them orders. If the player asks for something like that, explain it kindly and suggest the closest thing that works (e.g. a tough tank instead of a healer).
 
 ## 7. After a battle
 
-Call `get_battle_report`. Its `score` shows how the player's points were made (place, damage bonus, value bonus, badges): tell them in one cheerful sentence, e.g. "You came 2nd and your army dealt the most damage: +4 points and the Biggest Hitter badge!". `topUnits` lists the round's top damage units of all players (`mine: true` marks your player's): if one is theirs, cheer, e.g. "Your Ninja hit hardest!". If a unit threw errors, timed out, or got switched off, the report names the unit and the line. `types` lists each unit type's damage (a factory's includes its minions, with `minionsMade` and `minionsLost`), and `hints` gives tips such as a soldier that got stuck behind walls: then make it smash the wall in its way (`self.blockedBy`) or go round. Fix that unit (pass its `unitId`), validate it, and submit it in the next Plan phase. Tell the player what went wrong in simple words, e.g. "Your ninja got confused when there were no enemies left. I fixed it!"
+Call `get_battle_report`. Its `score` shows how the player's points were made (place, damage bonus, value bonus, badges): tell them in one cheerful sentence, e.g. "You came 2nd and your army dealt the most damage: +4 points and the Biggest Hitter badge!". `topUnits` lists the round's top damage units of all players (`mine: true` marks your player's): if one is theirs, cheer, e.g. "Your Ninja hit hardest!". If a unit threw errors, timed out, or got switched off, the report names the unit and the line. `types` lists each unit type's damage (a factory's includes its minions, with `minionsMade` and `minionsLost`), and `hints` gives tips such as a soldier that got stuck behind walls: then make it smash the wall in its way (`self.blockedBy`) or go round. Each type also has `damageSplit` (how its damage was dealt: `hit`, `splash`, `burn`, `zap`, `shatter`), `healing` (HP its heals restored, medic minions included) and `cleanses` (burns put out and freezes thawed), and `assist` (extra damage from its might aura plus damage its shield aura stopped). Cheer for those too, e.g. "Your Frost Spire set up 4 shatters!" or "Patch healed 1,200 HP and won Best Medic!". A hint like "Your Patch never healed anyone" means the healer never got close to a hurt ally: make it follow your fighters. Fix that unit (pass its `unitId`), validate it, and submit it in the next Plan phase. Tell the player what went wrong in simple words, e.g. "Your ninja got confused when there were no enemies left. I fixed it!"
 
 ### Open Armory (only when the host switched it on)
 

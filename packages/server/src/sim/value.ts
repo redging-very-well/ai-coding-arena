@@ -12,13 +12,24 @@
 //   * M8.6 (§5.3): minions stored inside a factory count like the ones it can
 //     still make: they keep it a fighter and add minionValue each to its
 //     living value (so the killer of a full factory is credited them too).
+//   * M8.8 (§5.5, §9.4): a soldier or tower with damage 0 (pure support), a
+//     medic minion and a factory that makes medics are NOT fighters; they
+//     still count their living value while alive.
 
 import type { BodyType, FrameDTO } from '@pixel-clash/shared';
 import type { SimUnit, UnitReport } from './types.js';
 
-/** Whether a living body keeps its side in the battle. */
-export function isFighter(u: Pick<SimUnit, 'type' | 'factory'>): boolean {
+/** Whether a body can ever fight (M8.8): not a wall, a damage-0 unit, a medic minion or a medic factory. */
+export function canFight(u: Pick<SimUnit, 'type' | 'factory' | 'minion'> & { stats?: { damage: number } }): boolean {
   if (u.type === 'wall') return false;
+  if (u.type === 'factory') return (u.factory?.kind ?? 'grunt') !== 'medic';
+  if (u.type === 'minion') return (u.minion?.kind ?? 'grunt') !== 'medic';
+  return (u.stats?.damage ?? 1) > 0;
+}
+
+/** Whether a living body keeps its side in the battle. */
+export function isFighter(u: Pick<SimUnit, 'type' | 'factory' | 'minion'> & { stats?: { damage: number } }): boolean {
+  if (!canFight(u)) return false;
   if (u.type === 'factory') return (u.factory?.canMake ?? 0) > 0 || (u.factory?.stored ?? 0) > 0;
   return true;
 }
@@ -40,7 +51,7 @@ export function killValueOf(u: Pick<SimUnit, 'type' | 'cost' | 'factory'>): numb
 // ---------------------------------------------------------------------------
 
 type ReportLike = Pick<UnitReport, 'instanceId' | 'playerId' | 'cost' | 'diedAtTick'> &
-  Partial<Pick<UnitReport, 'type' | 'factory' | 'spawnedAtTick'>>;
+  Partial<Pick<UnitReport, 'type' | 'factory' | 'spawnedAtTick' | 'nonFighter'>>;
 
 /**
  * The minions each living factory in a frame is worth (`fac`, §9.3 Frames):
@@ -79,7 +90,7 @@ export function livingValueAt(u: ReportLike, left: ReadonlyMap<string, number>):
 /** Whether a reported body (alive at the frame) was a fighter there. */
 export function fighterAt(u: ReportLike, left: ReadonlyMap<string, number>): boolean {
   const t: BodyType | undefined = u.type;
-  if (t === 'wall') return false;
+  if (t === 'wall' || u.nonFighter) return false;
   if (t === 'factory') return (left.get(u.instanceId) ?? 0) > 0;
   return true;
 }

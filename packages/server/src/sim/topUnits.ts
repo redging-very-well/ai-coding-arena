@@ -36,6 +36,7 @@ export function topUnits({ reveal, summaries, kicked, shown }: TopUnitsInput): T
         damage,
         kills: s.kills,
         valueDestroyed: Math.round(s.valueDestroyed),
+        ...(s.healing && s.healing > 0 ? { healing: Math.round(s.healing) } : {}),
         copies: s.fielded,
         sprite: type?.spriteHidden ? null : (type?.sprite ?? null),
         spriteHidden: type?.spriteHidden ?? false,

@@ -15,6 +15,7 @@
 // each kill; a later hit on a target already at ≤ 0 hp deals nothing (a
 // projectile fizzles).
 
+import type { Element } from '@pixel-clash/shared';
 import { compareIds, type Projectile, type SimUnit } from './types.js';
 import { killValueOf } from './value.js';
 
@@ -56,6 +57,11 @@ export interface PendingHit {
   damage: number;
   /** The projectile, or undefined for a melee hit. */
   projectile?: Projectile;
+  /** M8.8, melee hits (a projectile carries its own): the element, splash and might at fire time. */
+  element?: Element;
+  splash?: number;
+  might?: number;
+  mightSrc?: SimUnit | null;
 }
 
 /**

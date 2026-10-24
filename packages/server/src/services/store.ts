@@ -33,7 +33,7 @@ import type {
   ValidationError,
   ValidationWarning,
 } from '@pixel-clash/shared';
-import { cornerZone, isMapStyle, isTeamMode, migrateConfigPatch, type Corner } from '@pixel-clash/shared';
+import { cornerZone, isMapStyle, isTeamMode, migrateEconomyPatch, type Corner } from '@pixel-clash/shared';
 import { log } from '../util/log.js';
 
 // ---------------------------------------------------------------------------
@@ -77,6 +77,10 @@ export interface UnitVersionRecord {
   warnings: ValidationWarning[];
   /** M8.6 factories: the squad orders its update() gave in the dry run (§7), for the card. */
   orders?: MinionOrder[];
+  /** M8.8 heal support: whether update() healed in the dry run (§7), for the card. */
+  healUsed?: boolean;
+  /** M8.8: 2 = submitted for the ×5 economy; absent (or 1) = the $1,000 game (§6 M8.8 migration, W_OLD_SCALE). */
+  scaleVersion?: number;
   sha256: string;
   createdAt: number;
 }
@@ -155,6 +159,8 @@ export interface ArmoryEntryRecord {
   roundAdded: number;
   status: UnitStatus;
   error?: ValidationError;
+  /** M8.8: the copied version's scaleVersion (absent = the $1,000 game). */
+  scaleVersion?: number;
 }
 
 export interface ArmoryState {
@@ -237,6 +243,8 @@ export interface PersistedState {
   configPatch: DeepPartial<GameConfig>;
   /** /setup settings (Claude box address, preferred LAN URL, seat password). */
   setup?: Partial<SetupRecord>;
+  /** M8.8: the $1,000-game config overrides the v2 migration dropped (the /admin banner), until a wipe. */
+  economyReset?: string[];
 }
 
 export function newMatchState(defaultRounds: number): MatchState {
@@ -287,6 +295,14 @@ export class Store {
   adminSessions = new Set<string>();
   adminPassword: string | undefined;
   configPatch: DeepPartial<GameConfig> = {};
+  /**
+   * M8.8 (§6 M8.8 migration): the scale-sensitive overrides of a $1,000-game
+   * config patch dropped at boot (cost.*, caps.budget, caps.unitCost, HP and
+   * damage bounds, minion HP/damage), for the log and the /admin banner
+   * "Your economy overrides were for the $1,000 game and were reset."
+   * Empty when nothing was dropped.
+   */
+  economyReset: string[] = [];
   /** /setup settings; kept across a wipe (they describe the venue, not the game). */
   setup: SetupRecord = { claudeBoxHost: null, preferredUrl: null, seatSecret: null };
   /** Monotonic counter for join order. */
@@ -400,7 +416,18 @@ export class Store {
     this.sessions = new Map(Object.entries(data.sessions ?? {}));
     this.adminSessions = new Set(data.adminSessions ?? []);
     this.adminPassword = data.adminPassword;
-    this.configPatch = migrateConfigPatch(data.configPatch ?? {});
+    // M8.8: a patch from the $1,000 game loses its scale-sensitive keys (a ×5
+    // conversion would let an old curveK or cost.hp undo the retune).
+    const migrated = migrateEconomyPatch(data.configPatch ?? {});
+    this.configPatch = migrated.patch;
+    this.economyReset = [...new Set([...(data.economyReset ?? []), ...migrated.dropped])];
+    if (migrated.dropped.length > 0) {
+      log.warn(`config overrides from the $1,000 game were reset (M8.8 economy): ${migrated.dropped.join(', ')}`);
+      if (this.match.phase !== 'LOBBY' && this.match.phase !== 'MATCH_RESULTS') {
+        log.warn('a match was running: it continues on the M8.8 economy (units are re-priced at boot); start a New match to begin cleanly');
+      }
+      this.dirty = true;
+    }
     if (data.setup) {
       this.setup = {
         claudeBoxHost: data.setup.claudeBoxHost ?? null,
@@ -460,8 +487,10 @@ export class Store {
       sessions: Object.fromEntries(this.sessions),
       adminSessions: [...this.adminSessions],
       ...(this.adminPassword !== undefined ? { adminPassword: this.adminPassword } : {}),
-      configPatch: this.configPatch,
+      // M8.8: every override written from here on is at the ×5 scale.
+      configPatch: Object.keys(this.configPatch).length > 0 ? { ...this.configPatch, economyVersion: 2 } : this.configPatch,
       setup: this.setup,
+      ...(this.economyReset.length > 0 ? { economyReset: this.economyReset } : {}),
     };
     try {
       mkdirSync(this.dataDir, { recursive: true });
@@ -564,6 +593,7 @@ export class Store {
     this.sessions.clear();
     this.match = newMatchState(defaultRounds);
     this.configPatch = {};
+    this.economyReset = [];
     this.joinSeq = 0;
     this.dirty = true;
     this.flush();

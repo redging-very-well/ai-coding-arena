@@ -31,7 +31,7 @@ import {
 } from '@pixel-clash/shared';
 import type { Game } from './game.js';
 import type { ArmoryEntryRecord, ArmoryState } from './store.js';
-import { UnitsService } from './units.js';
+import { SCALE_VERSION, UnitsService } from './units.js';
 
 /** One own design version fielded in a battle (snapshotted at START). */
 export interface FieldedDesign {
@@ -210,7 +210,8 @@ export class ArmoryService {
       if (existing && existing.version >= f.version) continue;
       const creator = this.game.store.players.get(f.playerId);
       const armoryId = existing?.armoryId ?? `ar_${randomBytes(4).toString('hex')}`;
-      const checked = UnitsService.checkVersion({ stats: f.stats }, config);
+      // Only valid designs are fielded, so the copy is at the current scale.
+      const checked = UnitsService.checkVersion({ stats: f.stats, scaleVersion: SCALE_VERSION }, config);
       const rec: ArmoryEntryRecord = {
         armoryId,
         sourceUnitId: f.unitId,
@@ -227,6 +228,7 @@ export class ArmoryService {
         roundAdded: round,
         status: checked.error ? 'invalid' : 'valid',
         ...(checked.error ? { error: checked.error } : {}),
+        scaleVersion: SCALE_VERSION,
       };
       this.game.store.writeArmoryFile(armoryId, rec.version, rec.compiledJs);
       if (existing) this.a.entries[this.a.entries.indexOf(existing)] = rec;
@@ -266,6 +268,7 @@ export class ArmoryService {
     const repriced: string[] = [];
     const invalidated: string[] = [];
     for (const e of this.a.entries) {
+      // M8.8: an entry from the $1,000 game (no scaleVersion) below the new minimum gets the ×5 fix.
       const r = UnitsService.checkVersion(e, config);
       e.breakdown = r.cost.breakdown;
       if (r.cost.cost !== e.cost) {

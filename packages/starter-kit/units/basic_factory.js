@@ -5,10 +5,14 @@
 //
 // Options (all optional; this template uses the defaults):
 //   this.produces = 'grunt'   which minion it builds (the price follows):
-//       'grunt'  40 HP, 5 damage, melee, speed 1.5   $28 each (the default)
-//       'archer' 24 HP, 5 damage, shoots from 110 px  $35 each
-//       'runner' 28 HP, 4 damage, melee, speed 2.6   $38 each
-//       'brute' 100 HP, 8 damage (x3 on walls), slow $35 each
+//       'grunt'  180 HP, 25 damage, melee, speed 1.5   $148 each (the default)
+//       'archer' 120 HP, 25 damage, shoots from 110 px  $195 each
+//       'runner' 140 HP, 20 damage, melee, speed 2.6   $185 each
+//       'brute'  550 HP, 40 damage (x3 on walls), slow $213 each
+//       'medic'  150 HP, never attacks: heals 40 HP     $209 each (cleanses burning/frozen
+//                within 60 px of it                     friends first; not a fighter on its own)
+//   this.minionElement = 'normal'  'fire', 'ice' or 'lightning' for every minion: x1.2 on the
+//                             minion price (medics ignore it)
 //   this.burst = 1            1-4: save up minions INSIDE and send them out together
 //                             (free, but stored minions are lost if the factory dies)
 //
@@ -22,9 +26,9 @@
 //   { action: 'hold' }                                       pause building for a tick
 //
 // Cost = body + production
-//   body       = 10 + maxHealth*0.12 * (1 + 2*(maxHealth/1000)^2) = 10 + 42.48 = 52.48  ->  $53
-//   production = 5 minions (one every 15 s in a 90 s battle) x $28 (half price: they arrive late) = $140
-//   total      = $193
+//   body       = 50 + maxHealth*0.12 * (1 + (maxHealth/5000)^2) = 50 + 196.2 = 246.2  ->  $247
+//   production = 5 minions (one every 15 s in a 90 s battle) x $148 (half price: they arrive late) = $740
+//   total      = $987
 //
 // No imports, no timers, no network, no async.
 
@@ -32,10 +36,11 @@ export default class BasicFactory {
   constructor() {
     this.name = 'Basic Factory';
     this.type = 'factory';           // a building: never moves, never attacks
-    this.maxHealth = 300;            // 100-1000
+    this.maxHealth = 1500;           // 500-5000
     this.productionInterval = 900;   // 600-1800 ticks between minions (900 = 15 s); faster costs more
     this.color = '#C0A060';          // "#RRGGBB": also the colour of its minions
-    // this.produces = 'archer';     // 'grunt' (default), 'archer', 'runner' or 'brute': the price follows
+    // this.produces = 'archer';     // 'grunt' (default), 'archer', 'runner', 'brute' or 'medic': the price follows
+    // this.minionElement = 'fire';  // 'normal' (default), 'fire', 'ice' or 'lightning': x1.2 on each minion
     // this.burst = 3;               // 1-4: save up minions inside and send them out together
   }
 

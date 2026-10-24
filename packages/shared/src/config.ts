@@ -12,6 +12,7 @@ import { z } from 'zod';
 const finite = () => z.number().refine(Number.isFinite, 'must be a finite number');
 const nonNeg = () => finite().refine((n) => n >= 0, 'must be >= 0');
 const posInt = () => z.number().int().positive();
+const atLeastOne = () => finite().refine((n) => n >= 1, 'must be >= 1');
 
 /** An inclusive numeric range. */
 const RangeSchema = z
@@ -20,9 +21,9 @@ const RangeSchema = z
 export type NumRange = z.infer<typeof RangeSchema>;
 
 /**
- * Cost coefficients (§6). Each stat term is convex:
+ * Cost coefficients (§6, M8.8). Each stat term is convex:
  * term = c * x * (1 + curveK * (x / max)²), so a maxed stat costs (1 + curveK)× its linear price;
- * raw = (base + Σ term) * max(1, refCD / CD).
+ * raw = (base + Σ term + heal) * max(1, refCD / CD) * power * splash * element + aura.
  */
 export const CostCoefficientsSchema = z.object({
   base: nonNeg(),
@@ -39,6 +40,16 @@ export const CostCoefficientsSchema = z.object({
    * >= 0 (a negative k would make cost fall as a stat rises) and <= 5.
    */
   curveK: nonNeg().refine((n) => n <= 5, 'must be <= 5'),
+  /** M8.8 power factor q: × (1 + q · HP/2500 · damage/300) (tough AND strong costs more). 0-2. */
+  powerFactor: nonNeg().refine((n) => n <= 2, 'must be <= 2'),
+  /** M8.8 splash factor s: × (1 + s · ρ(2 − ρ)), ρ = splashRadius / 80. 0-2. */
+  splash: nonNeg().refine((n) => n <= 2, 'must be <= 2'),
+  /** M8.8 element factors (whole-unit multipliers; normal is always 1). Each >= 1. */
+  element: z.object({ fire: atLeastOne(), ice: atLeastOne(), lightning: atLeastOne() }),
+  /** M8.8 heal price per HP per heal (inside the cooldown factor). */
+  heal: nonNeg(),
+  /** M8.8 aura prices per % (added after the factors: always on). */
+  aura: z.object({ haste: nonNeg(), might: nonNeg(), shield: nonNeg() }),
   /**
    * Walls (§6 Walls and factories): raw = base + hp·HP·(1 + curveK·(HP/1500)²).
    * No cooldown factor (walls can't attack).
@@ -80,6 +91,15 @@ export const StatBoundsSchema = z.object({
   productionInterval: RangeSchema,
   /** Factory (M8.6): minions saved up inside before they leave together (§5.3). Whole numbers; max ≤ factory.maxAlivePerFactory. */
   burst: RangeSchema,
+  /** M8.8 (§5.4): splash radius in px (0 = one target). */
+  splashRadius: RangeSchema,
+  /** M8.8 (§5.5): supportPower and supportRange per support kind. */
+  support: z.object({
+    heal: z.object({ power: RangeSchema, range: RangeSchema }),
+    haste: z.object({ power: RangeSchema, range: RangeSchema }),
+    might: z.object({ power: RangeSchema, range: RangeSchema }),
+    shield: z.object({ power: RangeSchema, range: RangeSchema }),
+  }),
 });
 export type StatBounds = z.infer<typeof StatBoundsSchema>;
 
@@ -100,15 +120,20 @@ export const MinionStatsSchema = z.object({
   impatientTicks: posInt(),
   /** Hits on walls deal damage × this (M8.6: brutes 3, the rest 1). Not priced (§5.3). */
   wallDamageMultiplier: finite().refine((n) => n >= 1 && n <= 5, 'must be 1-5'),
+  /** M8.8 medic (§5.5): HP per heal (its heal support power); priced in its soldier formula. */
+  heal: nonNeg().optional(),
+  /** M8.8 medic: heal reach, edge to edge (its heal support range). */
+  reach: nonNeg().optional(),
 });
 export type MinionStats = z.infer<typeof MinionStatsSchema>;
 
-/** The four preset minion kinds (§5.3), keyed like `MinionKind`. */
+/** The preset minion kinds (§5.3; medic §5.5), keyed like `MinionKind`. */
 export const MinionKindsSchema = z.object({
   grunt: MinionStatsSchema,
   archer: MinionStatsSchema,
   runner: MinionStatsSchema,
   brute: MinionStatsSchema,
+  medic: MinionStatsSchema,
 });
 export type MinionKindsConfig = z.infer<typeof MinionKindsSchema>;
 
@@ -136,7 +161,34 @@ export const FactorySchema = z.object({
 });
 export type FactoryConfig = z.infer<typeof FactorySchema>;
 
+/** M8.8 element constants (§5.4, §9.4). */
+export const ElementsSchema = z.object({
+  /** A fire hit adds burnPct% of its damage as a burn, over `pulses` pulses `pulseTicks` apart. */
+  fire: z.object({ burnPct: nonNeg(), pulses: posInt(), pulseTicks: posInt() }),
+  /** An ice hit freezes for `ticks`: moves, reloads and builds slowPct% slower. */
+  ice: z.object({ slowPct: finite().refine((n) => n >= 0 && n < 100, 'must be 0-99'), ticks: posInt() }),
+  /** chancePct% of lightning main hits zap the nearest other enemy within hopRange px (edge to edge); a burning target adds hops. */
+  lightning: z.object({
+    chancePct: finite().refine((n) => n >= 0 && n <= 100, 'must be 0-100'),
+    hopRange: nonNeg(),
+    burningExtraHops: z.number().int().nonnegative(),
+  }),
+  /** Shatter: a fire hit on a frozen target does +shatterPct% and thaws it. */
+  shatterPct: nonNeg(),
+  /** Splash hits deal splashPct% of the hit. */
+  splashPct: nonNeg(),
+});
+export type ElementsConfig = z.infer<typeof ElementsSchema>;
+
+/** M8.8 support constants (§5.5). */
+export const SupportSchema = z.object({
+  /** A body can be healed this % of its max HP per 60-tick window (shared by every healer). */
+  healRoomPctPerSecond: nonNeg(),
+});
+
 export const ConfigSchema = z.object({
+  /** M8.8 economy version: 2 = the ×5 economy (stored config patches without it are migrated, §6). */
+  economyVersion: z.literal(2),
   cost: CostCoefficientsSchema,
   stats: z.object({ bounds: StatBoundsSchema }),
   caps: z.object({
@@ -216,6 +268,10 @@ export const ConfigSchema = z.object({
   }),
   /** Factories and their built-in minions (§5.2, §9.3). */
   factory: FactorySchema,
+  /** M8.8 elements and splash (§5.4, §9.4). */
+  elements: ElementsSchema,
+  /** M8.8 support (§5.5). */
+  support: SupportSchema,
   sandbox: z.object({
     mode: z.enum(['ivm', 'process', 'inproc-unsafe']),
     memoryLimitMb: posInt(),
@@ -267,7 +323,7 @@ export const ConfigSchema = z.object({
 }).superRefine((c, ctx) => {
   // Every minion kind is priced as a soldier (§6), so it must be a legal soldier.
   const b = c.stats.bounds;
-  const within: Array<[keyof MinionStats, { min: number; max: number }]> = [
+  const within: Array<['maxHealth' | 'damage' | 'range' | 'speed' | 'attackCooldown' | 'size', { min: number; max: number }]> = [
     ['maxHealth', b.maxHealth],
     ['damage', b.damage],
     ['range', b.range],
@@ -281,6 +337,16 @@ export const ConfigSchema = z.object({
         ctx.addIssue({ code: 'custom', path: ['factory', 'minions', kind, k], message: `must be within the soldier bounds ${r.min}-${r.max}` });
       }
     }
+  }
+  // The medic (M8.8, §5.5): a pure healer (damage 0) whose heal and reach fit the heal support bounds.
+  const medic = c.factory.minions.medic;
+  const hb = b.support.heal;
+  if (medic.damage !== 0) ctx.addIssue({ code: 'custom', path: ['factory', 'minions', 'medic', 'damage'], message: 'medics never attack: must be 0' });
+  if (medic.heal === undefined || medic.heal < hb.power.min || medic.heal > hb.power.max) {
+    ctx.addIssue({ code: 'custom', path: ['factory', 'minions', 'medic', 'heal'], message: `must be within the heal support bounds ${hb.power.min}-${hb.power.max}` });
+  }
+  if (medic.reach === undefined || medic.reach < hb.range.min || medic.reach > hb.range.max) {
+    ctx.addIssue({ code: 'custom', path: ['factory', 'minions', 'medic', 'reach'], message: `must be within the heal support bounds ${hb.range.min}-${hb.range.max}` });
   }
   // Burst (§5.3): whole minions, at least 1, and stored minions count toward the per-factory cap.
   const burst = b.burst;
@@ -296,37 +362,51 @@ export type GameConfig = z.infer<typeof ConfigSchema>;
 export type SandboxMode = GameConfig['sandbox']['mode'];
 
 export const DEFAULT_CONFIG: GameConfig = {
+  // M8.8: the ×5 economy (§6 M8.8 economy). Stored config patches from before it are migrated (`migrateEconomyPatch`).
+  economyVersion: 2,
   cost: {
-    base: 10,
-    hp: 0.25,
+    base: 50,
+    hp: 0.3,
     damage: 1.5,
-    range: 0.2,
-    speed: 12,
-    size: 0.5,
+    range: 1.38,
+    speed: 66,
+    size: 8,
     referenceCooldown: 60,
-    curveK: 2,
-    // §6 Walls and factories (first guesses, checked by tests/balance.test.ts).
-    wall: { base: 4, hp: 0.06 },
-    factory: { base: 10, hp: 0.12, minionDiscount: 0.5 },
+    curveK: 1,
+    powerFactor: 0.6,
+    splash: 0.7,
+    element: { fire: 1.2, ice: 1.2, lightning: 1.2 },
+    heal: 4.5,
+    aura: { haste: 5, might: 4, shield: 7 },
+    // §6 Walls and factories (×5 in M8.8).
+    wall: { base: 20, hp: 0.06 },
+    factory: { base: 50, hp: 0.12, minionDiscount: 0.5 },
   },
   stats: {
     bounds: {
       nameLength: { min: 1, max: 24 },
-      maxHealth: { min: 10, max: 500 },
-      damage: { min: 0, max: 60 },
+      maxHealth: { min: 50, max: 2500 },
+      damage: { min: 0, max: 300 },
       range: { min: 20, max: 300 },
       soldierSpeed: { min: 0.5, max: 5 },
       attackCooldown: { min: 10, max: 600 },
       size: { min: 6, max: 20 },
-      wallHealth: { min: 50, max: 1500 },
-      factoryHealth: { min: 100, max: 1000 },
+      wallHealth: { min: 250, max: 7500 },
+      factoryHealth: { min: 500, max: 5000 },
       productionInterval: { min: 600, max: 1800 },
       burst: { min: 1, max: 4 },
+      splashRadius: { min: 0, max: 80 },
+      support: {
+        heal: { power: { min: 10, max: 250 }, range: { min: 20, max: 200 } },
+        haste: { power: { min: 5, max: 50 }, range: { min: 40, max: 150 } },
+        might: { power: { min: 5, max: 50 }, range: { min: 40, max: 150 } },
+        shield: { power: { min: 5, max: 40 }, range: { min: 40, max: 150 } },
+      },
     },
   },
   caps: {
-    unitCost: 500,
-    budget: 1000,
+    unitCost: 2500,
+    budget: 5000,
     maxDesigns: 8,
     maxUnitTypes: 4,
     maxBuildingTypes: 4,
@@ -381,13 +461,26 @@ export const DEFAULT_CONFIG: GameConfig = {
     defendArriveRadius: 48,
     guardRadius: 120,
     guardArriveGap: 16,
-    // §5.3 minion kinds (M8.6). grunt = the M8.5 minion; each must be a legal soldier.
+    // §5.3 minion kinds (M8.6, ×5 in M8.8). grunt = the M8.5 minion; each must be a legal soldier.
     minions: {
-      grunt: { maxHealth: 40, damage: 5, range: 20, speed: 1.5, attackCooldown: 60, size: 8, aggroRange: 120, impatientTicks: 120, wallDamageMultiplier: 1 },
-      archer: { maxHealth: 24, damage: 5, range: 110, speed: 1.2, attackCooldown: 60, size: 7, aggroRange: 150, impatientTicks: 120, wallDamageMultiplier: 1 },
-      runner: { maxHealth: 28, damage: 4, range: 20, speed: 2.6, attackCooldown: 60, size: 6, aggroRange: 120, impatientTicks: 120, wallDamageMultiplier: 1 },
-      brute: { maxHealth: 100, damage: 8, range: 20, speed: 0.9, attackCooldown: 60, size: 11, aggroRange: 120, impatientTicks: 30, wallDamageMultiplier: 3 },
+      grunt: { maxHealth: 180, damage: 25, range: 20, speed: 1.5, attackCooldown: 60, size: 8, aggroRange: 120, impatientTicks: 120, wallDamageMultiplier: 1 },
+      archer: { maxHealth: 120, damage: 25, range: 110, speed: 1.2, attackCooldown: 60, size: 7, aggroRange: 150, impatientTicks: 120, wallDamageMultiplier: 1 },
+      runner: { maxHealth: 140, damage: 20, range: 20, speed: 2.6, attackCooldown: 60, size: 6, aggroRange: 120, impatientTicks: 120, wallDamageMultiplier: 1 },
+      brute: { maxHealth: 550, damage: 40, range: 20, speed: 0.9, attackCooldown: 60, size: 11, aggroRange: 120, impatientTicks: 30, wallDamageMultiplier: 3 },
+      // M8.8 (§5.5): never attacks; heals 40 HP within 60 px, cleanses burning and frozen allies first.
+      medic: { maxHealth: 150, damage: 0, range: 20, speed: 1.4, attackCooldown: 60, size: 7, aggroRange: 150, impatientTicks: 120, wallDamageMultiplier: 1, heal: 40, reach: 60 },
     },
+  },
+  elements: {
+    fire: { burnPct: 50, pulses: 6, pulseTicks: 30 },
+    ice: { slowPct: 35, ticks: 120 },
+    lightning: { chancePct: 35, hopRange: 100, burningExtraHops: 1 },
+    shatterPct: 50,
+    splashPct: 50,
+  },
+  support: {
+    // Heals stop at suddenDeath.startTick (§5.5).
+    healRoomPctPerSecond: 5,
   },
   sandbox: {
     mode: 'ivm',
@@ -470,6 +563,91 @@ export function migrateConfigPatch<T>(patch: T): T {
   if (!isPlainObject(rest.scoring)) return rest as T;
   const { placePoints: _placePoints, ...scoring } = rest.scoring;
   return { ...rest, scoring } as T;
+}
+
+/**
+ * The keys a pre-M8.8 ($1,000 game) config patch may not keep (§6 M8.8
+ * migration): every money, HP and damage number changed scale, and an old
+ * `curveK: 2` or `cost.hp` would silently undo the M8.8 retune.
+ */
+export const ECONOMY_V2_DROPPED = [
+  'cost',
+  'caps.budget',
+  'caps.unitCost',
+  'stats.bounds.maxHealth',
+  'stats.bounds.damage',
+  'stats.bounds.wallHealth',
+  'stats.bounds.factoryHealth',
+  'factory.minions.*.maxHealth',
+  'factory.minions.*.damage',
+] as const;
+
+/**
+ * The M8.8 economy step (§6 M8.8 migration) for a STORED config patch (the
+ * server's `configPatch` in state.json): a patch without `economyVersion: 2`
+ * was made for the $1,000 game, so its scale-sensitive keys
+ * (`ECONOMY_V2_DROPPED`) are dropped and the rest (timers, sudden death, copy
+ * caps, scoring, map, …) is kept. Returns the migrated patch (stamped
+ * `economyVersion: 2` when it has any content) and the dropped key paths,
+ * for the log and the admin banner. A mechanical ×5 conversion is
+ * deliberately not done.
+ *
+ * Not part of `parseConfig`: a fresh override such as `{ cost: { base: 55 } }`
+ * is already at the new scale.
+ */
+export function migrateEconomyPatch<T>(patch: T): { patch: T; dropped: string[] } {
+  if (!isPlainObject(patch)) return { patch, dropped: [] };
+  const src = migrateConfigPatch(patch) as Record<string, unknown>;
+  if (src.economyVersion === 2) return { patch: src as T, dropped: [] };
+  const dropped: string[] = [];
+  const out: Record<string, unknown> = { ...src };
+  if ('cost' in out) {
+    dropped.push(...leafPaths(out.cost, 'cost'));
+    delete out.cost;
+  }
+  if (isPlainObject(out.caps)) {
+    const caps = { ...out.caps };
+    for (const k of ['budget', 'unitCost']) if (k in caps) { delete caps[k]; dropped.push(`caps.${k}`); }
+    out.caps = caps;
+  }
+  if (isPlainObject(out.stats) && isPlainObject(out.stats.bounds)) {
+    const bounds = { ...out.stats.bounds };
+    for (const k of ['maxHealth', 'damage', 'wallHealth', 'factoryHealth']) {
+      if (k in bounds) { dropped.push(...leafPaths(bounds[k], `stats.bounds.${k}`)); delete bounds[k]; }
+    }
+    out.stats = { ...out.stats, bounds };
+  }
+  if (isPlainObject(out.factory) && isPlainObject(out.factory.minions)) {
+    const minions: Record<string, unknown> = {};
+    for (const [kind, m] of Object.entries(out.factory.minions)) {
+      if (!isPlainObject(m)) { minions[kind] = m; continue; }
+      const kept = { ...m };
+      for (const k of ['maxHealth', 'damage']) if (k in kept) { delete kept[k]; dropped.push(`factory.minions.${kind}.${k}`); }
+      minions[kind] = kept;
+    }
+    out.factory = { ...out.factory, minions };
+  }
+  const pruned = prune(out) as Record<string, unknown>;
+  return { patch: (Object.keys(pruned).length > 0 ? { ...pruned, economyVersion: 2 } : pruned) as T, dropped };
+}
+
+function leafPaths(v: unknown, at: string): string[] {
+  if (!isPlainObject(v)) return [at];
+  const out: string[] = [];
+  for (const [k, x] of Object.entries(v)) out.push(...leafPaths(x, `${at}.${k}`));
+  return out.length > 0 ? out : [at];
+}
+
+/** Drop empty objects left behind by a migration. */
+function prune(v: unknown): unknown {
+  if (!isPlainObject(v)) return v;
+  const out: Record<string, unknown> = {};
+  for (const [k, x] of Object.entries(v)) {
+    const p = prune(x);
+    if (isPlainObject(p) && Object.keys(p).length === 0) continue;
+    out[k] = p;
+  }
+  return out;
 }
 
 /**

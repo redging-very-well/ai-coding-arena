@@ -58,7 +58,8 @@ export const HARNESS_GLOBALS = {
 export type HarnessApiFn = 'load' | 'seal' | 'spawn' | 'stats' | 'sprite' | 'tick' | 'reset';
 
 /** The stat fields `stats()` reports, in order (mirrors shared STAT_FIELDS). */
-const STAT_FIELD_LIST = "['name', 'type', 'maxHealth', 'damage', 'range', 'speed', 'attackCooldown', 'productionInterval', 'produces', 'burst', 'color', 'size', 'shape']";
+const STAT_FIELD_LIST =
+  "['name', 'type', 'maxHealth', 'damage', 'range', 'speed', 'attackCooldown', 'productionInterval', 'produces', 'minionElement', 'burst', 'element', 'splashRadius', 'support', 'supportPower', 'supportRange', 'color', 'size', 'shape']";
 
 /** Max length of one serialized action before it is replaced (keeps output small). */
 export const MAX_ACTION_JSON = 4096;
@@ -373,7 +374,38 @@ export const HARNESS_SOURCE = String.raw`(function setup(seed) {
   // ---- tick: one update() per self ---------------------------------------
   // Input (built by the host, see encodeTickInput):
   //   { nowMs, selves: [SelfView], enemiesJson, worldJson, allyIds: [id], alliesJson: [json] }
+  // The enemies and allies are parsed ONCE per tick; every update() gets its
+  // own fresh copy (M8.8: the views carry status/support objects, and a
+  // JSON.parse per call doubled the tick time). The copies are made without
+  // index writes or prototype methods (object spread and defineProperty
+  // create own data properties), so setters planted on Object/Array
+  // prototypes never see them.
   function str(v, fallback) { return typeof v === 'string' ? v : fallback; }
+  var LIST_DESC = { value: undefined, writable: true, enumerable: true, configurable: true };
+  function cloneView(o) {
+    if (o === null || typeof o !== 'object') return o;
+    var c = { ...o };
+    var s = c.status;
+    if (s !== null && typeof s === 'object') c.status = { ...s };
+    var p = c.support;
+    if (p !== null && typeof p === 'object') c.support = { ...p };
+    return c;
+  }
+  /** A fresh copy of a parsed view list, leaving out the view with id skipId. */
+  function cloneList(src, skipId) {
+    var out = [];
+    var n = 0;
+    var len = src.length;
+    for (var i = 0; i < len; i++) {
+      var o = src[i];
+      if (skipId !== undefined && o !== null && typeof o === 'object' && o.id === skipId) continue;
+      LIST_DESC.value = cloneView(o);
+      defineProperty(out, n, LIST_DESC);
+      n++;
+    }
+    LIST_DESC.value = undefined;
+    return out;
+  }
   function tick(json) {
     var input = parse(json);
     simNow = input.nowMs;
@@ -384,17 +416,14 @@ export const HARNESS_SOURCE = String.raw`(function setup(seed) {
     var allyIds = input.allyIds;
     var alliesJson = input.alliesJson;
     var nA = allyIds.length;
+    var enemiesAll = parse(enemiesJson);
+    var aj = '[';
+    for (var a = 0; a < nA; a++) aj += (a ? ',' : '') + str(alliesJson[a], 'null');
+    var alliesAll = parse(aj + ']');
     var out = '';
     for (var k = 0; k < selves.length; k++) {
       var self = selves[k];
       var id = self.id;
-      // Allies minus self, as a fresh copy for this call.
-      var aj = '[';
-      var first = true;
-      for (var a = 0; a < nA; a++) {
-        if (allyIds[a] !== id) { aj += (first ? '' : ',') + str(alliesJson[a], 'null'); first = false; }
-      }
-      aj += ']';
       var head = (k ? ',' : '') + '{"instanceId":' + stringify(id);
       var inst = mget(instances, id);
       if (inst === undefined) { out += head + ',"error":{"message":"this copy was never spawned"},"ms":0}'; continue; }
@@ -403,7 +432,8 @@ export const HARNESS_SOURCE = String.raw`(function setup(seed) {
       var t0 = clock();
       var body;
       try {
-        var act = apply(inst.update, inst.obj, [self, parse(enemiesJson), parse(aj), parse(worldJson)]);
+        // Allies minus self; every list a fresh copy for this call.
+        var act = apply(inst.update, inst.obj, [self, cloneList(enemiesAll, undefined), cloneList(alliesAll, id), parse(worldJson)]);
         if (act !== null && typeof act === 'object' && typeof act.then === 'function') {
           lastPromiseOwner = id;
           body = ',"promise":true';

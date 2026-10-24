@@ -25,6 +25,14 @@
 // The rules above are the `attack` order. `defend` anchors on the factory
 // (defendRadius), `swarm` goes for one target only, `guard` anchors on an
 // ally (guardRadius). Each kind uses its own aggroRange and impatientTicks.
+//
+// M8.8 (§5.4, §5.5): minions carry their factory's minionElement (their hits
+// apply it; they never splash). The medic never attacks: it heals (cleansing
+// burning or frozen allies first, then the lowest hp fraction) within its
+// reach, walks to an ally that needs it within its aggro range, and otherwise
+// moves by the order (attack / swarm: follow the nearest non-medic minion of
+// its factory, else the rally point; defend: the factory; guard: the ally).
+// It routes round walls like every minion but never smashes one.
 
 import {
   DEFAULT_CONFIG,
@@ -32,6 +40,7 @@ import {
   edgeDistance,
   minionPrice,
   pricingOf,
+  type Element,
   type GameConfig,
   type MinionKind,
   type MinionOrder,
@@ -39,6 +48,7 @@ import {
   type Point,
   type StatsSnapshotLike,
 } from '@pixel-clash/shared';
+import { isSupportable, needsHealing } from './effects.js';
 import type { SimStats, SimUnit } from './types.js';
 
 /** The grunt's display name (the M8.6 kinds are named after their kind, §5.3). */
@@ -54,9 +64,13 @@ export function kindConfig(config: Pick<GameConfig, 'factory'>, kind: MinionKind
   return config.factory.minions[kind];
 }
 
-/** A minion kind's stats, coloured like its factory. */
-export function minionStats(config: Pick<GameConfig, 'factory'>, color: string, kind: MinionKind = 'grunt'): SimStats {
+/**
+ * A minion kind's stats, coloured like its factory. M8.8: its factory's
+ * element (medics: normal), no splash, and the medic's heal support.
+ */
+export function minionStats(config: Pick<GameConfig, 'factory'>, color: string, kind: MinionKind = 'grunt', element: Element = 'normal'): SimStats {
   const m = kindConfig(config, kind);
+  const medic = kind === 'medic';
   return Object.freeze({
     name: MINION_KIND_NAMES[kind],
     type: 'minion' as const,
@@ -68,12 +82,15 @@ export function minionStats(config: Pick<GameConfig, 'factory'>, color: string, 
     color,
     size: m.size,
     shape: 'circle' as const,
+    element: medic ? 'normal' : element,
+    splashRadius: 0,
+    support: medic ? { kind: 'heal' as const, power: m.heal ?? 0, range: m.reach ?? 0 } : null,
   });
 }
 
-/** minionValue (§6): what a factory pays per minion of that kind, its timeout value and value destroyed. */
-export function minionValueOf(config: Pick<GameConfig, 'cost' | 'timers' | 'factory'>, kind: MinionKind = 'grunt'): number {
-  return minionPrice(config.cost, pricingOf(config), kind).minionValue;
+/** minionValue (§6): what a factory pays per minion of that kind (and element), its timeout value and value destroyed. */
+export function minionValueOf(config: Pick<GameConfig, 'cost' | 'timers' | 'factory'>, kind: MinionKind = 'grunt', element: Element = 'normal'): number {
+  return minionPrice(config.cost, pricingOf(config), kind, element).minionValue;
 }
 
 /** `battle:reveal`'s `minion` / `minions[kind]` (§9.3 Frames). */
@@ -108,6 +125,8 @@ export interface MinionWorld {
   safeRadius: number;
   rangeTolerance: number;
   lookup: (id: string) => SimUnit | undefined;
+  /** M8.8: sudden death has started, so heals do nothing (§5.5). */
+  healsOff?: boolean;
 }
 
 /** A living enemy of `m` with this id (walls included), else undefined. */
@@ -184,6 +203,7 @@ function smashBlockingWall(m: SimUnit, world: MinionWorld, impatientTicks: numbe
 
 /** The minion's raw action for this tick (validated by sim/actions.ts like any other). */
 export function minionAction(m: SimUnit, world: MinionWorld, config: Pick<GameConfig, 'factory'>): unknown {
+  if (kindOf(m) === 'medic') return medicAction(m, world, config);
   const f = config.factory;
   const kind = kindConfig(config, kindOf(m));
   const reach = m.stats.range + world.rangeTolerance;
@@ -227,6 +247,64 @@ export function minionAction(m: SimUnit, world: MinionWorld, config: Pick<GameCo
   if (target) return moveTo(m, target, world);
   if (!arrive(Math.hypot(anchor.x - m.x, anchor.y - m.y))) return moveTo(m, anchor, world);
   return { action: 'idle' };
+}
+
+/**
+ * The medic's AI (§5.5): heal the ally that needs it most within reach
+ * (burning or frozen first, then the lowest hp / maxHp, then the lower
+ * instanceId) when the cooldown is ready; else walk to such an ally within
+ * aggro range; else move by the order. Never attacks, never smashes walls.
+ */
+export function medicAction(m: SimUnit, world: MinionWorld, config: Pick<GameConfig, 'factory'>): unknown {
+  const f = config.factory;
+  const kind = kindConfig(config, 'medic');
+  const reach = (kind.reach ?? 0) + world.rangeTolerance;
+  if (!world.healsOff) {
+    let inReach: SimUnit | undefined;
+    let inReachKey = Infinity;
+    let near: SimUnit | undefined;
+    let nearKey = Infinity;
+    for (const a of world.living) {
+      if (a === m || !a.alive || a.teamId !== m.teamId || !isSupportable(a) || !needsHealing(a)) continue;
+      // Burning or frozen first (key < 1), then the lowest hp fraction (living is in instanceId order: ties keep the lower id).
+      const key = ((a.burns?.length ?? 0) > 0 || (a.frozen ?? 0) > 0 ? -2 : 0) + a.hp / a.maxHp;
+      const gap = edgeDistance(m, a);
+      if (gap <= reach && key < inReachKey) {
+        inReachKey = key;
+        inReach = a;
+      }
+      if (gap <= kind.aggroRange && key < nearKey) {
+        nearKey = key;
+        near = a;
+      }
+    }
+    if (inReach && m.cooldownRemaining <= 0) return { action: 'heal', targetId: inReach.id };
+    // In reach but reloading: wait by it.
+    if (inReach) return { action: 'idle' };
+    if (near) return moveTo(m, near, world);
+  }
+  const fac = m.minion?.factory;
+  const { order, target: focus } = effectiveOrder(m, world);
+  const keepClose = (a: SimUnit) => Math.hypot(a.x - m.x, a.y - m.y) <= a.radius + m.radius + f.guardArriveGap;
+  if (order === 'guard' && focus) return keepClose(focus) ? { action: 'idle' } : moveTo(m, focus, world);
+  if (order === 'defend') {
+    const home = insideSafe(fac ? { x: fac.x, y: fac.y } : world.safeCenter, world);
+    return Math.hypot(home.x - m.x, home.y - m.y) <= f.defendArriveRadius ? { action: 'idle' } : moveTo(m, home, world);
+  }
+  // attack and swarm: follow the nearest living non-medic minion of my factory, else the rally point.
+  let buddy: SimUnit | undefined;
+  let best = Infinity;
+  for (const u of world.living) {
+    if (u === m || !u.alive || u.minion?.factory !== fac || kindOf(u) === 'medic') continue;
+    const d = Math.hypot(u.x - m.x, u.y - m.y);
+    if (d < best) {
+      best = d;
+      buddy = u;
+    }
+  }
+  if (buddy) return keepClose(buddy) ? { action: 'idle' } : moveTo(m, buddy, world);
+  const rally = insideSafe(fac?.factory?.rally ?? world.safeCenter, world);
+  return Math.hypot(rally.x - m.x, rally.y - m.y) <= f.rallyArriveRadius ? { action: 'idle' } : moveTo(m, rally, world);
 }
 
 /** A move toward `dest`, sidestepping a tower or factory dead ahead. */

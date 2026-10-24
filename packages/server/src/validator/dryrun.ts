@@ -10,6 +10,10 @@
 // walls are never dry-run (no code runs for them). M8.6 (§5.3): factories may
 // also return command/release; their worlds hold a friendly tower to guard,
 // and the orders they give are recorded for the unit card.
+// M8.8 (§7 step 9): every view carries element, splashRadius, support and
+// status; world A's ally is hurt and burning and world B's enemy is frozen, so
+// code that reads `status` runs; soldiers and towers may return `heal` (a
+// string targetId), which only units with heal support can do.
 // update() must not throw or time out, and each return must be a valid Action
 // or undefined. The results also feed the non-fatal warnings.
 
@@ -19,11 +23,16 @@ import {
   MINION_ORDERS,
   UNIT_RADIUS,
   burstOf,
+  elementOf,
   isMinionOrder,
+  minionElementOf,
   producesOf,
   sizeOf,
+  splashOf,
+  supportOf,
   zoneCenter,
   type BodyType,
+  type StatusView,
   type MinionOrder,
   type OtherView,
   type SelfView,
@@ -52,6 +61,13 @@ export interface DryRunResult {
   warnings: ValidationWarning[];
   /** Factories (M8.6): the squad orders update() gave, in first-seen order (`rally` = attack). */
   orders?: MinionOrder[];
+  /** M8.8 heal support: whether update() returned a well-formed `heal`. */
+  healUsed?: boolean;
+}
+
+/** Nothing on a body (§5 StatusView). */
+export function noStatus(healRoom = 0): StatusView {
+  return { burning: 0, burnLeft: 0, frozen: 0, haste: 0, might: 0, shield: 0, healRoom };
 }
 
 const TICKS_PER_WORLD = 5;
@@ -74,9 +90,28 @@ const PRACTICE_BODY: Record<BodyType, { name: string; radius: number; hp: number
   minion: { name: 'Minion', radius: 8, hp: 40, range: 20 },
 };
 
-function other(id: string, ownerId: string, type: BodyType, x: number, y: number): OtherView {
+function other(id: string, ownerId: string, type: BodyType, x: number, y: number, extra: Partial<OtherView> = {}): OtherView {
   const b = PRACTICE_BODY[type];
-  return { id, ownerId, teamId: ownerId === ENEMY ? 1 : 0, type, name: b.name, x, y, radius: b.radius, hp: b.hp, maxHp: b.hp, range: b.range };
+  // Soldiers, towers and minions can be healed: 5% of max HP per second (§5.5).
+  const healable = type === 'soldier' || type === 'tower' || type === 'minion';
+  return {
+    id,
+    ownerId,
+    teamId: ownerId === ENEMY ? 1 : 0,
+    type,
+    name: b.name,
+    x,
+    y,
+    radius: b.radius,
+    hp: b.hp,
+    maxHp: b.hp,
+    range: b.range,
+    element: 'normal',
+    splashRadius: 0,
+    support: null,
+    status: noStatus(healable ? b.hp * 0.05 : 0),
+    ...extra,
+  };
 }
 
 interface World {
@@ -101,9 +136,22 @@ function worlds(stats: StatsSnapshot, self: { x: number; y: number; radius: numb
 
 function baseWorlds(stats: StatsSnapshot, self: { x: number; y: number; radius: number }, bx: number): World[] {
   void stats;
+  // M8.8: world A's ally is hurt and burning, 15 px away edge to edge (within every heal reach), so a healer has someone to heal.
+  const allyX = self.x + self.radius + UNIT_RADIUS.soldier + 15;
+  const hurt = PRACTICE_BODY.soldier.hp * 0.6;
   return [
-    { label: 'no enemies', enemies: [], allies: [other('ally-1', ME, 'soldier', self.x + 40, self.y)], expectAttack: false },
-    { label: 'one enemy in range', enemies: [other('enemy-1', ENEMY, 'soldier', bx, self.y)], allies: [], expectAttack: true },
+    {
+      label: 'no enemies',
+      enemies: [],
+      allies: [other('ally-1', ME, 'soldier', allyX, self.y, { hp: hurt, status: { ...noStatus(PRACTICE_BODY.soldier.hp * 0.05), burning: 90, burnLeft: 15 } })],
+      expectAttack: false,
+    },
+    {
+      label: 'one enemy in range',
+      enemies: [other('enemy-1', ENEMY, 'soldier', bx, self.y, { status: { ...noStatus(PRACTICE_BODY.soldier.hp * 0.05), frozen: 60 } })],
+      allies: [],
+      expectAttack: true,
+    },
     {
       label: 'three enemies far away',
       enemies: [
@@ -131,6 +179,9 @@ export function badActionReason(a: unknown): string | undefined {
       return undefined;
     case 'attack':
       return typeof o.targetId === 'string' ? undefined : 'an attack needs targetId set to an enemy id (a string)';
+    case 'heal':
+      // M8.8 (§5 rule 4): heal one ally in supportRange.
+      return typeof o.targetId === 'string' ? undefined : 'a heal needs targetId set to an ALLY id (a string), e.g. targetId: friend.id';
     case 'move':
     case 'rally': {
       const d = o.destination as Record<string, unknown> | undefined;
@@ -162,7 +213,7 @@ export function badActionReason(a: unknown): string | undefined {
       return undefined;
     }
     default:
-      return `"action" must be "idle", "move", "attack", "rally", "command", "release" or "hold" (got ${JSON.stringify(o.action) ?? 'nothing'})`;
+      return `"action" must be "idle", "move", "attack", "heal", "rally", "command", "release" or "hold" (got ${JSON.stringify(o.action) ?? 'nothing'})`;
   }
 }
 
@@ -252,6 +303,9 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
   let returnedNothing = false;
   let wrongTypeWarned = false;
   let orderTargetWarned = false;
+  const support = supportOf(stats);
+  const healer = support?.kind === 'heal';
+  let healUsed = false;
   const orders: MinionOrder[] = [];
   let moved = false;
   let attackedWhenAble = true;
@@ -300,6 +354,11 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
         speed: stats.speed,
         attackCooldown: stats.attackCooldown,
         cooldownRemaining: 0,
+        // M8.8 (§5.6): element, splash, support and status.
+        element: elementOf(stats),
+        splashRadius: splashOf(stats),
+        support,
+        status: noStatus(stats.type === 'soldier' || stats.type === 'tower' ? stats.maxHealth * 0.05 : 0),
         blockedBy: null,
         blockedTicks: 0,
         pathing: 'direct',
@@ -316,6 +375,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
                 stored: 0,
                 burst: burstOf(stats),
                 produces: producesOf(stats),
+                minionElement: minionElementOf(stats),
                 order: 'attack',
                 orderTargetId: null,
                 rally: { x: CENTER.x, y: CENTER.y },
@@ -337,7 +397,26 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
         nowMs: (t * 1000) / ctx.config.timers.ticksPerSecond,
         selves: [self],
         enemies: world.enemies,
-        allies: [{ id: self.id, ownerId: ME, teamId: 0, type: self.type, name: self.name, x: self.x, y: self.y, radius, hp: self.hp, maxHp: self.maxHp, range: self.range }, ...world.allies],
+        allies: [
+          {
+            id: self.id,
+            ownerId: ME,
+            teamId: 0,
+            type: self.type,
+            name: self.name,
+            x: self.x,
+            y: self.y,
+            radius,
+            hp: self.hp,
+            maxHp: self.maxHp,
+            range: self.range,
+            element: self.element,
+            splashRadius: self.splashRadius,
+            support: self.support,
+            status: self.status,
+          },
+          ...world.allies,
+        ],
         world: worldView,
       };
       const out = await session.call('tick', [encodeTickInput(input)], callMs, { deadlineMs: callMs + DEFAULT_DEADLINE_SLACK_MS });
@@ -412,6 +491,10 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
       if (reason && stats.type === 'factory' && (rawKind === 'move' || rawKind === 'attack')) {
         reason = `a factory can't ${rawKind}, it only tells its minions where to go`;
       }
+      if (reason && rawKind === 'heal' && stats.type === 'factory') {
+        // A factory's broken heal: say what a factory can do (it would idle anyway).
+        reason = "a factory can't heal: set this.produces = 'medic' to build healing minions";
+      }
       if (reason) {
         errors.push({
           code: 'BAD_ACTION',
@@ -428,13 +511,15 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
                     "{ action: 'release' }",
                     "{ action: 'hold' }",
                   ]
-                : ["{ action: 'idle' }", "{ action: 'move', destination: { x, y } }", "{ action: 'attack', targetId }"],
+                : ["{ action: 'idle' }", "{ action: 'move', destination: { x, y } }", "{ action: 'attack', targetId }", "{ action: 'heal', targetId } (support 'heal' only)"],
           },
           errorMessage: reason,
           message: `update() returned something that is not a valid action in a practice battle (${world.label}): ${reason}.`,
           fix:
             rawKind === 'command'
               ? commandFix((entry.action as { order?: unknown }).order)
+              : rawKind === 'heal'
+                ? "A heal needs the id of an ALLY in supportRange: { action: 'heal', targetId: friend.id }. Pick a friend from allies (not yourself) that is hurt, burning or frozen; otherwise return { action: 'idle' } or an attack."
               : stats.type === 'factory'
                 ? "Return exactly one of { action: 'rally', destination: { x: number, y: number } } (where the minions go), { action: 'command', order: 'attack' | 'defend' | 'swarm' | 'guard', targetId? }, { action: 'release' }, { action: 'hold' } (pause building) or { action: 'idle' }."
                 : "Return exactly one of { action: 'idle' }, { action: 'move', destination: { x: number, y: number } } or { action: 'attack', targetId: enemy.id }.",
@@ -445,17 +530,27 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
       // §5.2: rally/hold are factory actions; move/attack are not (the engine idles, no strike).
       const kind = action?.action;
       const factoryAction = kind === 'rally' || kind === 'hold' || kind === 'command' || kind === 'release';
-      if (!wrongTypeWarned && ((stats.type === 'factory' && (kind === 'move' || kind === 'attack')) || (stats.type !== 'factory' && factoryAction))) {
+      // M8.8: heal needs support 'heal' (soldiers and towers only).
+      const badHeal = kind === 'heal' && (stats.type === 'factory' || !healer);
+      if (kind === 'heal' && !badHeal) healUsed = true;
+      if (!wrongTypeWarned && ((stats.type === 'factory' && (kind === 'move' || kind === 'attack')) || (stats.type !== 'factory' && factoryAction) || badHeal)) {
         wrongTypeWarned = true;
         warnings.push({
           code: 'W_ACTION_NOT_FOR_TYPE',
           field: 'update',
           value: kind,
-          message: `update() returned { action: '${kind}' }, which a ${stats.type} can't do, so it waits instead.`,
+          message:
+            kind === 'heal'
+              ? `update() returned { action: 'heal' }, but this ${stats.type} has no heal support, so it waits instead.`
+              : `update() returned { action: '${kind}' }, which a ${stats.type} can't do, so it waits instead.`,
           fix:
-            stats.type === 'factory'
-              ? "A factory can only return { action: 'rally', destination: { x, y } } (where its minions go), { action: 'command', order, targetId? }, { action: 'release' }, { action: 'hold' } or { action: 'idle' }."
-              : "Only factories rally, command, release or hold. Soldiers return move/attack/idle; towers attack/idle.",
+            kind === 'heal'
+              ? stats.type === 'factory'
+                ? "A factory can't heal. Set this.produces = 'medic' to build healing minions, and return rally/command/release/hold/idle."
+                : "Only units with heal support can heal: add this.support = 'heal'; this.supportPower = 60; this.supportRange = 120; (heal 60 HP, reach 120 px), or remove the heal action."
+              : stats.type === 'factory'
+                ? "A factory can only return { action: 'rally', destination: { x, y } } (where its minions go), { action: 'command', order, targetId? }, { action: 'release' }, { action: 'hold' } or { action: 'idle' }."
+                : "Only factories rally, command, release or hold. Soldiers return move/attack/heal/idle; towers attack/heal/idle.",
         });
       }
       if (stats.type === 'factory' && (kind === 'rally' || kind === 'command')) {
@@ -488,6 +583,14 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
     slowestMs = Math.max(slowestMs, median(worldCallMs));
   }
 
+  if (healer && !healUsed) {
+    warnings.push({
+      code: 'W_HEAL_NEVER_USED',
+      field: 'update',
+      message: 'This unit has heal support, but update() never returned a heal in the practice battles (a hurt, burning ally was in reach).',
+      fix: "Return { action: 'heal', targetId } for a hurt ally in supportRange: look through allies (skip self.id, walls and factories) for one with hp < maxHp and status.healRoom > 0, or status.burning / status.frozen > 0, whose gap (distance − both radii) is ≤ self.support.range, and heal it when self.cooldownRemaining === 0.",
+    });
+  }
   if (!attackedWhenAble && stats.damage > 0) {
     warnings.push({
       code: 'W_NEVER_ATTACKS',
@@ -522,5 +625,5 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
       fix: 'Make update() cheaper: avoid nested loops and big temporary arrays.',
     });
   }
-  return { errors, warnings, ...(stats.type === 'factory' ? { orders } : {}) };
+  return { errors, warnings, ...(stats.type === 'factory' ? { orders } : {}), ...(healer ? { healUsed } : {}) };
 }

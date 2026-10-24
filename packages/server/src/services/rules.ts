@@ -4,9 +4,12 @@ import { readFileSync } from 'node:fs';
 import {
   ARENA,
   BADGES,
+  BUILDING_HP_CURVE_MAX,
   CELL_SIZE,
+  CURVE_MAX,
   DEFAULT_CONFIG,
   DEFAULT_SIZE,
+  ELEMENTS,
   GRID_SIZE,
   MAP_STYLES,
   MAP_STYLE_INFO,
@@ -126,6 +129,7 @@ export function unitTypeRules(config: GameConfig): Record<string, unknown> {
         needs: ['name', 'type', 'maxHealth', 'productionInterval', 'color'],
         optional: {
           produces: `one of ${MINION_KINDS.map((k) => `'${k}'`).join(', ')} (default 'grunt'): the minion it builds; the price follows`,
+          minionElement: `one of ${ELEMENTS.map((e) => `'${e}'`).join(', ')} (default 'normal'): every minion's element, x${c.element.fire} on the minion price (medics ignore it)`,
           burst: `whole number ${b.burst.min}-${b.burst.max} (default 1): minions saved up inside, then sent out together; free`,
         },
         maxHealth: b.factoryHealth,
@@ -154,7 +158,9 @@ export function unitTypeRules(config: GameConfig): Record<string, unknown> {
       minionKinds: Object.fromEntries(
         MINION_KINDS.map((k) => {
           const price = minionPrice(c, pricing, k);
-          return [k, { ...f.minions[k], name: MINION_KIND_NAMES[k], role: KIND_ROLES[k], minionCost: price.minionCost, minionValue: price.minionValue }];
+          // M8.8: the price per minionElement (medics ignore it).
+          const byElement = Object.fromEntries(ELEMENTS.map((e) => [e, minionPrice(c, pricing, k, e)]));
+          return [k, { ...f.minions[k], name: MINION_KIND_NAMES[k], role: KIND_ROLES[k], minionCost: price.minionCost, minionValue: price.minionValue, byElement }];
         }),
       ),
       orders: {
@@ -171,7 +177,7 @@ export function unitTypeRules(config: GameConfig): Record<string, unknown> {
       },
     },
     fighters:
-      'Fighters are soldiers, towers, minions and factories that can still build. Walls are NOT fighters: Ready needs at least one fighter (NO_FIGHTERS), and a side with no fighters left is out (its walls crumble).',
+      "Fighters are soldiers and towers with damage above 0, attacking minions and factories that can still build (not medic-only factories). Walls, damage-0 support units (medics, banners, healing shrines) and medic factories are NOT fighters: Ready needs at least one fighter (NO_FIGHTERS), and a side with no fighters left is out (its walls and support units crumble). Support units still count toward the fighter copies cap.",
     livingValue: `At the time limit walls are worth $0, a factory is worth its body price only (minions it never built count nothing), and each living minion $${minionValue}. During the battle a factory counts $${minionValue} per minion it can still build in time, and one that holds or is walled in until it no longer has time to build one is not a fighter any more. Breaking an enemy wall still scores its full price as value destroyed.`,
   };
 }
@@ -193,12 +199,36 @@ export function buildRules(config: GameConfig, armoryEnabled = false, match?: Ma
     maxPlayers: config.match.maxPlayers,
     caps: { ...config.caps },
     costFormula:
-      'each stat term = linear * (1 + c.curveK * (x / max)^2) with linear = maxHealth*c.hp (max 500), damage*c.damage (max 60), range*c.range (max 300), speed*c.speed (max 5), (size - 6)*c.size (max 14); ' +
-      'raw = (c.base + sum of the terms) * max(1, c.referenceCooldown / attackCooldown); cost = ceil(raw), where c = coefficients and size defaults to bounds.defaultSize[type]. ' +
+      `each stat term = linear * (1 + c.curveK * (x / max)^2) with linear = maxHealth*c.hp (max ${CURVE_MAX.maxHealth}), damage*c.damage (max ${CURVE_MAX.damage}), range*c.range (max ${CURVE_MAX.range}), speed*c.speed (max ${CURVE_MAX.speed}), (size - 6)*c.size (max ${CURVE_MAX.size}); ` +
+      'heal (support heal) = c.heal * supportPower * (1 + c.curveK*(supportPower/250)^2) * reach(supportRange/200); aura (haste/might/shield) = c.aura[kind] * supportPower * (1 + c.curveK*(supportPower/max)^2) * reach(supportRange/150), max 50 (shield 40); reach(r) = 0.5 + r*(2 - r). ' +
+      'raw = (c.base + sum of the terms + heal) * max(1, c.referenceCooldown / attackCooldown) * (1 + c.powerFactor * maxHealth/2500 * damage/300) * (1 + c.splash * s*(2 - s), s = splashRadius/80) * c.element[element] (normal 1) + aura; cost = ceil(raw), where c = coefficients and size defaults to bounds.defaultSize[type]. ' +
+      `In words: ${PRICE_PARAGRAPH} ` +
       curveSentence(config.cost.curveK) +
-      ' Walls: cost = ceil(c.wall.base + maxHealth*c.wall.hp*(1 + c.curveK*(maxHealth/1500)^2)). ' +
-      'Factories: cost = ceil(c.factory.base + maxHealth*c.factory.hp*(1 + c.curveK*(maxHealth/1000)^2)) + minionValue * E, where E = the minions it can build in one battle (unitTypes.factories.minionsPerBattle) and minionValue = half the price of its minion kind priced as a soldier (unitTypes.factories.minionKinds[produces].minionValue: grunt is the default). burst never changes the price.',
+      ` Walls: cost = ceil(c.wall.base + maxHealth*c.wall.hp*(1 + c.curveK*(maxHealth/${BUILDING_HP_CURVE_MAX.wall})^2)). ` +
+      `Factories: cost = ceil(c.factory.base + maxHealth*c.factory.hp*(1 + c.curveK*(maxHealth/${BUILDING_HP_CURVE_MAX.factory})^2)) + minionValue * E, where E = the minions it can build in one battle (unitTypes.factories.minionsPerBattle) and minionValue = half the price of its minion kind priced as a soldier, times the minionElement factor (unitTypes.factories.minionKinds[produces].byElement: grunt is the default; medics ignore the element). burst never changes the price.`,
     coefficients: { ...config.cost },
+    // M8.8 (§5.4, §5.5): one line per rule; the numbers are config.
+    elements: {
+      ...config.elements,
+      fire: `${config.elements.fire.burnPct}% of the hit again as a burn over ${(config.elements.fire.pulses * config.elements.fire.pulseTicks) / t.ticksPerSecond} s (one burn per attacking player, refreshed by new hits)`,
+      ice: `freezes for ${config.elements.ice.ticks / t.ticksPerSecond} s: moves, reloads and builds ${config.elements.ice.slowPct}% slower (works at damage 0; refreshes, never stacks)`,
+      lightning: `${config.elements.lightning.chancePct}% of hits zap the nearest other enemy within ${config.elements.lightning.hopRange} px (edge to edge) for the same damage`,
+      shatter: `fire on a frozen target: ${100 + config.elements.shatterPct}% damage and it thaws`,
+      overload: `lightning on a burning target: the zap hops ${config.elements.lightning.burningExtraHops} more time`,
+      splash: `every other enemy within splashRadius of the target (its centre to their edge) takes ${config.elements.splashPct}% of the hit, with the fire or ice; never walls`,
+      walls: 'a hit on a wall is plain damage: no element, no splash, no zap',
+      config: { ...config.elements },
+    },
+    support: {
+      text: "One support per soldier or tower: support 'heal' is an action ({ action: 'heal', targetId: ally.id }, shares the attack cooldown); 'haste', 'might' and 'shield' are always-on auras for allies within supportRange (edge to edge); per kind only the strongest aura counts.",
+      healRoomPctPerSecond: config.support.healRoomPctPerSecond,
+      heal: `min(supportPower, missing HP, the target's heal room): ${config.support.healRoomPctPerSecond}% of max HP per second shared by all healers; a burning or frozen ally is only cleansed; no heals from ${config.suddenDeath.startTick / t.ticksPerSecond} s (sudden death); never walls, factories or the healer itself`,
+      haste: 'move speed and reload speed x(1 + power%) (multiplies with a freeze)',
+      might: 'outgoing damage x(1 + power%), taken when the shot is fired',
+      shield: 'incoming damage (hits, splash, zaps, burns, shatter) x(1 - power%); never sudden death',
+      bounds: config.stats.bounds.support,
+      fighters: 'A soldier or tower with damage 0 and a factory that only builds medics are not fighters: a side with only those (and walls) left is out.',
+    },
     bounds: {
       ...config.stats.bounds,
       byType: {
@@ -243,7 +273,7 @@ export function buildRules(config: GameConfig, armoryEnabled = false, match?: Ma
         }
       : {}),
     ranking:
-      'Survivors rank above the eliminated (a side with only walls left is out). At the time limit, survivors are ranked by the total value of their living units: soldiers and towers their cost, walls $0, factories their body (unbuilt minions count nothing), minions their minionValue. In team mode whole teams are ranked the same way (team living cost).',
+      'Survivors rank above the eliminated (a side with only walls or damage-0 support units left is out). At the time limit, survivors are ranked by the total value of their living units: soldiers and towers their cost, walls $0, factories their body (unbuilt minions count nothing), minions their minionValue. In team mode whole teams are ranked the same way (team living cost).',
     pointsSummary: `Round points = place points (1st gets players - 1 down to 0 for last; 4 players: ${placePointsTable(4).join('/')}) + damage bonus (0-${config.scoring.damageBonusMax} at 4 players) + value-destroyed bonus (0-${config.scoring.valueBonusMax} at 4 players). Bonuses scale with players / 4. See scoring.`,
   };
 }
@@ -300,10 +330,15 @@ export const ENGINE_RULES = [
   '1. Stats are snapshotted at validation. Changing this.damage inside update() has no effect.',
   '2. Extra fields on `this` persist between ticks for that copy. Module-level variables are shared by all your copies of the same type.',
   '3. update() is called once per tick (60 ticks = 1 s) with fresh plain copies. Mutating the inputs does nothing.',
-  "4. The returned action is a request: attack needs a living enemy within range (EDGE to edge, +0.5 px) and cooldownRemaining = 0, else the unit idles. move: soldiers only, at most `speed` px per tick, clamped to the arena; a wall in the way is slid along. rally {destination}, command {order, targetId?}, release and hold: factories only (rally = order 'attack' + where its minions go; command gives the squad order attack/defend/swarm/guard, kept until changed; release sends the stored minions out; hold pauses building for the tick). An action the type can't do is an idle. Anything else (or a throw) means idle; throws count strikes and 30 strikes disable the unit for the battle.",
+  "4. The returned action is a request: attack needs a living enemy within range (EDGE to edge, +0.5 px) and cooldownRemaining = 0, else the unit idles. move: soldiers only, at most `speed` px per tick, clamped to the arena; a wall in the way is slid along. rally {destination}, command {order, targetId?}, release and hold: factories only (rally = order 'attack' + where its minions go; command gives the squad order attack/defend/swarm/guard, kept until changed; release sends the stored minions out; hold pauses building for the tick). heal {targetId} (M8.8): units with support 'heal' only; a living ally (not itself, a wall or a factory) within supportRange (edge to edge) that is hurt, burning or frozen, cooldownRemaining = 0; it shares the attack cooldown, and a refused heal keeps the cooldown. An action the type can't do is an idle. Anything else (or a throw) means idle; throws count strikes and 30 strikes disable the unit for the battle.",
   '5. No import, require, network, timers or async. They do not exist in the sandbox.',
-  '6. Four types: soldier (moves, fights), tower (stays, shoots), wall (a 40x40 block with no update() that blocks everyone; enemies can break it), factory (stays and builds minions: grunts, archers, runners or brutes; its update() gives them orders). Minions are engine-made fighters (type "minion" in enemies/allies, named after their kind): you never write their code.',
+  '6. Four types: soldier (moves, fights), tower (stays, shoots), wall (a 40x40 block with no update() that blocks everyone; enemies can break it), factory (stays and builds minions: grunts, archers, runners, brutes or medics; its update() gives them orders). Minions are engine-made (type "minion" in enemies/allies, named after their kind): you never write their code.',
+  '7. Elements, splash and support (M8.8): one element per unit (fire burns, ice freezes, lightning zaps; x1.2 price), optional splashRadius 0-80 (others near the target take half), and one support (heal action, or a haste/might/shield aura). self/enemy/ally views carry element, splashRadius, support and status (burning, burnLeft, frozen, haste, might, shield, healRoom). A side with only damage-0 units left is out.',
 ];
+
+/** The price in one paragraph (§6 M8.8, CLAUDE.md §5, get_unit_contract). */
+export const PRICE_PARAGRAPH =
+  'Each stat costs its normal price, more near its max (up to 2× at the max). Healing adds a price too. Then multiply: fast attacks (60 / cooldown), being both tough and strong (up to ×1.6), splash (×1.53 at 40 px, ×1.7 at 80) and an element (×1.2). An aura is added at the end.';
 
 /** The costFormula sentence on the curve, built from curveK (k = 0 is linear: no "spread" claim). */
 function curveSentence(curveK: number): string {
@@ -318,8 +353,8 @@ function fmtX(n: number): string {
 
 /** The cost-curve tip, with the multipliers from curveK. */
 export function curveTip(curveK: number): string {
-  if (!(curveK > 0)) return 'Cost grows in a straight line with each stat (curveK = 0). 4-8 units per $1,000 is a good army.';
-  return `Maxing a stat costs ${fmtX(1 + curveK)}× its normal price (half its max costs ${fmtX(1 + curveK / 4)}×): spread your stats. Two or three medium units usually beat one giant one. 4-8 units per $1,000 is a good army.`;
+  if (!(curveK > 0)) return 'Cost grows in a straight line with each stat (curveK = 0). 4-8 units per $5,000 is a good army.';
+  return `Maxing a stat costs ${fmtX(1 + curveK)}× its normal price (half its max costs ${fmtX(1 + curveK / 4)}×); being tough AND strong at once costs up to ×1.6 more (the power factor), so pair a tank with a hitter. 4-8 units per $5,000 is a good army.`;
 }
 
 /** The sudden-death tip, with the start time and damage rate from config. */
@@ -329,15 +364,52 @@ export function suddenDeathTip(config: GameConfig = DEFAULT_CONFIG): string {
   return `After ${startS} s a safe circle shrinks toward the centre; units outside it lose ${sd.damagePctPerSecond}% of max health per second. Towers far from the centre will suffer.`;
 }
 
-/** Strategy tips; the cost-curve and sudden-death tips follow the config. */
+/** M8.8 teaching point 1: the ×5 numbers, from config. */
+export function scaleTip(config: GameConfig = DEFAULT_CONFIG): string {
+  const b = config.stats.bounds;
+  return `Numbers are 5x bigger now: ${money(config.caps.budget)} per army, up to ${money(config.caps.unitCost)} per unit, HP ${num(b.maxHealth.min)}-${num(b.maxHealth.max)}, damage ${num(b.damage.min)}-${num(b.damage.max)}. Range, speed, size and cooldown work exactly as before. Don't copy old numbers: 120 HP is a weakling now.`;
+}
+
+/** M8.8 teaching point 3: the three elements, from config. */
+export function elementTip(config: GameConfig = DEFAULT_CONFIG): string {
+  const e = config.elements;
+  const tps = config.timers.ticksPerSecond;
+  const f = config.cost.element;
+  const factor = f.fire === f.ice && f.ice === f.lightning ? `x${fmtX(f.fire)} price` : `price x${fmtX(f.fire)} fire, x${fmtX(f.ice)} ice, x${fmtX(f.lightning)} lightning`;
+  return `One element per unit, ${factor}: 'fire' adds ${e.fire.burnPct}% of the hit again as a ${fmtX((e.fire.pulses * e.fire.pulseTicks) / tps)} s burn (best on fast hitters); 'ice' freezes for ${fmtX(e.ice.ticks / tps)} s, ${e.ice.slowPct}% slower moving, reloading and building (works at damage 0; best against a few big units); 'lightning' has a ${e.lightning.chancePct}% chance to zap the nearest other enemy within ${e.lightning.hopRange} px for the same damage (best against crowds).`;
+}
+
+/** M8.8 teaching point 7: the healing limits, from config. */
+export function healTip(config: GameConfig = DEFAULT_CONFIG): string {
+  const sdS = fmtX(config.suddenDeath.startTick / config.timers.ticksPerSecond);
+  return `Healing limits: at most ${config.support.healRoomPctPerSecond}% of an ally's max HP per second, nothing after ${sdS} s (sudden death), never walls, factories or the healer itself. A heal on a burning or frozen ally only cleanses it, so fire is how you beat medics.`;
+}
+
+function money(n: number): string {
+  return `$${n.toLocaleString('en-US')}`;
+}
+
+function num(n: number): string {
+  return n.toLocaleString('en-US');
+}
+
+/** Strategy tips; the cost-curve, sudden-death and M8.8 number tips follow the config. */
 export function strategyTips(config: GameConfig = DEFAULT_CONFIG): string[] {
-  return STRATEGY_TIPS.map((t) =>
-    t === CURVE_TIP_SLOT ? curveTip(config.cost.curveK) : t === SUDDEN_DEATH_TIP_SLOT ? suddenDeathTip(config) : t,
-  );
+  const slots: Record<string, (c: GameConfig) => string> = {
+    [CURVE_TIP_SLOT]: (c) => curveTip(c.cost.curveK),
+    [SUDDEN_DEATH_TIP_SLOT]: suddenDeathTip,
+    [SCALE_TIP_SLOT]: scaleTip,
+    [ELEMENT_TIP_SLOT]: elementTip,
+    [HEAL_TIP_SLOT]: healTip,
+  };
+  return STRATEGY_TIPS.map((t) => slots[t]?.(config) ?? t);
 }
 
 const CURVE_TIP_SLOT = '(curve tip)';
 const SUDDEN_DEATH_TIP_SLOT = '(sudden-death tip)';
+const SCALE_TIP_SLOT = '(scale tip)';
+const ELEMENT_TIP_SLOT = '(element tip)';
+const HEAL_TIP_SLOT = '(heal tip)';
 
 export const STRATEGY_TIPS = [
   'attackCooldown 60 is free; a faster cooldown multiplies the WHOLE cost (cooldown 30 = ×2).',
@@ -352,12 +424,21 @@ export const STRATEGY_TIPS = [
   'Walls block everyone, your own units too: leave a gap of one empty cell so your soldiers and minions can get out (two cells for size 19-20).',
   "Walls can't attack and are worth $0 at the end, and a player with only walls left is out: walls protect fighters, they don't win.",
   "Skip enemies with type 'wall' when picking targets, unless one blocks you: if self.blockedBy is an enemy wall (still in enemies) and self.blockedTicks is high (120 = 2 s), smash it.",
-  "Minions show up in enemies as type 'minion': weak (40 HP) but many. Shots fly over walls, so towers behind walls still shoot.",
+  "Minions show up in enemies as type 'minion': weaker (a grunt has 180 HP) but many. Shots fly over walls, so towers behind walls still shoot.",
   'Enemies walk round walls too: a wall with a way round it only makes them walk further. To keep them out, close the gap completely (then they have to smash a wall).',
   'A factory pays up front for its minions: productionInterval 600 makes 8 per battle, 900 makes 5, 1800 makes 2, and the price follows. Rally them at the nearest enemy to attack, or in front of your towers to defend.',
   "Pick this.produces for the job: 'archer' (shoots from 110 px, fragile) behind walls or towers, 'runner' (fast) to swarm far targets, 'brute' (tough, 3x damage to walls) to smash walls, 'grunt' (default, cheapest) for a steady stream.",
   "Squad orders: { action: 'command', order: 'swarm', targetId: enemy.id } sends every minion at one enemy; 'guard' with an ally's id keeps them next to it; 'defend' keeps them home; 'attack' (default) hunts. swarm and guard need a targetId: with no target return { action: 'command', order: 'attack' }. swarm is for ONE target (a sniper, a wall in the way); for an open fight attack is the all-rounder, and defend next to your towers is very strong.",
   'this.burst = 4 saves minions inside the factory and sends them out together (a surprise rush), but stored minions die with the factory: keep it safe, or release early with { action: \'release\' }.',
+  // M8.8 (§11 teaching points 1-9, one line each; point 2, softer extremes, is the curve tip).
+  SCALE_TIP_SLOT,
+  ELEMENT_TIP_SLOT,
+  'Combos: fire on a frozen enemy = SHATTER (1.5x damage, and it thaws); lightning on a burning enemy zaps one more. Read enemy.status.frozen and enemy.status.burning to pick targets.',
+  'Splash: this.splashRadius = 40 makes everyone within 40 px of the target take half, with your fire or ice (x1.53 price; x1.7 at 80). If the enemy has splash (enemy.splashRadius > 0), spread out. Walls never burn, freeze, get zapped or take splash.',
+  "Support (one per unit): 'heal' is an action, return { action: 'heal', targetId: ally.id } on a hurt, burning or frozen ally within supportRange (it uses your attack cooldown); 'haste', 'might' and 'shield' are auras: keep allies inside supportRange and there is nothing to code. Two of the same aura don't add up; different ones do.",
+  HEAL_TIP_SLOT,
+  "Factories: this.minionElement = 'ice' on archers, 'fire' on brutes, 'lightning' on burst runners; this.produces = 'medic' with the 'guard' command on your tank.",
+  "A unit with damage 0 can't win alone: a side with only support units left (damage 0, or medic factories) is out. Pure support still counts toward the fighter copies cap.",
 ];
 
 /** One line per minion kind (get_rules). */
@@ -366,6 +447,7 @@ const KIND_ROLES = {
   archer: 'ranged (110 px, shots fly over walls), fragile: put it behind walls or soldiers',
   runner: 'very fast and small, weak: reaches far targets first (great with swarm)',
   brute: 'slow and tough, hits walls 3x as hard and smashes a blocking wall after 0.5 s',
+  medic: 'never attacks: heals its side (puts out burns and thaws freezes first); medic-only factories are not fighters',
 } as const;
 
 export function buildContract(config: GameConfig = DEFAULT_CONFIG): ContractDTO {
@@ -377,6 +459,6 @@ export function buildContract(config: GameConfig = DEFAULT_CONFIG): ContractDTO 
       basic_wall: templateSource('basic_wall'),
       basic_factory: templateSource('basic_factory'),
     },
-    notes: [...ENGINE_RULES, ...strategyTips(config).map((t) => `Tip: ${t}`)],
+    notes: [...ENGINE_RULES, `Price: ${PRICE_PARAGRAPH}`, ...strategyTips(config).map((t) => `Tip: ${t}`)],
   };
 }

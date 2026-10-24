@@ -47,6 +47,17 @@
 // `command`/`release` in step 3, swarm/guard orders whose target died fall
 // back in step 1, minion hits on walls are multiplied per kind in step 6,
 // and step 9b stores minions inside until a burst is complete.
+//
+// Elements, splash and support (M8.8, §9.4): step 1 lowers cooldowns (a
+// float) and the factory timers by each body's tempo (×0.65 frozen, ×(1 +
+// haste%) hasted), counts the freeze down, resets the heal room every 60
+// ticks and computes the auras; step 3 accepts `heal`; step 4 moves at
+// speed × tempo (the router's re-plan and blocked checks use that step, so a
+// frozen unit is never "blocked"); step 6 bakes might into each shot and
+// queues heals; step 7 lands hits through the element and splash pipeline
+// (sim/effects.ts, lightning draws from its own `elementRng`), then 7b applies
+// the queued heals and 7c the due burn pulses; step 10 doesn't count
+// damage-0 units, medic minions or medic factories as fighters.
 
 import {
   ARENA,
@@ -54,13 +65,18 @@ import {
   burstOf,
   cellCenter,
   computeCost,
+  elementOf,
   instanceIdFor,
+  minionElementOf,
   pricingOf,
   producesOf,
   runsCode,
   scaleSuddenDeath,
   sizeOf,
+  splashOf,
+  supportOf,
   zoneCenterOf,
+  type DamageSplitDTO,
   type FactoryView,
   type BattleReportDTO,
   type FrameDTO,
@@ -89,15 +105,17 @@ import {
 import { createSplitRunner, needsSplit } from '../sandbox/splitRunner.js';
 import { timedOutOnceMessage } from '../sandbox/strikes.js';
 import { resolveAction, type ResolvedAction } from './actions.js';
+import { BodyIndex, HitPipeline, emptySplit, noAura, statusOf, tempoOf } from './effects.js';
 import { alivePerPlayerCap, canMakeOf, spawnSpots, zoneFacingDir } from './factory.js';
 import { FrameRecorder, frameAt } from './frames.js';
 import { hitDamage, kindConfig, minionAction, minionStats, minionValueOf } from './minion.js';
 import { isFixedBody, separate } from './movement.js';
 import { Pathfinder } from './pathing.js';
-import { aliveInFrame, factoryLeftIn, isFighter, livingValueAt, livingValueOf } from './value.js';
+import { aliveInFrame, canFight, factoryLeftIn, isFighter, livingValueAt, livingValueOf } from './value.js';
+import { applyHeals, computeAuras, freshHealRoom, resetHealRoom, type QueuedHeal } from './support.js';
 import { WallGrid } from './walls.js';
 import { deriveSeed, mulberry32, type Rng } from './prng.js';
-import { applyHit, moveProjectiles, resolveHits, type PendingHit } from './projectiles.js';
+import { moveProjectiles, resolveHits, type PendingHit } from './projectiles.js';
 import { rankResult } from './ranking.js';
 import { playerMetrics, roundScoreOf, scoreRanking, sumMetrics, teamRoundRanking } from './scoring.js';
 import { applySuddenDeath, safeRadiusAt } from './suddenDeath.js';
@@ -275,6 +293,8 @@ export class BattleEngine {
   private readonly byId = new Map<string, SimUnit>();
   private readonly recorder = new FrameRecorder();
   private readonly rng: Rng;
+  /** M8.8 (§9.4 Determinism): the lightning stream, drawn once per lightning main hit (the separation rng is untouched). */
+  private readonly elementRng: Rng;
   private readonly onFrame: ((frame: FrameDTO) => void) | undefined;
   private readonly kicked: ReadonlySet<string>;
   private readonly yieldEvery: number;
@@ -311,6 +331,7 @@ export class BattleEngine {
     if (withTeam !== 0 && withTeam !== opts.players.length) throw new Error('give a teamId to every player or to none');
     this.teamMode = withTeam > 0;
     this.rng = mulberry32(deriveSeed(opts.seed, 0x51));
+    this.elementRng = mulberry32(deriveSeed(opts.seed, 0xe1e));
     this.onFrame = opts.onFrame;
     this.kicked = opts.kickedPlayerIds ?? new Set();
     this.yieldEvery = opts.yieldEveryTicks ?? 30;
@@ -375,7 +396,17 @@ export class BattleEngine {
     const units = new Map<string, UnitCounters>();
     for (const [id, log] of this.unitCounterLog) {
       const e = lastAtOrBefore(log, t);
-      if (e) units.set(id, { damageDealt: e.damageDealt, kills: e.kills, valueDestroyed: e.valueDestroyed, strikes: e.strikes, disabled: e.disabled });
+      if (e) {
+        units.set(id, {
+          damageDealt: e.damageDealt,
+          kills: e.kills,
+          valueDestroyed: e.valueDestroyed,
+          strikes: e.strikes,
+          disabled: e.disabled,
+          ...(e.healing ? { healing: e.healing } : {}),
+          ...(e.combos ? { combos: e.combos } : {}),
+        });
+      }
     }
     const playerStrikes = new Map<string, number>();
     for (const [id, log] of this.playerStrikeLog) {
@@ -408,6 +439,8 @@ export class BattleEngine {
           damageDealt: c?.damageDealt ?? 0,
           kills: c?.kills ?? 0,
           valueDestroyed: c?.valueDestroyed ?? 0,
+          healing: c?.healing ?? 0,
+          combos: c?.combos ?? 0,
         };
       }),
     );
@@ -509,12 +542,18 @@ export class BattleEngine {
       blockedSinceFrame: false,
       slide: null,
       spawnedAtTick: 0,
+      // M8.8 (§9.4): no status yet; the heal room fills on tick 0.
+      frozen: 0,
+      burns: [],
+      healRoom: 0,
+      aura: noAura(),
     };
     if (s.type === 'factory') {
       // Priced like the validator does (§6): body + minionValue × E.
       const priced = computeCost(s, this.config.cost, pricingOf(this.config)).breakdown;
       const prod = priced.production;
       const kind = producesOf(s);
+      const element = minionElementOf(s);
       u.factory = {
         productionInterval: s.productionInterval ?? this.config.stats.bounds.productionInterval.max,
         timer: 0,
@@ -524,6 +563,7 @@ export class BattleEngine {
         made: 0,
         released: 0,
         kind,
+        element,
         // A burst never exceeds what one factory may have alive (§5.3).
         burst: Math.min(burstOf(s), this.config.factory.maxAlivePerFactory),
         stored: 0,
@@ -534,7 +574,7 @@ export class BattleEngine {
         rally: { x: center.x, y: center.y },
         holding: false,
         bodyCost: priced.body ?? design.cost,
-        minionValue: prod?.minionValue ?? minionValueOf(this.config, kind),
+        minionValue: prod?.minionValue ?? minionValueOf(this.config, kind, element),
         spawnedSinceFrame: false,
         minionsLost: 0,
       };
@@ -579,17 +619,26 @@ export class BattleEngine {
   private async step(tick: number): Promise<void> {
     const cfg = this.config;
 
-    // 1) Cooldowns, then views from the start-of-tick state.
+    // 1) Cooldowns (by the tempo, M8.8), status timers, heal room and auras,
+    //    then views from the start-of-tick state.
     const living = this.living();
     for (const u of living) {
-      if (u.cooldownRemaining > 0) u.cooldownRemaining -= 1;
+      if (u.cooldownRemaining > 0) {
+        const cd = u.cooldownRemaining - tempoOf(u, cfg);
+        // Float tempos leave crumbs (0.65 × n): snap them so 0 means ready.
+        u.cooldownRemaining = cd > 1e-9 ? cd : 0;
+      }
       if (u.factory) u.factory.holding = false;
+      if ((u.frozen ?? 0) > 0) u.frozen! -= 1;
     }
+    resetHealRoom(living, tick, cfg);
+    computeAuras(living);
+    const healsOff = tick >= cfg.suddenDeath.startTick;
     // M8.6: a swarm whose target died becomes attack, a guard whose ally
     // died defend, before anyone decides (dead factories too: their minions
     // keep the last order).
     for (const u of this.units) if (u.factory) this.checkOrder(u);
-    const others = living.map(toOtherView);
+    const others = living.map((u) => toOtherView(u, tick, cfg));
     const safeRadius = safeRadiusAt(tick, cfg);
     // enemies/allies are built once per side and shared by its players, so
     // the sandbox serialises them once per side (§9.2 Performance).
@@ -605,6 +654,7 @@ export class BattleEngine {
       safeRadius,
       rangeTolerance: cfg.sim.rangeTolerance,
       lookup: (id: string) => this.byId.get(id),
+      healsOff,
     };
     for (const u of living) {
       if (u.type === 'minion') minionRaw.set(u.id, minionAction(u, minionWorld, cfg));
@@ -630,7 +680,7 @@ export class BattleEngine {
         else if (raw.has(u.id)) acting.push([u, raw.get(u.id)]);
       }
       for (const [unit, r] of acting) {
-        const action = resolveAction(r, unit, (id) => this.byId.get(id), cfg.sim.rangeTolerance, this.arena);
+        const action = resolveAction(r, unit, (id) => this.byId.get(id), cfg.sim.rangeTolerance, this.arena, { healsOff });
         const f = unit.factory;
         if (action.kind === 'rally') {
           f!.rally = action.destination;
@@ -654,7 +704,8 @@ export class BattleEngine {
     for (const { unit, action } of pending) {
       if (action.kind !== 'move') continue;
       const sx0 = screenX(unit);
-      const res = this.paths.move(unit, action.destination, unit.stats.speed, tick);
+      // M8.8: the step is speed × tempo; the router's waypoint and blocked checks use it too.
+      const res = this.paths.move(unit, action.destination, unit.stats.speed * tempoOf(unit, cfg), tick);
       // Sticky until the next frame is recorded (cleared in FrameRecorder.record).
       if (res.moved) unit.movedSinceFrame = true;
       if (res.blocked) unit.blockedSinceFrame = true;
@@ -676,7 +727,18 @@ export class BattleEngine {
     //    the projectile impacts, so the first hit in seat, then instanceId
     //    order to take a target to ≤ 0 hp gets the kill (§9 Value destroyed).
     const hits: PendingHit[] = [];
+    const heals: QueuedHeal[] = [];
     for (const { unit, action } of pending) {
+      if (action.kind === 'heal') {
+        // M8.8: heals share the attack cooldown and land in step 7b (an instant beam).
+        const target = this.byId.get(action.targetId)!;
+        unit.cooldownRemaining = unit.stats.attackCooldown;
+        unit.firedSinceFrame = true;
+        if (screenX(target) < screenX(unit)) unit.facingLeft = true;
+        else if (screenX(target) > screenX(unit)) unit.facingLeft = false;
+        heals.push({ healer: unit, target, power: action.power });
+        continue;
+      }
       if (action.kind !== 'attack') continue;
       const target = this.byId.get(action.targetId)!;
       const melee = unit.stats.range <= cfg.sim.meleeMaxRange;
@@ -686,9 +748,14 @@ export class BattleEngine {
       else if (screenX(target) > screenX(unit)) unit.facingLeft = false;
       this.recorder.event({ type: 'fire', instanceId: unit.id, targetId: target.id, melee });
       // Brutes hit walls harder (M8.6, §5.3); everyone else deals plain damage.
-      const damage = hitDamage(unit, target, cfg);
+      // M8.8: might is taken at fire time and travels with the shot, with the element and splash.
+      const might = unit.aura?.might ?? 0;
+      const damage = might > 0 ? hitDamage(unit, target, cfg) * (1 + might / 100) : hitDamage(unit, target, cfg);
+      const element = elementOf(unit.stats);
+      const splash = splashOf(unit.stats);
+      const mightSrc = might > 0 ? (unit.aura?.mightSrc ?? null) : null;
       if (melee) {
-        hits.push({ attackerId: unit.id, target, damage });
+        hits.push({ attackerId: unit.id, target, damage, element, splash, might, mightSrc });
       } else {
         this.projectiles.push({
           id: this.nextProjectileId++,
@@ -697,18 +764,35 @@ export class BattleEngine {
           ownerId: unit.id,
           targetId: target.id,
           damage,
+          ...(element !== 'normal' ? { element } : {}),
+          ...(splash > 0 ? { splash } : {}),
+          ...(might > 0 ? { might, mightSrc } : {}),
         });
       }
     }
 
     // 7) Projectiles move (over walls); then every hit of this tick (melee and
-    //    impacts) lands in attacker order: seat, then instanceId, then projectile id.
+    //    impacts) lands in attacker order: seat, then instanceId, then projectile
+    //    id, through the element and splash pipeline (M8.8, sim/effects.ts).
     const moved = moveProjectiles(this.projectiles, (id) => this.byId.get(id), cfg.sim.projectileSpeed);
     this.projectiles = moved.remaining;
+    const pipeline = new HitPipeline(cfg, tick, this.recorder, this.elementRng, new BodyIndex(living, this.arena));
     resolveHits([...hits, ...moved.arrived], (h) => {
-      const hit = applyHit(this.byId.get(h.attackerId), h.target, h.damage);
-      this.recorder.event({ type: 'hit', instanceId: h.attackerId, targetId: h.target.id, damage: hit.dealt });
+      const p = h.projectile;
+      pipeline.land({
+        attackerId: h.attackerId,
+        attacker: this.byId.get(h.attackerId),
+        target: h.target,
+        damage: h.damage,
+        element: p ? (p.element ?? 'normal') : (h.element ?? 'normal'),
+        splash: p ? (p.splash ?? 0) : (h.splash ?? 0),
+        might: p ? (p.might ?? 0) : (h.might ?? 0),
+        mightSrc: p ? (p.mightSrc ?? null) : (h.mightSrc ?? null),
+      });
     });
+    // 7b) The queued heals (after every hit: dead is dead), then 7c the burn pulses that are due.
+    if (heals.length > 0) applyHeals(heals, this.recorder);
+    pipeline.burnPulses(living);
 
     // 8) Sudden death on every body, buildings included (credits nobody).
     applySuddenDeath(living, tick, cfg, this.center);
@@ -797,7 +881,11 @@ export class BattleEngine {
     const buildings = { list: undefined as SimUnit[] | undefined };
     for (const fac of factories) {
       const f = fac.factory!;
-      if (!f.holding) f.timer = Math.min(f.timer + 1, f.productionInterval);
+      // M8.8: the timer gains the tempo (0.65 per tick while frozen), which slows bursts too.
+      if (!f.holding) {
+        const timer = f.timer + tempoOf(fac, this.config);
+        f.timer = timer > f.productionInterval - 1e-9 ? f.productionInterval : timer;
+      }
       const full = (perFactory.get(fac.id) ?? 0) >= fc.maxAlivePerFactory || (perPlayer.get(fac.playerId) ?? 0) >= this.minionCapPerPlayer;
       const wantRelease = f.releaseRequested && f.stored > 0;
       if (f.timer >= f.productionInterval && f.minionsLeft > 0 && !full) {
@@ -855,7 +943,7 @@ export class BattleEngine {
   /** Create a factory's n-th minion at `spot` (§5.2 Minions). */
   private addMinion(fac: SimUnit, n: number, spot: Point, t: number): void {
     const kind = fac.factory?.kind ?? 'grunt';
-    const stats = minionStats(this.config, fac.stats.color, kind);
+    const stats = minionStats(this.config, fac.stats.color, kind, fac.factory?.element ?? 'normal');
     const m: SimUnit = {
       id: `${fac.id}-m${n}`,
       playerId: fac.playerId,
@@ -893,6 +981,11 @@ export class BattleEngine {
       route: null,
       spawnedAtTick: t,
       minion: { factory: fac, n, kind },
+      frozen: 0,
+      burns: [],
+      // A fresh minion starts with a full heal room for its window (§5.5).
+      healRoom: freshHealRoom({ type: 'minion', maxHp: stats.maxHealth }, t, this.config),
+      aura: noAura(),
     };
     insertSorted(this.units, m);
     insertSorted(this.players.find((p) => p.setup.playerId === fac.playerId)!.units, m);
@@ -914,7 +1007,7 @@ export class BattleEngine {
     const cap = this.config.factory.maxAlivePerFactory;
     const selves = living
       .filter((u) => u.playerId === p.setup.playerId && !u.disabled && u.type !== 'wall' && u.type !== 'minion')
-      .map((u) => toSelfView(u, u.factory ? factoryView(u, living, cap) : null));
+      .map((u) => toSelfView(u, u.factory ? factoryView(u, living, cap) : null, tick, this.config));
     if (selves.length === 0) return undefined;
     const corner = zoneCenterOf(p.setup.zone);
     const { x: cx, y: cy } = this.center;
@@ -1144,15 +1237,26 @@ export class BattleEngine {
   private logCounters(t: number): void {
     for (const u of this.units) {
       const log = this.unitCounterLog.get(u.id);
-      const last = log?.[log.length - 1] ?? { damageDealt: 0, kills: 0, valueDestroyed: 0, strikes: 0, disabled: false };
+      const last: UnitCounters = log?.[log.length - 1] ?? { damageDealt: 0, kills: 0, valueDestroyed: 0, strikes: 0, disabled: false };
       const same =
         last.damageDealt === u.damageDealt &&
         last.kills === u.kills &&
         last.valueDestroyed === u.valueDestroyed &&
         last.strikes === u.strikes &&
-        last.disabled === u.disabled;
+        last.disabled === u.disabled &&
+        (last.healing ?? 0) === (u.healing ?? 0) &&
+        (last.combos ?? 0) === (u.combos ?? 0);
       if (same) continue;
-      const entry = { t, damageDealt: u.damageDealt, kills: u.kills, valueDestroyed: u.valueDestroyed, strikes: u.strikes, disabled: u.disabled };
+      const entry = {
+        t,
+        damageDealt: u.damageDealt,
+        kills: u.kills,
+        valueDestroyed: u.valueDestroyed,
+        strikes: u.strikes,
+        disabled: u.disabled,
+        ...(u.healing ? { healing: u.healing } : {}),
+        ...(u.combos ? { combos: u.combos } : {}),
+      };
       if (log) log.push(entry);
       else this.unitCounterLog.set(u.id, [entry]);
     }
@@ -1212,6 +1316,14 @@ export class BattleEngine {
       if (u.minion) r.factoryId = u.minion.factory.id;
       if (u.factory) r.factory = factoryReport(u);
       if (u.type === 'soldier' || u.type === 'minion') r.blockedTicksMax = u.blockedTicksMax ?? 0;
+      // M8.8 (§9.4): pure support is no fighter; healing, cleanses, combos, assist and the damage split.
+      if (!canFight(u) && u.type !== 'wall') r.nonFighter = true;
+      if (supportOf(u.stats)?.kind === 'heal' || u.factory?.kind === 'medic') r.healer = true;
+      if (u.healing) r.healing = u.healing;
+      if (u.cleanses) r.cleanses = u.cleanses;
+      if (u.combos) r.combos = u.combos;
+      if (u.assist) r.assist = u.assist;
+      if (u.damageSplit) r.damageSplit = { ...u.damageSplit };
       return r;
     });
     const result: BattleResult = { endTick: this.time, endReason, players, units, ranking: [] };
@@ -1327,6 +1439,11 @@ export function resultAtTick(
         errors: u.errors.filter((e) => e.tick <= endTick),
       };
       if (!c.disabled) delete r.disabledReason;
+      // M8.8: healing and combos as of the shown frame (the split, cleanses and assist are display only).
+      if (c.healing) r.healing = c.healing;
+      else delete r.healing;
+      if (c.combos) r.combos = c.combos;
+      else delete r.combos;
       return r;
     }),
   };
@@ -1384,6 +1501,7 @@ const STUCK_HINT_SHARE = 0.3;
  */
 function reportTypes(units: readonly UnitReport[], endTick: number): Pick<BattleReportDTO, 'types' | 'hints'> {
   const byType = new Map<string, NonNullable<BattleReportDTO['types']>[number]>();
+  const healers = new Set<string>();
   for (const u of units) {
     if (u.type === 'minion') continue;
     let t = byType.get(u.unitId);
@@ -1402,6 +1520,8 @@ function reportTypes(units: readonly UnitReport[], endTick: number): Pick<Battle
       if (u.factory.storedLost) t.storedLost = (t.storedLost ?? 0) + u.factory.storedLost;
     }
     if (u.blockedTicksMax !== undefined && t.type === 'soldier') t.blockedTicksMax = Math.max(t.blockedTicksMax ?? 0, u.blockedTicksMax);
+    addSupport(t, u);
+    if (u.healer) healers.add(u.unitId);
   }
   for (const u of units) {
     if (u.type !== 'minion') continue;
@@ -1410,11 +1530,15 @@ function reportTypes(units: readonly UnitReport[], endTick: number): Pick<Battle
     t.damageDealt += u.damageDealt;
     t.kills += u.kills;
     t.minionDamage = (t.minionDamage ?? 0) + u.damageDealt;
+    addSupport(t, u);
   }
   const types = [...byType.values()].map((t) => ({
     ...t,
     damageDealt: Math.round(t.damageDealt),
     ...(t.minionDamage !== undefined ? { minionDamage: Math.round(t.minionDamage) } : {}),
+    ...(t.damageSplit ? { damageSplit: roundSplit(t.damageSplit) } : {}),
+    ...(t.healing !== undefined ? { healing: Math.round(t.healing) } : {}),
+    ...(t.assist !== undefined ? { assist: Math.round(t.assist) } : {}),
   }));
   if (types.length === 0) return {};
   const hints = types
@@ -1424,15 +1548,36 @@ function reportTypes(units: readonly UnitReport[], endTick: number): Pick<Battle
       types
         .filter((t) => (t.storedLost ?? 0) > 0)
         .map((t) => `Your ${t.name} was destroyed with ${t.storedLost} minion${t.storedLost === 1 ? '' : 's'} inside. Ask Claude to release them earlier (or use a smaller burst), or guard the factory.`),
+    )
+    .concat(
+      // M8.8 (§10.6): a heal-support type that never healed or cleansed anyone.
+      types
+        .filter((t) => healers.has(t.unitId) && !(t.healing ?? 0) && !(t.cleanses ?? 0))
+        .map((t) => `Your ${t.name} never healed anyone. Ask Claude to make it follow your soldiers and heal the hurt ones.`),
     );
   return { types, ...(hints.length > 0 ? { hints } : {}) };
+}
+
+/** Add a body's M8.8 report counters (healing, cleanses, assist, damage split) to its type's row. */
+function addSupport(t: NonNullable<BattleReportDTO['types']>[number], u: UnitReport): void {
+  if (u.healing) t.healing = (t.healing ?? 0) + u.healing;
+  if (u.cleanses) t.cleanses = (t.cleanses ?? 0) + u.cleanses;
+  if (u.assist) t.assist = (t.assist ?? 0) + u.assist;
+  if (u.damageSplit) {
+    const s = (t.damageSplit ??= { hit: 0, splash: 0, burn: 0, zap: 0, shatter: 0 });
+    for (const k of ['hit', 'splash', 'burn', 'zap', 'shatter'] as const) s[k] += u.damageSplit[k];
+  }
+}
+
+function roundSplit(s: DamageSplitDTO): DamageSplitDTO {
+  return { hit: Math.round(s.hit), splash: Math.round(s.splash), burn: Math.round(s.burn), zap: Math.round(s.zap), shatter: Math.round(s.shatter) };
 }
 
 // ---------------------------------------------------------------------------
 // Views and runner safety
 // ---------------------------------------------------------------------------
 
-function toOtherView(u: SimUnit): OtherView {
+function toOtherView(u: SimUnit, tick: number, config: GameConfig): OtherView {
   // A wall is a circle of radius 20 for range (§5.2); walls and factories have range 0.
   return {
     id: u.id,
@@ -1446,10 +1591,15 @@ function toOtherView(u: SimUnit): OtherView {
     hp: u.hp,
     maxHp: u.maxHp,
     range: u.stats.range,
+    // M8.8 (§5.6): a minion's element is its factory's minionElement; walls and factories 'normal'.
+    element: elementOf(u.stats),
+    splashRadius: splashOf(u.stats),
+    support: supportOf(u.stats),
+    status: statusOf(u, tick, config),
   };
 }
 
-function toSelfView(u: SimUnit, factory: FactoryView | null): SelfView {
+function toSelfView(u: SimUnit, factory: FactoryView | null, tick: number, config: GameConfig): SelfView {
   return {
     id: u.id,
     unitId: u.unitId,
@@ -1466,7 +1616,12 @@ function toSelfView(u: SimUnit, factory: FactoryView | null): SelfView {
     range: u.stats.range,
     speed: u.stats.speed,
     attackCooldown: u.stats.attackCooldown,
-    cooldownRemaining: u.cooldownRemaining,
+    // M8.8: an internal float (tempo); 0 still means "can act this tick".
+    cooldownRemaining: Math.max(0, Math.ceil(u.cooldownRemaining - 1e-9)),
+    element: elementOf(u.stats),
+    splashRadius: splashOf(u.stats),
+    support: supportOf(u.stats),
+    status: statusOf(u, tick, config),
     blockedBy: u.blockedBy ?? null,
     blockedTicks: u.blockedTicks ?? 0,
     pathing: u.pathing ?? 'direct',
@@ -1481,13 +1636,14 @@ function factoryView(u: SimUnit, living: readonly SimUnit[], maxAlive: number): 
   for (const m of living) if (m.minion?.factory === u) alive++;
   return {
     productionInterval: f.productionInterval,
-    nextMinionIn: f.productionInterval - f.timer,
+    nextMinionIn: Math.max(0, Math.ceil(f.productionInterval - f.timer - 1e-9)),
     minionsLeft: f.minionsLeft,
     minionsAlive: alive,
     maxAlive,
     stored: f.stored,
     burst: f.burst,
     produces: f.kind,
+    minionElement: f.element ?? 'normal',
     order: f.order,
     orderTargetId: f.orderTargetId,
     rally: { x: f.rally.x, y: f.rally.y },

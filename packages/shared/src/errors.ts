@@ -77,6 +77,10 @@ export const WARNING_CODES = [
   // M8.6 (§5.3, §7)
   'W_ORDER_TARGET',
   'W_BURST_NEVER_FULL',
+  // M8.8 elements, splash and support (§7)
+  'W_HEAL_NEVER_USED',
+  'W_POWER_HIGH',
+  'W_OLD_SCALE',
 ] as const;
 export type WarningCode = (typeof WARNING_CODES)[number];
 
@@ -183,6 +187,8 @@ export interface ValidationSuccess {
     sprite: SpriteSpec | null;
     /** M8.6 factories: the squad orders update() gave in the dry run, in first-seen order (§7). */
     orders?: MinionOrder[];
+    /** M8.8 heal support: whether update() returned { action: 'heal' } in the dry run (§7). */
+    healUsed?: boolean;
   };
   warnings: ValidationWarning[];
   playerHint: string;
@@ -283,6 +289,12 @@ const FRIENDLY_FIELD: Record<string, string> = {
   productionInterval: 'building speed',
   produces: 'minion kind',
   burst: 'burst',
+  element: 'element',
+  minionElement: 'minion element',
+  splashRadius: 'splash',
+  support: 'support',
+  supportPower: 'support power',
+  supportRange: 'support range',
 };
 
 const PLAYER_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
@@ -329,13 +341,16 @@ const PLAYER_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
   W_SLOW: 'Heads up: your unit thinks a bit slowly.',
   W_SLOW_NO_DISCOUNT:
     "Tip: attacking slower than once a second doesn't make it cheaper. Ask Claude to make it attack once a second.",
-  W_STAT_NEAR_MAX: 'Tip: a maxed-out stat costs up to 3 times as much. Two medium units usually beat one giant one!',
+  W_STAT_NEAR_MAX: 'Tip: a maxed-out stat costs up to 2 times as much. Two medium units usually beat one giant one!',
   W_STAT_IGNORED: "Heads up: this kind of unit doesn't use its {field}, so the game ignores it.",
   W_UPDATE_IGNORED: "Heads up: walls don't think, so the game never runs this wall's update().",
   W_ACTION_NOT_FOR_TYPE: "Heads up: your unit sometimes gives an order its type can't do, so it waits instead.",
   W_TRAPPED: 'Walled in! Leave a gap so your unit can get out.',
   W_ORDER_TARGET: 'Heads up: your factory sometimes points its minions at the wrong side (swarm an enemy, guard a friend).',
   W_BURST_NEVER_FULL: "Heads up: this factory never makes enough minions to fill its burst, so they leave when it runs out.",
+  W_HEAL_NEVER_USED: "Heads up: your healer never healed anyone in the practice battles. Ask Claude to make it heal hurt friends!",
+  W_POWER_HIGH: 'Tip: a unit that is very tough AND very strong costs extra. One tough unit plus one strong unit is cheaper!',
+  W_OLD_SCALE: 'Heads up: this unit was made for the old game and is about 5 times weaker. Ask Claude to multiply its health and damage by 5!',
 };
 
 /** Player hint for a code, with `{field}` filled in. */
@@ -351,7 +366,13 @@ export function playerHintForIssue(issue: ValidationIssue): string {
     return 'Your unit must be a soldier, tower, wall or factory. Ask Claude to fix its type.';
   }
   if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'produces') {
-    return 'A factory can build grunts, archers, runners or brutes. Ask Claude to pick one of those.';
+    return 'A factory can build grunts, archers, runners, brutes or medics. Ask Claude to pick one of those.';
+  }
+  if (issue.code === 'STAT_OUT_OF_RANGE' && (issue.field === 'element' || issue.field === 'minionElement')) {
+    return 'The elements are normal, fire, ice and lightning. Ask Claude to pick one of those.';
+  }
+  if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'support') {
+    return 'A unit can support with heal, haste, might or shield. Ask Claude to pick one of those.';
   }
   if (issue.code === 'STAT_OUT_OF_RANGE' && issue.field === 'shape') {
     return 'Your unit must be a circle, square, triangle or diamond. Ask Claude to fix its shape.';

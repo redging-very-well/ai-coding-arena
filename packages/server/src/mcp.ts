@@ -29,7 +29,9 @@ export const MCP_INSTRUCTIONS = [
   'If you have no apiKey (see .pixel-clash/player.json), ask the player for their name and 4-digit PIN and call login.',
   'Save {name, apiKey} from login to .pixel-clash/player.json and pass apiKey on every pixel-clash tool call.',
   'Call get_unit_contract once to learn the unit format, and get_rules for costs and limits.',
-  'Four unit types: soldier, tower, wall, factory (see get_unit_contract). Walls block everyone and never attack; factories build minions (grunt, archer, runner or brute via this.produces) and their update() gives them orders (rally, or command attack/defend/swarm/guard) and can save them up for a burst (this.burst, release). A player needs at least one soldier, tower or factory: walls alone never win.',
+  'Four unit types: soldier, tower, wall, factory (see get_unit_contract). Walls block everyone and never attack; factories build minions (grunt, archer, runner, brute or medic via this.produces) and their update() gives them orders (rally, or command attack/defend/swarm/guard) and can save them up for a burst (this.burst, release). A player needs at least one unit that attacks: walls and damage-0 support units alone never win.',
+  'Units can have an element (fire, ice, lightning), splash (splashRadius) and one support (heal, haste, might, shield); factories can give minions an element (this.minionElement). See get_unit_contract.',
+  'Numbers are 5x the old game (by default $5,000 per army, up to $2,500 per unit, HP 50-2,500, damage 0-300; get_rules has the exact ones). Never reuse $1,000-game numbers; a W_OLD_SCALE warning means a unit was made for the old game: multiply its maxHealth and damage by 5.',
   'Always validate_unit before submit_unit, and fix problems using each error\'s "fix" text. validate_unit checks everything (sprite rows included), so never run scripts or shell commands to check a unit file.',
   'submit_unit works only in the PLAN phase (get_game_state shows submissionsOpen). Otherwise keep the unit validated and say "we\'ll send it when Plan starts".',
   'Players can also edit their own units on the web page. So before changing an existing unit ALWAYS call get_unit_source for its latest source and version, change that code, and pass unitId plus baseVersion (that version) to validate_unit and submit_unit, even if you rename it.',
@@ -177,7 +179,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Game rules',
       description:
-        'Phases, timers, budget, caps (4 unit + 4 building types, fighter / factory / wall copies), the cost formula and coefficients for soldier, tower, wall and factory, stat bounds per type, the factory minion kinds (stats and prices), squad orders and burst, scoring (place points + damage bonus + value-destroyed bonus, badges, match standings), map styles and arena sizes by player count, team modes and team rules, and sudden death.',
+        'Phases, timers, budget ($5,000) and caps (max $2,500 per unit, 4 unit + 4 building types, fighter / factory / wall copies), the cost formula and coefficients for soldier, tower, wall and factory (incl. the power, splash and element factors, heal and aura prices), stat bounds per type (incl. splashRadius and the support bounds per kind), elements (fire, ice, lightning, the shatter and overload combos, splash) and support (heal, haste, might, shield) with one rule each, the factory minion kinds (stats and prices per minionElement, the medic), squad orders and burst, scoring (place points + damage bonus + value-destroyed bonus, badges, match standings), map styles and arena sizes by player count, team modes and team rules, and sudden death.',
       inputSchema: {},
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },
@@ -190,7 +192,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Unit contract',
       description:
-        'The TypeScript unit contract for the four types (soldier, tower, wall, factory), the four template sources (basic_soldier, basic_tower, basic_wall, basic_factory), the engine rules and strategy tips. Read this before writing a unit.',
+        'The TypeScript unit contract for the four types (soldier, tower, wall, factory) with elements, splash and support, the four template sources (basic_soldier, basic_tower, basic_wall, basic_factory), the engine rules, the price in one paragraph and strategy tips. Read this before writing a unit.',
       inputSchema: {},
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },
@@ -239,7 +241,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     'list_my_units',
     {
       title: 'My units',
-      description: 'All of the player\'s designs with unitId, stats, cost, breakdown, version, status (valid/invalid + error), selected and last-battle summary.',
+      description: 'All of the player\'s designs with unitId, stats, cost, breakdown, version, status (valid/invalid + error), warnings (W_OLD_SCALE = made for the old $1,000 game), selected and last-battle summary (incl. healing).',
       inputSchema: { apiKey: API_KEY },
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },
@@ -369,7 +371,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Battle report',
       description:
-        "Report for the player's own units in a finished battle (default: the latest): survivors, damage, kills, value destroyed, the round score (place points + damage bonus + value bonus, badges), strikes, errors with unit, line and message, and the round's top damage units of all players (`mine: true` marks the player's own).",
+        "Report for the player's own units in a finished battle (default: the latest): survivors, damage, kills, value destroyed, the round score (place points + damage bonus + value bonus, badges), strikes, errors with unit, line and message, per unit type the damage split (hit, splash, burn, zap, shatter), healing, cleanses and aura assist, hints, and the round's top damage units of all players (`mine: true` marks the player's own).",
       inputSchema: { round: z.number().int().positive().optional().describe('Round number (default: latest finished)'), apiKey: API_KEY },
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },
@@ -397,9 +399,15 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
           top.length > 0
             ? ` Top damage: ${top.map((t) => `${t.rank}. ${t.displayName} by ${t.playerName} (${t.damage})`).join(', ')}.${mine.length > 0 ? ` The player's ${mine[0]!.displayName} is in the top ${mine[0]!.rank === 1 ? 'spot' : 'list'}!` : ''}`
             : '';
+        // M8.8: healing per type (Best Medic) in one line.
+        const healers = (report.types ?? []).filter((t) => (t.healing ?? 0) > 0 || (t.cleanses ?? 0) > 0);
+        const healText =
+          healers.length > 0
+            ? ` Healing: ${healers.map((t) => `${t.name} healed ${t.healing ?? 0} HP${t.cleanses ? ` and cleansed ${t.cleanses}x` : ''}`).join(', ')}.`
+            : '';
         return toolResult(
           { ok: true, ...report, topUnits: top },
-          `Round ${report.round}: ${report.survived} survived, ${report.kills} kills, ${report.errors.length} errors.${score}${topText}`,
+          `Round ${report.round}: ${report.survived} survived, ${report.kills} kills, ${report.errors.length} errors.${score}${healText}${topText}`,
         );
       }),
   );

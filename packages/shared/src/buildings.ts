@@ -362,12 +362,83 @@ const BRUTE_SPRITE: SpriteSpec = {
   },
 };
 
+/** Medic (M8.8, §5.5): a white cap with a red cross and a satchel; the attack frame holds out a glowing hand (the heal beam). */
+const MEDIC_SPRITE: SpriteSpec = {
+  grid: 12,
+  palette: KIND_PALETTE,
+  frames: {
+    idle: [
+      [
+        '....oooo....',
+        '...ossrso...',
+        '...osrrro...',
+        '...obbbbo...',
+        '..obbwkbwko.',
+        '..obbbbbbo..',
+        '.onobbbbbo..',
+        '.onnbsrsbo..',
+        '.onobsssbo..',
+        '..oobddbo...',
+        '...oo..oo...',
+        '............',
+      ],
+    ],
+    walk: [
+      [
+        '....oooo....',
+        '...ossrso...',
+        '...osrrro...',
+        '...obbbbo...',
+        '..obbwkbwko.',
+        '..obbbbbbo..',
+        '.onobbbbbo..',
+        '.onnbsrsbo..',
+        '.onobsssbo..',
+        '..oobddbo...',
+        '..oo....oo..',
+        '............',
+      ],
+      [
+        '............',
+        '....oooo....',
+        '...ossrso...',
+        '...osrrro...',
+        '...obbbbo...',
+        '..obbwkbwko.',
+        '..obbbbbbo..',
+        '.onobbbbbo..',
+        '.onnbsrsbo..',
+        '.onobsssbo..',
+        '...oooooo...',
+        '............',
+      ],
+    ],
+    attack: [
+      [
+        '....oooo....',
+        '...ossrso...',
+        '...osrrro...',
+        '...obbbbo...',
+        '..obbwkbwko.',
+        '..obbbbbbooo',
+        '.onobbbbbbss',
+        '.onnbsrsbooo',
+        '.onobsssbo..',
+        '..oobddbo...',
+        '...oo..oo...',
+        '............',
+      ],
+    ],
+  },
+};
+
 /** The built-in look of every minion kind (§5.3); the grunt is the M8.5 minion. */
 export const MINION_SPRITES: Readonly<Record<MinionKind, SpriteSpec>> = {
   grunt: MINION_SPRITE,
   archer: ARCHER_SPRITE,
   runner: RUNNER_SPRITE,
   brute: BRUTE_SPRITE,
+  medic: MEDIC_SPRITE,
 };
 
 /** A minion kind's sprite with its body in a factory's colour (and a darker shade). */

@@ -72,6 +72,7 @@
 //   POST /admin/units/:playerId/:unitId/sprite {hidden} -> {ok:true}
 //   GET  /admin/config                -> AdminConfigResponse
 //   PUT  /admin/config  DeepPartial<GameConfig> -> AdminConfigResponse
+//   DELETE /admin/config/economy-reset -> AdminConfigResponse (M8.8: dismiss the economy-reset banner)
 //   GET  /admin/overview              -> AdminOverviewDTO
 //   POST /admin/wipe {confirm:'WIPE'} -> {ok:true}
 //   PUT  /admin/setup {claudeBoxHost?, preferredUrl?, seatSecret?} (null/"" clears) -> SetupInfoDTO & {seatSecretSet}
@@ -112,7 +113,7 @@
 // ===========================================================================
 
 import type { CostBreakdown } from './cost.js';
-import type { BodyType, MapStyle, MinionKind, MinionOrder, SpriteSpec, StatsSnapshot, UnitGroup, UnitType } from './contract.js';
+import type { BodyType, Element, MapStyle, MinionKind, MinionOrder, SpriteSpec, StatsSnapshot, UnitGroup, UnitType } from './contract.js';
 import type { ValidationError, ValidationResult, ValidationSuccess, ValidationWarning } from './errors.js';
 import type { Corner } from './geometry.js';
 import type { Facing } from './maps.js';
@@ -193,6 +194,10 @@ export interface UnitCardDTO {
   group?: UnitGroup;
   /** M8.6 factories: the squad orders its update() gave in the dry run (§7), e.g. ['swarm', 'attack']. */
   orders?: MinionOrder[];
+  /** M8.8 heal support: whether update() returned { action: 'heal' } in the dry run (§7). */
+  healUsed?: boolean;
+  /** M8.8: 2 = made for the ×5 economy; older designs have 1 (or none) and may carry W_OLD_SCALE (§6 M8.8 migration). */
+  scaleVersion?: number;
   cost: number;
   breakdown: CostBreakdown;
   status: UnitStatus;
@@ -229,6 +234,8 @@ export interface UnitBattleSummaryDTO {
   valueDestroyed: number;
   strikes: number;
   disabled: number;
+  /** M8.8: HP its copies (and a factory's medic minions) healed. */
+  healing?: number;
 }
 
 export interface ValidateUnitRequest {
@@ -625,7 +632,16 @@ export const FRAME_FLAGS = {
   BLOCKED: 32,
   /** A factory made a minion since the last frame (door flash, §12.5). */
   PRODUCED: 64,
+  /** M8.8 (§9.4 Frames): status and auras on the body at the frame. */
+  BURNING: 128,
+  FROZEN: 256,
+  HASTED: 512,
+  MIGHTY: 1024,
+  SHIELDED: 2048,
 } as const;
+
+/** M8.8: what kind of damage a `hit` event is (§9.4 Frames). Absent = 'hit'. */
+export type HitKind = 'hit' | 'splash' | 'burn' | 'zap' | 'shatter';
 
 /** [instanceId, x, y, hp, flags] */
 export type FrameUnit = [string, number, number, number, number];
@@ -660,7 +676,18 @@ export type FrameEvent =
   /** An eliminated side's walls and spent factories vanish, credited to nobody (§9.3). */
   | { type: 'crumble'; ids: string[] }
   | { type: 'fire'; instanceId: string; targetId: string; melee: boolean }
-  | { type: 'hit'; instanceId: string; targetId: string; damage: number }
+  /** M8.8: `kind` (absent = a plain hit) and the attack's `element` (absent = normal). Burn pulses name the burn's last fire attacker. */
+  | { type: 'hit'; instanceId: string; targetId: string; damage: number; kind?: HitKind; element?: Element }
+  /** M8.8: a lightning zap from `from` (the struck target) to each body in `to`, in hop order. */
+  | { type: 'arc'; from: string; to: string[] }
+  /** M8.8: a splash ring round the struck target (its centre, radius and element). */
+  | { type: 'splash'; x: number; y: number; r: number; element: Element }
+  /** M8.8: a fire hit shattered a frozen body (`amount` = the damage of that hit). */
+  | { type: 'shatter'; id: string; amount: number }
+  /** M8.8: a heal beam (`amount` = HP actually restored). */
+  | { type: 'heal'; from: string; to: string; amount: number }
+  /** M8.8: a heal put out the burns and thawed the freeze instead of healing. */
+  | { type: 'cleanse'; from: string; to: string }
   | { type: 'death'; instanceId: string }
   | { type: 'disable'; instanceId: string; reason: string };
 
@@ -733,7 +760,7 @@ export interface BattleRevealDTO {
 // Scoring (§9 Points, Damage metric, Value destroyed, Badges)
 // ---------------------------------------------------------------------------
 
-export const BADGE_IDS = ['lastStanding', 'biggestHitter', 'giantSlayer', 'ironWall', 'inventor'] as const;
+export const BADGE_IDS = ['lastStanding', 'biggestHitter', 'giantSlayer', 'ironWall', 'inventor', 'bestMedic', 'comboMaster'] as const;
 export type BadgeId = (typeof BADGE_IDS)[number];
 
 /** Badges are titles only: they give no points. */
@@ -743,11 +770,13 @@ export const BADGES: Record<BadgeId, { emoji: string; title: string; rule: strin
   giantSlayer: { emoji: '🗡️', title: 'Giant Slayer', rule: 'most enemy value destroyed' },
   ironWall: { emoji: '🛡️', title: 'Iron Wall', rule: 'most army value still standing at the end' },
   inventor: { emoji: '💡', title: 'Inventor', rule: 'Open Armory: another player fielded a unit you invented' },
+  bestMedic: { emoji: '💚', title: 'Best Medic', rule: 'most HP healed (medic minions included)' },
+  comboMaster: { emoji: '⚡', title: 'Combo Master', rule: 'most shatters and overload zaps' },
 };
 
 /** A badge count per badge, all zero. */
 export function emptyBadgeCounts(): Record<BadgeId, number> {
-  return { lastStanding: 0, biggestHitter: 0, giantSlayer: 0, ironWall: 0, inventor: 0 };
+  return { lastStanding: 0, biggestHitter: 0, giantSlayer: 0, ironWall: 0, inventor: 0, bestMedic: 0, comboMaster: 0 };
 }
 
 /** One player's battle metrics (§9), as of the shown final frame. */
@@ -760,6 +789,10 @@ export interface PlayerMetricsDTO {
   kills: number;
   /** Full cost of this player's units still alive at the end. */
   livingValue: number;
+  /** M8.8: HP actually restored by this player's healers (medic minions included), whole number. Never damage. */
+  healing?: number;
+  /** M8.8: shatters + overload zaps (Combo Master). */
+  combos?: number;
 }
 
 /** One player's round score: `total` = placePoints + damageBonus + valueBonus. */
@@ -780,6 +813,10 @@ export interface RoundScoreDTO {
   badges: BadgeId[];
   /** 💡 Inventor (§9.1): how many other players fielded this player's Armory units this battle. */
   inventorUsedBy?: number;
+  /** M8.8 (💚 Best Medic, no points): HP this player's healers restored; only when > 0. */
+  healing?: number;
+  /** M8.8 (⚡ Combo Master, no points): shatters + overload zaps; only when > 0. */
+  combos?: number;
 }
 
 export interface RankingEntryDTO extends Omit<RoundScoreDTO, 'total'> {
@@ -811,6 +848,8 @@ export interface TopUnitDTO {
   damage: number;
   kills: number;
   valueDestroyed: number;
+  /** M8.8: HP its heals restored (whole number; never counts as damage). */
+  healing?: number;
   /** Copies fielded. */
   copies: number;
   stats?: StatsSnapshot;
@@ -826,6 +865,8 @@ export interface TopUnitDTO {
 /** Sent only when playback reaches the final frame (§9 Result release). */
 export interface BattleEndDTO {
   round: number;
+  /** M8.8: the economy the battle was played in (2 = ×5); absent = the $1,000 game (label "($1,000 game)"). */
+  scaleVersion?: number;
   /** Tick of the final (shown) frame. */
   endTick: number;
   reason: 'elimination' | 'timeout' | 'skipped';
@@ -873,11 +914,29 @@ export interface BattleReportTypeDTO {
   storedLost?: number;
   /** Soldiers: the most ticks in a row a wall was in the way of one copy. */
   blockedTicksMax?: number;
+  /** M8.8: how the damage was dealt (whole numbers; they add up to damageDealt). */
+  damageSplit?: DamageSplitDTO;
+  /** M8.8: HP its heals restored, and heals spent putting out burns / thawing (cleanses). */
+  healing?: number;
+  cleanses?: number;
+  /** M8.8 (display only): extra damage from its might auras + damage its shield auras prevented. */
+  assist?: number;
+}
+
+/** M8.8: a type's damage by kind (§9.4 Scoring and reports). */
+export interface DamageSplitDTO {
+  hit: number;
+  splash: number;
+  burn: number;
+  zap: number;
+  shatter: number;
 }
 
 /** Own units only (§10.3). */
 export interface BattleReportDTO {
   round: number;
+  /** M8.8: as BattleEndDTO.scaleVersion (absent = a report from the $1,000 game). */
+  scaleVersion?: number;
   survived: number;
   /** Effective damage (no overkill) summed over own units. */
   damageDealt: number;
@@ -902,6 +961,8 @@ export interface BattleReportDTO {
 /** GET /battles/:round/replay */
 export interface ReplayDTO {
   round: number;
+  /** M8.8: the economy the battle was played in (2 = ×5; absent = the $1,000 game). */
+  scaleVersion?: number;
   reveal: BattleRevealDTO;
   frames: FrameDTO[];
   end: BattleEndDTO;
@@ -1039,6 +1100,8 @@ export interface AdminOverviewDTO {
    * see and hide them, also for retired or deleted designs. Empty when off.
    */
   armory: AdminArmoryEntryDTO[];
+  /** M8.8 (§6 migration): config override paths the v2 migration dropped at boot (the /admin banner); empty when none. */
+  economyReset: string[];
 }
 
 /** One Open Armory entry in the admin overview (Hide sprite goes to the creator's design id). */
@@ -1117,6 +1180,12 @@ export interface AdminConfigResponse {
   repriced: string[];
   /** "playerId/unitId" of units that became invalid. */
   invalidated: string[];
+  /**
+   * M8.8 (§6 migration): the $1,000-game config override paths dropped at
+   * boot ("Your economy overrides were for the $1,000 game and were reset.");
+   * empty when nothing was dropped. Cleared by DELETE /admin/config/economy-reset or a wipe.
+   */
+  economyReset: string[];
 }
 
 // ---------------------------------------------------------------------------

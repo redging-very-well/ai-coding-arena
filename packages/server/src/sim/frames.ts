@@ -14,6 +14,12 @@
 //
 // M8.6 (§9.3): `fac` entries gain stored, burst and the order code, and
 // their (x, y) is the order's focus (`focusOf`; default the rally point).
+//
+// M8.8 (§9.4 Frames): the flags gain BURNING, FROZEN, HASTED, MIGHTY and
+// SHIELDED (the body's state at the frame), and the events gain hit kinds
+// and elements, arc, splash, shatter, heal and cleanse (sim/effects.ts,
+// sim/support.ts). A battle without elements or support records exactly the
+// M8.7 frames.
 
 import { FRAME_FLAGS, MINION_ORDERS, type FrameDTO, type FrameEvent, type FrameFactory, type FrameUnit, type Point } from '@pixel-clash/shared';
 import type { Projectile, SimUnit } from './types.js';
@@ -29,6 +35,14 @@ export function unitFlags(u: SimUnit): number {
   if (u.outsideSafeZone) flags |= FRAME_FLAGS.OUTSIDE_SAFE_ZONE;
   if (u.blockedSinceFrame) flags |= FRAME_FLAGS.BLOCKED;
   if (u.factory?.spawnedSinceFrame) flags |= FRAME_FLAGS.PRODUCED;
+  if ((u.burns?.length ?? 0) > 0) flags |= FRAME_FLAGS.BURNING;
+  if ((u.frozen ?? 0) > 0) flags |= FRAME_FLAGS.FROZEN;
+  const a = u.aura;
+  if (a) {
+    if (a.haste > 0) flags |= FRAME_FLAGS.HASTED;
+    if (a.might > 0) flags |= FRAME_FLAGS.MIGHTY;
+    if (a.shield > 0) flags |= FRAME_FLAGS.SHIELDED;
+  }
   return flags;
 }
 

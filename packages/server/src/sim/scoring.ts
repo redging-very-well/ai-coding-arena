@@ -15,7 +15,9 @@
 //   * Badges (titles, no points): Last Standing (1st place; team mode: every
 //     member of the 1st-place team), Biggest Hitter (most damage), Giant
 //     Slayer (most value destroyed), Iron Wall (most living army value at the
-//     end). Ties share a badge; a badge needs a value > 0.
+//     end). Ties share a badge; a badge needs a value > 0. M8.8: Best Medic
+//     (most HP healed, medic minions included) and Combo Master (most
+//     shatters + overload zaps), same rules. Healing never counts as damage.
 //   * Only RANKED players are scored: players kicked during the battle are
 //     not in the ranking, so they get no points or badges and do not set the
 //     "top" values. Damage dealt TO them still counts for the others.
@@ -49,6 +51,9 @@ export interface UnitMetricInput {
   damageDealt: number;
   kills: number;
   valueDestroyed: number;
+  /** M8.8: HP its heals restored, and its shatters + overload zaps. */
+  healing?: number;
+  combos?: number;
 }
 
 /**
@@ -57,8 +62,8 @@ export interface UnitMetricInput {
  * number here, so what the players see is exactly what the bonus was computed on.
  */
 export function sumMetrics(playerIds: readonly string[], units: Iterable<UnitMetricInput>): PlayerMetricsDTO[] {
-  const by = new Map<string, PlayerMetricsDTO & { rawDamage: number }>(
-    playerIds.map((playerId) => [playerId, { playerId, damage: 0, rawDamage: 0, valueDestroyed: 0, kills: 0, livingValue: 0 }]),
+  const by = new Map<string, PlayerMetricsDTO & { rawDamage: number; rawHealing: number; combos: number }>(
+    playerIds.map((playerId) => [playerId, { playerId, damage: 0, rawDamage: 0, valueDestroyed: 0, kills: 0, livingValue: 0, rawHealing: 0, combos: 0 }]),
   );
   for (const u of units) {
     const m = by.get(u.playerId);
@@ -66,9 +71,17 @@ export function sumMetrics(playerIds: readonly string[], units: Iterable<UnitMet
     m.rawDamage += u.damageDealt;
     m.kills += u.kills;
     m.valueDestroyed += u.valueDestroyed;
+    m.rawHealing += u.healing ?? 0;
+    m.combos += u.combos ?? 0;
     if (u.alive) m.livingValue += u.cost;
   }
-  return [...by.values()].map(({ rawDamage, ...m }) => ({ ...m, damage: Math.round(rawDamage) }));
+  return [...by.values()].map(({ rawDamage, rawHealing, combos, ...m }) => ({
+    ...m,
+    damage: Math.round(rawDamage),
+    // M8.8: only present when it happened, so older reports and metrics stay unchanged.
+    ...(rawHealing > 0 ? { healing: Math.round(rawHealing) } : {}),
+    ...(combos > 0 ? { combos } : {}),
+  }));
 }
 
 /** Per-player metrics of a (possibly Skip-trimmed, see `resultAtTick`) result, in seat order. */
@@ -83,6 +96,8 @@ export function playerMetrics(result: Pick<BattleResult, 'players' | 'units'>): 
       damageDealt: u.damageDealt,
       kills: u.kills,
       valueDestroyed: u.valueDestroyed,
+      healing: u.healing ?? 0,
+      combos: u.combos ?? 0,
     })),
   );
 }
@@ -119,6 +134,8 @@ export function computeRoundScore(
   const topDamage = top((m) => m.damage);
   const topValue = top((m) => m.valueDestroyed);
   const topLiving = top((m) => m.livingValue);
+  const topHealing = top((m) => m.healing ?? 0);
+  const topCombos = top((m) => m.combos ?? 0);
   const players = ranking.length;
   const sides = sideCount(ranking);
   // Bonus maxima scale × P/4; nothing to beat with one player.
@@ -134,6 +151,9 @@ export function computeRoundScore(
     if (topDamage > 0 && m.damage === topDamage) badges.push('biggestHitter');
     if (topValue > 0 && m.valueDestroyed === topValue) badges.push('giantSlayer');
     if (topLiving > 0 && m.livingValue === topLiving) badges.push('ironWall');
+    // M8.8 (§9 Badges): titles only, individual, > 0 to win, ties share.
+    if (topHealing > 0 && (m.healing ?? 0) === topHealing) badges.push('bestMedic');
+    if (topCombos > 0 && (m.combos ?? 0) === topCombos) badges.push('comboMaster');
     return {
       playerId: r.playerId,
       ...(r.teamId !== undefined ? { teamId: r.teamId } : {}),
@@ -145,6 +165,9 @@ export function computeRoundScore(
       valueBonus,
       total: placePoints + damageBonus + valueBonus,
       badges,
+      // M8.8: what won Best Medic / Combo Master (display only).
+      ...((m.healing ?? 0) > 0 ? { healing: m.healing } : {}),
+      ...((m.combos ?? 0) > 0 ? { combos: m.combos } : {}),
     };
   });
 }
@@ -183,6 +206,8 @@ export function roundScoreOf(entry: RankingEntryDTO): RoundScoreDTO {
     total: entry.pointsGained,
     badges: [...entry.badges],
     ...(entry.inventorUsedBy !== undefined ? { inventorUsedBy: entry.inventorUsedBy } : {}),
+    ...(entry.healing !== undefined ? { healing: entry.healing } : {}),
+    ...(entry.combos !== undefined ? { combos: entry.combos } : {}),
   };
 }
 

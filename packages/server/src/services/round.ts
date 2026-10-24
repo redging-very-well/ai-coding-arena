@@ -9,6 +9,7 @@ import {
   fail,
   groupOf,
   isArmoryUnitId,
+  isFighterDesign,
   isValidCell,
   mapFor,
   ok,
@@ -20,6 +21,7 @@ import {
   type PlacementResponse,
   type PlacementWarningDTO,
   type Result,
+  type StatsSnapshot,
   type UnitType,
 } from '@pixel-clash/shared';
 import { autoPlace } from '../sim/autoPlace.js';
@@ -33,6 +35,8 @@ export interface LockedDesign extends LockedUnit {
   name: string;
   cost: number;
   type: UnitType;
+  /** M8.8 (§5.2 Fighters): can win a battle (not a wall, a damage-0 unit or a medic factory). */
+  fighter?: boolean;
 }
 
 export class RoundService {
@@ -63,11 +67,11 @@ export class RoundService {
     for (const l of rs.locked ?? []) {
       if (isArmoryUnitId(l.unitId)) {
         const e = this.game.armory.forUnitId(l.unitId);
-        if (e) out.push({ ...l, name: ArmoryService.displayName(e), cost: e.cost, type: e.stats.type });
+        if (e) out.push({ ...l, name: ArmoryService.displayName(e), cost: e.cost, type: e.stats.type, fighter: isFighterDesign(e.stats) });
         continue;
       }
       const v = this.game.units.versionOf(playerId, l.unitId, l.version);
-      if (v) out.push({ ...l, name: v.stats.name, cost: v.cost, type: v.stats.type });
+      if (v) out.push({ ...l, name: v.stats.name, cost: v.cost, type: v.stats.type, fighter: isFighterDesign(v.stats) });
     }
     return out;
   }
@@ -202,11 +206,11 @@ export class RoundService {
         locked = resolve(recent);
       }
       if (locked.length === 0) locked = resolve(this.game.units.templateIds());
-      // §5.2 Fighters: walls can't win on their own, so a walls-only army gets
-      // the first starter fighter that fits the type caps (the Basic Soldier).
-      if (!locked.some((l) => this.selectedType(p.id, l.unitId) !== 'wall')) {
+      // §5.2 Fighters: walls (M8.8: and pure support) can't win on their own, so
+      // such an army gets the first starter fighter that fits the type caps (the Basic Soldier).
+      if (!locked.some((l) => this.isFighterId(p.id, l.unitId))) {
         for (const id of this.game.units.templateIds()) {
-          if (this.selectedType(p.id, id) === 'wall') continue;
+          if (!this.isFighterId(p.id, id)) continue;
           const extra = resolve([...locked.map((l) => l.unitId), id]);
           if (extra.some((l) => l.unitId === id)) {
             locked = extra;
@@ -381,13 +385,13 @@ export class RoundService {
     }
     // §5.2 Fighters: walls alone can't win, so Ready needs a fighter.
     if (ready && this.game.store.match.phase === 'PLAN' && !this.selectionHasFighter(playerId, rs.selection)) {
-      return fail('NO_FIGHTERS', "Walls can't win on their own. Pick a soldier, tower or factory too.", {
-        hint: 'Tap a soldier, tower or factory in My Units, then press Ready.',
+      return fail('NO_FIGHTERS', "Walls, medics and banners can't win on their own. Pick a unit that attacks.", {
+        hint: 'Tap a soldier or tower that does damage, or a factory that builds fighting minions, in My Units, then press Ready.',
       });
     }
     if (ready && this.game.store.match.phase === 'PLACEMENT' && rs.placements.length > 0 && !this.placementHasFighter(playerId, rs.placements)) {
-      return fail('NO_FIGHTERS', "Walls can't win on their own. Place a soldier, tower or factory too.", {
-        hint: 'Put a soldier, tower or factory on your grid, then press Ready.',
+      return fail('NO_FIGHTERS', "Walls, medics and banners can't win on their own. Place a unit that attacks.", {
+        hint: 'Put a soldier or tower that does damage, or a factory that builds fighting minions, on your grid, then press Ready.',
       });
     }
     rs.ready = ready;
@@ -400,9 +404,19 @@ export class RoundService {
 
   /** The type of a selectable id (own design's latest valid version or an Armory entry), if known. */
   private selectedType(playerId: string, id: string): UnitType | undefined {
-    if (isArmoryUnitId(id)) return this.game.armory.forUnitId(id)?.stats.type;
+    return this.selectedStats(playerId, id)?.type;
+  }
+
+  private selectedStats(playerId: string, id: string): StatsSnapshot | undefined {
+    if (isArmoryUnitId(id)) return this.game.armory.forUnitId(id)?.stats;
     const d = this.game.units.design(playerId, id);
-    return d ? UnitsService.latestValid(d)?.stats.type : undefined;
+    return d ? UnitsService.latestValid(d)?.stats : undefined;
+  }
+
+  /** §5.2 Fighters (M8.8): a selectable design that can win a battle. */
+  private isFighterId(playerId: string, id: string): boolean {
+    const s = this.selectedStats(playerId, id);
+    return s !== undefined && isFighterDesign(s);
   }
 
   /** A selectable id's name for messages (own design's latest version or an Armory entry). */
@@ -426,20 +440,14 @@ export class RoundService {
     return null;
   }
 
-  /** §5.2 Fighters: anything but a wall (soldiers, towers, factories). */
+  /** §5.2 Fighters: soldiers and towers that do damage, factories that don't build medics (M8.8). */
   private selectionHasFighter(playerId: string, ids: readonly string[]): boolean {
-    return ids.some((id) => {
-      const t = this.selectedType(playerId, id);
-      return t !== undefined && t !== 'wall';
-    });
+    return ids.some((id) => this.isFighterId(playerId, id));
   }
 
   private placementHasFighter(playerId: string, placements: readonly PlacementDTO[]): boolean {
-    const types = new Map(this.lockedDesigns(playerId).map((d) => [d.unitId, d.type]));
-    return placements.some((p) => {
-      const t = types.get(p.unitId);
-      return t !== undefined && t !== 'wall';
-    });
+    const fighters = new Map(this.lockedDesigns(playerId).map((d) => [d.unitId, d.fighter ?? d.type !== 'wall']));
+    return placements.some((p) => fighters.get(p.unitId) === true);
   }
 
   /**
@@ -481,7 +489,7 @@ export class RoundService {
       if (rs.placements.length > 0 && this.placementHasFighter(p.id, rs.placements)) continue;
       const res = autoPlace({
         ...(rs.placements.length > 0 ? { existing: rs.placements } : {}),
-        available: this.lockedDesigns(p.id).map((d) => ({ unitId: d.unitId, cost: d.cost, type: d.type })),
+        available: this.lockedDesigns(p.id).map((d) => ({ unitId: d.unitId, cost: d.cost, type: d.type, ...(d.fighter !== undefined ? { fighter: d.fighter } : {}) })),
         lastLayout: rs.lastLayout,
         caps: {
           budget: caps.budget,

@@ -27,6 +27,8 @@ export interface AutoPlaceUnit {
   cost: number;
   /** The design's type (default 'soldier'). */
   type?: UnitType;
+  /** M8.8 (§5.2 Fighters): can win a battle; default: anything but a wall (a damage-0 unit or a medic factory is not). */
+  fighter?: boolean;
 }
 
 export interface AutoPlaceCaps {
@@ -124,8 +126,9 @@ export function isLayoutUsable(
   if (layout.length - walls > caps.maxCopies) return false;
   if (walls > (caps.maxWallCopies ?? Infinity)) return false;
   if (factories > (caps.maxFactoryCopies ?? Infinity)) return false;
-  // A layout of walls only has no fighter: not usable (§5.2 Fighters).
-  if (walls === layout.length) return false;
+  // A layout of walls only (M8.8: or only pure support) has no fighter: not usable (§5.2 Fighters).
+  const fighter = new Map(available.map((u) => [u.unitId, u.fighter ?? (u.type ?? 'soldier') !== 'wall']));
+  if (walls === layout.length || !layout.some((p) => fighter.get(p.unitId))) return false;
   const used = [...new Set(layout.map((p) => p.unitId))].map((id) => typeOf.get(id));
   if (!typesFit(used, caps)) return false;
   const cells = new Set<string>();

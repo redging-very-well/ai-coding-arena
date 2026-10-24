@@ -47,6 +47,7 @@ import { log } from '../util/log.js';
 import { ArmoryService, type BorrowedUse, type FieldedDesign } from './armory.js';
 import type { Game } from './game.js';
 import type { RoundResultRecord } from './store.js';
+import { SCALE_VERSION } from './units.js';
 
 /** Playback pump interval (frames are batched per pump). */
 const PUMP_MS = 50;
@@ -557,7 +558,8 @@ export class BattleService {
     const reports: Record<string, BattleReportDTO> = {};
     const unitSummaries: Record<string, Record<string, UnitBattleSummaryDTO>> = {};
     for (const s of a.setup) {
-      const report = buildBattleReport(reported, s.playerId, a.round, ranking);
+      // M8.8: reports and results name the economy they were played in (old ones are labelled "($1,000 game)").
+      const report: BattleReportDTO = { ...buildBattleReport(reported, s.playerId, a.round, ranking), scaleVersion: SCALE_VERSION };
       // Borrowed units are named "Ogre (Ninja Sam)" and marked "borrowed from" (§9.1).
       for (const e of report.errors) {
         const b = s.borrowedNames.get(e.unitId);
@@ -583,6 +585,8 @@ export class BattleService {
         sum.damageDealt += u.damageDealt;
         sum.kills += u.kills;
         sum.valueDestroyed += u.valueDestroyed;
+        // M8.8: healing (medic minions count for their factory).
+        if (u.healing) sum.healing = (sum.healing ?? 0) + u.healing;
         // Minions count for their factory's damage, KOs and value, not as fielded copies (§9.3).
         if (u.type === 'minion') continue;
         sum.fielded++;
@@ -594,7 +598,7 @@ export class BattleService {
     }
 
     this.lastMetrics = this.metricsOf(a);
-    const end: BattleEndDTO = { round: a.round, endTick, reason, ranking, scoreboard: [] };
+    const end: BattleEndDTO = { round: a.round, scaleVersion: SCALE_VERSION, endTick, reason, ranking, scoreboard: [] };
     if (inventors.length > 0) end.inventors = inventors;
     end.topUnits = topUnits({ reveal: a.reveal, summaries: unitSummaries, kicked, shown: scoring.topUnitsShown });
     const record: RoundResultRecord = { round: a.round, end, reports, unitSummaries };
@@ -602,7 +606,8 @@ export class BattleService {
     // The fielded types enter the Open Armory now that the result is public (§9.1).
     game.armory.addFielded(a.round, a.setup.flatMap((s) => s.fielded));
     game.match.battleReleased(record); // adds points and fills end.scoreboard
-    const replay: ReplayDTO = { round: a.round, reveal: a.reveal, frames: a.frames.filter((f) => f.t <= endTick), end };
+    // M8.8: the replay header names the economy it was played in (§6 M8.8 migration).
+    const replay: ReplayDTO = { round: a.round, scaleVersion: SCALE_VERSION, reveal: a.reveal, frames: a.frames.filter((f) => f.t <= endTick), end };
     this.lastReplay = replay;
     game.store.writeReplay(replay);
     game.notifier.battleEnd(end);

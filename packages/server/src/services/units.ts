@@ -23,8 +23,10 @@ import {
   type Result,
   type SpriteSpec,
   type UnitCardDTO,
+  type StatsSnapshot,
   type UnitSourceDTO,
   type ValidationError,
+  type ValidationWarning,
   type ValidationResult,
   type ValidationSuccess,
 } from '@pixel-clash/shared';
@@ -102,6 +104,8 @@ export class UnitsService {
       breakdown: r.unit.breakdown,
       warnings: r.warnings,
       ...(r.unit.orders ? { orders: r.unit.orders } : {}),
+      ...(r.unit.healUsed !== undefined ? { healUsed: r.unit.healUsed } : {}),
+      scaleVersion: SCALE_VERSION,
       sha256: d.sha256 ?? '',
       createdAt: 0,
     };
@@ -185,6 +189,8 @@ export class UnitsService {
       ...(v.error ? { error: v.error } : {}),
       warnings: v.warnings,
       ...(v.orders ? { orders: v.orders } : {}),
+      ...(v.healUsed !== undefined ? { healUsed: v.healUsed } : {}),
+      scaleVersion: v.scaleVersion ?? 1,
       isTemplate: d.isTemplate,
       sprite: d.spriteHidden ? null : v.sprite,
       spriteHidden: d.spriteHidden,
@@ -366,6 +372,9 @@ export class UnitsService {
       breakdown: result.unit.breakdown,
       warnings: result.warnings,
       ...(result.unit.orders ? { orders: result.unit.orders } : {}),
+      ...(result.unit.healUsed !== undefined ? { healUsed: result.unit.healUsed } : {}),
+      // M8.8: made for the ×5 economy (§6 M8.8 migration).
+      scaleVersion: SCALE_VERSION,
       sha256: d.sha256 ?? '',
       createdAt: now,
     };
@@ -445,22 +454,33 @@ export class UnitsService {
   // -------------------------------------------------------------------------
 
   /** Errors a version would have under `config` (empty = valid). */
-  static checkVersion(v: Pick<UnitVersionRecord, 'stats'>, config: GameConfig): { error?: ValidationError; cost: ReturnType<typeof computeCost> } {
+  static checkVersion(
+    v: Pick<UnitVersionRecord, 'stats' | 'scaleVersion'>,
+    config: GameConfig,
+    opts: { template?: boolean } = {},
+  ): { error?: ValidationError; cost: ReturnType<typeof computeCost>; oldScale?: ValidationWarning } {
     // Per type (§6): a factory's price also follows the minion, battle length and soldier coefficients.
     const pricing = pricingOf(config);
     const priced = computeCost(v.stats, config.cost, pricing);
-    const checked = checkStats({ ...v.stats }, config.stats.bounds);
-    if (!checked.ok) return { error: checked.errors[0]!, cost: priced };
+    const old = !opts.template && (v.scaleVersion ?? 1) < SCALE_VERSION;
+    const checked = checkStats(snapshotInput(v.stats), config.stats.bounds);
+    if (!checked.ok) {
+      const error = checked.errors[0]!;
+      // M8.8 (§6 migration): a $1,000-game unit below the new minimum gets the ×5 fix.
+      return { error: old ? oldScaleFix(error, v.stats, config) : error, cost: priced };
+    }
     if (!Number.isFinite(priced.raw) || priced.cost > config.caps.unitCost) {
       return { error: tooExpensiveError(v.stats, priced, config.caps.unitCost, config.cost, config.stats.bounds, pricing), cost: priced };
     }
+    // Legal but made for the old scale: a non-fatal hint (never silently multiplied).
+    if (old && v.stats.maxHealth <= OLD_SCALE.maxHealth && v.stats.damage <= OLD_SCALE.damage) return { cost: priced, oldScale: oldScaleWarning(v.stats) };
     return { cost: priced };
   }
 
   /** Would any template become invalid under `config`? */
   templateBreaks(config: GameConfig): string | null {
     for (const t of this.templates) {
-      const r = UnitsService.checkVersion(t, config);
+      const r = UnitsService.checkVersion(t, config, { template: true });
       if (r.error) return `${t.stats.name}: ${r.error.message}`;
     }
     return null;
@@ -477,10 +497,19 @@ export class UnitsService {
     for (const [playerId, designs] of this.game.store.designs) {
       for (const d of designs.values()) {
         for (const v of d.versions) {
-          const r = UnitsService.checkVersion(v, config);
+          const r = UnitsService.checkVersion(v, config, { template: d.isTemplate });
           const wasValid = v.status === 'valid';
           // Always refresh the breakdown (it explains the curve per stat).
           v.breakdown = r.cost.breakdown;
+          // M8.8: W_OLD_SCALE follows the record (it goes once the unit is resubmitted at the new scale).
+          const hadOld = v.warnings.some((w) => w.code === 'W_OLD_SCALE');
+          if (r.oldScale && !hadOld) {
+            v.warnings = [r.oldScale, ...v.warnings];
+            touched.add(playerId);
+          } else if (!r.oldScale && hadOld) {
+            v.warnings = v.warnings.filter((w) => w.code !== 'W_OLD_SCALE');
+            touched.add(playerId);
+          }
           if (r.cost.cost !== v.cost) {
             v.cost = r.cost.cost;
             if (v === UnitsService.latest(d)) repriced.push(`${playerId}/${d.unitId}`);
@@ -547,6 +576,47 @@ export class UnitsService {
     for (const id of touched) this.game.notifier.privateChanged(id);
     return { repriced, invalidated };
   }
+}
+
+/** M8.8: the scale of units submitted now (§6 M8.8 migration). */
+export const SCALE_VERSION = 2;
+
+/** The $1,000 game's HP and damage maxima: a legal old unit within them is probably old-scale. */
+const OLD_SCALE = { maxHealth: 500, damage: 60 } as const;
+
+/** A stored snapshot as checkStats input: its support back as the three contract fields. */
+function snapshotInput(stats: StatsSnapshot): Record<string, unknown> {
+  const { support, ...rest } = stats;
+  if (!support) return support === null ? { ...rest } : rest;
+  return { ...rest, support: support.kind, supportPower: support.power, supportRange: support.range };
+}
+
+/** The stats multiplied by 5 the way the migration fix suggests (HP and damage only). */
+function times5(stats: StatsSnapshot): StatsSnapshot {
+  return { ...stats, maxHealth: stats.maxHealth * 5, damage: stats.damage * 5 };
+}
+
+/** §6 M8.8 migration: a $1,000-game unit below the new minimum gets "multiply maxHealth and damage by 5". */
+function oldScaleFix(error: ValidationError, stats: StatsSnapshot, config: GameConfig): ValidationError {
+  if (error.code !== 'STAT_OUT_OF_RANGE' || (error.field !== 'maxHealth' && error.field !== 'damage')) return error;
+  const scaled = computeCost(times5(stats), config.cost, pricingOf(config)).cost;
+  return {
+    ...error,
+    fix: `This unit was built for the $1,000 game: multiply maxHealth and damage by 5 (it would then cost $${scaled}). ${error.fix}`,
+  };
+}
+
+/** W_OLD_SCALE (§6 M8.8 migration, §7 step 10). */
+function oldScaleWarning(stats: StatsSnapshot): ValidationWarning {
+  return {
+    code: 'W_OLD_SCALE',
+    field: 'maxHealth',
+    value: stats.maxHealth,
+    message: 'Made for the old game: about 5× weaker and 5× cheaper.',
+    fix: `Ask Claude to multiply maxHealth and damage by 5 (maxHealth ${stats.maxHealth} → ${stats.maxHealth * 5}${
+      stats.type === 'soldier' || stats.type === 'tower' ? `, damage ${stats.damage} → ${stats.damage * 5}` : ''
+    }) and resubmit it.`,
+  };
 }
 
 function notFoundUnit(unitId: unknown): Result<never> {

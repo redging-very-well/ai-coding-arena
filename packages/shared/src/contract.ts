@@ -8,8 +8,10 @@
 // --- BEGIN CONTRACT (plan §5, verbatim) ---
 export type UnitType = 'soldier' | 'tower' | 'wall' | 'factory';   // §5.2
 export type BodyType = UnitType | 'minion'; // minions are made by factories: you see them, you never submit one
-export type MinionKind = 'grunt' | 'archer' | 'runner' | 'brute';  // what a factory builds (§5.3)
+export type MinionKind = 'grunt' | 'archer' | 'runner' | 'brute' | 'medic'; // what a factory builds (§5.3, medic §5.5)
 export type MinionOrder = 'attack' | 'defend' | 'swarm' | 'guard'; // what a factory's minions do (§5.3)
+export type Element = 'normal' | 'fire' | 'ice' | 'lightning';     // §5.4: one per unit
+export type SupportKind = 'heal' | 'haste' | 'might' | 'shield';  // §5.5: one per unit
 export type MapStyle = 'duel' | 'triangle' | 'corners' | 'ring' | 'lanes' | 'islands'; // §9.2
 export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 
@@ -17,16 +19,22 @@ export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 export interface UnitStats {
   name: string;          // 1-24 chars, shown on screen
   type: UnitType;        // soldiers move; towers, walls and factories are buildings and never move
-  maxHealth: number;     // soldier/tower 10-500, wall 50-1500, factory 100-1000
-  damage?: number;       // soldier/tower: required, 0-60. wall/factory: leave it out (they can't attack)
+  maxHealth: number;     // soldier/tower 50-2500, wall 250-7500, factory 500-5000
+  damage?: number;       // soldier/tower: required, 0-300. wall/factory: leave it out (they can't attack)
   range?: number;        // soldier/tower: required, 20-300 px, EDGE to edge (gap between the two bodies). wall/factory: leave it out
   speed?: number;        // soldier: required, 0.5-5 px per tick (60 ticks = 1 s). tower/wall/factory: 0 or leave it out
-  attackCooldown?: number;// soldier/tower: required, integer ticks between attacks. wall/factory: leave it out
+  attackCooldown?: number;// soldier/tower: required, integer ticks between attacks (and heals). wall/factory: leave it out
+  element?: Element;     // soldier/tower, optional (default 'normal'): fire burns, ice freezes, lightning zaps. Price ×1.2
+  splashRadius?: number; // soldier/tower, optional (default 0 = one target): 0-80 px; other enemies this close to the target take half
+  support?: SupportKind; // soldier/tower, optional: heal = an action you return; haste/might/shield = an aura that works by itself
+  supportPower?: number; // required with support. heal: HP per heal 10-250. haste/might: 5-50 (%). shield: 5-40 (%)
+  supportRange?: number; // required with support, EDGE to edge. heal: 20-200 px reach. haste/might/shield: 40-150 px aura
   productionInterval?: number; // factory only, required: integer ticks between two minions, 600-1800 (10-30 s)
   produces?: MinionKind; // factory only, optional (default 'grunt'): the minion it builds; the price follows (§6)
+  minionElement?: Element; // factory only, optional (default 'normal'): the element of every minion it builds (medics ignore it)
   burst?: number;        // factory only, optional (default 1): integer 1-4; minions wait inside until this many are ready, then leave together
   color: string;         // "#RRGGBB": projectiles, particles, fallback sprite; a wall's block colour; a factory's minion colour
-  size?: number;         // soldier/tower: body radius in px = hitbox AND drawn size, 6-20 (default 10 / 14), $0.5 per px above 6. Walls always fill their 40 px cell, factories are always 18: size is ignored for them.
+  size?: number;         // soldier/tower: body radius in px = hitbox AND drawn size, 6-20 (default 10 / 14), $8 per px above 6. Walls always fill their 40 px cell, factories are always 18: size is ignored for them.
   shape?: Shape;         // optional; only used by the fallback sprite when sprite() is missing
 }
 
@@ -44,6 +52,18 @@ export interface SpriteSpec {
   };
 }
 
+/** What is on a body right now. Every number is 0 when nothing applies. */
+export interface StatusView {
+  burning: number;   // ticks until the burn ends (max 180)
+  burnLeft: number;  // HP the burn will still take
+  frozen: number;    // ticks until the freeze ends (max 120): moves, reloads and builds 35% slower
+  haste: number;     // % from the strongest haste aura on it
+  might: number;     // % from the strongest might aura on it
+  shield: number;    // % from the strongest shield aura on it
+  healRoom: number;  // HP it can still be healed this second (0: full, a wall/factory, the cap is used, or sudden death)
+}
+export interface SupportView { kind: SupportKind; power: number; range: number }
+
 export interface FactoryView {
   productionInterval: number;
   nextMinionIn: number;  // ticks until the next minion (it waits while you hold, or while the factory is full)
@@ -52,6 +72,7 @@ export interface FactoryView {
   stored: number;        // built minions waiting inside: safe from attacks, but LOST if the factory is destroyed
   burst: number;         // stored minions leave together when stored reaches burst (or on { action: 'release' })
   produces: MinionKind;
+  minionElement: Element;
   order: MinionOrder;    // starts 'attack'; a swarm whose target died becomes 'attack', a guard whose ally died 'defend'
   orderTargetId: string | null; // swarm: the enemy, guard: the ally, else null
   rally: { x: number; y: number }; // where 'attack' minions go; starts at world.center
@@ -61,8 +82,10 @@ export interface SelfView {
   unitId: string;        // the design this copy was made from
   ownerId: string; teamId: number; type: UnitType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number;
-  damage: number; range: number; speed: number;
-  attackCooldown: number; cooldownRemaining: number; // 0 = can attack this tick
+  damage: number; range: number; speed: number; // the BASE stats: might, haste and a freeze change them in battle (status)
+  attackCooldown: number; cooldownRemaining: number; // 0 = can attack (or heal) this tick
+  element: Element; splashRadius: number; support: SupportView | null;
+  status: StatusView;
   blockedBy: string | null; // id of the wall that stopped my last move, else null
   blockedTicks: number;     // ticks in a row a wall has stopped me (no progress; 0 = free)
   pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls by a route the game found, or walled off (smash self.blockedBy)
@@ -71,10 +94,15 @@ export interface SelfView {
 export interface OtherView {
   id: string; ownerId: string; teamId: number; type: BodyType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number; range: number;
+  element: Element;      // a minion's is its factory's minionElement; walls and factories 'normal'
+  splashRadius: number;  // spread out against splash
+  support: SupportView | null; // find the enemy medic
+  status: StatusView;
 }
 // A wall has radius 20: for range it counts as a circle of radius 20 (so inRange works unchanged),
 // but its body blocks the whole 40×40 square. Walls and factories have range 0.
-// A minion's name is its kind: 'Grunt', 'Archer', 'Runner' or 'Brute'. Stored minions are invisible.
+// A minion's name is its kind: 'Grunt', 'Archer', 'Runner', 'Brute' or 'Medic'. Stored minions are invisible.
+// cooldownRemaining is Math.ceil of an internal float that counts down by the tempo: 0.65 frozen, ×(1 + haste%) hasted.
 export interface WorldView {
   width: number; height: number;        // arena size this battle: 800 (2-4 players), 1040 (5-6), 1200 (7-8), §9.2
   tick: number; ticksLeft: number;
@@ -92,6 +120,7 @@ export type Action =
   | { action: 'idle' }
   | { action: 'move'; destination: { x: number; y: number } }   // soldiers
   | { action: 'attack'; targetId: string }                     // soldiers and towers
+  | { action: 'heal'; targetId: string }                       // support 'heal' only: heal one ally in supportRange (uses the attack cooldown)
   | { action: 'rally'; destination: { x: number; y: number } }  // factories: order 'attack' and send my minions here
   | { action: 'command'; order: MinionOrder; targetId?: string; destination?: { x: number; y: number } } // factories: squad order; swarm/guard need targetId
   | { action: 'release' }                                       // factories: send the stored minions out now
@@ -110,8 +139,8 @@ export interface Unit extends UnitStats {
 export const UNIT_TYPES: readonly UnitType[] = ['soldier', 'tower', 'wall', 'factory'];
 export const SHAPES: readonly Shape[] = ['circle', 'square', 'triangle', 'diamond'];
 
-/** The minion kinds a factory can build (§5.3), in display order. */
-export const MINION_KINDS: readonly MinionKind[] = ['grunt', 'archer', 'runner', 'brute'];
+/** The minion kinds a factory can build (§5.3; medic §5.5), in display order. */
+export const MINION_KINDS: readonly MinionKind[] = ['grunt', 'archer', 'runner', 'brute', 'medic'];
 /** The squad orders a factory can give (§5.3). Index = the order code in frames (`FrameFactory[9]`). */
 export const MINION_ORDERS: readonly MinionOrder[] = ['attack', 'defend', 'swarm', 'guard'];
 /** A minion's name in views: its kind's name (§5.3). */
@@ -120,6 +149,7 @@ export const MINION_KIND_NAMES: Readonly<Record<MinionKind, string>> = {
   archer: 'Archer',
   runner: 'Runner',
   brute: 'Brute',
+  medic: 'Medic',
 };
 /** The default minion kind and burst of a factory that doesn't set them (§5.3). */
 export const DEFAULT_MINION_KIND: MinionKind = 'grunt';
@@ -138,6 +168,63 @@ export function producesOf(stats: { produces?: MinionKind | undefined }): Minion
 /** A factory's burst (default 1). */
 export function burstOf(stats: { burst?: number | undefined }): number {
   return typeof stats.burst === 'number' && Number.isInteger(stats.burst) && stats.burst >= 1 ? stats.burst : DEFAULT_BURST;
+}
+
+// ---------------------------------------------------------------------------
+// M8.8: elements, splash and support (§5.4, §5.5)
+// ---------------------------------------------------------------------------
+
+/** The four elements (§5.4), in display order. */
+export const ELEMENTS: readonly Element[] = ['normal', 'fire', 'ice', 'lightning'];
+/** The four support kinds (§5.5), in display order: heal is an action, the others are auras. */
+export const SUPPORT_KINDS: readonly SupportKind[] = ['heal', 'haste', 'might', 'shield'];
+/** The aura kinds (always on, no action). */
+export const AURA_KINDS = ['haste', 'might', 'shield'] as const;
+export type AuraKind = (typeof AURA_KINDS)[number];
+
+/** A unit's support as the snapshot stores it (§5.6: `support` + `supportPower` + `supportRange`). */
+export type SupportSpec = SupportView;
+
+export function isElement(v: unknown): v is Element {
+  return typeof v === 'string' && (ELEMENTS as readonly string[]).includes(v);
+}
+export function isSupportKind(v: unknown): v is SupportKind {
+  return typeof v === 'string' && (SUPPORT_KINDS as readonly string[]).includes(v);
+}
+export function isAuraKind(v: unknown): v is AuraKind {
+  return typeof v === 'string' && (AURA_KINDS as readonly string[]).includes(v);
+}
+/** A unit's element (older stored units have none: normal). */
+export function elementOf(stats: { element?: Element | undefined }): Element {
+  return isElement(stats.element) ? stats.element : 'normal';
+}
+/** A unit's splash radius (older stored units have none: 0). */
+export function splashOf(stats: { splashRadius?: number | undefined }): number {
+  return typeof stats.splashRadius === 'number' && Number.isFinite(stats.splashRadius) && stats.splashRadius > 0 ? stats.splashRadius : 0;
+}
+/** A unit's support (older stored units have none: null). */
+export function supportOf(stats: { support?: SupportSpec | null | undefined }): SupportSpec | null {
+  const s = stats.support;
+  return s && typeof s === 'object' && isSupportKind(s.kind) ? s : null;
+}
+/**
+ * The element of a factory's minions (§5.4): its `minionElement` (default
+ * normal). Medics never attack, so a medic factory's minions are always normal.
+ */
+export function minionElementOf(stats: { produces?: MinionKind | undefined; minionElement?: Element | undefined }): Element {
+  if (producesOf(stats) === 'medic') return 'normal';
+  return isElement(stats.minionElement) ? stats.minionElement : 'normal';
+}
+
+/**
+ * A design that can win a battle (§5.2 Fighters, M8.8): a soldier or tower
+ * with damage > 0, or a factory that doesn't build medics. Walls, pure
+ * support units (damage 0) and medic factories are not fighters.
+ */
+export function isFighterDesign(stats: { type: UnitType; damage?: number | undefined; produces?: MinionKind | undefined }): boolean {
+  if (stats.type === 'wall') return false;
+  if (stats.type === 'factory') return producesOf(stats) !== 'medic';
+  return (stats.damage ?? 0) > 0;
 }
 
 /** §5.2 groups: soldiers are "units"; towers, walls and factories are "buildings". */
@@ -172,7 +259,13 @@ export const STAT_FIELDS = [
   'attackCooldown',
   'productionInterval',
   'produces',
+  'minionElement',
   'burst',
+  'element',
+  'splashRadius',
+  'support',
+  'supportPower',
+  'supportRange',
   'color',
   'size',
   'shape',
@@ -195,21 +288,42 @@ export interface CostStats {
   productionInterval?: number | undefined;
   /** Factories: the minion kind (§5.3, default grunt); its price sets the production cost. */
   produces?: MinionKind | undefined;
+  /** Factories (M8.8): the minions' element (default normal; medics ignore it). */
+  minionElement?: Element | undefined;
+  /** Soldiers and towers (M8.8, §5.4): the element (default normal) and the splash radius (default 0). */
+  element?: Element | undefined;
+  splashRadius?: number | undefined;
+  /** Soldiers and towers (M8.8, §5.5): the support, or null / absent for none. */
+  support?: SupportSpec | null | undefined;
 }
 
 /**
  * The frozen stats taken at validation time (§5 rule 1). Combat reads only
  * this. `name` is trimmed, and `size` and `shape` are always filled in (type
  * defaults). Walls and factories get damage/range/speed/attackCooldown 0 and
- * their fixed size (20 / 18); `productionInterval`, `produces` and `burst` are set for factories only.
+ * their fixed size (20 / 18); `productionInterval`, `produces`, `minionElement`
+ * and `burst` are set for factories only. M8.8 (§5.6): the validator always
+ * sets `element` ('normal'), `splashRadius` (0) and `support` (null, or
+ * `{kind, power, range}`); older stored units lack them (read them with
+ * `elementOf`, `splashOf`, `supportOf`, `minionElementOf`).
  */
 export type StatsSnapshot = Readonly<
-  Required<Omit<UnitStats, 'productionInterval' | 'produces' | 'burst'>> & {
+  Required<
+    Omit<UnitStats, 'productionInterval' | 'produces' | 'burst' | 'minionElement' | 'element' | 'splashRadius' | 'support' | 'supportPower' | 'supportRange'>
+  > & {
     productionInterval?: number;
     /** Factories (M8.6): always set by the validator; absent in older stored factories (= grunt). */
     produces?: MinionKind;
     /** Factories (M8.6): always set by the validator; absent in older stored factories (= 1). */
     burst?: number;
+    /** Factories (M8.8): always set by the validator; absent in older stored factories (= normal). */
+    minionElement?: Element;
+    /** M8.8: always set by the validator; absent in older stored units (= normal). */
+    element?: Element;
+    /** M8.8: always set by the validator; absent in older stored units (= 0). */
+    splashRadius?: number;
+    /** M8.8: always set by the validator (null = none); absent in older stored units. */
+    support?: SupportSpec | null;
   }
 >;
 
