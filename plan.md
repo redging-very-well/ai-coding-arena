@@ -1933,6 +1933,48 @@ Players use **one browser tab**: `/play` shows their Claude seat's ttyd terminal
 
 ---
 
+### 11.3 Codex seats (OpenAI Codex CLI)
+
+Requested 2026-10-24: "can you also add in support for codex, and allow it to use the mcp too?". Any seat can run the OpenAI Codex CLI instead of Claude Code; everything players see (/play, the seat proxy, /admin) works the same.
+
+**Research (codex-cli 0.163.0 in the devcontainer, 0.162.1 pinned).**
+
+| Question | Finding |
+|---|---|
+| Version | `@openai/codex@0.162.1` (2026-10-09, ≥ 2 weeks old on 2026-10-24; 0.163.0 is 2026-10-15). |
+| MCP transport | Streamable HTTP **directly**: `[mcp_servers.<name>] url = "http://…/mcp"` (`codex mcp add --url`). No stdio bridge is needed, so the kit ships none. Personal kit: `http_headers = { Authorization = "Bearer pc_…" }`. Codex sends `protocolVersion: "2025-06-18"`, no session id, `Accept: text/event-stream, application/json`, `_meta` with `x-codex-turn-metadata` on tools/call; `codex mcp list` also probes OAuth discovery URLs (404 here, so "Auth: Unsupported"). Our stateless server answers all of it unchanged. |
+| Tool approval | Even with `approval_policy = "never"`, MCP tool calls fail ("MCP tool call requires approval") unless the server sets `default_tools_approval_mode = "approve"` (values `auto`, `prompt`, `writes`, `approve`). |
+| Instructions file | `AGENTS.md` in the working folder. Default limit `project_doc_max_bytes` = 32 KiB; CLAUDE.md is ~56 KB, so the kit sets 131072. |
+| Project config + trust | `<project>/.codex/config.toml` is loaded only for a trusted project (`[projects."<path>"] trust_level = "trusted"` in `~/.codex/config.toml` or the system `/etc/codex/config.toml`; `-c` doesn't count). Untrusted: the TUI asks once. |
+| Sandbox | `workspace-write` uses bubblewrap (user namespaces). In a `cap_drop: ALL` / `no-new-privileges` container (and this devcontainer) it fails: `apply_patch` and every command fail, so Codex would ask to escalate. `danger-full-access` works. |
+| Login | `codex login` (ChatGPT, browser callback on localhost), `codex login --device-auth` (device code; works in a container), `codex login --with-api-key` (key on stdin). Stored in `$CODEX_HOME/auth.json`. `codex login status` exits 1 when logged out. |
+| Resume | `codex resume --last` (chats in `$CODEX_HOME/sessions`). |
+
+**Kit: one source, two agents.** `packages/starter-kit/CLAUDE.md.tmpl` stays the only instructions source; its title is `# Pixel Clash: instructions for {{AGENT_NAME}}`. The Claude kit renders it as CLAUDE.md (+ `.mcp.json`, `.claude/settings.json`); the Codex kit renders the same text as **AGENTS.md** (+ `.codex/config.toml.tmpl` → `.codex/config.toml`). Rule (`kitFileAgent` in `services/kit.ts`, `kit_file_agent` in `sessions/entrypoint.sh`): `CLAUDE.md`, `.mcp.json`, `.claude/*` are Claude's, `.codex/*` is Codex's, the rest (PROMPTS.md, units/) is shared. `tests/kit-agents.test.ts` checks AGENTS.md = CLAUDE.md apart from the title (so the §5 contract block identity covers both), the Codex config, the personal key header, and that the entrypoint renders byte-identical kits to `services/kit.ts` for both agents.
+
+`.codex/config.toml` (generic; the personal kit adds the `http_headers` line under `url`):
+
+```toml
+project_doc_max_bytes = 131072
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = false
+exclude_slash_tmp = true
+exclude_tmpdir_env_var = true
+
+[mcp_servers.pixel-clash]
+url = "http://{{HOST}}/mcp"
+default_tools_approval_mode = "approve"
+```
+
+On a laptop (macOS Seatbelt, or Linux with user namespaces) this limits edits to the kit folder, with no network for commands; the game tools never ask. Zips: `GET /api/setup/kit.zip?agent=codex` and `GET /api/kit.zip?agent=codex` (`pixel-clash-codex-kit.zip`); without `agent` the Claude kit as before. /setup offers both.
+
+**Seats.** The image installs both pinned CLIs and a root-owned `/etc/codex/config.toml` (`[projects."/kit"] trust_level = "trusted"`, `check_for_update_on_startup = false`), so Codex needs no adult trust step. `AGENT=claude|codex` in `sessions/.env` (default `claude`) with per-seat `SEAT_AGENT_N`; volumes `codexN:/home/player/.codex` (`CODEX_HOME`). The entrypoint renders /kit for the seat's agent (removing the other agent's files), titles ttyd "Pixel Clash · Codex · seat N", and its `agent-loop` (old name `claude-loop` kept) runs `codex --sandbox ${CODEX_SANDBOX:-danger-full-access} --ask-for-approval ${CODEX_APPROVAL:-never}` (or `codex resume --last …` when the seat has chats and `CLAUDE_CONTINUE=1`) in the same no-shell restart loop behind the same base path. Optional `OPENAI_API_KEY` logs a logged-out Codex seat in on start and is unset before ttyd starts. `new-player` also clears `$CODEX_HOME` except `auth.json` and `config.toml`. `check` prints the agent, the Codex login status, the trust file and whether the Codex sandbox works in the container.
+
+**Verified offline** (`scripts/codex-mcp-check.mjs`): the real Codex binary (0.162.1 and 0.163.0) with a fake Responses-API model calls `login → get_game_state → validate_unit → get_rules` on a running server with no approval, through the kit's own `.codex/config.toml`; the interactive TUI with the kit's `on-request`/`workspace-write` and with the seat's flags showed no trust or approval prompt for the game tools. `tests/mcp-codex-compat.test.ts` replays the recorded Codex request sequence against the server.
+
 ## 12. UI
 
 **Isometric 2D pixel art.** The battle is drawn as a 2:1 isometric view of the top-down sim: `screenX = (x − y) · k`, `screenY = (x + y) · k / 2`, so the S×S arena (800, 1040 or 1200, §9.2) becomes a diamond. The zoom `k` is chosen per battle so the whole diamond fits the canvas (the projector zooms out for bigger arenas; sprites, rings and HP bars scale with it, and HP bars and seat badges keep a minimum on-screen size). Units are billboard sprites from `sprite()` (§5.1), depth-sorted by `x + y` every frame. Projectiles fly in a small arc (visual height only). The sudden-death circle is drawn as an ellipse on the ground plane. The floor is pixel-art iso tiles (one tile per 40 px cell), with the current map's zone bases tinted (seat colour, or team colour in team mode; Lanes draws its no-man's-land and Islands its clusters with different cosmetic tiles) and cosmetic props (rocks, crystals, banners) outside the arena edge. The only gameplay obstacles are player-built walls (M8.5, §12.5); props stay cosmetic. All art is generated in code or bundled, with no external assets. `src/common/render/iso.ts` holds the projection, depth sort and tile drawing, and it is shared by /screen, the /play battle view and the replay.
@@ -2366,7 +2408,7 @@ Numbers and sweeps in `docs/balance.md` "The $10,000 redesign".
 | 8-player battle lags (playback shows "thinking…") | check CPU per tick in /admin; lower `caps.maxCopies` (e.g. 12 → 8) in the config editor during RESULTS or PLAN for the next round, and play at 1x. With walls and factories (M8.5) also lower `caps.maxWallCopies` (12 → 8) and `factory.maxAlivePerBattle` (40 → 24) |
 
 - **Before the event (M8.8):** run `npm run wipe` once the M8.8 build is installed. Rehearsal units and config overrides from the $1,000 game would otherwise come back as invalid or `W_OLD_SCALE` units and an economy-reset banner (§6 M8.8 migration).
-- **After the event:** run `npm run wipe` (or admin Wipe) on the game server. This deletes players, PIN hashes, keys, unit sources, and replays. On the Claude box, run `docker compose down -v` to remove kit folders, keys, chat history and logins. Player laptops hold nothing. Only the Claude box talks to the internet (Anthropic); game data never leaves the LAN.
+- **After the event:** run `npm run wipe` (or admin Wipe) on the game server. This deletes players, PIN hashes, keys, unit sources, and replays. On the Claude box, run `docker compose down -v` to remove kit folders, keys, chat history and logins. Player laptops hold nothing. Only the Claude box talks to the internet (Anthropic, or OpenAI for Codex seats, §11.3); game data never leaves the LAN.
 
 ---
 
@@ -2618,6 +2660,19 @@ Judgement calls (the user said "make your own judgement calls"):
 | Players, PINs and keys kept on the wipe. | Only units were asked to go; logging everyone back in mid-playtest helps nobody. |
 | **Watch item: the padded full-12 soldier army** (`soldiersFilled`, 71.8%). | Allowed slightly over 70% as the brief permitted; splash, fire splash behind walls and the overload combo each beat it 10-16 of 16. |
 | Mixed vs mono not at parity by the head-to-head number (mixed wins 43.6% of mixed-vs-mono cells). | The top of the table is mostly mixed armies (rush, healerball, splashline, guarded catapults, shatter); the mixed starter archetypes (`mixed`, `templates`) are deliberately weak. Recorded honestly rather than tuned further. |
+
+Codex support (2026-10-24; the user said "continue and make judgement calls"):
+
+| Call | Why |
+|---|---|
+| Codex connects to `/mcp` by URL, **no stdio bridge** shipped. | 0.162.1 speaks streamable HTTP natively and works against the stateless server unchanged (§11.3). |
+| One instructions source: CLAUDE.md.tmpl → CLAUDE.md or AGENTS.md, only the title differs (`{{AGENT_NAME}}`). | No fork of the 56 KB text; the §5 identity test covers both through `tests/kit-agents.test.ts`. |
+| Seats run Codex with `--sandbox danger-full-access --ask-for-approval never` by default. | Codex's bubblewrap sandbox can't run in the locked-down seat containers, and `workspace-write` there turns every edit into an approval prompt. The container stays the boundary, as for Claude Code. Configurable (`CODEX_SANDBOX`, `CODEX_APPROVAL`); `check` says whether the sandbox works. |
+| Laptop Codex kit: `on-request` + `workspace-write` (kit folder only, no network for commands, `/tmp` excluded), game tools pre-approved. | "Approval/sandbox limited to /kit"; mirrors the Claude kit, where non-allowlisted commands (the §9 curl fallback) ask an adult. |
+| Trust via root-owned `/etc/codex/config.toml` in the image. | Removes the adult trust step for Codex seats; players can't edit it. |
+| Codex login: device code or API key per seat, or `OPENAI_API_KEY` in `.env` (auto-login, then unset). Recommend a dedicated, spend-limited key. | A container can't take the ChatGPT browser callback; Codex has no managed rule that hides `auth.json` from the agent. |
+| Wording: player/admin text says "AI helper" / "AI seat N"; the machine keeps its name **"Claude box"**; /setup offers "kit for Claude Code" and "kit for Codex". | The seat can be either agent; "Claude box" is the documented name of the machine (sessions/, this plan) and renaming it is churn. The server doesn't know a seat's agent, so the UI stays neutral rather than naming it. |
+| Default stays `AGENT=claude`; Claude Code pin unchanged (2.1.290). | Codex is opt-in per seat. |
 
 ### Open items
 1. **isolated-vm on the game server's host OS**: confirmed only by the M0 check. (It already works in the devcontainer on Node 24 / arm64 with isolated-vm 6.1.2.) Otherwise the process fallback is built and used, with its documented residual risk.
