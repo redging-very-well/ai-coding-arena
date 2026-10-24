@@ -245,6 +245,10 @@ export const UNITS = {
   /** an ice splash-80 caster with fast runners. */
   frostCaster: unitStats({ name: 'Frost Caster', type: 'soldier', maxHealth: 480, damage: 112, range: 130, speed: 2, attackCooldown: 65, size: 9, element: 'ice', splashRadius: 80 }),
   fastRunner: unitStats({ name: 'Fast Runner', type: 'soldier', maxHealth: 1360, damage: 44, range: 20, speed: 3.2, attackCooldown: 85, size: 10 }),
+  /** Backline divers (2026-10-24): an Assassin, fast glass melee that hunts healers, casters and shooters... */
+  assassin: unitStats({ name: 'Assassin', type: 'soldier', maxHealth: 960, damage: 112, range: 30, speed: 3.2, attackCooldown: 50, size: 7 }),
+  /** ...and Cavalry, a sturdier fast rider that swings round the enemy front. */
+  cavalry: unitStats({ name: 'Cavalry', type: 'soldier', maxHealth: 1600, damage: 72, range: 30, speed: 2.8, attackCooldown: 55, size: 12 }),
   /** Field Medic: damage 0, heal 96 in 120 px. Not a fighter. */
   medic: unitStats({ name: 'Field Medic', type: 'soldier', maxHealth: 800, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, support: { kind: 'heal', power: 96, range: 120 } }),
   /** Shield Bearer: a tough hitter with a 25% shield aura in 80 px. */
@@ -299,8 +303,8 @@ export interface Archetype {
   holdFactories?: boolean;
   /** M8.6: its factories' squad-order brain (default 'rally', the template); M8.8: or one per factory design. */
   factoryBrain?: FactoryBrain | Partial<Record<UnitKey, FactoryBrain>>;
-  /** M8.8: its fighting soldiers' brain (default 'chase', the template). */
-  soldierBrain?: SoldierBrain;
+  /** M8.8: its fighting soldiers' brain (default 'chase', the template); 2026-10-24: or one per soldier design ('dive', 'flank'). */
+  soldierBrain?: SoldierBrain | Partial<Record<UnitKey, SoldierBrain>>;
   /** Who its fighting soldiers and towers shoot (default 'nearest', the templates; 'focus': healers, support, ice/splash casters, then the weakest). */
   targeting?: Targeting;
   /** Custom designs (exploit search, CLI armies): an army key found here is this design, not a UNITS one. */
@@ -553,6 +557,18 @@ export const ELEMENT_ARCHETYPES: Archetype[] = [
   arch('icemortars', 'ice and mortars (ice towers and mortars sealed in, soldiers holding)', [['wall', 11], ['iceTower', 2], ['mortar', 3], ['soldier', 'fill']], { layout: 'seal', soldierBrain: 'hold', targeting: 'focus' }),
 ];
 
+/**
+ * Backline divers (2026-10-24, the user's call: the "tanks in front, fragile
+ * ranged hitter behind" family the exploit search keeps finding is good play,
+ * and the bot pool gets the counter a player would build): fast units that
+ * ignore the front line and hunt the healers, casters and shooters anywhere on
+ * the map (brains.ts `divePick`).
+ */
+export const DIVER_ARCHETYPES: Archetype[] = [
+  arch('assassins', 'assassin pack (soldiers in front, fast glass Assassins flank round to the back line)', [['soldier', 4], ['assassin', 'fill']], { soldierBrain: { assassin: 'flank' }, targeting: 'focus', pad: false }),
+  arch('cavalry', 'cavalry raid (soldiers in front, fast Cavalry hunt the back line)', [['soldier', 3], ['cavalry', 'fill']], { soldierBrain: { cavalry: 'dive' }, pad: false }),
+  arch('raiders', 'runner raid (towers sealed in, runner factories swarm the back line)', [['wall', 11], ['tower', 'fill'], ['runnerRush', 2]], { layout: 'seal', factoryBrain: 'dive' }),
+];
 /** The burst-1 twin of the runner swarm (not in the round robin): the burst comparison. */
 export const RUNNER_TRICKLE: Archetype = arch('trickle', 'runner trickle', [['soldier', 'fill'], ['runnerTrickle', 3]], { factoryBrain: 'swarm' });
 
@@ -561,8 +577,8 @@ export const RUSH: Archetype = arch('rush', 'template rush', [['soldier', 'fill'
 export const TEMPLATE_MIX: Archetype = arch('tmix', 'templates mixed', [['soldier', 'fill'], ['tower', 2], ['factory', 1], ['wall', 6]], { pad: false });
 export const TEMPLATE_ARCHETYPES: Archetype[] = [RUSH, TEMPLATE_MIX];
 
-/** Every round-robin archetype: the six, the building ones, the kind ones (the first 17), the specialist, element/support/combo and template ones. */
-export const ALL_ARCHETYPES: Archetype[] = [...ARCHETYPES, ...BUILDING_ARCHETYPES, ...KIND_ARCHETYPES, ...SPECIALIST_ARCHETYPES, ...ELEMENT_ARCHETYPES, ...TEMPLATE_ARCHETYPES];
+/** Every round-robin archetype: the six, the building ones, the kind ones (the first 17), the specialist, element/support/combo, template and diver ones. */
+export const ALL_ARCHETYPES: Archetype[] = [...ARCHETYPES, ...BUILDING_ARCHETYPES, ...KIND_ARCHETYPES, ...SPECIALIST_ARCHETYPES, ...ELEMENT_ARCHETYPES, ...TEMPLATE_ARCHETYPES, ...DIVER_ARCHETYPES];
 
 /** "No element dominates per dollar" twins (not in the round robin): the element army made `normal`, refilled. */
 export const NORMAL_TWINS: Record<string, Archetype> = {

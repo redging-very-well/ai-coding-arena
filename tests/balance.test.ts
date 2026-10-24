@@ -1,12 +1,14 @@
 // Balance (plan §14 balance.test.ts, §6 "no single archetype dominates",
 // §9 sudden death) for the $10,000 redesign (2026-10-24): $10,000 archetype
 // armies (12 fighters at most, the copy ramp, the redesign's prices and
-// mechanics) with "chase nearest" bots fight headless battles on real §9.2
-// maps with the DEFAULT config. 48 archetypes: the classic six, the building,
+// mechanics) with "chase nearest", focus-fire and backline-diver bots fight
+// headless battles on real §9.2 maps with the DEFAULT config. 51 archetypes: the classic six, the building,
 // minion-kind, specialist, element/support and template armies refit to the
 // new economy ("fill" parts and padding: helpers/balance.ts), the padded
 // one-design soldiers, the combo armies (kindle, brittle, overload), five
-// factories, splash answers and the exploit search's builds.
+// factories, splash answers, the exploit search's builds and three backline
+// divers (assassins, cavalry, runner raid: fast units that hunt the healers,
+// casters and shooters past the front line).
 //
 //   * the full matrix: nobody beats everyone, everyone beats someone and loses
 //     to someone, ≤ 70% round-robin wins except the re-recorded bricks key and
@@ -103,7 +105,7 @@ const battlesPerPair = DUEL_SITES.reduce((n, s) => n + s.pairs.length * 2, 0) * 
 /** A stated outcome: A wins more than half of its battles against B (≥ 9 of 16, ≥ 5 of 8). */
 const winsMost = (c: MatchupCell) => c.wins * 2 > c.wins + c.draws + c.losses;
 
-/** One full round robin (all 48 archetypes), shared by the tests below. */
+/** One full round robin (all 51 archetypes), shared by the tests below. */
 let fullMatrix: Promise<{ results: PairResult[]; m: Map<string, Map<string, MatchupCell>> }> | undefined;
 const full = () =>
   (fullMatrix ??= (async () => {
@@ -154,8 +156,8 @@ describe('the archetypes are legal armies ($10,000 budget with the copy ramp, $3
     }
   });
 
-  it('48 round-robin archetypes, every key once', () => {
-    expect(ALL_ARCHETYPES).toHaveLength(48);
+  it('51 round-robin archetypes, every key once', () => {
+    expect(ALL_ARCHETYPES).toHaveLength(51);
     expect(new Set(ALL_KEYS).size).toBe(ALL_KEYS.length);
     expect(SPECIALIST_ARCHETYPES.map((a) => a.key)).toEqual(['hugetanks', 'glass', 'longbow', 'soldiersFilled']);
     expect(ELEMENT_ARCHETYPES).toHaveLength(25);
@@ -197,11 +199,11 @@ describe('the archetypes are legal armies ($10,000 budget with the copy ramp, $3
 
 describe('round robin: no archetype dominates (§6, §14)', () => {
   it(
-    'the full matrix (48 archetypes): nobody beats everyone, everyone beats and loses to someone, ≤ 70% with the bricks key and one capped watch item',
+    'the full matrix (51 archetypes): nobody beats everyone, everyone beats and loses to someone, ≤ 70% with the bricks key and one capped watch item',
     async () => {
       const { m, results } = await full();
       if (process.env.BALANCE_REPORT) console.log(matrixMarkdown(m, ALL_ARCHETYPES));
-      expect(m.size).toBe(48);
+      expect(m.size).toBe(51);
       structural(m, { ...FULL_DOMINANCE_EXCEPTIONS, ...WATCH_ITEMS }, true);
       // The one exception key left from M8.8, re-recorded at the measured number, below the M8.6 cap...
       expect(Object.keys(FULL_DOMINANCE_EXCEPTIONS)).toEqual(['bricks']);

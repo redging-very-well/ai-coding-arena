@@ -1,7 +1,8 @@
 // The archetype brains of the balance harness (plan §14): the CLAUDE.md
 // templates as plain functions ("chase nearest", "shoot nearest", the factory
-// orders, medics and banners, M8.8 hold-by-the-tower, and focus fire: "kill
-// the healer first, then the casters, then the weakest").
+// orders, medics and banners, M8.8 hold-by-the-tower, focus fire: "kill
+// the healer first, then the casters, then the weakest", and backline divers:
+// "send fast units round the side to hunt their fragile shooters").
 //
 // This file is SELF-CONTAINED on purpose (type imports only): it is the one
 // source of the brains for both runners of the balance tooling.
@@ -136,6 +137,100 @@ const chaseFocus: BrainFn = (self, enemies, world, rng, allies) => {
   if (gap(self, pick) <= self.range) return self.cooldownRemaining === 0 ? { action: 'attack', targetId: pick.id } : { action: 'idle' };
   return { action: 'move', destination: { x: pick.x, y: pick.y } };
 };
+
+/**
+ * Backline divers (2026-10-24, the user's call on the "tanks in front, fragile
+ * hitter behind" family): what a player's "send fast units round the side to
+ * hunt their shooters" unit does. The dive pick looks at EVERY enemy on the
+ * map (not walls, factories or minions): healers first, then the other support
+ * units and the ice or splash casters, then the ranged ones (range ≥ 100); the
+ * smallest max HP first (max HP, not HP, so the pick doesn't flip-flop as
+ * bodies get hurt), then the nearer. Null when the enemy has none of those
+ * (a front line only): then the diver fights like a focus soldier.
+ */
+const DIVE_RANGED = 100;
+const diveRank = (e: OtherView): number =>
+  e.support?.kind === 'heal' ? 0 : e.support !== null || e.element === 'ice' || e.splashRadius > 0 ? 1 : e.range >= DIVE_RANGED ? 2 : 3;
+function divePick(self: { x: number; y: number }, enemies: OtherView[]): OtherView | null {
+  let best: OtherView | null = null;
+  let bestRank = 3;
+  let bestHp = Infinity;
+  let bestD = Infinity;
+  for (const e of enemies) {
+    if (e.type === 'wall' || e.type === 'factory' || e.type === 'minion') continue;
+    const rank = diveRank(e);
+    if (rank >= 3) continue;
+    const d = Math.hypot(e.x - self.x, e.y - self.y);
+    if (rank < bestRank || (rank === bestRank && (e.maxHp < bestHp || (e.maxHp === bestHp && d < bestD)))) {
+      best = e;
+      bestRank = rank;
+      bestHp = e.maxHp;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+/** How far a flanker swings out from the straight line to its target, and how near it goes straight in. */
+const FLANK_OFFSET = 180;
+const FLANK_NEAR = 160;
+
+/**
+ * The flank waypoint: the midpoint of the line to the target, pushed
+ * FLANK_OFFSET px sideways, to the side AWAY from the rest of the enemy army
+ * (its centre of mass: the front line), kept inside the arena and the safe
+ * zone. Null (go straight) when near the target or there is no front line.
+ */
+function flankPoint(self: SelfView, target: OtherView, enemies: OtherView[], world: WorldView): { x: number; y: number } | null {
+  const dx = target.x - self.x;
+  const dy = target.y - self.y;
+  const d = Math.hypot(dx, dy);
+  if (d <= FLANK_NEAR) return null;
+  let cx = 0;
+  let cy = 0;
+  let n = 0;
+  for (const e of enemies) {
+    if (e === target || e.type === 'wall' || e.type === 'factory') continue;
+    cx += e.x;
+    cy += e.y;
+    n++;
+  }
+  if (n === 0) return null;
+  cx /= n;
+  cy /= n;
+  // The front's side of the line self → target (cross product sign); swing round the other side.
+  const side = dx * (cy - self.y) - dy * (cx - self.x) > 0 ? -1 : 1;
+  let x = (self.x + target.x) / 2 + (side * -dy * FLANK_OFFSET) / d;
+  let y = (self.y + target.y) / 2 + (side * dx * FLANK_OFFSET) / d;
+  x = Math.min(world.width - 40, Math.max(40, x));
+  y = Math.min(world.height - 40, Math.max(40, y));
+  const sz = world.safeZone;
+  const r = Math.hypot(x - sz.x, y - sz.y);
+  const keep = sz.radius * 0.85;
+  if (r > keep && r > 0) {
+    x = sz.x + ((x - sz.x) * keep) / r;
+    y = sz.y + ((y - sz.y) * keep) / r;
+  }
+  return { x, y };
+}
+
+/**
+ * Dive and flank soldiers: hunt the dive pick anywhere on the map, past the
+ * front line (the game routes round walls and buildings); hit it in range.
+ * 'flank' first swings wide round the enemy front (flankPoint), then goes in.
+ * Stuck at an enemy wall for 120 ticks: smash it, like the template. No dive
+ * pick (only a front line left): fight like a focus soldier.
+ */
+const diveBrain = (flank: boolean): BrainFn => (self, enemies, world, rng, allies) => {
+  if (enemies.length === 0 || self.blockedTicks >= 120) return chaseNearest(self, enemies, world, rng, allies);
+  const pick = divePick(self, enemies);
+  if (!pick) return chaseFocus(self, enemies, world, rng, allies);
+  if (gap(self, pick) <= self.range) return self.cooldownRemaining === 0 ? { action: 'attack', targetId: pick.id } : { action: 'idle' };
+  const via = flank ? flankPoint(self, pick, enemies, world) : null;
+  return { action: 'move', destination: via ?? { x: pick.x, y: pick.y } };
+};
+const DIVE = diveBrain(false);
+const FLANK = diveBrain(true);
 
 /**
  * M8.8 "hold" soldiers (an army built round a tower, like Blizzard + fire):
@@ -339,16 +434,27 @@ const swarmWall: BrainFn = (self, enemies, world, rng) => {
   return wall ? { action: 'command', order: 'swarm', targetId: wall.id } : rallyNearest(self, enemies, world, rng, []);
 };
 
+/** Backline raid: every minion swarms the dive pick (healer, caster, ranged), else the weakest like `swarm`. */
+const swarmDive: BrainFn = (self, enemies, world, rng, allies) => {
+  const pick = divePick(self, enemies);
+  return pick ? { action: 'command', order: 'swarm', targetId: pick.id } : swarmWeakest(self, enemies, world, rng, allies);
+};
+
 /** Keep the minions home. */
 const defendHome: BrainFn = () => ({ action: 'command', order: 'defend' });
 
-/** M8.8: how an army's fighting soldiers play: chase nearest (the template) or hold by their towers. */
-export type SoldierBrain = 'chase' | 'hold';
+/**
+ * M8.8: how an army's fighting soldiers play: chase nearest (the template) or
+ * hold by their towers; 2026-10-24: or dive (hunt the healers, casters and
+ * ranged units anywhere on the map) or flank (the same, swinging wide round
+ * the enemy front first).
+ */
+export type SoldierBrain = 'chase' | 'hold' | 'dive' | 'flank';
 
 /** Who an army's fighters shoot: the nearest (the templates) or the focus pick. */
 export type Targeting = 'nearest' | 'focus';
 
-export type FactoryBrain = 'rally' | 'guard' | 'guardTank' | 'swarm' | 'breach' | 'defend';
+export type FactoryBrain = 'rally' | 'guard' | 'guardTank' | 'swarm' | 'breach' | 'defend' | 'dive';
 
 
 const FACTORY_BRAINS: Record<FactoryBrain, BrainFn> = {
@@ -358,6 +464,7 @@ const FACTORY_BRAINS: Record<FactoryBrain, BrainFn> = {
   swarm: swarmWeakest,
   breach: swarmWall,
   defend: defendHome,
+  dive: swarmDive,
 };
 
 /** How an army's brains play (the archetype's options). */
@@ -366,8 +473,8 @@ export interface BrainOptions {
   holdFactories?: boolean;
   /** M8.6: the factories' order brain (default: rally on the nearest enemy, the template); M8.8: or one per factory design. */
   factoryBrain?: FactoryBrain | Partial<Record<string, FactoryBrain>>;
-  /** M8.8: the fighting soldiers' brain (default: chase nearest, the template). */
-  soldierBrain?: SoldierBrain;
+  /** M8.8: the fighting soldiers' brain (default: chase nearest, the template); 2026-10-24: or one per soldier design. */
+  soldierBrain?: SoldierBrain | Partial<Record<string, SoldierBrain>>;
   /**
    * Who the fighting soldiers and towers shoot (2026-10-24): 'nearest' (default, the
    * templates) or 'focus' (healers, then support and ice/splash casters, then the
@@ -382,8 +489,9 @@ export function actFor(self: SelfView, enemies: OtherView[], allies: OtherView[]
   const fb: FactoryBrain = typeof fbs === 'string' ? fbs : (fbs[self.unitId] ?? 'rally');
   const factory = opts.holdFactories === true ? holdForever : FACTORY_BRAINS[fb];
   const focus = opts.targeting === 'focus';
-  const chase = focus ? chaseFocus : chaseNearest;
-  const soldier = opts.soldierBrain === 'hold' ? (focus ? HOLD_FOCUS : HOLD_NEAREST) : chase;
+  const sbs = opts.soldierBrain ?? 'chase';
+  const sb: SoldierBrain = typeof sbs === 'string' ? sbs : (sbs[self.unitId] ?? 'chase');
+  const soldier = sb === 'hold' ? (focus ? HOLD_FOCUS : HOLD_NEAREST) : sb === 'dive' ? DIVE : sb === 'flank' ? FLANK : focus ? chaseFocus : chaseNearest;
   const brain = self.type === 'tower' ? (focus ? shootFocus : shootNearest) : self.type === 'factory' ? factory : self.support ? supportSoldier : soldier;
   return brain(self, enemies, world, rng, allies);
 }

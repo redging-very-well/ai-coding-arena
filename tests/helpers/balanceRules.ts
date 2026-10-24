@@ -14,7 +14,9 @@ export const ROUND_ROBIN_WIN_CAP = 0.7;
  * recorded exception key left from M8.8, re-recorded at the measured value
  * (both seeds; the one-seed default run measures at or under it) and never
  * above the M8.6 cap (220/256). 546-0-206 (72.6%): loses to the walled nests,
- * splash and the turtle, shield wall and the combo armies.
+ * splash and the turtle, shield wall and the combo armies. With the three
+ * backline divers (51 archetypes, 2026-10-24) it measures 569/800 (71.1%),
+ * under the recorded cap, which stays as it was.
  */
 export const FULL_DOMINANCE_EXCEPTIONS: Record<string, { roundRobinWinCap: number }> = {
   bricks: { roundRobinWinCap: 546 / 752 },
@@ -25,6 +27,7 @@ export const FULL_DOMINANCE_EXCEPTIONS: Record<string, { roundRobinWinCap: numbe
  * blocker; no other new exception). The padded soldiers (the Basic Soldier with
  * HP and damage raised until the copy ramp and the budget stop it, 9 copies):
  * 540-0-212 (71.8%), losing only to splash, walls, the shield wall and combos.
+ * With the backline divers (51 archetypes) it measures 557/800 (69.6%).
  */
 export const WATCH_ITEMS: Record<string, { roundRobinWinCap: number }> = {
   soldiersFilled: { roundRobinWinCap: 540 / 752 },
