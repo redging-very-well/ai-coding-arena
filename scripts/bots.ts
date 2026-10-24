@@ -21,7 +21,13 @@
 // making minions behind brawlers and darts) (M8.5); M8.6 (§5.3) minion kinds,
 // squad orders and bursts: archers (an archer nest guarding turrets behind a
 // wall), runners (a burst-4 runner pack swarming the weakest enemy) and
-// brutes (a brute smithy swarming the nearest enemy wall).
+// brutes (a brute smithy swarming the nearest enemy wall); M8.8 (§5.4, §5.5)
+// elements, splash and support: elements (fire soldiers that shatter what
+// frost archers and an ice tower freeze), storm (lightning soldiers and a
+// mortar tower that splashes the biggest clump), splash (mortars behind a
+// wall line), support (a medic that cleanses then heals, a war drummer and a
+// shield bearer following the fighters) and medics (a medic tent guarding
+// the toughest soldier, next to fire grunts).
 // Options: --prefix Bot  --pin 4242  --poll 400 (ms)  --quiet
 
 import { resolve } from 'node:path';
@@ -33,7 +39,7 @@ import { frontCells } from '../packages/server/src/sim/autoPlace.js';
 // Designs
 // ---------------------------------------------------------------------------
 
-type Behaviour = 'nearest' | 'weakest' | 'kite' | 'tower' | 'rally' | 'guard' | 'swarm' | 'breach' | 'none';
+type Behaviour = 'nearest' | 'weakest' | 'kite' | 'tower' | 'rally' | 'guard' | 'swarm' | 'breach' | 'shatter' | 'mortar' | 'medic' | 'banner' | 'guardTank' | 'none';
 type BotType = 'soldier' | 'tower' | 'wall' | 'factory';
 
 interface BotDesign {
@@ -51,8 +57,13 @@ interface BotDesign {
   /** Factories only (§5.2): ticks between two minions. */
   productionInterval?: number;
   /** Factories only (M8.6, §5.3): the minion kind and the burst. */
-  produces?: 'grunt' | 'archer' | 'runner' | 'brute';
+  produces?: 'grunt' | 'archer' | 'runner' | 'brute' | 'medic';
   burst?: number;
+  /** M8.8 (§5.4, §5.5): soldiers and towers: element, splash and support; factories: the minions' element. */
+  element?: 'fire' | 'ice' | 'lightning';
+  splashRadius?: number;
+  support?: { kind: 'heal' | 'haste' | 'might' | 'shield'; power: number; range: number };
+  minionElement?: 'fire' | 'ice' | 'lightning';
 }
 
 const D = (role: string, type: BotDesign['type'], s: Omit<BotDesign, 'role' | 'type' | 'speed'> & { speed?: number }): BotDesign => ({
@@ -66,7 +77,7 @@ const D = (role: string, type: BotDesign['type'], s: Omit<BotDesign, 'role' | 't
 const B = (
   role: string,
   type: 'wall' | 'factory',
-  s: Pick<BotDesign, 'maxHealth' | 'color'> & Partial<Pick<BotDesign, 'productionInterval' | 'produces' | 'burst' | 'behaviour'>>,
+  s: Pick<BotDesign, 'maxHealth' | 'color'> & Partial<Pick<BotDesign, 'productionInterval' | 'produces' | 'burst' | 'behaviour' | 'minionElement'>>,
 ): BotDesign => ({
   role,
   type,
@@ -80,23 +91,37 @@ const B = (
   ...s,
 });
 
-/** Fighters all around $60-$190, so a bot always fields 4-12 copies (walls $24 on top). */
+/** Fighters all around $355-$1,300 (M8.8 ×5 scale), so a bot always fields 4-12 copies (walls $114 on top). */
 export const DESIGNS = {
-  brawler: D('Brawler', 'soldier', { maxHealth: 150, damage: 14, range: 30, speed: 1.6, attackCooldown: 60, size: 11, color: '#E8413C', shape: 'square', behaviour: 'weakest' }),
-  archer: D('Archer', 'soldier', { maxHealth: 80, damage: 12, range: 120, speed: 1.4, attackCooldown: 60, size: 9, color: '#3CB371', shape: 'triangle', behaviour: 'kite' }),
-  turret: D('Turret', 'tower', { maxHealth: 180, damage: 18, range: 160, attackCooldown: 60, size: 14, color: '#FF9933', shape: 'square', behaviour: 'tower' }),
-  runner: D('Runner', 'soldier', { maxHealth: 70, damage: 8, range: 25, speed: 2.6, attackCooldown: 45, size: 7, color: '#FFD23C', shape: 'diamond', behaviour: 'nearest' }),
-  bastion: D('Bastion', 'tower', { maxHealth: 300, damage: 8, range: 100, attackCooldown: 60, size: 16, color: '#8C98AC', shape: 'square', behaviour: 'tower' }),
-  gnat: D('Gnat', 'soldier', { maxHealth: 50, damage: 7, range: 25, speed: 1.8, attackCooldown: 60, size: 7, color: '#B04CFF', shape: 'circle', behaviour: 'nearest' }),
-  dart: D('Dart', 'tower', { maxHealth: 50, damage: 8, range: 140, attackCooldown: 60, size: 8, color: '#3CD6FF', shape: 'diamond', behaviour: 'tower' }),
-  pebble: D('Pebble', 'soldier', { maxHealth: 70, damage: 6, range: 35, speed: 1.2, attackCooldown: 60, size: 8, color: '#9BEA3C', shape: 'circle', behaviour: 'weakest' }),
-  // M8.5 buildings: a 300 HP wall ($24) and a factory making 5 minions ($184).
-  stone: B('Stone Wall', 'wall', { maxHealth: 300, color: '#8A8F98' }),
-  workshop: B('Workshop', 'factory', { maxHealth: 250, productionInterval: 900, color: '#C0A060' }),
-  // M8.6 kinds (§5.3, §6): archers $219, a burst-4 runner pack $234, brutes $219 (250 HP bodies, 5 minions).
-  archerNest: B('Archer Nest', 'factory', { maxHealth: 250, productionInterval: 900, produces: 'archer', color: '#5BC0EB', behaviour: 'guard' }),
-  runnerPack: B('Runner Pack', 'factory', { maxHealth: 250, productionInterval: 900, produces: 'runner', burst: 4, color: '#FFD23C', behaviour: 'swarm' }),
-  smasher: B('Brute Smithy', 'factory', { maxHealth: 250, productionInterval: 900, produces: 'brute', color: '#B5651D', behaviour: 'breach' }),
+  brawler: D('Brawler', 'soldier', { maxHealth: 750, damage: 70, range: 30, speed: 1.6, attackCooldown: 60, size: 11, color: '#E8413C', shape: 'square', behaviour: 'weakest' }),
+  archer: D('Archer', 'soldier', { maxHealth: 400, damage: 60, range: 120, speed: 1.4, attackCooldown: 60, size: 9, color: '#3CB371', shape: 'triangle', behaviour: 'kite' }),
+  turret: D('Turret', 'tower', { maxHealth: 900, damage: 90, range: 160, attackCooldown: 60, size: 14, color: '#FF9933', shape: 'square', behaviour: 'tower' }),
+  runner: D('Runner', 'soldier', { maxHealth: 350, damage: 40, range: 25, speed: 2.6, attackCooldown: 45, size: 7, color: '#FFD23C', shape: 'diamond', behaviour: 'nearest' }),
+  bastion: D('Bastion', 'tower', { maxHealth: 1500, damage: 40, range: 100, attackCooldown: 60, size: 16, color: '#8C98AC', shape: 'square', behaviour: 'tower' }),
+  gnat: D('Gnat', 'soldier', { maxHealth: 250, damage: 35, range: 25, speed: 1.8, attackCooldown: 60, size: 7, color: '#B04CFF', shape: 'circle', behaviour: 'nearest' }),
+  dart: D('Dart', 'tower', { maxHealth: 250, damage: 40, range: 140, attackCooldown: 60, size: 8, color: '#3CD6FF', shape: 'diamond', behaviour: 'tower' }),
+  pebble: D('Pebble', 'soldier', { maxHealth: 350, damage: 30, range: 35, speed: 1.2, attackCooldown: 60, size: 8, color: '#9BEA3C', shape: 'circle', behaviour: 'weakest' }),
+  // M8.5 buildings: a 1500 HP wall ($114) and a factory making 5 minions ($950).
+  stone: B('Stone Wall', 'wall', { maxHealth: 1500, color: '#8A8F98' }),
+  workshop: B('Workshop', 'factory', { maxHealth: 1250, productionInterval: 900, color: '#C0A060' }),
+  // M8.6 kinds (§5.3, §6): archers $1,185, a burst-4 runner pack $1,135, brutes $1,275 (1250 HP bodies, 5 minions).
+  archerNest: B('Archer Nest', 'factory', { maxHealth: 1250, productionInterval: 900, produces: 'archer', color: '#5BC0EB', behaviour: 'guard' }),
+  runnerPack: B('Runner Pack', 'factory', { maxHealth: 1250, productionInterval: 900, produces: 'runner', burst: 4, color: '#FFD23C', behaviour: 'swarm' }),
+  smasher: B('Brute Smithy', 'factory', { maxHealth: 1250, productionInterval: 900, produces: 'brute', color: '#B5651D', behaviour: 'breach' }),
+  // M8.8 elements, splash and support (§5.4, §5.5, §6): a fire soldier $635 that hits frozen
+  // enemies first, a frost archer $733 (range 140, inside a tower's reach), an ice tower $1,144,
+  // a lightning soldier $635, a mortar $1,179 that splashes the biggest clump, a field medic $759,
+  // a war drummer $603, a shield bearer $982 and a medic tent $1,292 (5 medics guarding a tank).
+  pyro: D('Pyro', 'soldier', { maxHealth: 600, damage: 50, range: 40, attackCooldown: 60, size: 10, color: '#FF6A2A', shape: 'triangle', behaviour: 'shatter', element: 'fire' }),
+  frostbow: D('Frostbow', 'soldier', { maxHealth: 400, damage: 40, range: 140, attackCooldown: 60, size: 9, color: '#7FDBFF', shape: 'diamond', behaviour: 'kite', element: 'ice' }),
+  frostTower: D('Frost Tower', 'tower', { maxHealth: 625, damage: 75, range: 140, attackCooldown: 45, size: 14, color: '#5BC8FF', shape: 'square', behaviour: 'tower', element: 'ice' }),
+  stormling: D('Stormling', 'soldier', { maxHealth: 600, damage: 50, range: 40, attackCooldown: 60, size: 10, color: '#FFE14D', shape: 'diamond', behaviour: 'nearest', element: 'lightning' }),
+  mortar: D('Mortar', 'tower', { maxHealth: 625, damage: 100, range: 140, attackCooldown: 60, size: 14, color: '#A0522D', shape: 'square', behaviour: 'mortar', splashRadius: 40 }),
+  medic: D('Medic', 'soldier', { maxHealth: 500, damage: 0, range: 20, attackCooldown: 60, size: 10, color: '#33CC66', shape: 'circle', behaviour: 'medic', support: { kind: 'heal', power: 60, range: 120 } }),
+  drummer: D('Drummer', 'soldier', { maxHealth: 500, damage: 0, range: 20, attackCooldown: 60, size: 10, color: '#D94040', shape: 'circle', behaviour: 'banner', support: { kind: 'might', power: 30, range: 100 } }),
+  bearer: D('Shield Bearer', 'soldier', { maxHealth: 1000, damage: 30, range: 30, speed: 1.2, attackCooldown: 60, size: 14, color: '#4A7BD0', shape: 'square', behaviour: 'banner', support: { kind: 'shield', power: 25, range: 80 } }),
+  medicTent: B('Medic Tent', 'factory', { maxHealth: 1500, productionInterval: 900, produces: 'medic', color: '#9BEA9B', behaviour: 'guardTank' }),
+  fireGrunts: B('Fire Grunts', 'factory', { maxHealth: 1250, productionInterval: 900, minionElement: 'fire', color: '#FF8A3C' }),
 } satisfies Record<string, BotDesign>;
 type DesignKey = keyof typeof DESIGNS;
 
@@ -111,8 +136,13 @@ export const STRATEGIES: Record<string, DesignKey[]> = {
   archers: ['archerNest', 'turret', 'stone'],
   runners: ['runnerPack', 'brawler', 'dart'],
   brutes: ['smasher', 'brawler', 'stone'],
+  elements: ['pyro', 'frostbow', 'frostTower'],
+  storm: ['stormling', 'mortar', 'brawler'],
+  splash: ['mortar', 'stone', 'brawler'],
+  support: ['medic', 'drummer', 'bearer'],
+  medics: ['medicTent', 'fireGrunts', 'brawler'],
 };
-const MIXED_ORDER = ['brawl', 'rush', 'turtle', 'swarm', 'fortress', 'factory', 'archers', 'runners', 'brutes'];
+const MIXED_ORDER = ['brawl', 'rush', 'turtle', 'swarm', 'fortress', 'factory', 'archers', 'runners', 'brutes', 'elements', 'storm', 'splash', 'support', 'medics'];
 
 /**
  * update() bodies. Every one loops over all enemies (the §14 load shape); soldiers step into the
@@ -190,6 +220,59 @@ const BEHAVIOURS: Record<Behaviour, string> = {
     }
     if (wall) return { action: 'command', order: 'swarm', targetId: wall.id };
     return { action: 'command', order: 'attack' };`,
+  // M8.8 (§5.4): fire hits a frozen enemy first (SHATTER), else the nearest one.
+  shatter: `
+    let target = null;
+    for (const e of enemies) {
+      const g = gap(self, e);
+      const score = g - (e.status.frozen > 0 ? 1000 : 0);
+      if (!target || score < target.score) target = { e, g, score };
+    }
+    if (!target) return { action: 'move', destination: world.center };
+    if (target.g <= self.range) return self.cooldownRemaining === 0 ? { action: 'attack', targetId: target.e.id } : { action: 'idle' };
+    return { action: 'move', destination: { x: target.e.x, y: target.e.y } };`,
+  // M8.8 splash: shoot the enemy in range with the most other enemies within splashRadius of it.
+  mortar: `
+    if (self.cooldownRemaining > 0) return { action: 'idle' };
+    let best = null;
+    for (const e of enemies) {
+      if (gap(self, e) > self.range) continue;
+      let n = e.type === 'wall' ? -1 : 0;
+      for (const o of enemies) if (o !== e && o.type !== 'wall' && Math.hypot(o.x - e.x, o.y - e.y) - o.radius <= self.splashRadius) n++;
+      if (!best || n > best.n) best = { e, n };
+    }
+    return best ? { action: 'attack', targetId: best.e.id } : { action: 'idle' };`,
+  // M8.8 (§5.5, the CLAUDE.md Field Medic): cleanse burning/frozen allies first, then heal the most
+  // hurt one in reach; otherwise stay with the nearest ally that fights.
+  medic: `
+    const need = allies.filter((a) => a.id !== self.id && a.type !== 'wall' && a.type !== 'factory' && gap(self, a) <= self.support.range
+      && (a.status.burning > 0 || a.status.frozen > 0 || (a.hp < a.maxHp && a.status.healRoom > 0)));
+    need.sort((a, b) => (b.status.burning + b.status.frozen > 0) - (a.status.burning + a.status.frozen > 0) || a.hp / a.maxHp - b.hp / b.maxHp);
+    if (need[0] && self.cooldownRemaining === 0) return { action: 'heal', targetId: need[0].id };
+    const friend = nearestFighter(self, allies);
+    if (!friend) return { action: 'move', destination: world.center };
+    if (gap(self, friend) > self.support.range / 2) return { action: 'move', destination: { x: friend.x, y: friend.y } };
+    return { action: 'idle' };`,
+  // M8.8 auras work by themselves: stay with the nearest ally that fights, hit what comes close.
+  banner: `
+    const near = nearest(self, enemies);
+    if (self.damage > 0 && near && near.gap <= self.range) return self.cooldownRemaining === 0 ? { action: 'attack', targetId: near.e.id } : { action: 'idle' };
+    const friend = nearestFighter(self, allies);
+    if (!friend) {
+      if (self.damage > 0 && near) return { action: 'move', destination: { x: near.e.x, y: near.e.y } };
+      return { action: 'move', destination: world.center };
+    }
+    if (gap(self, friend) > self.support.range / 2) return { action: 'move', destination: { x: friend.x, y: friend.y } };
+    return { action: 'idle' };`,
+  // M8.8 (CLAUDE.md): medics with command guard on your tank (the toughest own soldier).
+  guardTank: `
+    let tank = null;
+    for (const a of allies) {
+      if (a.type !== 'soldier') continue;
+      if (!tank || a.maxHp > tank.maxHp) tank = a;
+    }
+    if (tank) return { action: 'command', order: 'guard', targetId: tank.id };
+    return { action: 'command', order: 'defend' };`,
   none: '',
 };
 
@@ -219,7 +302,7 @@ export function botSource(name: string, d: BotDesign): string {
     d.type === 'wall' || d.type === 'factory'
       ? `    this.maxHealth = ${d.maxHealth};${d.type === 'factory' ? `\n    this.productionInterval = ${d.productionInterval ?? 900};` : ''}${
           d.produces ? `\n    this.produces = ${JSON.stringify(d.produces)};` : ''
-        }${d.burst ? `\n    this.burst = ${d.burst};` : ''}
+        }${d.burst ? `\n    this.burst = ${d.burst};` : ''}${d.minionElement ? `\n    this.minionElement = ${JSON.stringify(d.minionElement)};` : ''}
     this.color = ${JSON.stringify(d.color)};`
       : `    this.maxHealth = ${d.maxHealth};
     this.damage = ${d.damage};
@@ -228,7 +311,9 @@ export function botSource(name: string, d: BotDesign): string {
     this.attackCooldown = ${d.attackCooldown};
     this.color = ${JSON.stringify(d.color)};
     this.size = ${d.size};
-    this.shape = ${JSON.stringify(d.shape)};`;
+    this.shape = ${JSON.stringify(d.shape)};${d.element ? `\n    this.element = ${JSON.stringify(d.element)};` : ''}${d.splashRadius ? `\n    this.splashRadius = ${d.splashRadius};` : ''}${
+          d.support ? `\n    this.support = ${JSON.stringify(d.support.kind)};\n    this.supportPower = ${d.support.power};\n    this.supportRange = ${d.support.range};` : ''
+        }`;
   // Walls have no update() (§5.2: they never run code).
   const update = d.type === 'wall' ? '' : `
   update(self, enemies, allies, world) {${safe}${BEHAVIOURS[d.behaviour]}
@@ -243,6 +328,16 @@ function nearest(self, enemies) {
   for (const e of enemies) {
     const g = gap(self, e);
     if (!best || g < best.gap) best = { e, gap: g };
+  }
+  return best;
+}
+function nearestFighter(self, allies) {
+  let best = null;
+  let bestGap = Infinity;
+  for (const a of allies) {
+    if (a.id === self.id || a.type === 'wall' || a.type === 'factory' || a.support) continue;
+    const g = gap(self, a);
+    if (g < bestGap) { bestGap = g; best = a; }
   }
   return best;
 }
@@ -341,7 +436,7 @@ export class Bot {
   placedRound = -1;
   private stopped = false;
   private seenMatch = false;
-  private caps = { budget: 1000, maxCopies: 12, maxUnitTypes: 4, maxBuildingTypes: 4, maxFactoryCopies: 2, maxWallCopies: 12 };
+  private caps = { budget: 5000, maxCopies: 12, maxUnitTypes: 4, maxBuildingTypes: 4, maxFactoryCopies: 2, maxWallCopies: 12 };
 
   constructor(readonly opts: BotOptions) {
     this.api = new Api(opts.url.replace(/\/+$/, ''));
@@ -605,7 +700,7 @@ function parseArgs(argv: string[]): Record<string, string | true> {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
-    console.log('npm run bots -- --players 3 [--url http://localhost:8080] [--strategy mixed|brawl|turtle|rush|swarm|fortress|factory|archers|runners|brutes] [--prefix Bot] [--pin 4242] [--quiet]');
+    console.log('npm run bots -- --players 3 [--url http://localhost:8080] [--strategy mixed|brawl|turtle|rush|swarm|fortress|factory|archers|runners|brutes|elements|storm|splash|support|medics] [--prefix Bot] [--pin 4242] [--quiet]');
     return;
   }
   const players = Number(args.players ?? 3);

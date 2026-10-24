@@ -7,11 +7,10 @@
 // curve maxima are today's ×5 bounds, so a ×5 unit costs what its ×1
 // original cost, ×5 (up to the rounding of each price).
 //
-// tests/balance.test.ts keeps its M6-M8.7 matrices (archetypes rebuilt ×5)
-// on this economy until the M8.8 balance refit (plan §14 "M8.8 balance")
-// moves them to the M8.8 prices and archetypes. The sim is scale-invariant
-// (sudden death is a percentage), and battles without elements or support
-// play exactly like M8.7, so the recorded matrices and caps carry over.
+// tests/rescale.test.ts plays the M8.7 battles on it at ×1 and ×5 to show
+// the rescale changes nothing: the sim is scale-invariant (sudden death is a
+// percentage), and battles without elements or support play exactly like
+// M8.7. (tests/balance.test.ts moved to the M8.8 prices with the balance refit.)
 
 import { ConfigSchema, DEFAULT_CONFIG, type GameConfig } from '@pixel-clash/shared';
 

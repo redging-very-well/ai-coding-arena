@@ -5,9 +5,14 @@
 // rush, 2-team Lanes and a Ring 8 free-for-all with buildings, and the
 // engine time per battle; M8.6: the minion-kind archetypes in the round robin,
 // burst vs one-at-a-time runners, the kinds' minion output and a Ring 8
-// free-for-all with kind armies. Same harness as tests/balance.test.ts.
+// free-for-all with kind armies; M8.8: the 37-archetype matrix (specialist,
+// element and support archetypes), the stated outcomes, the element armies
+// against their normal twins, the effects and heal limits, the 9-soldier rush
+// against the field, and Lanes and a free-for-all with element armies. Same
+// harness as tests/balance.test.ts; the round robins run in worker processes.
 //
-//   npx tsx --conditions=source scripts/balance-matrix.ts
+//   npx tsx --conditions=source scripts/balance-matrix.ts            (16 battles per pair, both seeds)
+//   BALANCE_SEEDS=11 npx tsx --conditions=source scripts/balance-matrix.ts   (8, the default test run)
 
 import { DEFAULT_CONFIG, mapFor, type MapStyle } from '@pixel-clash/shared';
 import {
@@ -16,22 +21,27 @@ import {
   BUILDING_ARCHETYPES,
   DUEL_SITES,
   KIND_ARCHETYPES,
+  NORMAL_TWINS,
   RUNNER_TRICKLE,
   OPEN_FORTRESS,
   RUSH,
   SEEDS,
+  allPairs,
+  archetypeByKey,
   armyCost,
   balanceBattle,
   duel,
   lanesTeams,
   matrixMarkdown,
-  roundRobin,
+  matrixOf,
+  playPairs,
+  rowRate,
   type Archetype,
   type BalanceBattle,
+  type MatchupCell,
 } from '../tests/helpers/balance.js';
 
-const byKey = (k: string): Archetype =>
-  k === RUSH.key ? RUSH : k === OPEN_FORTRESS.key ? OPEN_FORTRESS : ALL_ARCHETYPES.find((a) => a.key === k)!;
+const byKey = archetypeByKey;
 /** Engine time of every battle that has a wall or a factory in it (lean runner, so this is the sim alone). */
 const buildingTimes: Array<{ ms: number; ticks: number }> = [];
 const timed = (b: BalanceBattle, entrants: Archetype[]) => {
@@ -40,25 +50,87 @@ const timed = (b: BalanceBattle, entrants: Archetype[]) => {
 };
 const sd = DEFAULT_CONFIG.suddenDeath;
 const s = (ticks: number | null) => (ticks === null ? '-' : `${(ticks / 60).toFixed(1)} s`);
+const matrixSeeds = process.env.BALANCE_SEEDS ? process.env.BALANCE_SEEDS.split(',').map(Number) : SEEDS;
+const pct = (wins: number, battles: number) => `${wins}/${battles} (${Math.round((100 * wins) / Math.max(1, battles))}%)`;
+const cellText = (c: MatchupCell | undefined) => (c ? `${c.wins}-${c.draws}-${c.losses}` : '-');
 
 async function main(): Promise<void> {
-  console.log(`Sudden death: from ${sd.startTick / 60} s, radius ${sd.startRadius} → ${sd.endRadius} (800 arena), ${sd.damagePctPerSecond}% max HP/s\n`);
+  const c = DEFAULT_CONFIG;
+  console.log(`Sudden death: from ${sd.startTick / 60} s, radius ${sd.startRadius} → ${sd.endRadius} (800 arena), ${sd.damagePctPerSecond}% max HP/s`);
+  console.log(`Economy: budget $${c.caps.budget}, cap $${c.caps.unitCost}; cost base ${c.cost.base}, hp ${c.cost.hp}, damage ${c.cost.damage}, range ${c.cost.range}, speed ${c.cost.speed}, size ${c.cost.size}, curveK ${c.cost.curveK}, power ${c.cost.powerFactor}; grunt ${c.factory.minions.grunt.maxHealth}/${c.factory.minions.grunt.damage}`);
+  console.log(`Matrix seeds: ${matrixSeeds.join(', ')} (${DUEL_SITES.reduce((n, site) => n + site.pairs.length * 2, 0) * matrixSeeds.length} battles per pair)\n`);
   console.log('## Archetypes\n');
-  for (const a of [...ALL_ARCHETYPES, RUSH, OPEN_FORTRESS, RUNNER_TRICKLE]) console.log(`- ${a.key}: ${a.label}, $${armyCost(a)}`);
+  for (const a of [...ALL_ARCHETYPES, RUSH, OPEN_FORTRESS, RUNNER_TRICKLE, ...Object.values(NORMAL_TWINS)]) console.log(`- ${a.key}: ${a.label}, $${armyCost(a).toLocaleString('en-US')}`);
 
-  console.log('\n## Round robin (row W-D-L vs column; the first six are the §14 matrix, the first 13 M8.5\'s)\n');
-  const m = await roundRobin(ALL_ARCHETYPES, undefined, (a, b, battle) => timed(battle, [a, b]));
+  const keys = ALL_ARCHETYPES.map((a) => a.key);
+  const started = performance.now();
+  const results = await playPairs(allPairs(keys), matrixSeeds);
+  const wall = performance.now() - started;
+  const m = matrixOf(results, keys);
+  console.log(`\n## Round robin, ${keys.length} archetypes (row W-D-L vs column; the first six are the §14 matrix, the first 13 M8.5's, the first 17 M8.6's)\n`);
   console.log(matrixMarkdown(m, ALL_ARCHETYPES));
-  const perPair = DUEL_SITES.reduce((n, site) => n + site.pairs.length * 2, 0) * SEEDS.length;
-  const rate = (row: Map<string, { wins: number }>, keys?: Set<string>) => {
-    const cells = [...row].filter(([k]) => !keys || keys.has(k));
-    const wins = cells.reduce((n, [, c]) => n + c.wins, 0);
-    return `${wins}/${perPair * cells.length} (${Math.round((100 * wins) / (perPair * cells.length))}%)`;
+  const sets: Array<[string, Set<string>]> = [
+    ['the six', new Set(ARCHETYPES.map((a) => a.key))],
+    ['the M8.5 13', new Set([...ARCHETYPES, ...BUILDING_ARCHETYPES].map((a) => a.key))],
+    ['the M8.6 17', new Set([...ARCHETYPES, ...BUILDING_ARCHETYPES, ...KIND_ARCHETYPES].map((a) => a.key))],
+  ];
+  const rateIn = (a: string, set?: Set<string>) => {
+    if (set && !set.has(a)) return '-';
+    const row = new Map([...m.get(a)!].filter(([b]) => !set || set.has(b)));
+    const r = rowRate(row);
+    return pct(r.wins, r.battles);
   };
-  const old = new Set(ARCHETYPES.map((a) => a.key));
-  const m85 = new Set([...ARCHETYPES, ...BUILDING_ARCHETYPES].map((a) => a.key));
-  console.log('\n| archetype | wins vs the six | wins vs the M8.5 13 | wins vs all 16 |\n|---|---|---|---|');
-  for (const [a, row] of m) console.log(`| ${a} | ${old.has(a) ? rate(row, old) : '-'} | ${m85.has(a) ? rate(row, m85) : '-'} | ${rate(row)} |`);
+  console.log(`\n| archetype | ${sets.map(([n]) => `wins vs ${n}`).join(' | ')} | wins vs all ${keys.length - 1} | beats | loses to |\n|---|${sets.map(() => '---|').join('')}---|---|---|`);
+  const order = [...keys].sort((x, y) => rowRate(m.get(y)!).rate - rowRate(m.get(x)!).rate);
+  for (const a of order) {
+    const row = m.get(a)!;
+    const beaten = [...row].filter(([, cell]) => cell.wins > cell.losses).length;
+    const losing = [...row].filter(([, cell]) => cell.losses > cell.wins).map(([b]) => b);
+    console.log(`| ${a} | ${sets.map(([, set]) => rateIn(a, set)).join(' | ')} | ${rateIn(a)} | ${beaten} | ${losing.join(', ')} |`);
+  }
+  console.log(`\n${results.reduce((n, r) => n + r.cell.wins + r.cell.draws + r.cell.losses, 0)} battles in ${(wall / 1000).toFixed(0)} s wall clock (worker processes); engine ${(results.reduce((n, r) => n + r.ms, 0) / 1000).toFixed(0)} s.`);
+
+  console.log('\n## Stated outcomes (M8.8)\n');
+  const stated: Array<[string, string]> = [
+    ['shatter', 'bricks'], ['shatter', 'bigFriends'], ['frostnest', 'bricks'], ['blizzard', 'bricks'], ['blizzard', 'buffedrush'],
+    ['mortars', 'scoutsFilled'], ['storm', 'scoutsFilled'], ['storm', 'runners'], ['firenest', 'storm'], ['icewall', 'wallrush'],
+    ['healerball', 'templates'], ['shatter', 'healerball'], ['firenest', 'healerball'], ['firesquad', 'healerball'], ['buffedrush', 'templates'],
+    ['buffedrush', 'shatter'], ['buffedrush', 'turtle'], ['buffedrush', 'longbow'], ['shieldwall', 'glass'], ['bigFriends', 'tanks'],
+    ['bigFriends', 'bombard'], ['bigFriends', 'longbow'], ['elemfactories', 'runners'], ['medictent', 'mixed'],
+  ];
+  console.log('| A | B | A vs B (W-D-L) |\n|---|---|---|');
+  for (const [a, b] of stated) console.log(`| ${a} | ${b} | ${cellText(m.get(a)!.get(b))} |`);
+
+  console.log('\n## Element armies against the same army made normal (M8.8)\n');
+  const twins = Object.entries(NORMAL_TWINS);
+  const twinRows = await playPairs(twins.flatMap(([key, twin]) => [[twin.key, key] as [string, string], ...keys.filter((k) => k !== key).map((k) => [twin.key, k] as [string, string])]), matrixSeeds);
+  console.log('| element army | its round robin | normal twin | twin\'s round robin (same field) | head to head (W-D-L) |\n|---|---|---|---|---|');
+  for (const [key, twin] of twins) {
+    const tm = matrixOf(twinRows, [twin.key, ...keys]).get(twin.key)!;
+    const h2h = tm.get(key);
+    tm.delete(key);
+    const er = rowRate(m.get(key)!);
+    const tr = rowRate(tm);
+    console.log(`| ${key} ($${armyCost(byKey(key))}) | ${pct(er.wins, er.battles)} | ${twin.label} ($${armyCost(twin)}) | ${pct(tr.wins, tr.battles)} | ${h2h ? `${h2h.losses}-${h2h.draws}-${h2h.wins}` : '-'} |`);
+  }
+
+  console.log('\n## Effects and heal limits in the round robin (M8.8)\n');
+  const side = (k: string) => results.flatMap((r) => (r.a === k ? [r.effects[0]] : r.b === k ? [r.effects[1]] : []));
+  console.log('| archetype | burn damage | shatters | zaps | overload zaps | HP healed | cleanses |\n|---|---|---|---|---|---|---|');
+  for (const k of keys) {
+    const e = side(k).reduce((t, x) => ({ shatters: t.shatters + x.shatters, arcs: t.arcs + x.arcs, overloads: t.overloads + x.overloads, burnDamage: t.burnDamage + x.burnDamage, healed: t.healed + x.healed, cleanses: t.cleanses + x.cleanses }));
+    if (!e.burnDamage && !e.shatters && !e.arcs && !e.healed) continue;
+    console.log(`| ${k} | ${Math.round(e.burnDamage).toLocaleString('en-US')} | ${e.shatters} | ${e.arcs} | ${e.overloads} | ${Math.round(e.healed).toLocaleString('en-US')} | ${e.cleanses} |`);
+  }
+  const healed = results.filter((r) => r.healBattles > 0);
+  console.log(`\n- ${healed.reduce((n, r) => n + r.healBattles, 0)} battles with heals: the most any body got in one 60-tick window is ${(100 * Math.max(...healed.map((r) => r.worstHealWindow))).toFixed(2)}% of its max HP (cap ${c.support.healRoomPctPerSecond}%); the last heal lands in the frame at t = ${Math.max(...healed.map((r) => r.lastHealTick))} (sudden death from ${sd.startTick}).`);
+  console.log(`- Battles won with only walls standing: ${results.reduce((n, r) => n + r.wallOnlyWins, 0)}.`);
+
+  console.log('\n## The 9-soldier rush against the field (watch item, not in the round robin)\n');
+  const rushRows = await playPairs(keys.map((k) => ['rush', k] as [string, string]), matrixSeeds);
+  const rr = matrixOf(rushRows, ['rush', ...keys]).get('rush')!;
+  const rrr = rowRate(rr);
+  console.log(`- rush (9 Basic Soldiers, $${armyCost(RUSH)}): ${pct(rrr.wins, rrr.battles)}; loses to ${[...rr].filter(([, cell]) => cell.losses > cell.wins).map(([b]) => b).join(', ')}`);
 
   console.log('\n## Minion kinds, orders and burst (M8.6)\n');
   const output = async (a: Archetype, foes: Archetype[]) => {
@@ -90,9 +162,9 @@ async function main(): Promise<void> {
             }
     return `| ${a.key} | ${wins}/${n} | ${made} | ${lost} | ${kills} | ${Math.round(dmg)} | ${(dmg / Math.max(1, made)).toFixed(1)} | ${(lost / Math.max(1, kills)).toFixed(1)} |`;
   };
-  console.log('Minion output against every round-robin archetype (all sites, both orders, both seeds):\n');
+  console.log('Minion output against the M8.6 archetypes (all sites, both orders, both seeds):\n');
   console.log('| army | wins | minions made | lost | minion KOs | minion damage | damage per minion | lost per KO |\n|---|---|---|---|---|---|---|---|');
-  const foes = ALL_ARCHETYPES.filter((a) => a.key !== 'runners');
+  const foes = [...ARCHETYPES, ...BUILDING_ARCHETYPES, ...KIND_ARCHETYPES].filter((a) => a.key !== 'runners');
   for (const a of [...KIND_ARCHETYPES, RUNNER_TRICKLE, byKey('swarm'), byKey('bunker')]) console.log(await output(a, foes.filter((b) => b !== a)));
 
   console.log('\n## All-tower battles\n');
@@ -167,6 +239,19 @@ async function main(): Promise<void> {
     console.log(`- round ${round}: first hit ${s(b.firstContactTick)}, winner team ${b.winner}, end ${s(b.result.endTick)} ${b.result.endReason}`);
   }
 
+  console.log('\n## Lanes 8 with element and support armies (M8.8)\n');
+  const elementCases: Array<[string[], string[]]> = [
+    [['firesquad', 'storm', 'healerball', 'frostnest'], ['templates', 'rush', 'tanks', 'turtle']],
+    [['shatter', 'mortars', 'buffedrush', 'medictent'], ['bricks', 'scoutsFilled', 'wallrush', 'snipers']],
+    [['blizzard', 'bigFriends', 'stormrunners', 'shieldwall'], ['storm', 'glass', 'firenest', 'elemfactories']],
+  ];
+  for (const [t0, t1] of elementCases)
+    for (const round of [0, 1])
+      for (const seed of SEEDS) {
+        const b = await lanesTeams(8, t0.map(byKey), t1.map(byKey), round, seed + round);
+        console.log(`- ${t0.join(' + ')} vs ${t1.join(' + ')}, round ${round}, seed ${seed}: first hit ${s(b.firstContactTick)}, winner team ${b.winner}, end ${s(b.result.endTick)} ${b.result.endReason}`);
+      }
+
   console.log('\n## Lanes 8 with building armies (M8.5)\n');
   const cases: Array<[string[], string[]]> = [
     [['fortress', 'swarm', 'wallrush', 'mixed'], ['bricks', 'tanks', 'rush', 'snipers']],
@@ -184,6 +269,7 @@ async function main(): Promise<void> {
     ['Ring 8 free-for-all, 8 rotations × 2 seeds', ['bricks', 'templates', 'tanks', 'turtle', 'scouts', 'snipers', 'rush', 'templates']],
     ['Ring 8 free-for-all with building armies (M8.5), 8 rotations × 2 seeds', ['fortress', 'swarm', 'snipewall', 'wallrush', 'bunker', 'mixed', 'quad', 'rush']],
     ['Ring 8 free-for-all with minion-kind armies (M8.6), 8 rotations × 2 seeds', ['archers', 'runners', 'brutes', 'homeguard', 'swarm', 'fortress', 'quad', 'rush']],
+    ['Ring 8 free-for-all with element and support armies (M8.8), 8 rotations × 2 seeds', ['storm', 'shatter', 'mortars', 'healerball', 'blizzard', 'firenest', 'buffedrush', 'bigFriends']],
   ] as const) {
     console.log(`\n## ${title}\n`);
     const lineup = keys.map(byKey);

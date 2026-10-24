@@ -482,3 +482,106 @@ landed.
   but the runners popping out are obvious.
 - **The "lost" label (grey "−3")** was only captured after the battle ended in d2, because the
   short battle finished soon after. The event and the report were checked.
+
+## Elements, splash and support (M8.8)
+
+QA of the M8.8 elements, splash and support in a real browser, after the core, server, client
+and balance work landed.
+
+### How it was run
+
+- **Server:** the production build (`npm run build`, then `node scripts/start.mjs`) on :18189,
+  with a fresh data dir for each run.
+- **Players:** one browser player ("Ann") and `npm run bots` with the M8.8 personalities:
+  - **p2:** a Duel against `medics`.
+  - **p4:** Corners against `elements`, `support` and `storm`.
+  - **p8:** Ring against `elements`, `storm`, `splash`, `support`, `medics`, `elements` and
+    `storm`. This is the effects-heavy case: 53 spawns, 433 shots, 27 shatters, 13 zaps, 26
+    splashes, 173 burn ticks, 13 heals and 6 cleanses.
+- **Ann's units:** she submits four units over REST, then picks and places them in the /play UI
+  at $5,000:
+  - Fire Blade, a fire soldier that targets frozen enemies first ($635);
+  - Frost Spire, an ice tower ($1,144);
+  - Patch, a medic with heal 60 and reach 120 ($759);
+  - War Drummer, a might aura of 30% ($618).
+- **Screenshots:**
+  - /screen at 1920×1080, live through the battle.
+  - The results replay at a 3× pixel ratio, cropped to the fight, every 0.7 s, to check the
+    effects up close.
+  - /play at 1400×1000.
+  - /admin at 1440×900 and at 390×844.
+- **Old data:** after p8, the stored state was edited to look like a $1,000 game: an old config
+  patch, results with no `scaleVersion`, and a Fire Blade with 120 HP and no `scaleVersion`.
+  The server was then restarted on that state.
+- **Script and shots:**
+  `/tmp/claude-1000/-workspaces-kidscodingday/9c9e875f-8be6-4b5a-93eb-d016b9d3d229/scratchpad/qa89/`
+  (`game.cjs`, `zoom.cjs`, `admin.cjs`, `cards.cjs` and `qs.cjs`, with the shots `p2-*`, `p4-*`,
+  `p8-*`, `z8-*`, `a-*`, `c-*` and `q-*`). There were no page errors or console errors in any
+  run.
+
+### Frame rate (/screen, rAF intervals and the page's own rAF work, 5 s windows)
+
+| Battle | Window | Interval median / p99 / max | Frames > 20 ms | Work median / p99 / max |
+|---|---|---|---|---|
+| p2 Duel | 6-11 s (contact) | 16.7 / 16.8 / 16.8 ms | 0 | 0.3 / 1.5 / 1.8 ms |
+| p4 Corners | 6-11 s | 16.7 / 16.8 / 16.8 ms | 0 | 0.4 / 1.8 / 2.3 ms |
+| p8 Ring | 6-11 s (first contact, shatters) | 16.7 / 16.8 / 16.8 ms | 0 | 0.7 / 2.6 / 5.1 ms |
+| p8 Ring | 16-21 s | 16.7 / 16.7 / 16.8 ms | 0 | 0.5 / 2.1 / 2.5 ms |
+
+/screen holds 60 fps with the full effects. Each frame takes at most about 5 ms of work, against
+a 16.7 ms budget. The same host was also running the server, the sim, 7 bots and 2 other
+Chromium pages.
+
+### Checked and working
+
+- **Battle effects (z8 crops):**
+  - Frozen bodies are tinted cyan with ice pips, and burning units carry flame pips.
+  - Damage numbers are coloured by element: orange fire, cyan ice, yellow lightning.
+  - Zaps draw jagged yellow bolts.
+  - Splash rings expand on the ground.
+  - The might aura is a red dashed ring with arrows, and its icon shows over buffed allies.
+  - Heals draw a green beam with "+9" or "+30", and cleanses draw a white beam.
+  - "SHATTER!" pops in big cyan letters.
+- **From projector distance (1x, 1920):** the element colours, the aura rings, the frozen tint
+  and "SHATTER!" read clearly. The pips over the HP bars are small at Ring 8, as the stored
+  badge was in M8.6, but the body tint and the coloured numbers carry the same information.
+- **Results:**
+  - /screen shows **Best Medic** and **Combo Master** as badges (p4) and as icons in the 8-player
+    table (p8).
+  - /play shows "Best Medic: Your healers healed the most!" (p8, Ann).
+  - The report lines show the fire burn split for the Fire Blade (250 burn of its 2,290 damage).
+- **/play cards:**
+  - The chips show Fire, Ice, Heal 60 and Might 30%, and medics and banners carry "support only".
+  - The price tables add up:
+    - Frost Spire: 688.92 × 1.33 × 1.04 × 1.2 = $1,144.
+    - War Drummer: 390.34 + aura 226.67 = $618.
+    - Patch shows the heal row and its explanation line.
+  - An old 120 HP design shows "old $1,000 numbers" with its warning.
+- **Placement at $5,000:**
+  - The budget bar reads "$4,426 / $5,000 — $574 left".
+  - The palette shows the element and support icons.
+  - A Frost Spire that no longer fits gets "Not enough money! It costs $1,144 but you only have
+    $574 left."
+- **Admin quick settings:**
+  - The Costs fields include the power, splash, element, heal and aura prices.
+  - There is an "Elements & support" group.
+  - The medic minion has its own fields.
+  - The live price check lists Fire Soldier $635, Mortar Tower $1,179, Field Medic $759, War
+    Drummer $603 and Medic Tent $1,292, with "4 soldiers + 3 towers = $4,978 of $5,000".
+
+### Bugs found and fixed
+
+| # | Where | Bug | Fix | Evidence |
+|---|---|---|---|---|
+| 30 | /screen, /play battle | "SHATTER!" and "OVERLOAD!" were drawn before the damage numbers, so in a crowded fight the numbers covered them ("SHA·ER!"). | The pop text is its own pass (`EffectLayer.drawPops`), drawn after the damage numbers and the legend (`arena.ts`, `effects.ts`). The test is in `tests/elements-client.test.ts`. | `p4-b13.png` (before), `p8-b15.png` and `z8-008-125.png` (after) |
+| 31 | /admin | The economy-reset banner from the spec (§6, §10.6) was never built: the server sent `economyReset`, but nothing showed it. | A banner under the top bar reads "Your economy overrides were for the $1,000 game and were reset…" and lists the dropped keys. "OK, got it" calls `DELETE /admin/config/economy-reset` (`admin/App.tsx`, `api.admin.dismissEconomyReset`). After that it stays gone, also after a reload. | `a-admin-top.png`, `a-admin-narrow.png` |
+| 32 | /play Past battles | Rounds from before M8.8 (no `scaleVersion`) had no "($1,000 game)" label (§6). | A note above the ranking reads "($1,000 game) This round was played before prices and stats went up 5×…" (`PastBattles.tsx`). | `a-past.png` |
+| 33 | /play results, Past battles, /admin price check | Some numbers had no thousands separators: the scoreboard's "💥 6157", the match total, "3215 damage" in Past battles, and the admin price check's "$39956" and "$4978 of $5000". | All of them now use `toLocaleString` / `formatMoney`. | `q-preview.png` |
+
+### Notes (not fixed)
+
+- **The Patch bot design shows `W_NEVER_MOVES`:** its only move follows an ally, and the dry run
+  has none. That is a quirk of the QA design, not of the game.
+- **Ties in the admin ranking read "2nd, 2nd, 4th".** That is how places are shared, as before.
+- **The "Place your army!" toast covers the top of the placement panel for a few seconds.** This
+  is unchanged from M8.6.

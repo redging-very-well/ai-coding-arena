@@ -175,3 +175,46 @@ Date: 2026-10-23. Claude Code, the same setup as M8.5:
   `'archers'` → `'archer'`) were not triggered by these runs. They are checked by
   `tests/validator-buildings.test.ts` and `tests/buildings-cost.test.ts`, and so are the three
   CLAUDE.md examples, which must validate cleanly. CLAUDE.md wasn't changed after the runs.
+
+## Elements, splash and support (M8.8)
+
+Date: 2026-10-24. Claude Code 2.1.304, the same setup as M8.6:
+- **Server:** the production build on :18189 with a fresh data dir. Players Cara, Dev, Eli, Fay
+  and Gus were created over REST (PIN 1234), and the match was in PLAN with the timer paused.
+- **Kit:** a fresh copy of the generic kit (`GET /api/setup/kit.zip`, `Host: 127.0.0.1:18189`)
+  per player, unzipped outside the repo. Its CLAUDE.md has §4d "Elements, splash and support" and
+  the ×5 prices.
+- **Command:** `claude -p "<prompt>" --output-format stream-json --verbose --settings
+  .claude/settings.json`. The five runs went in parallel.
+
+5 runs, **$2.98** in total ($0.54-0.68 each).
+
+| # | Player says | Calls | Validates | Outcome | Notes |
+|---|---|---|---|---|---|
+| e1 | "I'm Cara, PIN 1234. Make an ice tower that slows everything near my base" | 10 | 1 | Submitted "Frost Spire": tower, 625 HP, 75 damage, range 140, cd 60, `element: 'ice'`, `splashRadius: 40`, $1,309. No warnings | Shoots the enemy in range that is nearest to `world.myCorner`, unfrozen ones first, and walls last. Ice-crystal sprite with a twinkle and a shot flash. Suggested a tough or fire unit next to it ("a great team") |
+| e2 | "I'm Dev, PIN 1234. Make a medic that heals my tanks" | 10 | 1 | Submitted "Field Medic": soldier, 500 HP, damage 0, `support: 'heal'`, power 60, reach 120, $759. `healUsed: true`, no warnings | Follows the toughest fighter and cleanses burning or frozen friends first, then heals the most hurt. Said "the medic can't fight" and offered to make a tank to go with it |
+| e3 | "I'm Eli, PIN 1234. Make a fire soldier with splash damage" | 10 | 1 | Submitted "Flame Brawler": 700 HP, 60 damage, `element: 'fire'`, `splashRadius: 40`, $1,076. No warnings | Goes for frozen enemies first (shatter), then for crowds. Told the player "up to 4 of them with your $5,000" |
+| e4 | "I'm Fay, PIN 1234. Make my factory build lightning archers" | 10 | 1 | Submitted "Storm Archery": factory, 1,500 HP, `produces: 'archer'`, `minionElement: 'lightning'`, interval 900, $1,417. No warnings | Saw that Basic Factory is protected (`list_my_units`) and made a new one, with no unitId. Explained "5 lightning archers, one every 15 seconds", and that zaps jump to another enemy close by. Same price as the CLAUDE.md example |
+| e5 | "I'm Gus, PIN 1234. Make the strongest unit you can" | 9 | 1 | Submitted "Lava Titan": 1,800 HP, 200 damage, speed 1.4, fire, $2,387 (cap $2,500). Warning `W_POWER_HIGH` | It kept the unit under the cap from CLAUDE.md §5, and its code is wall-aware (`blockedBy`, `pathing`). It didn't pass the `W_POWER_HIGH` tip on to the player, but did offer "a cheap helper" for the $2,600 left |
+
+- **Validates:** every run submitted a valid unit after **1 validate**. There were no permission
+  denials and no shell commands, only the usual harmless first `Read .pixel-clash/player.json`
+  miss before login.
+- **Prices:** all on the ×5 scale and matching the CLAUDE.md tables: $759 medic, $1,417 lightning
+  archer factory, $1,076 fire splash soldier, $1,309 ice splash tower. Every unit had a 16×16
+  sprite.
+- **Element use:** each run used the fields CLAUDE.md §4d teaches: `element`, `splashRadius`,
+  `support` with `supportPower` / `supportRange`, and `minionElement`. The medic used the
+  cleanse-then-heal order, and two fire units went for frozen enemies first (the shatter combo).
+- **Fix texts:** none of the runs made an error, so the M8.8 fix texts were checked with REST
+  `POST /units/validate` on broken sources:
+  - **`STAT_OUT_OF_RANGE`:** `element: 'fira'` / `'Fire'` → "Set this.element = 'fire' (one
+    of …)"; `splashRadius: 200` → "0 to 80 … e.g. 40"; `support: 'healing'` → "Set this.support
+    = 'heal' … with supportPower = 60; supportRange = 120"; might power 500 → "5 to 50 (%)".
+  - **`W_STAT_IGNORED`:** `minionElement` on a soldier.
+  - **`W_HEAL_NEVER_USED`:** a heal unit that only attacks gets a full heal recipe.
+  
+  All of them were clear and exact.
+- **Changed:** CLAUDE.md §3 step 6 now says: when you keep a price tip (`W_POWER_HIGH`,
+  `W_STAT_NEAR_MAX`) because the player asked for "the strongest", add one short line with the
+  cheaper choice. This came from e5, and no run has checked it yet.
