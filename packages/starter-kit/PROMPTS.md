@@ -37,6 +37,7 @@ You don't write any code. Just tell your AI helper (Claude or Codex) what you wa
 - "Build a medic soldier called Patch with no damage, heal 96 and reach 120. It follows my tank, puts out fires first and then heals whoever is hurt most. How many can I afford next to two Half Tanks?"
 - "Make a fire tower and an ice soldier that work together." (burning enemies take extra hits, frozen ones too)
 - "Make a fast scout that dodges arrows." (shots at fast-moving units can miss)
+- "Their tanks protect fragile archers at the back. Make fast assassins that run round the side and hunt their shooters and casters first, and keep my tank in front."
 - "My enemy clumps up with lots of small units. Give me a mortar tower with splash 40 that shoots the enemy with the most other enemies near it, and a War Drummer with a might aura that stays next to my soldiers."
 
 ## Change how it looks

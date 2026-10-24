@@ -461,6 +461,7 @@ export const STRATEGY_TIPS = [
   ELEMENT_TIP_SLOT,
   SYNERGY_TIP_SLOT,
   ACCURACY_TIP_SLOT,
+  "Tanks in front and fragile shooters behind? Focus their casters first (healers, ice, splash), and send fast units round the side to hunt their fragile shooters: enemies lists every enemy on the map, so pick the weakest shooter (e.range >= 100, low e.maxHp) and run past the tanks.",
   'Splash: this.splashRadius = 40 makes everyone within 40 px of the target take half, with your fire or ice (x1.6 price; x1.8 at 80). If the enemy has splash (enemy.splashRadius > 0), spread out. Walls never burn, freeze, get zapped or take splash.',
   "Support (one per unit): 'heal' is an action, return { action: 'heal', targetId: ally.id } on a hurt, burning or frozen ally within supportRange (it uses your attack cooldown); 'haste', 'might' and 'shield' are auras: keep allies inside supportRange and there is nothing to code. Two of the same aura don't add up; different ones do.",
   HEAL_TIP_SLOT,
