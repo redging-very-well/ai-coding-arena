@@ -114,6 +114,7 @@ import { Pathfinder } from './pathing.js';
 import { aliveInFrame, canFight, factoryLeftIn, isFighter, livingValueAt, livingValueOf } from './value.js';
 import { applyHeals, computeAuras, freshHealRoom, resetHealRoom, type QueuedHeal } from './support.js';
 import { WallGrid } from './walls.js';
+import { BuildingGrid, isRoutingBuilding } from './buildings.js';
 import { deriveSeed, mulberry32, type Rng } from './prng.js';
 import { moveProjectiles, resolveHits, type PendingHit } from './projectiles.js';
 import { rankResult } from './ranking.js';
@@ -300,11 +301,15 @@ export class BattleEngine {
   private readonly rng: Rng;
   /** M8.8 (§9.4 Determinism): the lightning stream, drawn once per lightning main hit (the separation rng is untouched). */
   private readonly elementRng: Rng;
+  /** Redesign (§9.4 Accuracy): drawn once per ranged shot at a moving target (other streams untouched). */
+  private readonly accuracyRng: Rng;
   private readonly onFrame: ((frame: FrameDTO) => void) | undefined;
   private readonly kicked: ReadonlySet<string>;
   private readonly yieldEvery: number;
   /** Living walls by arena cell (§9.3). */
   private readonly walls: WallGrid;
+  /** Living towers and factories by arena cell (redesign: solid for routing, §9.3). */
+  private readonly buildings: BuildingGrid;
   /** Routing round walls: flow fields and plans (§9.3, M8.7). */
   private readonly paths: Pathfinder;
   /** What a factory pays per minion; a minion's value (§6). */
@@ -343,12 +348,15 @@ export class BattleEngine {
     this.teamMode = withTeam > 0;
     this.rng = mulberry32(deriveSeed(opts.seed, 0x51));
     this.elementRng = mulberry32(deriveSeed(opts.seed, 0xe1e));
+    this.accuracyRng = mulberry32(deriveSeed(opts.seed, 0xacc));
     this.onFrame = opts.onFrame;
     this.kicked = opts.kickedPlayerIds ?? new Set();
     this.yieldEvery = opts.yieldEveryTicks ?? 30;
     this.frames = this.recorder.frames;
     this.walls = new WallGrid(this.arena);
+    this.buildings = new BuildingGrid(this.arena);
     this.paths = new Pathfinder(this.walls, this.arena, this.center, {
+      buildings: this.buildings,
       replanTicks: this.config.sim.replanTicks,
       slideMemoryTicks: this.config.sim.slideMemoryTicks,
     });
@@ -386,6 +394,7 @@ export class BattleEngine {
     for (const u of this.units) {
       this.byId.set(u.id, u);
       if (u.type === 'wall') this.walls.add(u);
+      else if (isRoutingBuilding(u) && this.config.sim.routeRoundBuildings) this.buildings.add(u);
     }
   }
 
@@ -720,14 +729,19 @@ export class BattleEngine {
     // 4) Moves (soldiers and minions; other types were turned into idle in
     //    step 3), routed round walls and sliding along them (§9.3 Routing
     //    round walls, Wall steering).
+    // Redesign (accuracy): how far each body moves this tick (0 unless it moves below).
+    for (const u of living) u.moved = 0;
     for (const { unit, action } of pending) {
       if (action.kind !== 'move') continue;
       const sx0 = screenX(unit);
+      const x0 = unit.x;
+      const y0 = unit.y;
       // M8.8: the step is speed × tempo; the router's waypoint and blocked checks use it too.
       const res = this.paths.move(unit, action.destination, unit.stats.speed * tempoOf(unit, cfg), tick);
       // Sticky until the next frame is recorded (cleared in FrameRecorder.record).
       if (res.moved) unit.movedSinceFrame = true;
       if (res.blocked) unit.blockedSinceFrame = true;
+      unit.moved = Math.hypot(unit.x - x0, unit.y - y0);
       const sx1 = screenX(unit);
       if (sx1 < sx0) unit.facingLeft = true;
       else if (sx1 > sx0) unit.facingLeft = false;
@@ -780,6 +794,14 @@ export class BattleEngine {
       if (melee) {
         hits.push({ attackerId: unit.id, target, damage, element, splash, might, mightSrc });
       } else {
+        // Redesign (§9.4 Accuracy): a shot at a moving body may miss; it then
+        // flies to where the body is now and lands there (splash only).
+        const chance = missChance(target.moved ?? 0, cfg);
+        const miss = chance > 0 && this.accuracyRng() < chance;
+        if (miss) {
+          unit.misses = (unit.misses ?? 0) + 1;
+          target.dodges = (target.dodges ?? 0) + 1;
+        }
         this.projectiles.push({
           id: this.nextProjectileId++,
           x: unit.x,
@@ -790,6 +812,7 @@ export class BattleEngine {
           ...(element !== 'normal' ? { element } : {}),
           ...(splash > 0 ? { splash } : {}),
           ...(might > 0 ? { might, mightSrc } : {}),
+          ...(miss ? { miss: { x: target.x, y: target.y } } : {}),
         });
       }
     }
@@ -802,6 +825,20 @@ export class BattleEngine {
     const pipeline = new HitPipeline(cfg, tick, this.recorder, this.elementRng, new BodyIndex(living, this.arena));
     resolveHits([...hits, ...moved.arrived], (h) => {
       const p = h.projectile;
+      if (p?.miss) {
+        pipeline.landMiss({
+          attackerId: h.attackerId,
+          attacker: this.byId.get(h.attackerId),
+          targetId: p.targetId,
+          at: p.miss,
+          damage: h.damage,
+          element: p.element ?? 'normal',
+          splash: p.splash ?? 0,
+          might: p.might ?? 0,
+          mightSrc: p.mightSrc ?? null,
+        });
+        return;
+      }
       pipeline.land({
         attackerId: h.attackerId,
         attacker: this.byId.get(h.attackerId),
@@ -828,7 +865,8 @@ export class BattleEngine {
       }
     }
     // Shots at units that just died vanish.
-    this.projectiles = this.projectiles.filter((p) => this.byId.get(p.targetId)?.alive);
+    // (A missed shot flies on to the ground it was aimed at.)
+    this.projectiles = this.projectiles.filter((p) => p.miss || this.byId.get(p.targetId)?.alive);
 
     // 9b) Factory production (new minions act from the next tick).
     this.produce(tick + 1, factoryTempo);
@@ -841,6 +879,7 @@ export class BattleEngine {
     u.hp = 0;
     u.diedAtTick = t;
     if (u.type === 'wall') this.walls.remove(u);
+    else if (isRoutingBuilding(u)) this.buildings.remove(u);
     const f = u.minion?.factory.factory;
     if (f) f.minionsLost += 1;
     // Minions waiting inside a factory die with it (M8.6, §5.3).
@@ -1254,7 +1293,8 @@ export class BattleEngine {
     if (crumbled) {
       crumbled.sort(compareIds);
       this.recorder.event({ type: 'crumble', ids: crumbled });
-      this.projectiles = this.projectiles.filter((p) => this.byId.get(p.targetId)?.alive);
+      // (A missed shot flies on to the ground it was aimed at.)
+    this.projectiles = this.projectiles.filter((p) => p.miss || this.byId.get(p.targetId)?.alive);
     }
     return sidesWithFighters.size <= 1;
   }
@@ -1363,6 +1403,9 @@ export class BattleEngine {
       if (u.combos) r.combos = u.combos;
       if (u.assist) r.assist = u.assist;
       if (u.damageSplit) r.damageSplit = { ...u.damageSplit };
+      // Redesign (accuracy): shots that missed and shots it dodged.
+      if (u.misses) r.misses = u.misses;
+      if (u.dodges) r.dodges = u.dodges;
       return r;
     });
     const result: BattleResult = { endTick: this.time, endReason, players, units, ranking: [] };
@@ -1626,6 +1669,16 @@ function roundSplit(s: DamageSplitDTO): DamageSplitDTO {
   return { hit: Math.round(s.hit), splash: Math.round(s.splash), burn: Math.round(s.burn), zap: Math.round(s.zap), shatter: Math.round(s.shatter) };
 }
 
+/**
+ * Redesign (§9.4 Accuracy): the chance a ranged shot misses a body that moved
+ * `moved` px this tick: missMaxPct% × min(1, moved / speedRef).
+ */
+export function missChance(moved: number, config: Pick<GameConfig, 'accuracy'>): number {
+  const a = config.accuracy;
+  if (!(moved > 0) || a.missMaxPct <= 0) return 0;
+  return (a.missMaxPct / 100) * Math.min(1, moved / a.speedRef);
+}
+
 // ---------------------------------------------------------------------------
 // Views and runner safety
 // ---------------------------------------------------------------------------
@@ -1649,6 +1702,9 @@ function toOtherView(u: SimUnit, tick: number, config: GameConfig): OtherView {
     splashRadius: splashOf(u.stats),
     support: supportOf(u.stats),
     status: statusOf(u, tick, config),
+    // Redesign (accuracy): how far it moved last tick.
+    moving: (u.moved ?? 0) > 0,
+    currentSpeed: Math.round((u.moved ?? 0) * 100) / 100,
   };
 }
 

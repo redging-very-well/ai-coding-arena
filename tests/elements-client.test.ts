@@ -23,7 +23,9 @@ import {
   BOLT_STEPS,
   EffectLayer,
   FROZEN_TEMPO,
+  LEGEND_COLOR,
   LEGEND_MS,
+  LEGEND_TEXT,
   LegendTracker,
   MAX_ARCS,
   MAX_BEAMS,
@@ -58,8 +60,8 @@ import { breakdownNotes, breakdownRows, budgetText, combatChips, effectReportLin
 const pricing = pricingOf(DEFAULT_CONFIG);
 const price = (s: CostStats) => computeCost(s, DEFAULT_CONFIG.cost, pricing);
 
-const SOLDIER: CostStats = { type: 'soldier', maxHealth: 600, damage: 50, range: 40, speed: 1.5, attackCooldown: 60, size: 10 };
-const SUPPORT_BODY: CostStats = { type: 'soldier', maxHealth: 500, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, size: 10 };
+const SOLDIER: CostStats = { type: 'soldier', maxHealth: 1400, damage: 56, range: 40, speed: 1.5, attackCooldown: 60, size: 10 };
+const SUPPORT_BODY: CostStats = { type: 'soldier', maxHealth: 800, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, size: 10 };
 
 const snap = (extra: Partial<StatsSnapshot> = {}): StatsSnapshot => ({
   name: 'U',
@@ -280,6 +282,16 @@ describe('the first-battle legend', () => {
     expect(l.lines(9001)).toEqual(['shatter']);
     l.reset();
     expect(l.note('fire', 20000)).toBe(true);
+    // The redesign's synergies and misses get a line each too.
+    for (const k of ['kindle', 'brittle', 'miss'] as const) {
+      expect(LEGEND_TEXT[k].length, k).toBeGreaterThan(0);
+      expect(LEGEND_COLOR[k], k).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    }
+    expect(LEGEND_TEXT.kindle).toContain('KINDLE');
+    expect(LEGEND_TEXT.brittle).toContain('BRITTLE');
+    expect(LEGEND_TEXT.miss).toContain('MISS');
+    expect(l.note('miss', 30000)).toBe(true);
+    expect(l.lines(30001)).toEqual(['miss']);
   });
 
   it('draws the corner box only while lines are due', () => {
@@ -372,40 +384,45 @@ describe('/play cards and the price breakdown (M8.8)', () => {
 
   it('prices the spec reference units and lists their new rows', () => {
     const fire = price({ ...SOLDIER, element: 'fire' });
-    expect(fire.cost).toBe(635);
+    // Plan §6 reference units ($10,000 scale): Fire Soldier, Mortar Tower, Field Medic, War Drummer.
+    expect(fire.cost).toBe(1049);
     const fireRows = breakdownRows(fire.breakdown);
     expect(fireRows.map((r) => r.label)).toContain('🔥 Fire ×');
-    expect(fireRows.find((r) => r.label === '🔥 Fire ×')!.value).toBe('×1.2');
-    expect(fireRows.at(-1)!.value).toBe('$635');
+    expect(fireRows.find((r) => r.label === '🔥 Fire ×')!.value).toBe('×1.3');
+    expect(fireRows.at(-1)!.value).toBe('$1,049');
+    const ice = price({ ...SOLDIER, element: 'ice' });
+    expect(ice.cost).toBe(1412);
+    expect(breakdownRows(ice.breakdown).find((r) => r.label.endsWith('Ice ×'))!.value).toBe('×1.75');
 
-    const mortar = price({ type: 'tower', maxHealth: 625, damage: 100, range: 140, speed: 0, attackCooldown: 60, size: 14, splashRadius: 40 });
-    expect(mortar.cost).toBe(1179);
-    expect(breakdownRows(mortar.breakdown).find((r) => r.label === 'Splash ×')!.value).toBe('×1.53');
-    expect(breakdownRows(mortar.breakdown).at(-1)!.value).toBe('$1,179');
+    const mortar = price({ type: 'tower', maxHealth: 1000, damage: 80, range: 140, speed: 0, attackCooldown: 60, size: 14, splashRadius: 40 });
+    expect(mortar.cost).toBe(1374);
+    expect(breakdownRows(mortar.breakdown).find((r) => r.label === 'Splash ×')!.value).toBe('×1.6');
+    expect(breakdownRows(mortar.breakdown).at(-1)!.value).toBe('$1,374');
 
-    const medic = price({ ...SUPPORT_BODY, support: { kind: 'heal', power: 60, range: 120 } });
-    expect(medic.cost).toBe(759);
+    const medic = price({ ...SUPPORT_BODY, support: { kind: 'heal', power: 96, range: 120 } });
+    expect(medic.cost).toBe(892);
     const medicRows = breakdownRows(medic.breakdown);
     expect(medicRows.findIndex((r) => r.label === '💚 Heal')).toBeLessThan(medicRows.findIndex((r) => r.label === 'Sum'));
 
     const drummer = price({ ...SUPPORT_BODY, support: { kind: 'might', power: 30, range: 100 } });
-    expect(drummer.cost).toBe(603);
+    expect(drummer.cost).toBe(869);
     const drumRows = breakdownRows(drummer.breakdown);
     expect(drumRows.findIndex((r) => r.label === '💪 Aura +')).toBe(drumRows.length - 2);
     expect(breakdownNotes(drummer.breakdown)).toContain(drummer.breakdown.aura!.text);
   });
 
   it('the editor panel lists the multipliers and the curve follows curveK', () => {
-    const b = price({ ...SOLDIER, maxHealth: 1750, damage: 265, element: 'fire', splashRadius: 40 }).breakdown;
-    const p = costPanel(b, 2500);
+    const b = price({ ...SOLDIER, maxHealth: 2800, damage: 212, element: 'fire', splashRadius: 40 }).breakdown;
+    const p = costPanel(b, 3000);
     expect(p.extras.map((x) => x.label)).toEqual(['Tough + strong', 'Splash 40', 'Element fire']);
-    expect(p.extras[0]!.price).toBe('×1.37');
+    // Power factor 2: 1 + 2 × (2800/4000) × (212/240).
+    expect(p.extras[0]!.price).toBe('×2.24');
     expect(p.maxMultiple).toBe(2);
-    const healer = costPanel(price({ ...SUPPORT_BODY, support: { kind: 'heal', power: 60, range: 120 } }).breakdown, 2500);
+    const healer = costPanel(price({ ...SUPPORT_BODY, support: { kind: 'heal', power: 96, range: 120 } }).breakdown, 3000);
     expect(healer.rows.map((r) => r.label)).toContain('Heal');
-    const drummer = costPanel(price({ ...SUPPORT_BODY, support: { kind: 'might', power: 30, range: 100 } }).breakdown, 2500);
+    const drummer = costPanel(price({ ...SUPPORT_BODY, support: { kind: 'might', power: 30, range: 100 } }).breakdown, 3000);
     expect(drummer.extras.at(-1)!.price).toMatch(/^\+\$\d+(\.\d+)?$/);
-    expect(breakdownNotes(b)[0]).toMatch(/^Power ×1\.37/);
+    expect(breakdownNotes(b)[0]).toMatch(/^Power ×2\.24/);
   });
 
   it('formats money and stats with thousands separators', () => {

@@ -90,7 +90,7 @@ function selfView(id: string, unitId: string, x = 100, y = 100): SelfView {
 function otherView(id: string, ownerId: string, x: number, y: number): OtherView {
   return {
     id, ownerId, teamId: ownerId === 'p0' ? 0 : 1, type: 'soldier', name: 'x', x, y, radius: 10, hp: 120, maxHp: 120, range: 40,
-    element: 'normal', splashRadius: 0, support: null, status: NO_STATUS,
+    element: 'normal', splashRadius: 0, support: null, status: NO_STATUS, moving: false, currentSpeed: 0,
   };
 }
 const NO_STATUS = { burning: 0, burnLeft: 0, frozen: 0, haste: 0, might: 0, shield: 0, healRoom: 0 };

@@ -276,6 +276,12 @@ export interface SimUnit {
   combos?: number;
   assist?: number;
   damageSplit?: DamageSplit;
+  // Redesign (accuracy, §9.4): px moved in step 4 of the last tick (0 = standing), and the report counters.
+  moved?: number;
+  /** Ranged shots of this unit that missed a moving target. */
+  misses?: number;
+  /** Ranged shots at this unit that missed. */
+  dodges?: number;
 }
 
 /** A homing projectile in flight (§9 Attacks). */
@@ -293,6 +299,8 @@ export interface Projectile {
   /** M8.8: the might % baked into `damage`, and the aura that gave it (assist). */
   might?: number;
   mightSrc?: SimUnit | null;
+  /** Redesign (accuracy): a missed shot flies to where the target was at fire time and lands there (splash only). */
+  miss?: { x: number; y: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -391,6 +399,9 @@ export interface UnitReport {
   combos?: number;
   assist?: number;
   damageSplit?: DamageSplit;
+  /** Redesign (accuracy): ranged shots that missed, and shots at it that missed. */
+  misses?: number;
+  dodges?: number;
 }
 
 export type BattleEndReason = 'elimination' | 'timeout' | 'stopped';

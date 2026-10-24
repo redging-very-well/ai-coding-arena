@@ -161,8 +161,8 @@ describe('battles', () => {
   });
 
   it('timeout: survivors are ranked by the full cost of their living units', async () => {
-    const t = design('t', TOWER); // $1,167
-    const s = design('s', SOLDIER); // $529
+    const t = design('t', TOWER); // $1,151
+    const s = design('s', SOLDIER); // $533
     const { result } = await battle(
       [
         { playerId: 'a', seat: 0, zone: 'TL', units: [s], placements: [at(0, 0, 's'), at(1, 0, 's'), at(2, 0, 's')], brains: { s: idleBrain } },
@@ -174,9 +174,9 @@ describe('battles', () => {
     expect(result.endReason).toBe('timeout');
     expect(result.endTick).toBe(120);
     expect(result.ranking.map((r) => [r.playerId, r.place, r.pointsGained, r.livingCost])).toEqual([
-      ['b', 1, 2, 2334], // 3 players: place points 2/1/0
-      ['a', 2, 1, 1587],
-      ['c', 3, 0, 1167],
+      ['b', 1, 2, 2302], // 3 players: place points 2/1/0
+      ['a', 2, 1, 1599],
+      ['c', 3, 0, 1151],
     ]);
   });
 
@@ -468,13 +468,13 @@ describe('zones, auto-place and skip', () => {
     // At the end the reaper has won.
     expect(result.endReason).toBe('elimination');
     expect(result.ranking[0]!.playerId).toBe('b');
-    // Early on, a still has $1,587 on the field vs b's $1,250: a leads.
+    // Early on, a still has $1,599 on the field vs b's $1,250: a leads.
     const early = rankAtPlaybackTick(result.frames, 11, result);
-    expect(early.map((r) => [r.playerId, r.place, r.livingCost])).toEqual([['a', 1, 1587], ['b', 2, 1250]]);
-    // After the first kill a is down to $1,058: b leads.
+    expect(early.map((r) => [r.playerId, r.place, r.livingCost])).toEqual([['a', 1, 1599], ['b', 2, 1250]]);
+    // After the first kill a is down to $1,066: b leads.
     const firstDeath = result.units.filter((u) => u.playerId === 'a').map((u) => u.diedAtTick!).sort((x, y) => x - y)[0]!;
     const mid = rankFromFrame(frameAt(result.frames, firstDeath + 2)!, result);
-    expect(mid.map((r) => [r.playerId, r.livingCost])).toEqual([['b', 1250], ['a', 1058]]);
+    expect(mid.map((r) => [r.playerId, r.livingCost])).toEqual([['b', 1250], ['a', 1066]]);
   });
 
   it('stop() ends the sim early on a frame of the final state', async () => {
@@ -949,8 +949,8 @@ describe('scoring metrics (§9 Damage metric, Value destroyed, Skip)', () => {
     const r1 = await run();
     const r2 = await run();
     expect(r1.units.map((u) => [u.instanceId, u.damageDealt, u.kills, u.valueDestroyed])).toEqual([
-      ['0-0-0', 600, 1, 529],
-      ['1-0-0', 600, 1, 529],
+      ['0-0-0', 600, 1, 533],
+      ['1-0-0', 600, 1, 533],
     ]);
     expect(r2.ranking).toEqual(r1.ranking);
   });
@@ -983,21 +983,21 @@ describe('scoring metrics (§9 Damage metric, Value destroyed, Skip)', () => {
     const result = await engine.run();
     expect(result.endReason).toBe('elimination');
     const finalB = playerMetrics(result)[1]!;
-    expect(finalB).toMatchObject({ kills: 3, valueDestroyed: 1587 });
+    expect(finalB).toMatchObject({ kills: 3, valueDestroyed: 1599 });
 
     // At the start nothing has happened yet.
     expect(engine.metricsAt(0)).toEqual([
-      { playerId: 'a', damage: 0, valueDestroyed: 0, kills: 0, livingValue: 1587 },
+      { playerId: 'a', damage: 0, valueDestroyed: 0, kills: 0, livingValue: 1599 },
       { playerId: 'b', damage: 0, valueDestroyed: 0, kills: 0, livingValue: 1250 },
     ]);
 
-    // Just after the first kill: one kill, $529, and less damage than at the end.
+    // Just after the first kill: one kill, $533, and less damage than at the end.
     const firstDeath = result.units.filter((u) => u.playerId === 'a').map((u) => u.diedAtTick!).sort((x, y) => x - y)[0]!;
     const frame = frameAt(engine.frames, firstDeath + 2)!;
     const mid = engine.metricsAt(frame.t);
-    expect(mid[1]).toMatchObject({ kills: 1, valueDestroyed: 529, livingValue: 1250 });
+    expect(mid[1]).toMatchObject({ kills: 1, valueDestroyed: 533, livingValue: 1250 });
     expect(mid[1]!.damage).toBeLessThan(finalB.damage);
-    expect(mid[0]!.livingValue).toBe(1058);
+    expect(mid[0]!.livingValue).toBe(1066);
     // The same as trimming the result to that tick (what the battle service does on Skip).
     const trimmed = resultAtTick(result, engine.countersAt(frame.t), new Set(frame.units.map((u) => u[0])), frame.t);
     expect(playerMetrics(trimmed)).toEqual(mid);
@@ -1005,12 +1005,12 @@ describe('scoring metrics (§9 Damage metric, Value destroyed, Skip)', () => {
     // Scored at the playback tick: b leads on living value and gets every bonus.
     const ranking = scoreRanking(rankFromFrame(frame, result), mid, DEFAULT_CONFIG.scoring);
     expect(ranking.map((r) => [r.playerId, r.place, r.placePoints, r.damageBonus, r.valueBonus, r.pointsGained, r.valueDestroyed])).toEqual([
-      ['b', 1, 1, 1, 1, 3, 529],
+      ['b', 1, 1, 1, 1, 3, 533],
       ['a', 2, 0, 0, 0, 0, 0],
     ]);
     expect(ranking[0]!.badges).toEqual(['lastStanding', 'biggestHitter', 'giantSlayer', 'ironWall']);
     // The report of the trimmed result carries the score at that tick.
-    expect(buildBattleReport(trimmed, 'b', 1, ranking)).toMatchObject({ kills: 1, valueDestroyed: 529, score: { total: 3 } });
+    expect(buildBattleReport(trimmed, 'b', 1, ranking)).toMatchObject({ kills: 1, valueDestroyed: 533, score: { total: 3 } });
   });
 });
 
@@ -1177,17 +1177,17 @@ describe('teams (§9.2)', () => {
   });
 
   it('timeout: teams are ranked by team living cost (the sum over members)', async () => {
-    const tower = design('t', TOWER); // $1,167
-    const soldier = design('s', SOLDIER); // $529
+    const tower = design('t', TOWER); // $1,151
+    const soldier = design('s', SOLDIER); // $533
     const idle = { t: idleBrain, s: idleBrain };
-    // Team 0: a tower + d soldier = $1,696. Team 1: two towers = $2,334.
+    // Team 0: a tower + d soldier = $1,684. Team 1: two towers = $2,302.
     const { result } = await battle(twoVsTwo({ a: idle, b: idle, c: idle, d: idle }, { a: tower, b: tower, c: tower, d: soldier }), cfg({}, 60));
     expect(result.endReason).toBe('timeout');
     expect(result.teams!.map((x) => [x.teamId, x.place, x.livingCost, x.placePoints])).toEqual([
-      [1, 1, 2334, 3],
-      [0, 2, 1696, 0],
+      [1, 1, 2302, 3],
+      [0, 2, 1684, 0],
     ]);
-    // Individually a ($1,167) out-values d ($529) and b, c ($1,167) but team 0 still comes 2nd.
+    // Individually a ($1,151) out-values d ($533) and b, c ($1,151) but team 0 still comes 2nd.
     expect(result.ranking.map((x) => [x.playerId, x.place])).toEqual([['b', 1], ['c', 1], ['a', 2], ['d', 2]]);
   });
 
@@ -1195,7 +1195,7 @@ describe('teams (§9.2)', () => {
     const tower = design('t', TOWER);
     const big = design('b', stats({ type: 'tower', name: 'Big', maxHealth: 2500 }));
     const idle = { t: idleBrain, b: idleBrain };
-    // d's big tower would put team 0 ahead, but d was kicked: team 0 = a's $1,167 vs team 1's $2,334.
+    // d's big tower would put team 0 ahead, but d was kicked: team 0 = a's $1,151 vs team 1's $2,302.
     const { result } = await battle(twoVsTwo({ a: idle, b: idle, c: idle, d: idle }, { a: tower, b: tower, c: tower, d: big }), cfg({}, 30), 7, new Set(['d']));
     expect(result.ranking.map((x) => [x.playerId, x.place, x.placePoints])).toEqual([['b', 1, 2], ['c', 1, 2], ['a', 2, 0]]);
   });

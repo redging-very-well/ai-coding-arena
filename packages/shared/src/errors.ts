@@ -80,7 +80,6 @@ export const WARNING_CODES = [
   // M8.8 elements, splash and support (§7)
   'W_HEAL_NEVER_USED',
   'W_POWER_HIGH',
-  'W_OLD_SCALE',
 ] as const;
 export type WarningCode = (typeof WARNING_CODES)[number];
 
@@ -350,7 +349,6 @@ const PLAYER_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
   W_BURST_NEVER_FULL: "Heads up: this factory never makes enough minions to fill its burst, so they leave when it runs out.",
   W_HEAL_NEVER_USED: "Heads up: your healer never healed anyone in the practice battles. Ask Claude to make it heal hurt friends!",
   W_POWER_HIGH: 'Tip: a unit that is very tough AND very strong costs extra. One tough unit plus one strong unit is cheaper!',
-  W_OLD_SCALE: 'Heads up: this unit was made for the old game and is about 5 times weaker. Ask Claude to multiply its health and damage by 5!',
 };
 
 /** Player hint for a code, with `{field}` filled in. */

@@ -165,19 +165,19 @@ describe('ice: freeze (§9.4)', () => {
 });
 
 describe('shatter (§5.4 combo)', () => {
-  it('fire on a frozen body: ×1.5 and a thaw, a shatter event and a combo; the burn uses the pre-shatter damage', () => {
+  it('fire on a frozen body: ×1.4 and a thaw, a shatter event and a combo; the burn uses the pre-shatter damage', () => {
     const A = body('0-0-0', soldier({ damage: 100, element: 'fire' }));
     const T = body('1-0-0', dummy(), { frozen: 80 });
     const { p, events } = pipeline([A, T]);
     p.land(hit(A, T));
-    expect(T.hp).toBe(2350);
+    expect(T.hp).toBe(2360); // shatterPct 40: 100 × 1.4
     expect(T.frozen).toBe(0);
     expect(T.burns![0]!.pool).toBe(50);
     expect(A.combos).toBe(1);
-    expect(A.damageSplit).toMatchObject({ shatter: 150, hit: 0 });
+    expect(A.damageSplit).toMatchObject({ shatter: 140, hit: 0 });
     expect(events()).toEqual([
-      { type: 'hit', instanceId: '0-0-0', targetId: '1-0-0', damage: 150, kind: 'shatter', element: 'fire' },
-      { type: 'shatter', id: '1-0-0', amount: 150 },
+      { type: 'hit', instanceId: '0-0-0', targetId: '1-0-0', damage: 140, kind: 'shatter', element: 'fire' },
+      { type: 'shatter', id: '1-0-0', amount: 140 },
     ]);
   });
 
@@ -186,7 +186,7 @@ describe('shatter (§5.4 combo)', () => {
     const T = body('1-0-0', dummy());
     const E = body('1-0-1', dummy(), { x: 440, frozen: 50 });
     pipeline([A, T, E]).p.land(hit(A, T));
-    expect(E.hp).toBe(2500 - 75); // half of 100, ×1.5
+    expect(E.hp).toBe(2500 - 70); // half of 100, ×1.4
     expect(E.frozen).toBe(0);
     expect(A.combos).toBe(1);
   });
@@ -305,7 +305,7 @@ describe('shield and might (§5.5 auras on the pipeline)', () => {
     const T = body('1-0-0', dummy(), { x: 400, aura: shielded, frozen: 10 });
     const E = body('1-0-1', dummy(), { x: 440, aura: { ...noAura(), shield: 40 } });
     pipeline([A, T, E]).p.land(hit(A, T));
-    expect(T.hp).toBe(2500 - 150 * 0.75); // shatter, shielded
+    expect(T.hp).toBe(2500 - 140 * 0.75); // shatter (×1.4), shielded
     expect(E.hp).toBe(2500 - 50 * 0.6); // splash, shielded
     const before = T.hp;
     pulse([A, T], 1, 30);
@@ -319,7 +319,7 @@ describe('shield and might (§5.5 auras on the pipeline)', () => {
     const sd = deepMerge(C, { suddenDeath: { startTick: 0, endTick: 10, startRadius: 1, endRadius: 0 } });
     const out = body('1-0-4', dummy(), { x: 20, y: 20, aura: shielded });
     applySuddenDeath([out], 5, sd, { x: 400, y: 400 });
-    expect(2500 - out.hp).toBeCloseTo((2500 * 0.07) / 60, 9);
+    expect(2500 - out.hp).toBeCloseTo((2500 * C.suddenDeath.damagePctPerSecond) / 100 / 60, 9);
   });
 
   it("might is baked into the shot: burn and splash follow it, and the aura source gets the extra as assist", () => {
@@ -460,7 +460,8 @@ describe('elements in battle: frames, events, credit and determinism', () => {
   it('a battle without elements or support is bit-identical to M8.7 (golden frames hash from the M8.7 engine)', async () => {
     // ×1 stats and minions, explicit prices: recorded with the M8.7 engine (commit f1959f9) and this exact setup.
     const X1 = { grunt: { maxHealth: 40, damage: 5 }, archer: { maxHealth: 24, damage: 5 }, runner: { maxHealth: 28, damage: 4 }, brute: { maxHealth: 100, damage: 8 } };
-    const config = deepMerge(C, { factory: { minions: X1 }, timers: { battleTicks: 3600 }, suddenDeath: { startTick: 2400, endTick: 3600 } });
+    // Redesign: the building router and accuracy are switched off (their own knobs), so the M8.7 frames still come out.
+    const config = deepMerge(C, { factory: { minions: X1 }, timers: { battleTicks: 3600 }, suddenDeath: { startTick: 2400, endTick: 3600, damagePctPerSecond: 7 }, sim: { routeRoundBuildings: false }, accuracy: { missMaxPct: 0 } });
     const S = stats({ type: 'soldier', name: 'S', maxHealth: 120, damage: 10, range: 40, speed: 1.5, attackCooldown: 60, size: 10 });
     const T = stats({ type: 'tower', name: 'T', maxHealth: 150, damage: 15, range: 180, speed: 0, attackCooldown: 45, size: 14 });
     const W = stats({ type: 'wall', name: 'W', maxHealth: 400 });

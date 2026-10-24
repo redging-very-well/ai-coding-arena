@@ -3,9 +3,9 @@ export default class Unit {
   constructor() {
     this.name = 'Maxed';
     this.type = 'soldier';
-    this.maxHealth = 2500;
-    this.damage = 300;
-    this.range = 300;
+    this.maxHealth = 4000;
+    this.damage = 240;
+    this.range = 160;
     this.speed = 5;
     this.attackCooldown = 10;
     this.size = 20;

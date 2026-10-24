@@ -477,7 +477,7 @@ function PreviewTable({ preview }: { preview: CostPreview | null }) {
         </tbody>
       </table>
       <p class={cx('qs-army', army.overBudget && 'warn-text')}>
-        {army.soldiers} soldiers + {army.towers} towers = <b>{formatMoney(army.total)}</b> of {formatMoney(budget)}
+        {army.soldiers} soldiers + {army.towers} towers (with the copy ramp) = <b>{formatMoney(army.total)}</b> of {formatMoney(budget)}
         {army.overBudget ? ' (over budget!)' : ''}
       </p>
     </div>

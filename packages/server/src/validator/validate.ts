@@ -519,7 +519,7 @@ function statWarnings(stats: StatsSnapshot, config: GameConfig): ValidationWarni
         value: burst,
         allowed: { max: made },
         message: `This factory makes only ${made} minion${made === 1 ? '' : 's'} per battle, so a burst of ${burst} never fills up: they leave when it runs out.`,
-        fix: `Lower this.burst to ${Math.max(1, made)}, or make minions faster (a smaller this.productionInterval, e.g. 900 makes 5).`,
+        fix: `Lower this.burst to ${Math.max(1, made)}, or make minions faster (a smaller this.productionInterval, e.g. 900 makes 7).`,
       });
     }
   }

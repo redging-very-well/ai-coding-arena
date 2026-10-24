@@ -97,7 +97,10 @@ describe('/screen PLAN ready', () => {
 
 describe('/admin quick toggle', () => {
   it('has the auto-advance checkbox under Timers, off by default', () => {
-    expect(QUICK_TOGGLES.map((t) => t.path)).toEqual(['timers.autoAdvanceWhenAllReady']);
+    expect(QUICK_TOGGLES.map((t) => t.path)).toEqual(['timers.autoAdvanceWhenAllReady', 'sim.routeRoundBuildings']);
+    // The redesign's building-routing toggle sits in its own group and is on by default.
+    expect(QUICK_GROUPS.find((g) => g.id === 'sim')?.toggles?.[0]?.path).toBe('sim.routeRoundBuildings');
+    expect(toggleValue(DEFAULT_CONFIG, 'sim.routeRoundBuildings')).toBe(true);
     expect(QUICK_GROUPS.find((g) => g.id === 'timers')?.toggles?.[0]?.label).toBe('Start placement automatically when everyone is ready');
     expect(toggleValue(DEFAULT_CONFIG, 'timers.autoAdvanceWhenAllReady')).toBe(false);
     const on = setPath(DEFAULT_CONFIG, 'timers.autoAdvanceWhenAllReady', true);

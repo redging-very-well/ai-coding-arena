@@ -142,7 +142,7 @@ describe('sprite() range (lezer tree)', () => {
 
   it('finds stat values in the constructor and renames copies', () => {
     const d = findStatValue(soldier, 'damage')!;
-    expect(soldier.slice(d.from, d.to)).toBe('50');
+    expect(soldier.slice(d.from, d.to)).toBe('56');
     expect(unitNameOf(soldier)).toBe('Basic Soldier');
     const r = withUnitName(soldier, "Zoe's Knight")!;
     expect(unitNameOf(r.source)).toBe("Zoe's Knight");
@@ -265,9 +265,9 @@ describe('diagnostics from validator results', () => {
 
 describe('cost panel', () => {
   it('shows the near-max surcharge and the over-cap state', () => {
-    const stats = { name: 'Big', type: 'soldier' as const, maxHealth: 1000, damage: 300, range: 40, speed: 1.5, attackCooldown: 60, color: '#112233' };
+    const stats = { name: 'Big', type: 'soldier' as const, maxHealth: 1600, damage: 240, range: 40, speed: 1.5, attackCooldown: 60, color: '#112233' };
     const priced = computeCost(stats, DEFAULT_CONFIG.cost);
-    const p = costPanel(priced.breakdown, 2500);
+    const p = costPanel(priced.breakdown, 3000);
     const dmg = p.rows.find((r) => r.label === 'Damage')!;
     expect(dmg.nearMax).toBe(true);
     expect(dmg.price).toMatch(/^\$450 \+ \$450 near max$/);

@@ -8,7 +8,7 @@
 // The zod ConfigSchema is checked too (validateDraft), so its bounds and
 // cross-field rules (e.g. sudden death start < end) show inline as well.
 
-import { ConfigSchema, checkStats, computeCost, isNonCombatBuilding, pricingOf, type CostStats, type GameConfig } from '@pixel-clash/shared';
+import { ConfigSchema, checkStats, computeCost, copiesCost, isNonCombatBuilding, pricingOf, type CostStats, type GameConfig } from '@pixel-clash/shared';
 
 export interface QuickField {
   /** Config path, e.g. "caps.budget" or "scoring.placePoints.0". */
@@ -212,8 +212,25 @@ export const QUICK_GROUPS: QuickGroup[] = [
       { path: 'elements.lightning.chancePct', label: 'Lightning zap chance', help: 'Share of lightning hits that also zap the nearest other enemy for the same damage.', unit: '%', min: 0, max: 100, step: 5 },
       { path: 'elements.lightning.hopRange', label: 'Zap reach', help: 'How far a zap jumps, edge to edge.', unit: 'px', min: 0, step: 10 },
       { path: 'elements.shatterPct', label: 'Shatter bonus', help: 'A fire hit on a frozen body does this % extra and thaws it.', unit: '%', min: 0, max: 200, step: 5 },
+      { path: 'elements.kindlePct', label: 'Kindle bonus', help: 'A burning body takes this % extra from every hit that isn’t fire (mix fire with other units).', unit: '%', min: 0, max: 200, step: 5 },
+      { path: 'elements.brittlePct', label: 'Brittle bonus', help: 'A frozen body takes this % extra from every hit that isn’t ice or fire (fire shatters instead).', unit: '%', min: 0, max: 200, step: 5 },
+      { path: 'elements.lightning.burningExtraHops', label: 'Overload hops', help: 'Extra hops a lightning zap makes when its target is burning.', min: 0, max: 5, step: 1, integer: true },
       { path: 'elements.splashPct', label: 'Splash damage', help: 'Enemies near the target of a splash unit take this % of the hit.', unit: '%', min: 0, max: 100, step: 5 },
+      { path: 'accuracy.missMaxPct', label: 'Ranged miss chance (max)', help: 'A ranged shot at a body moving at full speed misses this often (less for slower bodies; never for standing ones or melee).', unit: '%', min: 0, max: 100, step: 5 },
+      { path: 'accuracy.speedRef', label: 'Full-speed for misses', help: 'A body moving this many px per tick (or faster) is missed the most.', unit: 'px/tick', min: 0.1, step: 0.5 },
       { path: 'support.healRoomPctPerSecond', label: 'Heal limit (% max HP / s)', help: 'All healers together can restore at most this share of a body’s max HP per second. Heals stop when sudden death starts.', unit: '%/s', min: 0, max: 100, step: 0.5 },
+    ],
+  },
+  {
+    id: 'sim',
+    title: 'Movement',
+    fields: [],
+    toggles: [
+      {
+        path: 'sim.routeRoundBuildings',
+        label: 'Units walk round towers and factories',
+        help: 'Routing treats towers and factories as solid (units squeeze through a gap only when they fit). Off: only walls are routed round, buildings are just pushed past.',
+      },
     ],
   },
   {
@@ -533,17 +550,17 @@ export interface PreviewUnit {
   template: boolean;
 }
 
-// M8.8 (×5 economy): the starter templates and the plan's Huge Tank (§6 M8.8 reference units).
-export const BASIC_SOLDIER: CostStats = { type: 'soldier', maxHealth: 600, damage: 50, range: 40, speed: 1.5, attackCooldown: 60, size: 10 };
-export const BASIC_TOWER: CostStats = { type: 'tower', maxHealth: 625, damage: 75, range: 140, speed: 0, attackCooldown: 45, size: 14 };
-export const BIG_TANK: CostStats = { type: 'soldier', maxHealth: 2500, damage: 100, range: 40, speed: 0.8, attackCooldown: 60, size: 20 };
-/** M8.5 templates (§11) and the plan's Swarm Factory (§6). */
-export const BASIC_WALL: CostStats = { type: 'wall', maxHealth: 2000, damage: 0, range: 0, speed: 0, attackCooldown: 60 };
-export const BASIC_FACTORY: CostStats = { type: 'factory', maxHealth: 1500, damage: 0, range: 0, speed: 0, attackCooldown: 60, productionInterval: 900 };
-export const SWARM_FACTORY: CostStats = { ...BASIC_FACTORY, productionInterval: 600 };
-/** M8.8 reference units (§6): the Mortar Tower and the damage-0 support body (Field Medic, War Drummer). */
-export const MORTAR_TOWER: CostStats = { type: 'tower', maxHealth: 625, damage: 100, range: 140, speed: 0, attackCooldown: 60, size: 14, splashRadius: 40 };
-export const SUPPORT_BODY: CostStats = { type: 'soldier', maxHealth: 500, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, size: 10 };
+// The $10,000 redesign: the starter templates and the plan's Huge Tank (§6 reference units).
+export const BASIC_SOLDIER: CostStats = { type: 'soldier', maxHealth: 1400, damage: 56, range: 40, speed: 1.5, attackCooldown: 60, size: 10 };
+export const BASIC_TOWER: CostStats = { type: 'tower', maxHealth: 1200, damage: 72, range: 140, speed: 0, attackCooldown: 45, size: 14 };
+export const BIG_TANK: CostStats = { type: 'soldier', maxHealth: 3600, damage: 80, range: 40, speed: 0.8, attackCooldown: 60, size: 20 };
+/** The wall and factory templates (§11) and the plan's Swarm Factory (§6). */
+export const BASIC_WALL: CostStats = { type: 'wall', maxHealth: 3200, damage: 0, range: 0, speed: 0, attackCooldown: 60 };
+export const BASIC_FACTORY: CostStats = { type: 'factory', maxHealth: 2400, damage: 0, range: 0, speed: 0, attackCooldown: 60, productionInterval: 600 };
+export const SWARM_FACTORY: CostStats = { ...BASIC_FACTORY, productionInterval: 300 };
+/** §6 reference units: the Mortar Tower and the damage-0 support body (Field Medic, War Drummer). */
+export const MORTAR_TOWER: CostStats = { type: 'tower', maxHealth: 1000, damage: 80, range: 140, speed: 0, attackCooldown: 60, size: 14, splashRadius: 40 };
+export const SUPPORT_BODY: CostStats = { type: 'soldier', maxHealth: 800, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, size: 10 };
 
 /** The preview units; the all-max one uses the draft's stat bounds. */
 export function previewUnits(cfg: GameConfig): PreviewUnit[] {
@@ -552,7 +569,7 @@ export function previewUnits(cfg: GameConfig): PreviewUnit[] {
     type: 'soldier',
     maxHealth: b.maxHealth.max,
     damage: b.damage.max,
-    range: b.range.max,
+    range: b.soldierRange.max,
     speed: b.soldierSpeed.max,
     attackCooldown: b.attackCooldown.min,
     size: b.size.max,
@@ -560,21 +577,21 @@ export function previewUnits(cfg: GameConfig): PreviewUnit[] {
   return [
     { key: 'basicSoldier', label: 'Basic Soldier', stats: BASIC_SOLDIER, template: true },
     { key: 'basicTower', label: 'Basic Tower', stats: BASIC_TOWER, template: true },
-    { key: 'bigTank', label: 'Huge Tank (2,500 HP soldier)', stats: BIG_TANK, template: false },
+    { key: 'bigTank', label: 'Huge Tank (3,600 HP soldier)', stats: BIG_TANK, template: false },
     { key: 'allMax', label: 'Everything maxed', stats: allMax, template: false },
-    { key: 'basicWall', label: 'Basic Wall (2,000 HP)', stats: BASIC_WALL, template: true },
-    { key: 'basicFactory', label: 'Basic Factory (5 minions)', stats: BASIC_FACTORY, template: true },
-    { key: 'swarmFactory', label: 'Swarm Factory (8 minions)', stats: SWARM_FACTORY, template: false },
+    { key: 'basicWall', label: 'Basic Wall (3,200 HP)', stats: BASIC_WALL, template: true },
+    { key: 'basicFactory', label: 'Basic Factory (11 minions)', stats: BASIC_FACTORY, template: true },
+    { key: 'swarmFactory', label: 'Swarm Factory (12 minions)', stats: SWARM_FACTORY, template: false },
     // M8.6 (§6 Minion kinds): the Basic Factory building each other kind.
-    { key: 'archerFactory', label: 'Archer Factory (5 archers)', stats: { ...BASIC_FACTORY, produces: 'archer' }, template: false },
-    { key: 'runnerFactory', label: 'Runner Factory (5 runners)', stats: { ...BASIC_FACTORY, produces: 'runner' }, template: false },
-    { key: 'bruteFactory', label: 'Brute Factory (5 brutes)', stats: { ...BASIC_FACTORY, produces: 'brute' }, template: false },
+    { key: 'archerFactory', label: 'Archer Factory (11 archers)', stats: { ...BASIC_FACTORY, produces: 'archer' }, template: false },
+    { key: 'runnerFactory', label: 'Runner Factory (11 runners)', stats: { ...BASIC_FACTORY, produces: 'runner' }, template: false },
+    { key: 'bruteFactory', label: 'Brute Factory (11 brutes)', stats: { ...BASIC_FACTORY, produces: 'brute' }, template: false },
     // M8.8 (§6 M8.8 reference units): an element, splash and the support kinds.
     { key: 'fireSoldier', label: 'Fire Soldier', stats: { ...BASIC_SOLDIER, element: 'fire' }, template: false },
     { key: 'mortarTower', label: 'Mortar Tower (splash 40)', stats: MORTAR_TOWER, template: false },
-    { key: 'fieldMedic', label: 'Field Medic (heal 60)', stats: { ...SUPPORT_BODY, support: { kind: 'heal', power: 60, range: 120 } }, template: false },
+    { key: 'fieldMedic', label: 'Field Medic (heal 96)', stats: { ...SUPPORT_BODY, support: { kind: 'heal', power: 96, range: 120 } }, template: false },
     { key: 'warDrummer', label: 'War Drummer (might 30%)', stats: { ...SUPPORT_BODY, support: { kind: 'might', power: 30, range: 100 } }, template: false },
-    { key: 'medicFactory', label: 'Medic Tent (5 medics)', stats: { ...BASIC_FACTORY, produces: 'medic' }, template: false },
+    { key: 'medicFactory', label: 'Medic Tent (11 medics)', stats: { ...BASIC_FACTORY, produces: 'medic' }, template: false },
   ];
 }
 
@@ -590,7 +607,7 @@ export interface CostPreview {
   rows: PreviewRow[];
   cap: number;
   budget: number;
-  /** 4 Basic Soldiers + 3 Basic Towers. */
+  /** 5 Basic Soldiers + 3 Basic Towers, with the copy ramp. */
   army: { soldiers: number; towers: number; total: number; overBudget: boolean };
 }
 
@@ -604,6 +621,7 @@ export function costPreview(cfg: GameConfig): CostPreview {
   });
   const soldier = rows.find((r) => r.key === 'basicSoldier')!.cost;
   const tower = rows.find((r) => r.key === 'basicTower')!.cost;
-  const total = 4 * soldier + 3 * tower;
-  return { rows, cap, budget: cfg.caps.budget, army: { soldiers: 4, towers: 3, total, overBudget: total > cfg.caps.budget } };
+  const ramp = cfg.caps.copyRamp;
+  const total = copiesCost(soldier, 5, 'soldier', ramp) + copiesCost(tower, 3, 'tower', ramp);
+  return { rows, cap, budget: cfg.caps.budget, army: { soldiers: 5, towers: 3, total, overBudget: total > cfg.caps.budget } };
 }

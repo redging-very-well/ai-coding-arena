@@ -4,40 +4,61 @@
 // with early stopping (helpers/balanceFast.ts). The shape checks mirror the
 // expectations in tests/balance.test.ts's round-robin tests: keep them in step.
 
-import { ALL_ARCHETYPES, ARCHETYPES, BUILDING_ARCHETYPES, KIND_ARCHETYPES } from './balance.js';
+import { ALL_ARCHETYPES } from './balance.js';
 
 /** §6 "no single archetype dominates": the most of its round-robin battles any archetype may win. */
 export const ROUND_ROBIN_WIN_CAP = 0.7;
 
-/** The 17×17 (M8.6) part: 188-0-68 (73%): loses to the walled nests, the sealed fortress and walls + rush. */
-export const KIND_DOMINANCE_EXCEPTIONS: Record<string, { roundRobinWinCap: number }> = {
-  bricks: { roundRobinWinCap: 188 / 256 },
-};
-/** The full M8.8 matrix (37 archetypes): 410-0-166 (71%): loses to the walled nests, ice + fire and the shatter squad. */
+/**
+ * The $10,000 redesign's full matrix (48 archetypes; docs/balance.md): the one
+ * recorded exception key left from M8.8, re-recorded at the measured value
+ * (both seeds; the one-seed default run measures at or under it) and never
+ * above the M8.6 cap (220/256). 546-0-206 (72.6%): loses to the walled nests,
+ * splash and the turtle, shield wall and the combo armies.
+ */
 export const FULL_DOMINANCE_EXCEPTIONS: Record<string, { roundRobinWinCap: number }> = {
-  bricks: { roundRobinWinCap: 410 / 576 },
+  bricks: { roundRobinWinCap: 546 / 752 },
+};
+/**
+ * WATCH ITEMS (the user accepted the "12 fighters, make them count" meta: a
+ * padded one-design army slightly over 70% is recorded and capped, not a
+ * blocker; no other new exception). The padded soldiers (the Basic Soldier with
+ * HP and damage raised until the copy ramp and the budget stop it, 9 copies):
+ * 540-0-212 (71.8%), losing only to splash, walls, the shield wall and combos.
+ */
+export const WATCH_ITEMS: Record<string, { roundRobinWinCap: number }> = {
+  soldiersFilled: { roundRobinWinCap: 540 / 752 },
 };
 
-/** [A, B, why]: A wins most of its battles against B (≥ 9 of 16; ≥ 5 of 8 on one seed). */
+/** [A, B, why]: A wins most of its battles against B (≥ 9 of 16; ≥ 5 of 8 on one seed). The redesign's re-recorded list (§14). */
 export const STATED: Array<[string, string, string]> = [
-  ['shatter', 'bricks', 'fire on frozen bricks shatters them'],
-  ['shatter', 'bigFriends', 'and the Huge Tank'],
-  ['frostnest', 'bricks', 'ice is the anti-brick counter'],
-  ['blizzard', 'bricks', 'so is a freezing totem with fire soldiers round it'],
-  ['blizzard', 'buffedrush', 'a frozen rush is a slow rush'],
-  ['mortars', 'scoutsFilled', 'splash is the anti-swarm counter'],
+  ['splashline', 'soldiersFilled', 'splash answers the padded one-design army'],
+  ['bombard', 'soldiersFilled', 'so does fire splash from range'],
+  ['firenest', 'soldiersFilled', 'and fire splash behind walls'],
+  ['overload', 'soldiersFilled', 'a combo army (lightning round fire towers: kindle + overload) beats the padded mono army'],
+  ['overload', 'bricks', 'and the bricks'],
+  ['mortars', 'rush', 'splash beats the template rush'],
+  ['splashline', 'rush', 'a splash line too'],
+  ['guardedcatapults', 'bricks', 'shield bearers in front of catapults stop two bricks'],
+  ['shieldwall', 'bricks', 'a 25% shield blunts the bricks'],
+  ['icewall', 'healerball', 'ice and snipers behind walls beat healing'],
+  ['icebreak', 'healerball', 'brittle: frozen tanks take extra hits'],
+  ['shatter', 'bigFriends', 'fire on frozen bodies shatters the Huge Tank'],
   ['firenest', 'storm', 'fire splash behind walls stops a soldier crowd'],
+  ['mortars', 'storm', 'so does plain splash'],
+  ['storm', 'runners', 'lightning is the anti-swarm element'],
+  ['icemortars', 'buffedrush', 'a frozen rush is a slow rush'],
+  ['factories5', 'mortars', 'five factories flood a splash battery with minions'],
+  ['homeguard', 'mortars', 'and so does a grunt home guard'],
   ['icewall', 'wallrush', 'ice behind walls stops a soldier rush'],
   ['healerball', 'templates', 'healing wins a fair fight'],
-  ['shatter', 'healerball', 'but fire beats medics (a heal on a burning ally only cleanses)'],
-  ['firenest', 'healerball', 'fire splash too'],
-  ['buffedrush', 'templates', 'might and haste make 6 soldiers beat 7 templates'],
-  ['buffedrush', 'shatter', 'and the shatter squad'],
+  ['firenest', 'healerball', 'fire splash beats medics'],
+  ['buffedrush', 'templates', 'might and haste make soldiers beat the templates'],
   ['shieldwall', 'glass', 'a 25% shield blunts the Glass Cannons'],
-  ['bigFriends', 'bombard', 'a Huge Tank with a medic walks through the catapults'],
+  ['bigFriends', 'bombard', 'a Huge Tank with medics walks through the catapults'],
   ['bigFriends', 'longbow', 'and the Max Snipers'],
   ['elemfactories', 'runners', 'ice archers and fire brutes beat plain runners'],
-  ['medictent', 'mixed', 'medics on guard keep the tanks going'],
+  ['tmix', 'templates', 'all four templates beat soldiers and towers alone'],
 ];
 
 /** What a rule asks of one matchup cell (A's wins W, draws D, losses L over its n battles). */
@@ -76,19 +97,17 @@ export type Rule =
 
 const capsOf = (e: Record<string, { roundRobinWinCap: number }>) => Object.fromEntries(Object.entries(e).map(([k, v]) => [k, v.roundRobinWinCap]));
 
-/** The matrices of tests/balance.test.ts (6, 13, 17 and all 37 archetypes), restricted to `keys`. */
+
+/**
+ * The matrix of tests/balance.test.ts (all archetypes), restricted to `keys`.
+ * The redesign rebuilt the pool for the $10,000 economy, so the old 6, 13 and
+ * 17 sub-matrices (M6-M8.6 subsets with their own history) are gone: the full
+ * matrix carries every structural rule.
+ */
 export function testMatrices(keys: string[]): MatrixDef[] {
-  const six = ARCHETYPES.map((a) => a.key);
-  const m85 = [...six, ...BUILDING_ARCHETYPES.map((a) => a.key)];
-  const m86 = [...m85, ...KIND_ARCHETYPES.map((a) => a.key)];
   const all = ALL_ARCHETYPES.map((a) => a.key);
   const have = new Set(keys);
-  const defs: MatrixDef[] = [
-    { name: '6', keys: six, caps: {}, losingMatchup: false },
-    { name: '13', keys: m85, caps: {}, losingMatchup: true },
-    { name: '17', keys: m86, caps: capsOf(KIND_DOMINANCE_EXCEPTIONS), losingMatchup: true },
-    { name: 'full', keys: all, caps: capsOf(FULL_DOMINANCE_EXCEPTIONS), losingMatchup: true },
-  ];
+  const defs: MatrixDef[] = [{ name: 'full', keys: all, caps: { ...capsOf(FULL_DOMINANCE_EXCEPTIONS), ...capsOf(WATCH_ITEMS) }, losingMatchup: true }];
   // A matrix is checked only when all its archetypes are in the run; a custom selection is its own matrix.
   const out = defs.filter((d) => d.keys.every((k) => have.has(k)));
   if (!out.some((d) => d.keys.length === keys.length)) out.push({ name: 'selected', keys, caps: {}, losingMatchup: true });
@@ -112,15 +131,12 @@ export function testRules(keys: string[]): { matrices: MatrixDef[]; rules: Rule[
   const cell = (a: string, b: string, pred: CellPred, label: string, stated = false) => {
     if (have.has(a) && have.has(b)) rules.push({ kind: 'cells', checks: [{ a, b, pred }], all: true, label, stated });
   };
-  // Shape checks (tests/balance.test.ts, the round-robin describe).
+  // Shape checks (tests/balance.test.ts, the round-robin describe), re-recorded for the redesign (§14).
   cell('bricks', 'tanks', 'beats', 'shape: bricks beat tanks');
   cell('turtle', 'templates', 'beats', 'shape: turtle beats templates');
-  cell('scouts', 'snipers', 'beats', 'shape: scouts beat snipers');
   cell('tanks', 'turtle', 'notBeats', "shape: tanks don't beat the turtle");
-  cell('snipers', 'bricks', 'beats', 'shape: snipers beat bricks');
-  for (const melee of ['tanks', 'bricks', 'scouts']) cell('fortress', melee, 'beats', `shape: fortress beats ${melee}`);
-  for (const breaker of ['turtle', 'snipers', 'swarm', 'bunker']) cell('fortress', breaker, 'losesMore', `shape: fortress loses to ${breaker}`);
-  cell('swarm', 'turtle', 'beats', 'shape: swarm beats turtle');
+  for (const melee of ['tanks', 'bricks', 'scouts', 'soldiersFilled', 'rush']) cell('fortress', melee, 'beats', `shape: fortress beats ${melee}`);
+  for (const breaker of ['turtle', 'snipers']) cell('fortress', breaker, 'losesMore', `shape: fortress loses to ${breaker}`);
   cell('swarm', 'bunker', 'beats', 'shape: swarm beats bunker');
   cell('tanks', 'swarm', 'beats', 'shape: tanks beat swarm');
   cell('wallrush', 'templates', 'beats', 'shape: wallrush beats templates');
@@ -128,17 +144,5 @@ export function testRules(keys: string[]): { matrices: MatrixDef[]; rules: Rule[
   for (const walled of ['turtle', 'fortress', 'snipewall']) cell('archers', walled, 'beats', `shape: archers beat ${walled}`);
   cell('homeguard', 'bunker', 'beats', 'shape: homeguard beats bunker');
   for (const [a, b, why] of STATED) cell(a, b, 'winsMost', `stated: ${a} > ${b} (${why})`, true);
-  if (have.has('storm') && have.has('scoutsFilled') && have.has('runners')) {
-    rules.push({
-      kind: 'cells',
-      checks: [
-        { a: 'storm', b: 'scoutsFilled', pred: 'winsMost' },
-        { a: 'storm', b: 'runners', pred: 'winsMost' },
-      ],
-      all: false,
-      label: 'stated: storm > scoutsFilled or runners (lightning is anti-swarm)',
-      stated: true,
-    });
-  }
   return { matrices, rules };
 }

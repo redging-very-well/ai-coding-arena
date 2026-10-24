@@ -54,7 +54,8 @@ describe('factory production (§5.2, §9.3 step 9b)', () => {
     expect(s.map((x) => x.t)).toEqual([600, 1200, 1800, 2400, 3000, 3600, 4200, 4800]);
     expect(s.map((x) => x.e.instanceId)).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => `0-2-2-m${n}`));
     const f = result.units.find((u) => u.instanceId === '0-2-2')!;
-    expect(f.factory).toMatchObject({ minionsLeft: 0, minionsMade: 8, bodyCost: 247, minionValue: 148 });
+    // The helper's 1500-HP factory body is $167; a grunt is $177 per expected minion (half its $353 soldier price).
+    expect(f.factory).toMatchObject({ minionsLeft: 0, minionsMade: 8, bodyCost: 167, minionValue: 177 });
     // Minions are reported under the factory's design.
     expect(result.units.filter((u) => u.type === 'minion').every((u) => u.unitId === 'f' && u.factoryId === '0-2-2')).toBe(true);
     // fac in the frames: progress, minionsLeft, ..., canMake.
@@ -76,9 +77,11 @@ describe('factory production (§5.2, §9.3 step 9b)', () => {
     expect(late.fac![0]!.slice(1, 3)).toEqual([100, 4]);
   });
 
-  it('the per-player cap is min(6, floor(40 / players)) and two factories share it', async () => {
-    expect([2, 4, 6, 7, 8].map((n) => alivePerPlayerCap(DEFAULT_CONFIG.factory, n))).toEqual([6, 6, 6, 5, 5]);
-    const config = cfg(noSD);
+  it('the per-player cap is min(12, floor(40 / players)) and two factories share it', async () => {
+    expect([2, 3, 4, 5, 6, 7, 8].map((n) => alivePerPlayerCap(DEFAULT_CONFIG.factory, n))).toEqual([12, 12, 10, 8, 6, 5, 5]);
+    // A per-player cap of 6 is below two factories' 2 × 4: they share it.
+    const config = cfg({ ...noSD, factory: { maxAlivePerPlayer: 6 } });
+    expect(alivePerPlayerCap(config.factory, 2)).toBe(6);
     const { engine, done } = run(
       [
         {
@@ -210,7 +213,7 @@ describe('factory production (§5.2, §9.3 step 9b)', () => {
     // (E = floor(2399 / 600) = 3 in this 2400-tick battle, 1 made).
     const hunterReport = result.units.find((u) => u.instanceId === '1-0-0')!;
     expect(hunterReport.kills).toBe(1);
-    expect(hunterReport.valueDestroyed).toBe(247 + 2 * 148);
+    expect(hunterReport.valueDestroyed).toBe(167 + 2 * 177);
     // Player a still has its minion (a fighter): not eliminated.
     const m1 = result.units.find((u) => u.instanceId === '0-0-0-m1')!;
     if (m1.survived) expect(result.players.find((p) => p.playerId === 'a')!.eliminatedAtTick).toBeNull();
@@ -244,7 +247,7 @@ describe('minion AI (§5.2)', () => {
     ...over,
   });
   const factory = mk({ id: '0-0-0', type: 'factory', x: 100, y: 100, radius: 18 });
-  factory.factory = { productionInterval: 600, timer: 0, minionsLeft: 3, canMake: 3, noSpot: false, made: 1, released: 1, kind: 'grunt', burst: 1, stored: 0, releaseRequested: false, order: 'attack', orderTargetId: null, storedLost: 0, rally: { x: 400, y: 400 }, holding: false, bodyCost: 247, minionValue: 147, spawnedSinceFrame: false, minionsLost: 0 };
+  factory.factory = { productionInterval: 600, timer: 0, minionsLeft: 3, canMake: 3, noSpot: false, made: 1, released: 1, kind: 'grunt', burst: 1, stored: 0, releaseRequested: false, order: 'attack', orderTargetId: null, storedLost: 0, rally: { x: 400, y: 400 }, holding: false, bodyCost: 167, minionValue: 177, spawnedSinceFrame: false, minionsLost: 0 };
   const minion = (over: Partial<SimUnit> = {}) =>
     mk({ id: '0-0-0-m1', type: 'minion', stats: minionStats(cfgF, '#C0A060'), radius: 8, x: 300, y: 300, minion: { factory, n: 1 }, ...over });
   const world = (living: SimUnit[], safeRadius = 570) => {
@@ -416,7 +419,7 @@ describe('credit, values and elimination with factories (§9.3)', () => {
     expect(result.units.find((u) => u.instanceId === '0-0-0')!.survived).toBe(false);
   });
 
-  it('timeout living value: factory body + $148 per unbuilt minion, minion $148, wall $0 (also from a frame)', async () => {
+  it('timeout living value: factory body + $177 per unbuilt minion, minion $177, wall $0 (also from a frame)', async () => {
     const config = cfg(noSD, 1300);
     const { engine, done } = run(
       [
@@ -428,12 +431,12 @@ describe('credit, values and elimination with factories (§9.3)', () => {
     const result = await done;
     // E = floor(1299 / 600) = 2 (priced for this battle length); both made by the end.
     const a = result.players.find((p) => p.playerId === 'a')!;
-    expect(a.livingCost).toBe(247 + 0 * 148 + 2 * 148);
+    expect(a.livingCost).toBe(167 + 0 * 177 + 2 * 177);
     // From the frame at t = 700: 1 minion made, 1 left.
     const frame = engine.frames.find((f) => f.t === 700)!;
     const placing = rankFromFrame(frame, result).find((p) => p.playerId === 'a')!;
-    expect(placing.livingCost).toBe(247 + 1 * 148 + 1 * 148);
-    expect(engine.metricsAt(700).find((m) => m.playerId === 'a')!.livingValue).toBe(247 + 2 * 148);
+    expect(placing.livingCost).toBe(167 + 1 * 177 + 1 * 177);
+    expect(engine.metricsAt(700).find((m) => m.playerId === 'a')!.livingValue).toBe(167 + 2 * 177);
   });
 });
 
@@ -461,8 +464,8 @@ describe('factories that never build (§9.3 canMake)', () => {
     const result = await done;
     expect(spawns(engine.frames)).toEqual([]);
     // Full value at the start, then it shrinks as the time to build runs out.
-    expect(engine.metricsAt(0).find((m) => m.playerId === 'a')!.livingValue).toBe(247 + 8 * 148);
-    expect(engine.metricsAt(4000).find((m) => m.playerId === 'a')!.livingValue).toBe(247 + 2 * 148);
+    expect(engine.metricsAt(0).find((m) => m.playerId === 'a')!.livingValue).toBe(167 + 8 * 177);
+    expect(engine.metricsAt(4000).find((m) => m.playerId === 'a')!.livingValue).toBe(167 + 2 * 177);
     const a = result.players.find((p) => p.playerId === 'a')!;
     expect(a.eliminatedAtTick).toBe(4800);
     expect(result.endReason).toBe('elimination');
@@ -491,8 +494,8 @@ describe('factories that never build (§9.3 canMake)', () => {
     const result = await done;
     const f = result.units.find((u) => u.instanceId === '0-2-2')!;
     expect(f.factory).toMatchObject({ minionsLeft: 2, canMake: 0 });
-    expect(f.livingValue).toBe(247);
-    expect(result.players.find((p) => p.playerId === 'a')!.livingCost).toBe(247 + 148);
+    expect(f.livingValue).toBe(167);
+    expect(result.players.find((p) => p.playerId === 'a')!.livingCost).toBe(167 + 177);
   });
 });
 

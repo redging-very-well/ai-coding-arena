@@ -18,7 +18,7 @@ describe('config editor diff', () => {
   });
 
   it('produces a patch the server config schema accepts', () => {
-    const text = JSON.stringify(DEFAULT_CONFIG).replace('"budget":5000', '"budget":6000');
+    const text = JSON.stringify(DEFAULT_CONFIG).replace('"budget":10000', '"budget":6000');
     const parsed = parseConfigText(text);
     expect(parsed.ok).toBe(true);
     const patch = configDiff(DEFAULT_CONFIG, parsed.ok ? parsed.value : null);

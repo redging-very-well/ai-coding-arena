@@ -1,34 +1,34 @@
 {
-  "economyVersion": 2,
+  "economyVersion": 3,
   "cost": {
     "base": 50,
-    "hp": 0.3,
-    "damage": 1.5,
+    "hp": 0.1875,
+    "damage": 1.875,
     "range": 1.38,
-    "speed": 66,
+    "speed": 90,
     "size": 8,
     "referenceCooldown": 60,
     "curveK": 1,
-    "powerFactor": 0.6,
-    "splash": 0.7,
+    "powerFactor": 2,
+    "splash": 0.8,
     "element": {
-      "fire": 1.2,
-      "ice": 1.2,
-      "lightning": 1.2
+      "fire": 1.3,
+      "ice": 1.75,
+      "lightning": 1.3
     },
-    "heal": 4.5,
+    "heal": 3.5,
     "aura": {
-      "haste": 5,
-      "might": 4,
+      "haste": 9,
+      "might": 8,
       "shield": 7
     },
     "wall": {
       "base": 20,
-      "hp": 0.06
+      "hp": 0.0375
     },
     "factory": {
       "base": 50,
-      "hp": 0.12,
+      "hp": 0.075,
       "minionDiscount": 0.5
     }
   },
@@ -39,12 +39,12 @@
         "max": 24
       },
       "maxHealth": {
-        "min": 50,
-        "max": 2500
+        "min": 80,
+        "max": 4000
       },
       "damage": {
         "min": 0,
-        "max": 300
+        "max": 240
       },
       "range": {
         "min": 20,
@@ -53,6 +53,10 @@
       "soldierSpeed": {
         "min": 0.5,
         "max": 5
+      },
+      "soldierRange": {
+        "min": 20,
+        "max": 160
       },
       "attackCooldown": {
         "min": 10,
@@ -63,16 +67,16 @@
         "max": 20
       },
       "wallHealth": {
-        "min": 250,
-        "max": 7500
+        "min": 400,
+        "max": 12000
       },
       "factoryHealth": {
-        "min": 500,
-        "max": 5000
+        "min": 800,
+        "max": 8000
       },
       "productionInterval": {
-        "min": 600,
-        "max": 1800
+        "min": 300,
+        "max": 1200
       },
       "burst": {
         "min": 1,
@@ -85,8 +89,8 @@
       "support": {
         "heal": {
           "power": {
-            "min": 10,
-            "max": 250
+            "min": 15,
+            "max": 400
           },
           "range": {
             "min": 20,
@@ -127,22 +131,26 @@
     }
   },
   "caps": {
-    "unitCost": 2500,
-    "budget": 5000,
+    "unitCost": 3000,
+    "budget": 10000,
     "maxDesigns": 8,
     "maxUnitTypes": 4,
     "maxBuildingTypes": 4,
     "maxCopies": 12,
-    "maxFactoryCopies": 2,
-    "maxWallCopies": 12,
-    "maxSourceBytes": 65536
+    "maxFactoryCopies": 5,
+    "maxWallCopies": 16,
+    "maxSourceBytes": 65536,
+    "copyRamp": {
+      "freeCopies": 3,
+      "pctPerCopy": 15
+    }
   },
   "timers": {
     "defaultRounds": 3,
     "planFirstRoundSec": 900,
     "planLaterRoundsSec": 480,
     "placementSec": 180,
-    "battleTicks": 5400,
+    "battleTicks": 7200,
     "ticksPerSecond": 60,
     "autoAdvanceWhenAllReady": false
   },
@@ -155,11 +163,11 @@
     "topUnitsShown": 3
   },
   "suddenDeath": {
-    "startTick": 3000,
-    "endTick": 5400,
+    "startTick": 4500,
+    "endTick": 7200,
     "startRadius": 570,
     "endRadius": 60,
-    "damagePctPerSecond": 7
+    "damagePctPerSecond": 10
   },
   "sim": {
     "meleeMaxRange": 50,
@@ -168,12 +176,13 @@
     "separationPasses": 2,
     "frameEveryTicks": 2,
     "slideMemoryTicks": 45,
-    "replanTicks": 10
+    "replanTicks": 10,
+    "routeRoundBuildings": true
   },
   "factory": {
-    "maxMinionsPerFactory": 8,
+    "maxMinionsPerFactory": 12,
     "maxAlivePerFactory": 4,
-    "maxAlivePerPlayer": 6,
+    "maxAlivePerPlayer": 12,
     "maxAlivePerBattle": 40,
     "rallyGuardRadius": 200,
     "rallyArriveRadius": 24,
@@ -183,8 +192,8 @@
     "guardArriveGap": 16,
     "minions": {
       "grunt": {
-        "maxHealth": 180,
-        "damage": 25,
+        "maxHealth": 360,
+        "damage": 20,
         "range": 20,
         "speed": 1.5,
         "attackCooldown": 60,
@@ -194,8 +203,8 @@
         "wallDamageMultiplier": 1
       },
       "archer": {
-        "maxHealth": 120,
-        "damage": 25,
+        "maxHealth": 240,
+        "damage": 20,
         "range": 110,
         "speed": 1.2,
         "attackCooldown": 60,
@@ -205,8 +214,8 @@
         "wallDamageMultiplier": 1
       },
       "runner": {
-        "maxHealth": 140,
-        "damage": 20,
+        "maxHealth": 480,
+        "damage": 24,
         "range": 20,
         "speed": 2.6,
         "attackCooldown": 60,
@@ -216,8 +225,8 @@
         "wallDamageMultiplier": 1
       },
       "brute": {
-        "maxHealth": 550,
-        "damage": 40,
+        "maxHealth": 1100,
+        "damage": 32,
         "range": 20,
         "speed": 0.9,
         "attackCooldown": 60,
@@ -227,7 +236,7 @@
         "wallDamageMultiplier": 3
       },
       "medic": {
-        "maxHealth": 150,
+        "maxHealth": 300,
         "damage": 0,
         "range": 20,
         "speed": 1.4,
@@ -236,7 +245,7 @@
         "aggroRange": 150,
         "impatientTicks": 120,
         "wallDamageMultiplier": 1,
-        "heal": 40,
+        "heal": 60,
         "reach": 60
       }
     }
@@ -254,13 +263,19 @@
     "lightning": {
       "chancePct": 35,
       "hopRange": 100,
-      "burningExtraHops": 1
+      "burningExtraHops": 2
     },
-    "shatterPct": 50,
+    "shatterPct": 40,
+    "kindlePct": 25,
+    "brittlePct": 25,
     "splashPct": 50
   },
   "support": {
-    "healRoomPctPerSecond": 5
+    "healRoomPctPerSecond": 4
+  },
+  "accuracy": {
+    "missMaxPct": 20,
+    "speedRef": 5
   },
   "sandbox": {
     "mode": "ivm",

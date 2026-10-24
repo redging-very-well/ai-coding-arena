@@ -216,7 +216,6 @@ export const api = {
     config: () => request<AdminConfigResponse>('GET', '/admin/config'),
     updateConfig: (patch: DeepPartial<GameConfig>) => request<AdminConfigResponse>('PUT', '/admin/config', patch),
     /** M8.8 (§6 migration): dismiss the "economy overrides were reset" banner. */
-    dismissEconomyReset: () => request<AdminConfigResponse>('DELETE', '/admin/config/economy-reset'),
     overview: () => request<AdminOverviewDTO>('GET', '/admin/overview'),
     wipe: () => request<{ ok: true }>('POST', '/admin/wipe', { confirm: 'WIPE' }),
     /** Claude seats (§11.2): with `details`, also the seat password and the direct URLs. */

@@ -19,17 +19,17 @@ export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 export interface UnitStats {
   name: string;          // 1-24 chars, shown on screen
   type: UnitType;        // soldiers move; towers, walls and factories are buildings and never move
-  maxHealth: number;     // soldier/tower 50-2500, wall 250-7500, factory 500-5000
-  damage?: number;       // soldier/tower: required, 0-300. wall/factory: leave it out (they can't attack)
-  range?: number;        // soldier/tower: required, 20-300 px, EDGE to edge (gap between the two bodies). wall/factory: leave it out
+  maxHealth: number;     // soldier/tower 80-4000, wall 400-12000, factory 800-8000
+  damage?: number;       // soldier/tower: required, 0-240. wall/factory: leave it out (they can't attack)
+  range?: number;        // required: soldier 20-160 px, tower 20-300 px (towers out-range soldiers), EDGE to edge (gap between the two bodies). wall/factory: leave it out
   speed?: number;        // soldier: required, 0.5-5 px per tick (60 ticks = 1 s). tower/wall/factory: 0 or leave it out
   attackCooldown?: number;// soldier/tower: required, integer ticks between attacks (and heals). wall/factory: leave it out
-  element?: Element;     // soldier/tower, optional (default 'normal'): fire burns, ice freezes, lightning zaps. Price ×1.2
+  element?: Element;     // soldier/tower, optional (default 'normal'): fire burns, ice freezes, lightning zaps. Price ×1.3 (ice ×1.75)
   splashRadius?: number; // soldier/tower, optional (default 0 = one target): 0-80 px; other enemies this close to the target take half
   support?: SupportKind; // soldier/tower, optional: heal = an action you return; haste/might/shield = an aura that works by itself
-  supportPower?: number; // required with support. heal: HP per heal 10-250. haste/might: 5-50 (%). shield: 5-40 (%)
+  supportPower?: number; // required with support. heal: HP per heal 15-400. haste/might: 5-50 (%). shield: 5-40 (%)
   supportRange?: number; // required with support, EDGE to edge. heal: 20-200 px reach. haste/might/shield: 40-150 px aura
-  productionInterval?: number; // factory only, required: integer ticks between two minions, 600-1800 (10-30 s)
+  productionInterval?: number; // factory only, required: integer ticks between two minions, 300-1200 (5-20 s)
   produces?: MinionKind; // factory only, optional (default 'grunt'): the minion it builds; the price follows (§6)
   minionElement?: Element; // factory only, optional (default 'normal'): the element of every minion it builds (medics ignore it)
   burst?: number;        // factory only, optional (default 1): integer 1-4; minions wait inside until this many are ready, then leave together
@@ -88,7 +88,7 @@ export interface SelfView {
   status: StatusView;
   blockedBy: string | null; // id of the wall that stopped my last move, else null
   blockedTicks: number;     // ticks in a row a wall has stopped me (no progress; 0 = free)
-  pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls by a route the game found, or walled off (smash self.blockedBy)
+  pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls and buildings by a route the game found, or walled off (smash self.blockedBy)
   factory: FactoryView | null; // factories only
 }
 export interface OtherView {
@@ -98,6 +98,8 @@ export interface OtherView {
   splashRadius: number;  // spread out against splash
   support: SupportView | null; // find the enemy medic
   status: StatusView;
+  moving: boolean;       // it moved last tick: ranged shots at a moving body can miss (shoot slow targets first)
+  currentSpeed: number;  // px it moved last tick (0 standing, blocked or stopped); misses grow with it
 }
 // A wall has radius 20: for range it counts as a circle of radius 20 (so inRange works unchanged),
 // but its body blocks the whole 40×40 square. Walls and factories have range 0.
@@ -109,7 +111,7 @@ export interface WorldView {
   mapStyle: MapStyle;                   // §9.2
   myCorner: { x: number; y: number };   // centre of my start zone this round (name kept from the 4-corner map; a zone need not be a corner)
   center: { x: number; y: number };     // = { x: width / 2, y: height / 2 }
-  safeZone: { x: number; y: number; radius: number }; // centred on `center`; shrinks from tick 3000 (sudden death, §9)
+  safeZone: { x: number; y: number; radius: number }; // centred on `center`; shrinks from tick 4500 (sudden death, §9)
 }
 // teamId: free-for-all = the owner's seat (0-7), so every player is their own team.
 // Team mode = the team index (0-3). Same teamId = friend, different = enemy.

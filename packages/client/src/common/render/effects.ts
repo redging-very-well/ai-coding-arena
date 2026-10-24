@@ -237,7 +237,7 @@ export function boltPath(x0: number, y0: number, x1: number, y1: number, seed: n
 // Legend
 // ---------------------------------------------------------------------------
 
-export type LegendKey = 'fire' | 'ice' | 'lightning' | 'shatter' | 'splash' | 'heal' | 'haste' | 'might' | 'shield';
+export type LegendKey = 'fire' | 'ice' | 'lightning' | 'shatter' | 'splash' | 'heal' | 'haste' | 'might' | 'shield' | 'kindle' | 'brittle' | 'miss';
 
 export const LEGEND_TEXT: Readonly<Record<LegendKey, string>> = {
   fire: 'fire burns',
@@ -249,6 +249,9 @@ export const LEGEND_TEXT: Readonly<Record<LegendKey, string>> = {
   haste: 'green ring = faster',
   might: 'red ring = stronger',
   shield: 'blue ring = tougher',
+  kindle: 'burning units take extra hits = KINDLE',
+  brittle: 'frozen units take extra hits = BRITTLE',
+  miss: 'fast movers dodge arrows = MISS',
 };
 
 export const LEGEND_COLOR: Readonly<Record<LegendKey, string>> = {
@@ -261,6 +264,9 @@ export const LEGEND_COLOR: Readonly<Record<LegendKey, string>> = {
   haste: AURA_COLOR.haste,
   might: AURA_COLOR.might,
   shield: AURA_COLOR.shield,
+  kindle: ELEMENT_COLOR.fire,
+  brittle: ELEMENT_COLOR.ice,
+  miss: '#D9D2C3',
 };
 
 /**

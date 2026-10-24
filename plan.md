@@ -188,17 +188,17 @@ export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 export interface UnitStats {
   name: string;          // 1-24 chars, shown on screen
   type: UnitType;        // soldiers move; towers, walls and factories are buildings and never move
-  maxHealth: number;     // soldier/tower 50-2500, wall 250-7500, factory 500-5000
-  damage?: number;       // soldier/tower: required, 0-300. wall/factory: leave it out (they can't attack)
-  range?: number;        // soldier/tower: required, 20-300 px, EDGE to edge (gap between the two bodies). wall/factory: leave it out
+  maxHealth: number;     // soldier/tower 80-4000, wall 400-12000, factory 800-8000
+  damage?: number;       // soldier/tower: required, 0-240. wall/factory: leave it out (they can't attack)
+  range?: number;        // required: soldier 20-160 px, tower 20-300 px (towers out-range soldiers), EDGE to edge (gap between the two bodies). wall/factory: leave it out
   speed?: number;        // soldier: required, 0.5-5 px per tick (60 ticks = 1 s). tower/wall/factory: 0 or leave it out
   attackCooldown?: number;// soldier/tower: required, integer ticks between attacks (and heals). wall/factory: leave it out
-  element?: Element;     // soldier/tower, optional (default 'normal'): fire burns, ice freezes, lightning zaps. Price ×1.2
+  element?: Element;     // soldier/tower, optional (default 'normal'): fire burns, ice freezes, lightning zaps. Price ×1.3 (ice ×1.75)
   splashRadius?: number; // soldier/tower, optional (default 0 = one target): 0-80 px; other enemies this close to the target take half
   support?: SupportKind; // soldier/tower, optional: heal = an action you return; haste/might/shield = an aura that works by itself
-  supportPower?: number; // required with support. heal: HP per heal 10-250. haste/might: 5-50 (%). shield: 5-40 (%)
+  supportPower?: number; // required with support. heal: HP per heal 15-400. haste/might: 5-50 (%). shield: 5-40 (%)
   supportRange?: number; // required with support, EDGE to edge. heal: 20-200 px reach. haste/might/shield: 40-150 px aura
-  productionInterval?: number; // factory only, required: integer ticks between two minions, 600-1800 (10-30 s)
+  productionInterval?: number; // factory only, required: integer ticks between two minions, 300-1200 (5-20 s)
   produces?: MinionKind; // factory only, optional (default 'grunt'): the minion it builds; the price follows (§6)
   minionElement?: Element; // factory only, optional (default 'normal'): the element of every minion it builds (medics ignore it)
   burst?: number;        // factory only, optional (default 1): integer 1-4; minions wait inside until this many are ready, then leave together
@@ -257,7 +257,7 @@ export interface SelfView {
   status: StatusView;
   blockedBy: string | null; // id of the wall that stopped my last move, else null
   blockedTicks: number;     // ticks in a row a wall has stopped me (no progress; 0 = free)
-  pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls by a route the game found, or walled off (smash self.blockedBy)
+  pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls and buildings by a route the game found, or walled off (smash self.blockedBy)
   factory: FactoryView | null; // factories only
 }
 export interface OtherView {
@@ -267,6 +267,8 @@ export interface OtherView {
   splashRadius: number;  // spread out against splash
   support: SupportView | null; // find the enemy medic
   status: StatusView;
+  moving: boolean;       // it moved last tick: ranged shots at a moving body can miss (shoot slow targets first)
+  currentSpeed: number;  // px it moved last tick (0 standing, blocked or stopped); misses grow with it
 }
 // A wall has radius 20: for range it counts as a circle of radius 20 (so inRange works unchanged),
 // but its body blocks the whole 40×40 square. Walls and factories have range 0.
@@ -278,7 +280,7 @@ export interface WorldView {
   mapStyle: MapStyle;                   // §9.2
   myCorner: { x: number; y: number };   // centre of my start zone this round (name kept from the 4-corner map; a zone need not be a corner)
   center: { x: number; y: number };     // = { x: width / 2, y: height / 2 }
-  safeZone: { x: number; y: number; radius: number }; // centred on `center`; shrinks from tick 3000 (sudden death, §9)
+  safeZone: { x: number; y: number; radius: number }; // centred on `center`; shrinks from tick 4500 (sudden death, §9)
 }
 // teamId: free-for-all = the owner's seat (0-7), so every player is their own team.
 // Team mode = the team index (0-3). Same teamId = friend, different = enemy.
@@ -643,256 +645,205 @@ Requested on 2026-10-23: "we should have a mechanic that allows units to support
 
 ## 6. Cost formula and economy
 
-> **M8.8 economy (landed).** User requests (2026-10-23): "update the starting cash, and the scaling to allow for these new types"; "don't penalise extremes so heavily". Every money, HP and damage number went ×5. The curve softened to k = 1. A power factor targets units that are both tough and hard-hitting. Elements, splash and support are priced. The formula, the coefficients and every reference table are in the subsections from **"M8.8 economy: formula"** to **"M8.8 economy: migration"** below. The $1,000-game (k = 2) tables were deleted when M8.8 landed; `tests/cost-curve.test.ts` and `tests/cost.test.ts` parse "Reference units (curve k = 1)".
+> **The $10,000 redesign (2026-10-24).** User decisions: a $10,000 budget, "12 fighters, make them count", lower damage and more HP (about 2× time-to-kill), 120 s battles, stronger synergies, beefier factories, ranged accuracy against the target's speed, routing round buildings, and (the user's last-resort idea, needed after measuring) a **copy ramp** against one-design armies. Every HP number of M8.8 is ×1.6 and every damage number ×0.8, the cost coefficients follow so a unit of the same shape keeps its M8.8 price, and then the balance retune of §14 "Redesign balance" moved the prices. The formula, the coefficients and every reference table are in the subsections below. The M8.8 ($5,000) tables were replaced; `tests/cost.test.ts` and `tests/buildings-cost.test.ts` parse "Reference units (curve k = 1)" and "Reference walls, minions and factories (curve k = 1)".
 
 General rules that hold for every formula version:
-- **The curve.** Each stat term is its linear price `c_i × x_i` times `1 + k·r²`, where `r` is how far the stat is towards its §5 max. With k = 1 a stat at **half** its max costs **1.25×** its linear price and a **maxed** stat costs **2×**. Every term is convex, so one unit with doubled stats costs more than two normal units once a stat reaches about 65% of its max (§6 M8.8 concentration property). The curve maxima are the default §5 bounds (fixed in code, so a live bounds retune doesn't move the curve). `curveK` is in config: 0 gives a linear formula, the schema allows 0-5 (a negative k would make cost fall as a stat rises, so it is refused).
-- **Explained in the output.** The breakdown returned by validate/submit has, per stat, the linear part and the curve surcharge, e.g. "maxHealth 1750 costs $782.25: $525 base + $257.25 for being at 70% of the max", plus the M8.8 factor lines (§6 M8.8 breakdown). Any stat at ≥ 80% of its max gives the non-fatal warning `W_STAT_NEAR_MAX` ("maxHealth is at 90% of max and costs 1.81× its normal price; two medium units usually beat one maxed one"), with a `fix` that names a lower value and the saving. `UNIT_TOO_EXPENSIVE` names the biggest lever (§6 M8.8 levers).
-- The cooldown factor scales the **whole** core (stats and heal). It is **clamped at 1**, so slow attackers (cooldown > 60) get no discount. That makes any cooldown above 60 strictly worse (same price, less damage per second), so the validator warns with `W_SLOW_NO_DISCOUNT`: "Attacking slower than once per second doesn't make it cheaper. Set attackCooldown to 60 for free extra damage." The same tip is in CLAUDE.md §5 and in the `get_unit_contract` strategy tips.
-- Coefficients (`curveK` included) and bounds live in config and can be retuned live in LOBBY, PLAN, or RESULTS. A change re-prices every stored unit.
-- **After a re-price or bounds change**, any unit that now breaks the $2,500 cap or a bound gets `status: "invalid"` with the new error object (`UNIT_TOO_EXPENSIVE` or `STAT_OUT_OF_RANGE`, with its `fix`). An invalid unit can't be selected or placed, is dropped from current and carried-over selections (with a toast to the owner), is skipped by the selection fallback, and shows up in `list_my_units` and `GET /units` so Claude can revise it. The config editor refuses a retune that would make any template invalid.
+- **The curve.** Each stat term is its linear price `c_i × x_i` times `1 + k·r²`, where `r` is how far the stat is towards its §5 max. With k = 1 a stat at **half** its max costs **1.25×** its linear price and a **maxed** stat costs **2×**. Every term is convex, so one unit with doubled stats costs more than two normal units once a stat reaches about 65% of its max (§6 concentration property). The curve maxima are the default §5 bounds (fixed in code, so a live bounds retune doesn't move the curve). `curveK` is in config: 0 gives a linear formula, the schema allows 0-5.
+- **Explained in the output.** The breakdown returned by validate/submit has, per stat, the linear part and the curve surcharge, e.g. "maxHealth 2400 costs $558: $450 base + $108 for being at 60% of the max", plus the factor lines. Any stat at ≥ 80% of its max gives the non-fatal warning `W_STAT_NEAR_MAX`, with a `fix` that names a lower value and the saving. `UNIT_TOO_EXPENSIVE` names the biggest lever (§6 levers).
+- The cooldown factor scales the **whole** core (stats and heal). It is **clamped at 1**, so slow attackers (cooldown > 60) get no discount, and the validator warns `W_SLOW_NO_DISCOUNT`.
+- Coefficients (`curveK` included) and bounds live in config and can be retuned live in LOBBY, PLAN, or RESULTS. A change re-prices every stored unit; a unit that then breaks the cap or a bound gets `status: "invalid"` with the new error object. The config editor refuses a retune that would make any template invalid.
 - Size defaults (soldier 10, tower 14) apply when `size` is omitted, and they are priced.
 
-**Size trade-off.** A bigger body reaches targets sooner (range is edge to edge, so +10 size is +10 effective reach for both sides of a fight), wins shoving matches in separation, and looks impressive, but it is easier to block in and is reachable from further away. The $8/px term (2× at size 20) keeps "max size everything" from being free.
+**Size trade-off.** A bigger body reaches targets sooner (range is edge to edge), wins shoving matches and looks impressive, but it is easier to block in and reachable from further away. The $8/px term (2× at size 20) keeps "max size everything" from being free.
 
-**Walls and factories.** Same shape as the unit formula, with per-type coefficients (config `cost.wall`, `cost.factory`) and the same curve k. Neither type attacks, so there are no factors. The formulas and the ×5 reference tables are in "M8.8 economy: formula" and "Reference walls, minions and factories (curve k = 1)".
-- **Curve semantics kept.** Every HP term has the curve with its maximum at the type's default HP max (wall 7,500, factory 5,000; fixed in code like the §5 maxima), so the near-max warning, `W_STAT_NEAR_MAX`, and the "biggest lever" fix work unchanged.
-- **Why wall HP is cheap** (0.06 vs 0.3 per HP for units): a wall can't move or fight, is worth $0 at timeout and loses 7% of its max HP per second in sudden death whatever its HP.
-- **Factory pricing = pay up front for the expected output.** E is the number of minions the factory can make in a 90 s battle, and each costs half of its price (`minionDiscount` 0.5) because it arrives during the battle (the first after 10-30 s) and the alive caps throttle them. Production is linear in E (no curve): the per-factory alive cap (4) already makes one fast factory worse than two slow ones, and factories are capped at 2 copies. The $2,500 cap applies to the whole factory price.
-- **Re-pricing.** A factory's price follows the soldier coefficients and `curveK` (through minionCost), the minion stats, `minionDiscount`, `maxMinionsPerFactory` and `timers.battleTicks`. Changing any of them re-prices every factory (the config editor refuses a retune that would make any of the four templates invalid).
-- **Breakdown.** Walls: base + HP, as for units. Factories: base, HP and a production line: "Production: 5 minions × $148 (half of a $296 minion, because they arrive during the battle) = $740"; with an element "5 fire brutes × $256 …". `UNIT_TOO_EXPENSIVE` on a factory names the bigger of HP and production as the lever ("Raising productionInterval from 600 to 900 makes 5 minions instead of 8 …"), and a cheaper kind or normal minions when that fits.
-- **Minion kinds** (M8.6): the factory pays `minionValue(kind, element) × E`; `burst` (1-4) never changes the price. Why: burst adds no minions (E is unchanged), it delays the first ones (they wait inside instead of fighting) and risks them (they die with the factory), so it trades time and risk for a stronger arrival. Pricing it would charge twice for a choice that already costs something. The brute's ×3 wall damage and the kinds' aggro / impatience are behaviour, not priced stats (§5.3).
+**Walls and factories.** Same shape as the unit formula, with per-type coefficients (`cost.wall`, `cost.factory`) and the same curve k, no factors (they can't attack). Factory pricing is **pay up front for the expected output**: E = min(`factory.maxMinionsPerFactory` 12, floor((battleTicks − 1) / productionInterval)) minions, each at `minionDiscount` (0.5) of its soldier price, because they arrive during the battle and the alive caps throttle them. Burst never changes the price. Changing the soldier coefficients, the minion stats, `minionDiscount`, `maxMinionsPerFactory` or the battle length re-prices every factory.
 
 ### Caps and rules
 
 | Rule | Default (config) | Error code |
 |---|---|---|
-| Single unit cost | ≤ **$2,500** (checked on the rounded cost, `caps.unitCost`) | `UNIT_TOO_EXPENSIVE` |
-| Budget per round | **$5,000** (`caps.budget`). Resets every round. Unspent credits don't carry over. | `OVER_BUDGET` |
-| Designs | free to register. Max 8 active designs per player. Revisions replace a design and don't count. The four templates (soldier, tower, wall, factory) don't count. | `TOO_MANY_DESIGNS` |
-| Types fielded per round | ≤ 4 unit types (soldiers, `caps.maxUnitTypes`) **and** ≤ 4 building types (towers, walls, factories, `caps.maxBuildingTypes`), §5.2 | `TOO_MANY_TYPES` (`details: {group, max, count}`) |
-| Copies placed per player | ≤ 12 fighters (soldiers + towers + factories, everything that runs code) of which ≤ 2 factories (`caps.maxFactoryCopies`), plus ≤ 12 walls (`caps.maxWallCopies`, no code, so outside the isolate guard). 12 walls cover a full front row and both flanks (6 + 2 × 3), or an L of 11 that seals a corner zone (its other two sides are the arena edge); the answers to a sealed fortress are smashing a wall (templates and minions do it after 2 s blocked), range, and sudden death, which reaches every corner zone | `TOO_MANY_COPIES` (`details: {group: 'fighters' \| 'factories' \| 'walls', max}`) |
-| Minions (engine-side, no error) | ≤ 8 made per factory, ≤ 4 alive per factory, alive per player ≤ min(6, floor(40 / players)): 6 with 2-6 players, 5 with 7-8, so ≤ 40 minions in any battle (`factory.*`) | the factory waits |
-| Fighters | PLAN Ready needs a fighter type selected, PLACEMENT Ready a fighter placed. M8.8: damage-0 units and medic-only factories are not fighters (§5.2) | `NO_FIGHTERS` |
+| Single unit cost | ≤ **$3,000** (checked on the rounded cost, `caps.unitCost`) | `UNIT_TOO_EXPENSIVE` |
+| Budget per round | **$10,000** (`caps.budget`). Resets every round. Unspent credits don't carry over. | `OVER_BUDGET` |
+| **Copy ramp** (redesign) | "12 fighters, make them count": the first **3** copies of a design cost its price; copy 4 costs +15%, copy 5 +30%, and so on (+15% per copy beyond 3, `caps.copyRamp: { freeCopies: 3, pctPerCopy: 15 }`; 0 = off). **Walls never ramp.** The placement budget bar, the palette (the next copy's price with ↑), auto-place, Copy last layout, the bots and `get_rules` all use it | `OVER_BUDGET` |
+| Designs | free to register. Max 8 active designs per player. Revisions replace a design and don't count. The four templates don't count. | `TOO_MANY_DESIGNS` |
+| Types fielded per round | ≤ 4 unit types (soldiers) **and** ≤ 4 building types (towers, walls, factories), §5.2 | `TOO_MANY_TYPES` |
+| Copies placed per player | ≤ **12 fighters** (soldiers + towers + factories) of which ≤ **5 factories**, plus ≤ **16 walls** | `TOO_MANY_COPIES` |
+| Minions (engine-side, no error) | ≤ 12 made per factory, ≤ 4 alive per factory, alive per player ≤ min(12, floor(40 / players)): 12 with 2-3 players, 10 with 4, 8 with 5, 6 with 6, 5 with 7-8, so ≤ 40 minions in any battle | the factory waits |
+| Fighters | PLAN Ready needs a fighter type selected, PLACEMENT Ready a fighter placed (damage-0 units and medic-only factories are not fighters) | `NO_FIGHTERS` |
 
-Every player starts with the four templates pre-registered, so nobody is ever unarmed. The cost breakdown (each term with its linear part and curve surcharge, the sum, the factors, the aura, the total) is returned by validate/submit and shown on unit cards. Budgets are never pooled between teammates, and the player count, map and team mode don't change them.
+Every player starts with the four templates pre-registered. Budgets are never pooled between teammates, and the player count, map and team mode don't change them. Copy ramp in numbers: 4 copies of a $1,000 design cost $4,150, 6 cost $6,900, 8 cost $10,250, 12 cost $18,750 (`copy ramp` line below).
 
-### M8.8 economy: formula
+### Economy: formula
 
-Every price below is printed by the reference implementation `cost.mjs` through `tables.mjs`. The approved design spec and its scripts live outside the repo, in `/home/vscode/pixel-clash-design/elements-spec/` (`elements-spec.md`, `final/cost.mjs`, `final/tables.mjs`, `final/tables.out`, `final/conc.mjs`). The **M8.8 balance retune** (§14 "M8.8 balance": `cost.speed` 60 → 66, `cost.range` 1.45 → 1.38, grunt HP 200 → 180) re-ran them from copies in `final-retune/` (the approved `final/` files are left as they were), and every table below is that output. `shared/cost.ts` must reproduce every number exactly.
+Every price below is printed by the reference implementation `cost.mjs` through `tables.mjs` in `/home/vscode/pixel-clash-design/elements-spec/redesign-10k/` (copies of the M8.8 `final-retune/` scripts with the redesign's numbers; the approved M8.8 files are left as they were). `shared/cost.ts` must reproduce every number exactly.
 
 ```
 term_i  = c_i × x_i × (1 + k × r_i²)          r_i = x_i / max_i, k = cost.curveK = 1
-          x_i / max_i: HP/2500, damage/300, range/300, speed/5, (size − 6)/14
-heal    = c_heal × P × (1 + k × (P/250)²) × reach(R/200)                 support 'heal' (P = supportPower, R = supportRange)
+          x_i / max_i: HP/4000, damage/240, range/300, speed/5, (size − 6)/14
+heal    = c_heal × P × (1 + k × (P/400)²) × reach(R/200)                 support 'heal' (P = supportPower, R = supportRange)
 aura    = c_kind × P × (1 + k × (P/Pmax)²) × reach(R/150)               haste/might Pmax 50, shield Pmax 40
 reach(ρ)= 0.5 + ρ(2 − ρ)                                                  0.5 at reach 0, 1.5 at the max
 core    = Base + Σ term_i + heal
-raw     = core × max(1, 60/attackCooldown)                                cooldown factor (as today, clamped at 1)
-             × (1 + q × HP/2500 × damage/300)                             power factor, q = 0.6 (max ×1.6)
-             × (1 + s × ρs(2 − ρs))                                       splash factor, s = 0.7, ρs = splashRadius/80 (max ×1.7)
-             × e                                                          element factor: normal 1, fire/ice/lightning 1.2
+raw     = core × max(1, 60/attackCooldown)                                cooldown factor (clamped at 1)
+             × (1 + q × HP/4000 × damage/240)                             power factor, q = 2 (max ×3)
+             × (1 + s × ρs(2 − ρs))                                       splash factor, s = 0.8, ρs = splashRadius/80 (max ×1.8)
+             × e                                                          element factor: normal 1, fire 1.3, ice 1.75, lightning 1.3
         + aura                                                            always on: after the factors
 cost    = ceil(raw − 1e-9)
+army    = Σ over designs of Σ_n copy_n,  copy_n = cost × (1 + max(0, n − 3) × 15%)   (rounded up; walls never ramp)
 ```
 
-**In one paragraph for Claude** (CLAUDE.md §5 and `get_unit_contract`): "Each stat costs its normal price, more near its max (up to 2× at the max). Healing adds a price too. Then multiply: fast attacks (60 / cooldown), being both tough and strong (up to ×1.6), splash (×1.53 at 40 px, ×1.7 at 80) and an element (×1.2). An aura is added at the end."
+**In one paragraph for Claude** (CLAUDE.md §5 and `get_unit_contract`): "Each stat costs its normal price, more near its max (up to 2× at the max). Healing adds a price too. Then multiply: fast attacks (60 / cooldown), being both tough and strong (up to ×3), splash (×1.6 at 40 px, ×1.8 at 80) and an element (fire and lightning ×1.3, ice ×1.75). An aura is added at the end. From the 4th copy of one design each copy costs 15% more again."
 
-Walls: `raw = 20 + 0.06·HP·(1 + (HP/7500)²)`. Factories: body = `ceil(50 + 0.12·HP·(1 + (HP/5000)²))`, and cost = body + minionValue × E, with E = min(8, floor(5399 / interval)) as before. Minions: `minionCost = ceil(soldier formula on the kind's stats × element factor)`, `minionValue = ceil(minionCost × 0.5)`. The medic's heal term is in its soldier formula, and medics ignore `minionElement`.
+Walls: `raw = 20 + 0.0375·HP·(1 + (HP/12000)²)`. Factories: body = `ceil(50 + 0.075·HP·(1 + (HP/8000)²))`, cost = body + minionValue × E. Minions: `minionCost = ceil(soldier formula on the kind's stats × element factor)`, `minionValue = ceil(minionCost × 0.5)`. The medic's heal term is in its soldier formula, and medics ignore `minionElement`.
 
-### M8.8 factor tables
+### Factor tables
 
 `node tables.mjs`, factor lines (exact output):
 
 ```text
-splash 10:×1.16 20:×1.31 30:×1.43 40:×1.53 50:×1.6 60:×1.66 70:×1.69 80:×1.7
+splash 10:×1.19 20:×1.35 30:×1.49 40:×1.6 50:×1.69 60:×1.75 70:×1.79 80:×1.8
 heal reach 20:×0.69 60:×1.01 100:×1.25 120:×1.34 160:×1.46 200:×1.5
 aura radius 40:×0.96 60:×1.14 80:×1.28 100:×1.39 120:×1.46 150:×1.5
-curve k=1 vs k=2 0.25: ×1.06 vs ×1.13 | 0.5: ×1.25 vs ×1.5 | 0.75: ×1.56 vs ×2.13 | 0.9: ×1.81 vs ×2.62 | 1: ×2 vs ×3
-power corners 600/50:×1.02 2500/100:×1.2 300/300:×1.07 400/250:×1.08 1800/260:×1.37 1250/150:×1.15 2500/300:×1.6
+curve k=1 0.25: ×1.06 | 0.5: ×1.25 | 0.75: ×1.56 | 0.9: ×1.81 | 1: ×2
+power corners 1400/56:×1.16 4000/80:×1.67 480/240:×1.24 640/200:×1.27 2480/180:×1.93 2000/120:×1.5 4000/240:×3
+copy ramp 1:×1 2:×2 3:×3 4:×4.15 5:×5.45 6:×6.9 8:×10.25 10:×14.2 12:×18.75
 ```
 
-The curve line reads: a stat at 50% of its max costs 1.25× its plain price (was 1.5×), and a maxed stat costs **2×** (was 3×). That is the "don't penalise extremes so heavily" change.
+The copy-ramp line reads: n copies of a $1,000 design cost n × $1,000 × that factor.
 
-### M8.8 economy: why these shapes
+### Economy: why these numbers
 
-- **Lanchester value.** An army's strength is (Σ DPS) × (Σ HP). So a unit's worth grows like √(DPS × HP), and a fair price grows like that worth^1.26. An effect that adds X to a unit's effective damage is worth a whole-unit factor of about (1 + X)^0.63, **whatever the unit's mix of HP and damage**.
-  - That is why elements and splash multiply the whole price.
-  - A multiplier on the attack part alone would make fire on a 2,500-HP tank nearly free (+3.6%).
-- **Measured fight geometry** (about 55,000 hits on the pre-pathing engine):
-  - share of a 3 s burn that lands: soldiers 0.74, towers 0.38, snipers 0.19, minions 0.68;
-  - P(another enemy within 100 px of the target): soldiers 0.95, towers 0.75;
-  - extra enemies inside the splash radius: 2.46 for soldiers and 1.90 for towers at R40, 2.94 and 2.32 at R80.
-- **Fair factors vs the price:**
+- **The rescale (HP ×1.6, damage ×0.8).** The user asked for lower damage and more HP so battles last longer and mixed armies get time to work. Time-to-kill doubles (×1.6 / ×0.8). The coefficients scale inversely (`cost.hp` 0.3/1.6, `cost.damage` 1.5/0.8, `cost.heal`, `cost.wall.hp` and `cost.factory.hp` /1.6) and the curve maxima move with the bounds, so before the retune every M8.8 unit shape kept its price.
+- **Lanchester value.** An army's strength is about (Σ DPS) × (Σ HP), so with a copy cap, more HP **and** more damage on each body is the efficient way to spend a big budget ("fill the slots"). Two answers: the **power factor** q = 2 (a maxed brick pays ×3; the Basic Soldier ×1.16) and the **copy ramp** (one design repeated pays more, a mixed army doesn't).
+- **Measured, not guessed** (§14 "Redesign balance"): ice ×1.75 (ice enables shatter, brittle and a slower enemy; at ×1.2-1.5 the fire-and-ice squad won 75-90%), fire and lightning ×1.3, speed 90 (the user's rule "make speed pricier if fast armies jump": the exploit search's fast-runner builds won 94% at 66), splash 0.8, auras haste 9 / might 8 / shield 7, heal 3.5 with a 4%/s heal room (twice the time-to-kill made healing twice as strong), minion discount 0.5.
+- **Towers out-range soldiers** (bounds, not price): soldiers reach 20-160 px, towers 20-300 px. The exploit search's mobile splash sniper (a range-240 soldier) won 93% at every range price; a range bound for moving units is the one rule that kept long range a tower's job.
 
-  | Effect | X (soldiers / towers) | fair factor | price |
-  |---|---|---|---|
-  | fire (+50% × landed share) | 0.37 / 0.19 | ×1.22 / ×1.12 | **×1.2** |
-  | lightning (35% × P(target)) | 0.33 / 0.26 | ×1.20 / ×1.16 | **×1.2** |
-  | ice (removes 35% of one enemy's DPS while frozen, worth ≈ 0.175 × n/N of a unit, where n/N = my units / theirs) | equal armies: +18% of the unit | ×1.18 | **×1.2**. Against 2 bricks (n/N = 3.5) it is worth ≈ 61% of a unit |
-  | splash 40 px (50% × extra) | 1.23 / 0.95 | ×1.66 / ×1.52 | **×1.53** |
-  | splash 80 px | 1.47 / 1.16 | ×1.77 / ×1.63 | **×1.70** |
+### Economy: coefficients, bounds and config keys
 
-- **Power factor.** What k = 2 really stopped was the brick (high HP **and** high damage). A brick's strength is HP × damage, so the surcharge is on that product.
-  - It barely touches specialists: Glass Cannon ×1.07, Max Sniper ×1.08, Huge Tank ×1.20.
-  - It hits the max-cost brick with ×1.37.
-- **Support:**
-  - Might X on N covered allies out of n is worth about X·(N/n)/2 of the army. For example, 30% on 2 of 7 is about $214, and the War Drummer's aura costs $227.
-  - Shield is priced a little high, because it combines with heals.
-  - 60 HP/s of capped healing is worth about $400, and the Field Medic's heal term costs $383.
-  - The reach factor saturates like the measured coverage: on average 2.0, 2.1 and 2.4 allies are within 60, 100 and 150 px.
-
-### M8.8 economy: coefficients, bounds and config keys (×5 defaults)
-
-| Config key | Today | **M8.8** | Note |
+| Config key | M8.8 ($5,000) | **Redesign ($10,000)** | Note |
 |---|---|---|---|
-| `caps.budget` / `caps.unitCost` | 1,000 / 500 | **5,000 / 2,500** | ×5 |
-| `cost.base` | 10 | **50** | ×5 |
-| `cost.hp` | 0.25 | **0.30** | +20%: k = 1 made Half Tanks cheaper, and they already dominated (84% at a pure ×5) |
-| `cost.damage` | 1.5 | **1.5** | the ×5 price and ×5 damage cancel out |
-| `cost.range` | 0.2 | **1.38** | a pure ×5 would be 1.0. The spec set 1.45 (the 300-range longbow army won 71% at 1.2 before routing); the M8.8 balance retune lowered it to 1.38 so that 4 Basic Soldiers + 3 Basic Towers still fit $5,000 after the speed retune (the longbow army then wins 65%, §14 M8.8 balance) |
-| `cost.speed` | 12 | **66** | ×5 = 60 (at 50, filled scouts reached 82%); the M8.8 balance retune took the spec's first scout knob, 60 → 66, because the HP-padded scout swarm won 70.3% on the routing engine (now 58%, §14 M8.8 balance) |
-| `cost.size` | 0.5 | **8** | a pure ×5 would be 2.5. Size 20 is the tanks' hidden edge: it blocks melee and adds 10 px reach |
-| `cost.referenceCooldown` | 60 | 60 | |
-| `cost.curveK` | 2 | **1** | schema 0-5 |
-| `cost.powerFactor` (new) | – | **0.6** | schema 0-2 |
-| `cost.splash` (new) | – | **0.7** | schema 0-2 |
-| `cost.element` (new) | – | **{fire: 1.2, ice: 1.2, lightning: 1.2}** | schema ≥ 1 |
-| `cost.heal` (new) | – | **4.5** per HP per heal | |
-| `cost.aura` (new) | – | **{haste: 5, might: 4, shield: 7}** per % | |
-| `cost.wall` | 4 / 0.06 | **20 / 0.06** | ×5 |
-| `cost.factory` | 10 / 0.12 / 0.5 | **50 / 0.12 / 0.5** | ×5 |
-| `stats.bounds.maxHealth` / `damage` | 10-500 / 0-60 | **50-2,500 / 0-300** | ×5 |
-| `stats.bounds.range`, `soldierSpeed`, `attackCooldown`, `size`, `productionInterval`, `burst` | | unchanged | geometry and time don't scale |
-| `stats.bounds.wallHealth` / `factoryHealth` | 50-1,500 / 100-1,000 | **250-7,500 / 500-5,000** | ×5 |
-| `stats.bounds.splashRadius` (new) | – | **0-80** | |
-| `stats.bounds.support` (new) | – | heal power 10-250, reach 20-200; haste/might 5-50; shield 5-40; aura radius 40-150 | |
-| `factory.minions.*` HP/damage | 40/5, 24/5, 28/4, 100/8 | **180/25, 120/25, 140/20, 550/40** + **medic 150/0** (heal 40, reach 60, speed 1.4, size 7, aggro 150) | other preset stats unchanged. Grunt 200 → 180 is the M8.8 balance retune (the spec's home-guard knob): the grunt home guard took 9 of 16 kind free-for-alls, over the half cap |
-| `elements` (new) | – | `{ fire: {burnPct: 50, pulses: 6, pulseTicks: 30}, ice: {slowPct: 35, ticks: 120}, lightning: {chancePct: 35, hopRange: 100, burningExtraHops: 1}, shatterPct: 50, splashPct: 50 }` | |
-| `support` (new) | – | `{ healRoomPctPerSecond: 5 }` (heals stop at `suddenDeath.startTick`) | |
-| `economyVersion` (new) | – | **2** | migration (§6 M8.8 migration) |
-| Curve maxima (code constants) | 500, 60, 300, 5, 14; wall 1500; factory 1000 | **2500, 300, 300, 5, 14; wall 7500; factory 5000**; heal 250 / 200; aura 50 (shield 40) / 150; splash 80 | fixed to the defaults |
+| `caps.budget` / `caps.unitCost` | 5,000 / 2,500 | **10,000 / 3,000** | the cap was measured at 3,000-4,000: 3,000 keeps the max-cost brick in check |
+| `caps.maxCopies` / `maxFactoryCopies` / `maxWallCopies` | 12 / 2 / 12 | **12 / 5 / 16** | |
+| `caps.copyRamp` (new) | – | **{ freeCopies: 3, pctPerCopy: 15 }** | the user's last-resort lever, needed: one-design armies won 85% without it |
+| `cost.base` / `cost.range` / `cost.size` / `cost.curveK` | 50 / 1.38 / 8 / 1 | unchanged | |
+| `cost.hp` | 0.30 | **0.1875** | 0.3 / 1.6 |
+| `cost.damage` | 1.5 | **1.875** | 1.5 / 0.8 |
+| `cost.speed` | 66 | **90** | fast armies jumped (accuracy makes speed worth more) |
+| `cost.powerFactor` | 0.6 | **2** | schema 0-4 |
+| `cost.splash` | 0.7 | **0.8** | |
+| `cost.element` | 1.2 / 1.2 / 1.2 | **fire 1.3, ice 1.75, lightning 1.3** | the synergies (§5.4) make elements worth more |
+| `cost.heal` | 4.5 | **3.5** | 4.5 / 1.6 = 2.81, then up: heals last twice as long |
+| `cost.aura` | 5 / 4 / 7 | **haste 9, might 8, shield 7** | auras work twice as long in a fight |
+| `cost.wall` | 20 / 0.06 | **20 / 0.0375** | 0.06 / 1.6 |
+| `cost.factory` | 50 / 0.12 / 0.5 | **50 / 0.075 / 0.5** | 0.12 / 1.6 |
+| `stats.bounds.maxHealth` / `damage` | 50-2,500 / 0-300 | **80-4,000 / 0-240** | ×1.6 / ×0.8 |
+| `stats.bounds.range` / `soldierRange` (new) | 20-300 | **towers 20-300, soldiers 20-160** | towers out-range soldiers |
+| `stats.bounds.wallHealth` / `factoryHealth` | 250-7,500 / 500-5,000 | **400-12,000 / 800-8,000** | ×1.6 |
+| `stats.bounds.productionInterval` | 600-1,800 | **300-1,200** | faster factories (5-20 s) |
+| `stats.bounds.support.heal.power` | 10-250 | **15-400** | ×1.6 |
+| `factory.maxMinionsPerFactory` / `maxAlivePerPlayer` | 8 / 6 | **12 / 12** | per player min(12, floor(40 / players)) |
+| `factory.minions.*` HP / damage | 180/25, 120/25, 140/20, 550/40, medic 150 (heal 40) | **grunt 360/20, archer 240/20, runner 480/24, brute 1100/32, medic 300 (heal 60)** | ×1.6 / ×0.8, then sturdier (+25% HP), runners +70% |
+| `timers.battleTicks` | 5,400 (90 s) | **7,200 (120 s)** | |
+| `suddenDeath` | 3,000 → 5,400, 570 → 60 px, 7%/s | **4,500 → 7,200 (75 s → 120 s)**, 570 → 60 px, 7%/s | §9 |
+| `elements` | shatter 50%, overload +1 hop | **shatter 40%, overload +2 hops, kindle 25%, brittle 25%** (new) | §5.4 |
+| `support.healRoomPctPerSecond` | 5 | **4** | |
+| `accuracy` (new) | – | **{ missMaxPct: 20, speedRef: 5 }** | §9.4 Accuracy |
+| `sim.routeRoundBuildings` (new) | – | **true** | §9.3 |
+| `economyVersion` | 2 | **3** | migration below |
 
-Bounds are deliberately **not** widened beyond ×5. What felt "limited" was the price of extremes (3× at the max) and the lack of other axes. Now a maxed stat costs 2×, and elements, splash, might and shield push effective damage and toughness past the caps: a Glass Cannon with a 30% might aura hits for 390, and a shatter on it hits for 585.
+### Economy: worked examples (exact arithmetic)
 
-### M8.8 economy: worked examples (exact arithmetic)
-
-- **Basic Soldier** (600 HP, 50 dmg, range 40, speed 1.5, size 10, CD 60):
-  - base 50
-  - HP 0.3·600 = 180, + 180·0.24² = 10.37 → 190.37
-  - damage 75 + 75·(1/6)² = 2.08 → 77.08
-  - range 1.38·40 = 55.2, + 55.2·(40/300)² = 0.98 → 56.18
-  - speed 66·1.5 = 99, + 99·0.3² = 8.91 → 107.91
-  - size 8·4 = 32, + 32·(4/14)² = 2.61 → 34.61
-  - Sum 516.15 (linear 491.2, curve 24.95). Cooldown ×1. Power 1 + 0.6·0.24·(1/6) = ×1.024 → **528.54 → $529**.
-- **Basic Tower** (625 HP, 75 dmg, range 140, size 14, CD 45):
-  - 50 + HP 187.5 + 11.72 + damage 112.5 + 7.03 + range 193.2 + 42.07 + size 64 + 20.90 = 688.92
-  - × 60/45 = 918.56
-  - × power 1 + 0.6·0.25·0.25 = 1.0375 → **953.01 → $954**.
-- **Fire Soldier:** 516.15 × 1.024 × 1.2 = **634.25 → $635**. Fire costs $106 on a template.
-- **Field Medic** (soldier 500 HP, damage 0, range 20, speed 1.5, size 10, heal 60, reach 120):
-  - body 50 + 156 + 0 + 27.72 + 107.91 + 34.61 = 376.24
-  - heal 4.5·60·(1 + 0.24²)·reach(0.6) = 285.55 × 1.34 = 382.64
-  - core 758.88 → **$759**.
-- **War Drummer** (same body, might 30%, radius 100): body 376.24 + aura 4·30·(1 + 0.6²)·reach(0.667) = 163.2 × 1.389 = 226.67 → **602.91 → $603**.
+- **Basic Soldier** (1,400 HP, 56 dmg, range 40, speed 1.5, size 10, CD 60): base 50 + HP 262.5 (+32.16) + damage 105 (+5.72) + range 55.2 (+0.98) + speed 135 (+12.15) + size 32 (+2.61) = 693.32. Power 1 + 2·0.35·0.233 = ×1.163 → **806.56 → $807**.
+- **Basic Tower** (1,200 HP, 72 dmg, range 140, size 14, CD 45): 762.57 × 60/45 × 1.18 → **$1,200**.
+- **Fire Soldier:** 693.32 × 1.163 × 1.3 = **$1,049**. **Ice Soldier** × 1.75 = **$1,412**.
+- **Field Medic** (800 HP, damage 0, heal 96 / 120 px): body 415.48 + heal 476.17 → **$892**.
+- **War Drummer** (same body, might 30% / 100 px): 415.48 + aura 453.33 → **$869**.
+- **Copy ramp:** 9 Basic Soldiers = 3 × $807 + $929 + $1,050 + $1,171 + $1,292 + $1,413 + $1,534 = **$9,810** (each copy rounded up; the plain sum would be $7,263).
 
 ### Reference units (curve k = 1)
 
-Exact output of `node tables.mjs` in `final-retune/` (the M8.8 balance retune, 2026-10-24; stored in its `tables.out`). Column meanings:
-- **Linear** = Base + Σ c·x.
-- **Curve** = Σ c·x·k·r².
-- **Heal** = the heal term.
-- **Sum** = Linear + Curve + Heal.
-- **CD f** is the cooldown factor, **Power** the power factor, **Splash f** the splash factor and **Elem f** the element factor.
-- **Aura** = the aura term, added after the factors.
-- **Old ×5 (k 2)** = today's formula with every money coefficient ×5 and k = 2 on the same stats, which is what a pure rescale would cost. ✗ means it is over $2,500, and – means the row has new mechanics.
+Exact output of `node tables.mjs` in `redesign-10k/`. Columns as before; **$5,000 game** is the price of the same unit in M8.8 (its HP ÷1.6, damage ÷0.8, heal ÷1.6, priced with the M8.8 coefficients). "rejected" = over the $3,000 cap. `tests/cost.test.ts` parses this table (every column).
 
-`tests/cost-curve.test.ts` and `tests/cost.test.ts` parse this table (every column); `tests/buildings-cost.test.ts` parses the k = 1 walls, minions and factories tables.
-
-| Unit | Type | HP | Dmg | Range | Spd | Size | CD | Element | Splash | Support | Linear | Curve | Heal | Sum | CD f | Power | Splash f | Elem f | Aura | Raw | **Cost** | Old ×5 (k 2) |
+| Unit | Type | HP | Dmg | Range | Spd | Size | CD | Element | Splash | Support | Linear | Curve | Heal | Sum | CD f | Power | Splash f | Elem f | Aura | Raw | **Cost** | $5,000 game |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Basic Soldier (template) | soldier | 600 | 50 | 40 | 1.5 | 10 | 60 |  |  |  | 491.2 | +24.95 |  | 516.15 | ×1 | ×1.02 | ×1 | ×1 |  | 528.54 | **$529** | $456 |
-| Basic Tower (template) | tower | 625 | 75 | 140 | 0 | 14 | 45 |  |  |  | 607.2 | +81.72 |  | 688.92 | ×1.33 | ×1.04 | ×1 | ×1 |  | 953.01 | **$954** | $782 |
-| Today's Basic Tower ×5 | tower | 750 | 75 | 180 | 0 | 14 | 45 |  |  |  | 699.9 | +137.6 |  | 837.5 | ×1.33 | ×1.05 | ×1 | ×1 |  | 1166.92 | **$1,167** | $988 |
-| Half Tank | soldier | 1250 | 100 | 40 | 0.8 | 20 | 60 |  |  |  | 795 | +224.75 |  | 1019.75 | ×1 | ×1.1 | ×1 | ×1 |  | 1121.72 | **$1,122** | $899 |
-| Huge Tank | soldier | 2500 | 100 | 40 | 0.8 | 20 | 60 |  |  |  | 1170 | +881 |  | 2051 | ×1 | ×1.2 | ×1 | ×1 |  | 2461.2 | **$2,462** | $2,306 |
-| Sniper Tower | tower | 400 | 200 | 280 | 0 | 14 | 60 |  |  |  | 920.4 | +493.9 |  | 1414.3 | ×1 | ×1.06 | ×1 | ×1 |  | 1504.82 | **$1,505** | $1,523 |
-| Slow Sniper (the trap) | tower | 400 | 200 | 280 | 0 | 14 | 90 |  |  |  | 920.4 | +493.9 |  | 1414.3 | ×1 | ×1.06 | ×1 | ×1 |  | 1504.82 | **$1,505** | $1,523 |
-| Max Sniper | tower | 400 | 250 | 300 | 0 | 14 | 60 |  |  |  | 1023 | +698.39 |  | 1721.39 | ×1 | ×1.08 | ×1 | ×1 |  | 1859.1 | **$1,860** | $1,985 |
-| Glass Cannon | soldier | 300 | 300 | 40 | 2 | 8 | 60 |  |  |  | 793.2 | +473.72 |  | 1266.92 | ×1 | ×1.07 | ×1 | ×1 |  | 1358.14 | **$1,359** | $1,683 |
-| Max-cost Brick | soldier | 1700 | 270 | 40 | 1.5 | 16 | 60 |  |  |  | 1199.2 | +614.58 |  | 1813.78 | ×1 | ×1.37 | ×1 | ×1 |  | 2479.8 | **$2,480** | $2,128 |
-| Today's brick ×5 | soldier | 2150 | 250 | 40 | 1.5 | 16 | 60 |  |  |  | 1304.2 | +788.17 |  | 2092.37 | ×1 | ×1.43 | ×1 | ×1 |  | 2992.08 | **$2,993**, rejected | $2,477 |
-| Speedy Scout | soldier | 300 | 30 | 30 | 4 | 6 | 20 |  |  |  | 490.4 | +171.12 |  | 661.52 | ×3 | ×1.01 | ×1 | ×1 |  | 1998.85 | **$1,999** | $2,253 |
-| Scout with cooldown 10 | soldier | 300 | 30 | 30 | 4 | 6 | 10 |  |  |  | 490.4 | +171.12 |  | 661.52 | ×6 | ×1.01 | ×1 | ×1 |  | 3997.7 | **$3,998**, rejected | $4,506 ✗ |
-| Laser Sniper (soldier) | soldier | 500 | 100 | 150 | 2 | 10 | 30 |  |  |  | 721 | +98.15 |  | 819.15 | ×2 | ×1.04 | ×1 | ×1 |  | 1703.83 | **$1,704** | $1,527 |
-| Half stats at CD 60 | soldier | 1250 | 150 | 150 | 2.5 | 13 | 60 |  |  |  | 1078 | +257 |  | 1335 | ×1 | ×1.15 | ×1 | ×1 |  | 1535.25 | **$1,536** | $1,333 |
-| Max stats at CD 60 | soldier | 2500 | 300 | 300 | 5 | 20 | 60 |  |  |  | 2106 | +2056 |  | 4162 | ×1 | ×1.6 | ×1 | ×1 |  | 6659.2 | **$6,660**, rejected | $5,180 ✗ |
-| Everything maxed | soldier | 2500 | 300 | 300 | 5 | 20 | 10 |  |  |  | 2106 | +2056 |  | 4162 | ×6 | ×1.6 | ×1 | ×1 |  | 39955.2 | **$39,956**, rejected | $31,080 ✗ |
-| Cheapest legal | tower | 50 | 0 | 20 | 0 | 6 | 600 |  |  |  | 92.6 | +0.13 |  | 92.73 | ×1 | ×1 | ×1 | ×1 |  | 92.73 | **$93** | $83 |
-| Fire Soldier | soldier | 600 | 50 | 40 | 1.5 | 10 | 60 | fire |  |  | 491.2 | +24.95 |  | 516.15 | ×1 | ×1.02 | ×1 | ×1.2 |  | 634.25 | **$635** | – |
-| Ice Soldier | soldier | 600 | 50 | 40 | 1.5 | 10 | 60 | ice |  |  | 491.2 | +24.95 |  | 516.15 | ×1 | ×1.02 | ×1 | ×1.2 |  | 634.25 | **$635** | – |
-| Lightning Soldier | soldier | 600 | 50 | 40 | 1.5 | 10 | 60 | lightning |  |  | 491.2 | +24.95 |  | 516.15 | ×1 | ×1.02 | ×1 | ×1.2 |  | 634.25 | **$635** | – |
-| Ice Tower | tower | 625 | 75 | 140 | 0 | 14 | 45 | ice |  |  | 607.2 | +81.72 |  | 688.92 | ×1.33 | ×1.04 | ×1 | ×1.2 |  | 1143.61 | **$1,144** | – |
-| Storm Tower | tower | 625 | 75 | 140 | 0 | 14 | 45 | lightning |  |  | 607.2 | +81.72 |  | 688.92 | ×1.33 | ×1.04 | ×1 | ×1.2 |  | 1143.61 | **$1,144** | – |
-| Frost Archer | soldier | 400 | 40 | 140 | 1.5 | 9 | 60 | ice |  |  | 546.2 | +56.23 |  | 602.43 | ×1 | ×1.01 | ×1 | ×1.2 |  | 732.16 | **$733** | – |
-| Frost Sniper | tower | 400 | 200 | 280 | 0 | 14 | 60 | ice |  |  | 920.4 | +493.9 |  | 1414.3 | ×1 | ×1.06 | ×1 | ×1.2 |  | 1805.78 | **$1,806** | – |
-| Mortar Tower | tower | 625 | 100 | 140 | 0 | 14 | 60 |  | 40 |  | 644.7 | +91.36 |  | 736.06 | ×1 | ×1.05 | ×1.53 | ×1 |  | 1178.61 | **$1,179** | – |
-| Fire Mortar | tower | 625 | 100 | 140 | 0 | 14 | 60 | fire | 40 |  | 644.7 | +91.36 |  | 736.06 | ×1 | ×1.05 | ×1.53 | ×1.2 |  | 1414.34 | **$1,415** | – |
-| Fireball Catapult | tower | 600 | 150 | 220 | 0 | 14 | 60 | fire | 40 |  | 822.6 | +250.79 |  | 1073.39 | ×1 | ×1.07 | ×1.53 | ×1.2 |  | 2105.72 | **$2,106** | – |
-| Blizzard Totem | tower | 650 | 0 | 160 | 0 | 14 | 60 | ice | 60 |  | 529.8 | +96.89 |  | 626.69 | ×1 | ×1 | ×1.66 | ×1.2 |  | 1245.54 | **$1,246** | – |
-| Fire Bomber | soldier | 700 | 60 | 40 | 1.2 | 12 | 60 | fire | 30 |  | 532.4 | +34.42 |  | 566.82 | ×1 | ×1.03 | ×1.43 | ×1.2 |  | 1002.93 | **$1,003** | – |
-| Max-splash fire brick | soldier | 1500 | 200 | 40 | 1.5 | 16 | 60 | fire | 80 |  | 1034.2 | +346.04 |  | 1380.24 | ×1 | ×1.24 | ×1.7 | ×1.2 |  | 3491.46 | **$3,492**, rejected | – |
-| Field Medic | soldier | 500 | 0 | 20 | 1.5 | 10 | 60 |  |  | heal 60 / 120 px | 358.6 | +17.64 | 382.64 | 758.88 | ×1 | ×1 | ×1 | ×1 |  | 758.88 | **$759** | – |
-| Healing Shrine | tower | 800 | 0 | 20 | 0 | 14 | 60 |  |  | heal 80 / 160 px | 381.6 | +45.6 | 579.42 | 1006.62 | ×1 | ×1 | ×1 | ×1 |  | 1006.62 | **$1,007** | – |
-| Battle Cleric | soldier | 600 | 40 | 40 | 1.5 | 10 | 60 |  |  | heal 40 / 100 px | 476.2 | +23.94 | 230.76 | 730.9 | ×1 | ×1.02 | ×1 | ×1 |  | 744.93 | **$745** | – |
-| Rapid Medic (CD 30) | soldier | 500 | 0 | 20 | 1.5 | 10 | 30 |  |  | heal 60 / 120 px | 358.6 | +17.64 | 382.64 | 758.88 | ×2 | ×1 | ×1 | ×1 |  | 1517.77 | **$1,518** | – |
-| War Drummer | soldier | 500 | 0 | 20 | 1.5 | 10 | 60 |  |  | might 30% / 100 px | 358.6 | +17.64 |  | 376.24 | ×1 | ×1 | ×1 | ×1 | +226.67 | 602.91 | **$603** | – |
-| Wind Banner | soldier | 500 | 0 | 20 | 1.5 | 10 | 60 |  |  | haste 30% / 100 px | 358.6 | +17.64 |  | 376.24 | ×1 | ×1 | ×1 | ×1 | +283.33 | 659.58 | **$660** | – |
-| Shield Bearer | soldier | 1000 | 30 | 30 | 1.2 | 14 | 60 |  |  | shield 25% / 80 px | 579.6 | +74.32 |  | 653.92 | ×1 | ×1.02 | ×1 | ×1 | +312.04 | 981.66 | **$982** | – |
-| Haste Totem | tower | 500 | 0 | 20 | 0 | 12 | 60 |  |  | haste 30% / 120 px | 275.6 | +14.94 |  | 290.54 | ×1 | ×1 | ×1 | ×1 | +297.84 | 588.38 | **$589** | – |
-| Max might pole | tower | 50 | 0 | 20 | 0 | 6 | 60 |  |  | might 50% / 150 px | 92.6 | +0.13 |  | 92.73 | ×1 | ×1 | ×1 | ×1 | +600 | 692.73 | **$693** | – |
-| Max shield pole | tower | 50 | 0 | 20 | 0 | 6 | 60 |  |  | shield 40% / 150 px | 92.6 | +0.13 |  | 92.73 | ×1 | ×1 | ×1 | ×1 | +840 | 932.73 | **$933** | – |
-| Max healer | soldier | 500 | 0 | 20 | 1.5 | 10 | 30 |  |  | heal 250 / 200 px | 358.6 | +17.64 | 3375 | 3751.24 | ×2 | ×1 | ×1 | ×1 |  | 7502.49 | **$7,503**, rejected | – |
+| Basic Soldier (template) | soldier | 1400 | 56 | 40 | 1.5 | 10 | 60 |  |  |  | 639.7 | +53.62 |  | 693.32 | ×1 | ×1.16 | ×1 | ×1 |  | 806.56 | **$807** | $687 |
+| Basic Tower (template) | tower | 1200 | 72 | 140 | 0 | 14 | 45 |  |  |  | 667.2 | +95.37 |  | 762.57 | ×1.33 | ×1.18 | ×1 | ×1 |  | 1199.78 | **$1,200** | $1,072 |
+| Half Tank | soldier | 2000 | 80 | 40 | 0.8 | 20 | 60 |  |  |  | 814.2 | +225.24 |  | 1039.44 | ×1 | ×1.33 | ×1 | ×1 |  | 1385.92 | **$1,386** | $1,122 |
+| Huge Tank | soldier | 3600 | 80 | 40 | 0.8 | 20 | 60 |  |  |  | 1114.2 | +678.24 |  | 1792.44 | ×1 | ×1.6 | ×1 | ×1 |  | 2867.91 | **$2,868** | $2,092 |
+| Sniper Tower | tower | 640 | 160 | 280 | 0 | 14 | 60 |  |  |  | 920.4 | +493.9 |  | 1414.3 | ×1 | ×1.21 | ×1 | ×1 |  | 1716.02 | **$1,717** | $1,505 |
+| Slow Sniper (the trap) | tower | 640 | 160 | 280 | 0 | 14 | 90 |  |  |  | 920.4 | +493.9 |  | 1414.3 | ×1 | ×1.21 | ×1 | ×1 |  | 1716.02 | **$1,717** | $1,505 |
+| Max Sniper | tower | 640 | 200 | 300 | 0 | 14 | 60 |  |  |  | 1023 | +698.39 |  | 1721.39 | ×1 | ×1.27 | ×1 | ×1 |  | 2180.42 | **$2,181** | $1,860 |
+| Glass Cannon | soldier | 480 | 240 | 40 | 2 | 8 | 60 |  |  |  | 841.2 | +481.4 |  | 1322.6 | ×1 | ×1.24 | ×1 | ×1 |  | 1640.03 | **$1,641** | $1,359 |
+| Max-cost Brick | soldier | 2480 | 180 | 40 | 1.5 | 16 | 60 |  |  |  | 1122.7 | +422.54 |  | 1545.24 | ×1 | ×1.93 | ×1 | ×1 |  | 2982.31 | **$2,983** | $1,927 |
+| Speedy Scout | soldier | 480 | 24 | 30 | 4 | 6 | 20 |  |  |  | 586.4 | +232.56 |  | 818.96 | ×3 | ×1.02 | ×1 | ×1 |  | 2515.85 | **$2,516** | $1,999 |
+| Scout with cooldown 10 | soldier | 480 | 24 | 30 | 4 | 6 | 10 |  |  |  | 586.4 | +232.56 |  | 818.96 | ×6 | ×1.02 | ×1 | ×1 |  | 5031.69 | **$5,032**, rejected | $3,998 |
+| Laser Sniper (soldier) | soldier | 800 | 80 | 150 | 2 | 10 | 30 |  |  |  | 769 | +105.83 |  | 874.83 | ×2 | ×1.13 | ×1 | ×1 |  | 1982.95 | **$1,983** | $1,704 |
+| Half stats at CD 60 | soldier | 2000 | 120 | 150 | 2.5 | 13 | 60 |  |  |  | 1138 | +272 |  | 1410 | ×1 | ×1.5 | ×1 | ×1 |  | 2115 | **$2,115** | $1,536 |
+| Max stats at CD 60 | soldier | 4000 | 240 | 160 | 5 | 20 | 60 |  |  |  | 2032.8 | +1824.81 |  | 3857.61 | ×1 | ×3 | ×1 | ×1 |  | 11572.82 | **$11,573**, rejected | $5,789 |
+| Everything maxed | soldier | 4000 | 240 | 160 | 5 | 20 | 10 |  |  |  | 2032.8 | +1824.81 |  | 3857.61 | ×6 | ×3 | ×1 | ×1 |  | 69436.9 | **$69,437**, rejected | $34,730 |
+| Cheapest legal | tower | 80 | 0 | 20 | 0 | 6 | 600 |  |  |  | 92.6 | +0.13 |  | 92.73 | ×1 | ×1 | ×1 | ×1 |  | 92.73 | **$93** | $93 |
+| Fire Soldier | soldier | 1400 | 56 | 40 | 1.5 | 10 | 60 | fire |  |  | 639.7 | +53.62 |  | 693.32 | ×1 | ×1.16 | ×1 | ×1.3 |  | 1048.53 | **$1,049** | $824 |
+| Ice Soldier | soldier | 1400 | 56 | 40 | 1.5 | 10 | 60 | ice |  |  | 639.7 | +53.62 |  | 693.32 | ×1 | ×1.16 | ×1 | ×1.75 |  | 1411.48 | **$1,412** | $824 |
+| Lightning Soldier | soldier | 1400 | 56 | 40 | 1.5 | 10 | 60 | lightning |  |  | 639.7 | +53.62 |  | 693.32 | ×1 | ×1.16 | ×1 | ×1.3 |  | 1048.53 | **$1,049** | $824 |
+| Fire Tower | tower | 1200 | 72 | 140 | 0 | 14 | 45 | fire |  |  | 667.2 | +95.37 |  | 762.57 | ×1.33 | ×1.18 | ×1 | ×1.3 |  | 1559.72 | **$1,560** | $1,287 |
+| Ice Tower | tower | 1200 | 72 | 140 | 0 | 14 | 45 | ice |  |  | 667.2 | +95.37 |  | 762.57 | ×1.33 | ×1.18 | ×1 | ×1.75 |  | 2099.62 | **$2,100** | $1,287 |
+| Storm Tower | tower | 1200 | 72 | 140 | 0 | 14 | 45 | lightning |  |  | 667.2 | +95.37 |  | 762.57 | ×1.33 | ×1.18 | ×1 | ×1.3 |  | 1559.72 | **$1,560** | $1,287 |
+| Frost Archer | soldier | 640 | 32 | 140 | 1.5 | 9 | 60 | ice |  |  | 582.2 | +59.47 |  | 641.67 | ×1 | ×1.04 | ×1 | ×1.75 |  | 1170.83 | **$1,171** | $733 |
+| Frost Sniper | tower | 640 | 144 | 280 | 0 | 14 | 60 | ice |  |  | 890.4 | +457.77 |  | 1348.17 | ×1 | ×1.19 | ×1 | ×1.75 |  | 2812.28 | **$2,813** | $1,711 |
+| Max-HP tank (the cap) | soldier | 4000 | 80 | 40 | 0.8 | 20 | 60 |  |  |  | 1189.2 | +881.49 |  | 2070.69 | ×1 | ×1.67 | ×1 | ×1 |  | 3451.15 | **$3,452**, rejected | $2,462 |
+| Mortar Tower | tower | 1000 | 80 | 140 | 0 | 14 | 60 |  | 40 |  | 644.7 | +91.36 |  | 736.06 | ×1 | ×1.17 | ×1.6 | ×1 |  | 1373.98 | **$1,374** | $1,179 |
+| Fire Mortar | tower | 1000 | 80 | 140 | 0 | 14 | 60 | fire | 40 |  | 644.7 | +91.36 |  | 736.06 | ×1 | ×1.17 | ×1.6 | ×1.3 |  | 1786.17 | **$1,787** | $1,415 |
+| Fireball Catapult | tower | 960 | 120 | 220 | 0 | 14 | 60 | fire | 40 |  | 822.6 | +250.79 |  | 1073.39 | ×1 | ×1.24 | ×1.6 | ×1.3 |  | 2768.48 | **$2,769** | $2,106 |
+| Blizzard Totem | tower | 1040 | 0 | 160 | 0 | 14 | 60 | ice | 60 |  | 529.8 | +96.89 |  | 626.69 | ×1 | ×1 | ×1.75 | ×1.75 |  | 1919.22 | **$1,920** | $1,246 |
+| Fire Bomber | soldier | 1120 | 48 | 40 | 1.2 | 12 | 60 | fire | 30 |  | 561.2 | +36.08 |  | 597.28 | ×1 | ×1.11 | ×1.49 | ×1.3 |  | 1284.35 | **$1,285** | $1,003 |
+| Max-splash fire brick | soldier | 2400 | 160 | 40 | 1.5 | 16 | 60 | fire | 80 |  | 1070.2 | +349.28 |  | 1419.48 | ×1 | ×1.8 | ×1.8 | ×1.3 |  | 5978.85 | **$5,979**, rejected | $3,492 |
+| Field Medic | soldier | 800 | 0 | 20 | 1.5 | 10 | 60 |  |  | heal 96 / 120 px | 394.6 | +20.88 | 476.17 | 891.66 | ×1 | ×1 | ×1 | ×1 |  | 891.66 | **$892** | $759 |
+| Healing Shrine | tower | 1280 | 0 | 20 | 0 | 14 | 60 |  |  | heal 128 / 160 px | 381.6 | +45.6 | 721.06 | 1148.25 | ×1 | ×1 | ×1 | ×1 |  | 1148.25 | **$1,149** | $1,007 |
+| Battle Cleric | soldier | 1000 | 32 | 40 | 1.5 | 10 | 60 |  |  | heal 64 / 100 px | 519.7 | +28.53 | 287.17 | 835.4 | ×1 | ×1.07 | ×1 | ×1 |  | 891.09 | **$892** | $755 |
+| Rapid Medic (CD 30) | soldier | 800 | 0 | 20 | 1.5 | 10 | 30 |  |  | heal 96 / 120 px | 394.6 | +20.88 | 476.17 | 891.66 | ×2 | ×1 | ×1 | ×1 |  | 1783.32 | **$1,784** | $1,518 |
+| War Drummer | soldier | 800 | 0 | 20 | 1.5 | 10 | 60 |  |  | might 30% / 100 px | 394.6 | +20.88 |  | 415.48 | ×1 | ×1 | ×1 | ×1 | +453.33 | 868.82 | **$869** | $603 |
+| Wind Banner | soldier | 800 | 0 | 20 | 1.5 | 10 | 60 |  |  | haste 30% / 100 px | 394.6 | +20.88 |  | 415.48 | ×1 | ×1 | ×1 | ×1 | +510 | 925.48 | **$926** | $660 |
+| Shield Bearer | soldier | 1600 | 24 | 30 | 1.2 | 14 | 60 |  |  | shield 25% / 80 px | 608.4 | +75.98 |  | 684.38 | ×1 | ×1.08 | ×1 | ×1 | +312.04 | 1051.17 | **$1,052** | $982 |
+| Haste Totem | tower | 800 | 0 | 20 | 0 | 12 | 60 |  |  | haste 30% / 120 px | 275.6 | +14.94 |  | 290.54 | ×1 | ×1 | ×1 | ×1 | +536.11 | 826.65 | **$827** | $589 |
+| Max might pole | tower | 80 | 0 | 20 | 0 | 6 | 60 |  |  | might 50% / 150 px | 92.6 | +0.13 |  | 92.73 | ×1 | ×1 | ×1 | ×1 | +1200 | 1292.73 | **$1,293** | $693 |
+| Max shield pole | tower | 80 | 0 | 20 | 0 | 6 | 60 |  |  | shield 40% / 150 px | 92.6 | +0.13 |  | 92.73 | ×1 | ×1 | ×1 | ×1 | +840 | 932.73 | **$933** | $933 |
+| Max healer | soldier | 800 | 0 | 20 | 1.5 | 10 | 30 |  |  | heal 400 / 200 px | 394.6 | +20.88 | 4200 | 4615.48 | ×2 | ×1 | ×1 | ×1 |  | 9230.97 | **$9,231**, rejected | $7,503 |
 
 Notes on the table:
 - The Slow Sniper has ⅔ the DPS at the same price (`W_SLOW_NO_DISCOUNT`).
-- The max might pole dies to one hit.
-- The Blizzard Totem has damage 0 (ice still freezes).
-
-**Softer extremes, measured in price** (M8.8 vs Old ×5):
-- **Cheaper single-stat specialists:** Glass Cannon −19%, Speedy Scout −11%, Max Sniper −6%.
-- **About the same:** Sniper Tower −1%, Huge Tank +7%. HP had to get dearer, because tanks were already among the strongest archetypes.
-- **Dearer mid-range all-rounders:** Half stats +15%, Half Tank +25%.
-- **Bricks pay the power factor:** the max-cost brick is 1,700 HP / 270 dmg ($2,480; the spec's 1,750 / 265 costs $2,502 after the speed retune). Today's brick ×5 (2,150 / 250) would cost $2,993 and is rejected.
+- The Huge Tank is about the most HP a damage-80 soldier gets under the cap; the max-HP tank (4,000) is rejected (power ×1.67).
+- The Max-cost Brick is the most HP × damage a range-40, speed-1.5, size-16 soldier gets under the cap: power ×1.93.
+- Soldier ranges stop at 160 (towers out-range soldiers), so the "max stats" rows use range 160.
 
 ### Reference walls, minions and factories (curve k = 1)
 
-Exact output of `node tables.mjs` in `final-retune/` (headers added).
+Exact output of `node tables.mjs` in `redesign-10k/` (headers added).
 
-Walls, `raw = 20 + 0.06·HP·(1 + (HP/7500)²)`:
+Walls, `raw = 20 + 0.0375·HP·(1 + (HP/12000)²)`:
 
-| HP | Linear | Curve | Raw | **Cost** | Old ×5 |
-|---|---|---|---|---|---|
-| 250 | 35 | +0.02 | 35.02 | **$36** | $36 |
-| 750 | 65 | +0.45 | 65.45 | **$66** | $66 |
-| 1500 | 110 | +3.6 | 113.6 | **$114** | $118 |
-| 2000 | 140 | +8.53 | 148.53 | **$149** | $158 |
-| 3000 | 200 | +28.8 | 228.8 | **$229** | $258 |
-| 4000 | 260 | +68.27 | 328.27 | **$329** | $397 |
-| 5000 | 320 | +133.33 | 453.33 | **$454** | $587 |
-| 7500 | 470 | +450 | 920 | **$920** | $1,370 |
+| HP | Linear | Curve | Raw | **Cost** |
+|---|---|---|---|---|
+| 400 | 35 | +0.02 | 35.02 | **$36** |
+| 1200 | 65 | +0.45 | 65.45 | **$66** |
+| 2400 | 110 | +3.6 | 113.6 | **$114** |
+| 3200 | 140 | +8.53 | 148.53 | **$149** |
+| 4800 | 200 | +28.8 | 228.8 | **$229** |
+| 6400 | 260 | +68.27 | 328.27 | **$329** |
+| 8000 | 320 | +133.33 | 453.33 | **$454** |
+| 12000 | 470 | +450 | 920 | **$920** |
 
-250 HP is the minimum, 2,000 HP is the Basic Wall template, and 7,500 HP is the maximum.
+400 HP is the minimum, 3,200 HP is the Basic Wall template, and 12,000 HP is the maximum.
 
-Minions are priced with the soldier formula at CD 60. The element factor is ×1.2 and minionValue = ceil(cost × 0.5). Each cell reads: raw → minionCost → **minionValue**.
+Minions are priced with the soldier formula at CD 60. The element factor is the unit's (fire 1.3, ice 1.75, lightning 1.3) and minionValue = ceil(cost × 0.5). Each cell reads: raw → minionCost → **minionValue**.
 
 | Kind | HP | Dmg | Range | Spd | Size | normal | fire | ice | lightning |
 |---|---|---|---|---|---|---|---|---|---|
-| grunt | 180 | 25 | 20 | 1.5 | 8 | 295.06 → $296 → **$148** | 354.07 → $355 → **$178** | 354.07 → $355 → **$178** | 354.07 → $355 → **$178** |
-| archer | 120 | 25 | 110 | 1.2 | 7 | 388.79 → $389 → **$195** | 466.54 → $467 → **$234** | 466.54 → $467 → **$234** | 466.54 → $467 → **$234** |
-| runner | 140 | 20 | 20 | 2.6 | 6 | 368.81 → $369 → **$185** | 442.58 → $443 → **$222** | 442.58 → $443 → **$222** | 442.58 → $443 → **$222** |
-| brute | 550 | 40 | 20 | 0.9 | 11 | 425.56 → $426 → **$213** | 510.67 → $511 → **$256** | 510.67 → $511 → **$256** | 510.67 → $511 → **$256** |
-| medic | 150 | 0 (heal 40, reach 60) | 20 | 1.4 | 7 | 417.02 → $418 → **$209** | 417.02 → $418 → **$209** | 417.02 → $418 → **$209** | 417.02 → $418 → **$209** |
+| grunt | 360 | 20 | 20 | 1.5 | 8 | 352.21 → $353 → **$177** | 457.87 → $458 → **$229** | 616.37 → $617 → **$309** | 457.87 → $458 → **$229** |
+| archer | 240 | 20 | 110 | 1.2 | 7 | 431.67 → $432 → **$216** | 561.17 → $562 → **$281** | 755.42 → $756 → **$378** | 561.17 → $562 → **$281** |
+| runner | 480 | 24 | 20 | 2.6 | 6 | 524.02 → $525 → **$263** | 681.23 → $682 → **$341** | 917.04 → $918 → **$459** | 681.23 → $682 → **$341** |
+| brute | 1100 | 32 | 20 | 0.9 | 11 | 525.25 → $526 → **$263** | 682.83 → $683 → **$342** | 919.19 → $920 → **$460** | 682.83 → $683 → **$342** |
+| medic | 300 | 0 (heal 60, reach 60) | 20 | 1.4 | 7 | 495.08 → $496 → **$248** | 495.08 → $496 → **$248** | 495.08 → $496 → **$248** | 495.08 → $496 → **$248** |
 
 The medic ignores its element, so every column is the same price.
 
@@ -900,138 +851,67 @@ Factories:
 
 | Factory | Kind | Element | HP | Interval | E | Body raw | Body | Production | **Cost** |
 |---|---|---|---|---|---|---|---|---|---|
-| Cheapest legal factory | grunt | normal | 500 | 1800 | 2 | 110.6 | $111 | 2 × $148 = $296 | **$407** |
-| Slow Factory | grunt | normal | 1500 | 1200 | 4 | 246.2 | $247 | 4 × $148 = $592 | **$839** |
-| Basic Factory (template) | grunt | normal | 1500 | 900 | 5 | 246.2 | $247 | 5 × $148 = $740 | **$987** |
-| Swarm Factory | grunt | normal | 1500 | 600 | 8 | 246.2 | $247 | 8 × $148 = $1,184 | **$1,431** |
-| Armoured Factory | grunt | normal | 3000 | 600 | 8 | 539.6 | $540 | 8 × $148 = $1,184 | **$1,724** |
-| Fortress Factory | grunt | normal | 5000 | 1800 | 2 | 1250 | $1,250 | 2 × $148 = $296 | **$1,546** |
-| Maxed grunt factory | grunt | normal | 5000 | 600 | 8 | 1250 | $1,250 | 8 × $148 = $1,184 | **$2,434** |
-| Archer Nest | archer | normal | 1500 | 600 | 8 | 246.2 | $247 | 8 × $195 = $1,560 | **$1,807** |
-| Runner Rush | runner | normal | 1500 | 600 | 8 | 246.2 | $247 | 8 × $185 = $1,480 | **$1,727** |
-| Brute Forge | brute | normal | 1500 | 600 | 8 | 246.2 | $247 | 8 × $213 = $1,704 | **$1,951** |
-| Ice Archer Nest | archer | ice | 1500 | 600 | 8 | 246.2 | $247 | 8 × $234 = $1,872 | **$2,119** |
-| Fire Brute Forge | brute | fire | 1500 | 600 | 8 | 246.2 | $247 | 8 × $256 = $2,048 | **$2,295** |
-| Storm Runners | runner | lightning | 1500 | 600 | 8 | 246.2 | $247 | 8 × $222 = $1,776 | **$2,023** |
-| Fire Grunts | grunt | fire | 1500 | 900 | 5 | 246.2 | $247 | 5 × $178 = $890 | **$1,137** |
-| Fire Brute Pack | brute | fire | 1500 | 900 | 5 | 246.2 | $247 | 5 × $256 = $1,280 | **$1,527** |
-| Medic Tent | medic | normal | 1500 | 900 | 5 | 246.2 | $247 | 5 × $209 = $1,045 | **$1,292** |
-| Maxed storm-runner factory | runner | lightning | 5000 | 600 | 8 | 1250 | $1,250 | 8 × $222 = $1,776 | **$3,026**, rejected |
+| Cheapest legal factory | grunt | normal | 800 | 1200 | 5 | 110.6 | $111 | 5 × $177 = $885 | **$996** |
+| Slow Factory | grunt | normal | 2400 | 1200 | 5 | 246.2 | $247 | 5 × $177 = $885 | **$1,132** |
+| Basic Factory (template) | grunt | normal | 2400 | 600 | 11 | 246.2 | $247 | 11 × $177 = $1,947 | **$2,194** |
+| Swarm Factory | grunt | normal | 2400 | 300 | 12 | 246.2 | $247 | 12 × $177 = $2,124 | **$2,371** |
+| Armoured Factory | grunt | normal | 4800 | 300 | 12 | 539.6 | $540 | 12 × $177 = $2,124 | **$2,664** |
+| Fortress Factory | grunt | normal | 8000 | 1200 | 5 | 1250 | $1,250 | 5 × $177 = $885 | **$2,135** |
+| Maxed grunt factory | grunt | normal | 8000 | 300 | 12 | 1250 | $1,250 | 12 × $177 = $2,124 | **$3,374**, rejected |
+| Archer Nest | archer | normal | 2400 | 300 | 12 | 246.2 | $247 | 12 × $216 = $2,592 | **$2,839** |
+| Runner Rush | runner | normal | 2400 | 720 | 9 | 246.2 | $247 | 9 × $263 = $2,367 | **$2,614** |
+| Brute Forge | brute | normal | 2400 | 720 | 9 | 246.2 | $247 | 9 × $263 = $2,367 | **$2,614** |
+| Steady Factory | grunt | normal | 2400 | 900 | 7 | 246.2 | $247 | 7 × $177 = $1,239 | **$1,486** |
+| Ice Archer Nest | archer | ice | 2400 | 900 | 7 | 246.2 | $247 | 7 × $378 = $2,646 | **$2,893** |
+| Fire Brute Pack | brute | fire | 2400 | 900 | 7 | 246.2 | $247 | 7 × $342 = $2,394 | **$2,641** |
+| Storm Runners | runner | lightning | 2400 | 900 | 7 | 246.2 | $247 | 7 × $341 = $2,387 | **$2,634** |
+| Fire Grunts | grunt | fire | 2400 | 600 | 11 | 246.2 | $247 | 11 × $229 = $2,519 | **$2,766** |
+| Medic Tent | medic | normal | 2400 | 600 | 11 | 246.2 | $247 | 11 × $248 = $2,728 | **$2,975** |
+| Steady Medics | medic | normal | 2400 | 900 | 7 | 246.2 | $247 | 7 × $248 = $1,736 | **$1,983** |
+| Brute Forge at 300 | brute | normal | 2400 | 300 | 12 | 246.2 | $247 | 12 × $263 = $3,156 | **$3,403**, rejected |
+| Maxed storm-runner factory | runner | lightning | 8000 | 300 | 12 | 1250 | $1,250 | 12 × $341 = $4,092 | **$5,342**, rejected |
 
-The maxed grunt factory is legal now. It was rejected at the ×1 scale.
+E = min(12, floor(7199 / interval)): 300-599 → 12, 600 → 11, 720 → 9, 900 → 7, 1200 → 5. `burst` still never changes a price.
 
-`burst` still never changes a price. The brute's ×3 wall damage and the kinds' aggro and impatience are still unpriced behaviour.
+### Economy: concentration property (`tests/cost-curve.test.ts`)
 
-### M8.8 economy: concentration property (`tests/cost-curve.test.ts`)
+Doubling a unit adds Σ 6k·c·x·r² of extra curve and saves one Base; the power factor makes doubling dearer still. Measured by `conc.mjs` in `redesign-10k/` (20,000 seeded random half units per variant, plus the worst-case grid): at the **65%** threshold the test uses there are 0 failures (normal worst 1.095 random / 1.071 grid; fire, splash 80 and ice + splash 80 the same within 0.002); at 50% the grid has 35 failures (worst 0.98), as before. Explicit checks: max stats $13,206 > 2 × half stats $4,230; the max-HP tank $3,452 > 2 × Half Tank $2,772; the Glass Cannon $1,641 > 2 × (480 HP, 120 dmg) $1,578; without the curve (k 0, power 0) doubled half stats $2,226 < 2 × $2,276, as intended.
 
-Doubling a unit adds Σ 6k·c·x·r² of extra curve and saves one Base, because two halves pay Base twice.
-- The power factor makes doubling dearer still, because doubling quadruples r_HP·r_dmg.
-- The cooldown, splash and element factors multiply both sides equally.
-- An aura term is paid once by the doubled unit but twice by two halves.
-- The smallest c·max of the four big stats is speed's: 66 × 5 = 330. So a doubled unit can only be cheaper than two halves below r ≈ (50 / (6·330))^(1/3) = 0.29, which means a doubled ratio of 0.59.
+### Economy: breakdown, warnings and levers
 
-Measured by `conc.mjs` (re-run in `final-retune/` with the M8.8 balance retune): 20,000 seeded random half units per variant, plus the existing worst-case grid (one stat pushed, the others at their minimum, CD 10/20/45/60/600).
+- `UNIT_TOO_EXPENSIVE` names the biggest lever, in this order: the cooldown factor, the power factor, splash, the element, the aura or heal, then the biggest stat.
+- `W_STAT_NEAR_MAX` keeps its 80% threshold; `W_POWER_HIGH` fires from a power factor of ×1.25.
+- The copy ramp is not a unit price: the unit card and `validate_unit` show the unit's price, and the placement page shows what the next copy costs (↑ when it is more).
 
-| Doubled unit has a stat ≥ | normal | fire | splash 80 | ice + splash 80 |
+### Example armies at $10,000
+
+Exact output of `node tables.mjs` in `redesign-10k/` (headers added). **Plain** = the sum without the copy ramp; **Cost** = with it.
+
+| Army | Units | Plain | **Cost** | Count |
 |---|---|---|---|---|
-| 50% (today's test) | 2 random + 70 grid failures (worst 0.948) | same | same | 3 + 70 |
-| 60% | 0 random, 0 grid (worst 1.022 / 1.009) | 0 / 0 | 0 / 0 | 0 / 0 |
-| **65% (M8.8 test)** | **0 / 16,607 random, 0 grid; worst 1.064 / 1.042** | 0, worst 1.064 / 1.043 | 0, 1.065 / 1.043 | 0, 1.065 / 1.043 |
-| 70% | 0, worst 1.078 / 1.078 | 0 | 0 | 0 |
+| All four templates | 4 Basic Soldier ($807) + 2 Basic Tower ($1,200) + 1 Basic Factory ($2,194) + 6 Basic Wall ($149) | $8,716 | **$8,838** | 7 + 6 walls |
+| Template rush | 9 Basic Soldier ($807) | $7,263 | **$9,810** | 9 |
+| Templates, 3 of each | 3 Basic Soldier ($807) + 3 Basic Tower ($1,200) + 1 Basic Factory ($2,194) | $8,215 | **$8,215** | 7 |
+| Fire and ice (shatter) | 4 Fire Soldier ($1,049) + 2 Frost Archer ($1,171) + 2 Basic Tower ($1,200) | $8,938 | **$9,096** | 8 |
+| Kindle squad (fire towers, soldiers) | 4 Basic Soldier ($807) + 3 Fire Tower ($1,560) + 1 Mortar Tower ($1,374) | $9,282 | **$9,404** | 8 |
+| Brittle nest (ice towers, snipers) | 3 Basic Soldier ($807) + 1 Ice Tower ($2,100) + 2 Sniper Tower ($1,717) + 6 Basic Wall ($149) | $8,849 | **$8,849** | 6 + 6 walls |
+| Overload (lightning round fire) | 5 Lightning Soldier ($1,049) + 2 Fire Tower ($1,560) | $8,365 | **$8,838** | 7 |
+| Splash line | 5 Basic Soldier ($807) + 3 Mortar Tower ($1,374) + 4 Basic Wall ($149) | $8,753 | **$9,118** | 8 + 4 walls |
+| Healer ball | 3 Half Tank ($1,386) + 2 Shield Bearer ($1,052) + 2 Basic Soldier ($807) + 2 Field Medic ($892) | $9,660 | **$9,660** | 9 |
+| Buffed rush | 7 Basic Soldier ($807) + 1 War Drummer ($869) + 1 Wind Banner ($926) + 4 Basic Wall ($149) | $8,040 | **$9,254** | 9 + 4 walls |
+| Five factories | 2 Steady Factory ($1,486) + 1 Steady Archers ($1,759) + 1 Steady Brutes ($2,088) + 1 Steady Medics ($1,983) + 1 Basic Soldier ($807) | $9,609 | **$9,609** | 6 |
+| Two max-cost bricks + soldiers | 2 Max-cost Brick ($2,983) + 4 Basic Soldier ($807) | $9,194 | **$9,316** | 6 |
+| Huge tank + friends | 1 Huge Tank ($2,868) + 1 Field Medic ($892) + 2 Basic Tower ($1,200) + 3 Basic Soldier ($807) | $8,581 | **$8,581** | 7 |
 
-**How the test changes:**
-- `bigEnough` uses `ratio ≥ 0.65`, and the grid loops r from 0.325 to 0.5.
-- The random check keeps `checked > 3000` (about 4,150 of 5,000 qualify).
-- The test gains variants with an element and with splash 80.
-- Explicit checks:
-  - Max stats $6,660 > 2 × Half stats $1,536 = $3,072;
-  - Huge Tank $2,462 > 2 × Half Tank $1,122 = $2,244;
-  - Glass Cannon $1,359 > 2 × (300 HP, 150 dmg) $672 = $1,344.
-- "Without the curve" (k 0, power 0) must still fail as intended: doubled half stats $2,106 < 2 × $1,078 = $2,156.
-- Exact multipliers: a maxed term = **2×** linear, half max = **1.25×**.
-- The slope ratio at the max is 1 + 3k = **4**, so the "> 5" assertion becomes "> 3".
+Army sizes: mixed armies of 3-4 designs field 7-9 fighters; a one-design army pays the ramp (9 Basic Soldiers $9,810 instead of $7,263).
 
-### M8.8 economy: breakdown, warnings and levers
+### Economy: migration
 
-```
-maxHealth 1750 costs $782.25: $525 base + $257.25 for being at 70% of the max
-damage 265 costs $707.66: $397.5 base + $310.16 for being near the max (88% of max)
-Power ×1.37: tough (70% of max HP) AND strong (88% of max damage). One tough unit plus one strong unit is cheaper.
-Splash ×1.53 (radius 40: everyone within 40 px of the target takes half)
-Fire (hits burn) ×1.2
-Heal 60 HP up to 120 px away: $382.64 (faster healing costs more)
-Might aura 30% within 100 px: +$226.67, added on top
-```
-
-- `UNIT_TOO_EXPENSIVE` names the biggest lever, checked in this order:
-  1. the cooldown factor (as today);
-  2. the power factor ("Lowering damage from 265 to 180 drops the power factor from ×1.37 to ×1.25 and saves $X");
-  3. splash ("Splash 80 → 40 saves $X");
-  4. the element ("normal instead of fire saves $X");
-  5. the aura or heal power and range;
-  6. the biggest stat.
-- `W_STAT_NEAR_MAX` keeps its 80% threshold and now says "costs 1.81× its normal price" at 90%.
-- The sentence "Maxed stats cost up to 2× their normal price" follows `curveK` (`1 + curveK`).
-- New warning `W_POWER_HIGH` when the power factor is ≥ 1.25 (§7 M8.8).
-- `CostBreakdown` gains `heal`, `aura`, `power`, `splash` and `element` parts with these texts. A factory's `production` gains `element`.
-
-### M8.8 example armies at $5,000
-
-Exact output of `node tables.mjs` in `final-retune/` (headers added):
-
-| Army | Units | **Cost** | Count |
-|---|---|---|---|
-| Templates | 4 Basic Soldier ($529) + 3 Basic Tower ($954) | **$4,978** | 7 |
-| All four templates | 4 Basic Soldier ($529) + 1 Basic Tower ($954) + 1 Basic Factory ($987) + 4 Basic Wall ($149) | **$4,653** | 6 + 4 walls |
-| Fire squad | 4 Fire Soldier ($635) + 2 Basic Tower ($954) + 1 Basic Soldier ($529) | **$4,977** | 7 |
-| Shatter squad | 2 Frost Archer ($733) + 5 Fire Soldier ($635) | **$4,641** | 7 |
-| Frost nest | 2 Ice Tower ($1,144) + 1 Frost Sniper ($1,806) + 1 Basic Soldier ($529) | **$4,623** | 4 |
-| Storm crowd | 7 Lightning Soldier ($635) | **$4,445** | 7 |
-| Mortar battery | 4 Mortar Tower ($1,179) | **$4,716** | 4 |
-| Fire splash nest | 2 Fire Mortar ($1,415) + 1 Basic Tower ($954) + 6 Basic Wall ($149) | **$4,678** | 3 + 6 walls |
-| Ice wall + snipers | 1 Frost Sniper ($1,806) + 1 Ice Tower ($1,144) + 1 Basic Tower ($954) + 6 Basic Wall ($149) | **$4,798** | 3 + 6 walls |
-| Bombard | 2 Fireball Catapult ($2,106) + 1 Basic Soldier ($529) | **$4,741** | 3 |
-| Blizzard + fire | 1 Blizzard Totem ($1,246) + 5 Fire Soldier ($635) + 1 Basic Soldier ($529) | **$4,950** | 7 |
-| Healer ball | 2 Half Tank ($1,122) + 1 Field Medic ($759) + 1 Shield Bearer ($982) + 1 Basic Soldier ($529) | **$4,514** | 5 |
-| Buffed rush | 1 War Drummer ($603) + 1 Wind Banner ($660) + 6 Basic Soldier ($529) + 2 Basic Wall ($149) | **$4,735** | 8 + 2 walls |
-| Shield wall | 2 Shield Bearer ($982) + 3 Basic Tower ($954) | **$4,826** | 5 |
-| Shrine fort | 1 Healing Shrine ($1,007) + 2 Basic Tower ($954) + 2 Basic Soldier ($529) + 3 Basic Wall ($149) | **$4,420** | 5 + 3 walls |
-| Glass battery | 2 Glass Cannon ($1,359) + 1 War Drummer ($603) + 3 Basic Soldier ($529) | **$4,908** | 6 |
-| Huge tank + friends | 1 Huge Tank ($2,462) + 1 Field Medic ($759) + 1 Basic Tower ($954) + 1 Basic Soldier ($529) | **$4,704** | 4 |
-| Elemental factories | 1 Ice Archer Nest ($2,119) + 1 Fire Brute Pack ($1,527) + 2 Basic Soldier ($529) | **$4,704** | 4 |
-| Storm runners | 2 Storm Runners ($2,023) + 1 Basic Soldier ($529) | **$4,575** | 3 |
-| Medic tent + tanks | 1 Medic Tent ($1,292) + 2 Half Tank ($1,122) + 2 Basic Soldier ($529) | **$4,594** | 5 |
-| Two max bricks | 2 Max-cost Brick ($2,480) | **$4,960** | 2 |
-
-Army sizes:
-- Templates still give 7 units.
-- Specialist armies land at 3-6 units and mixed ones at 6-9.
-- 11 cheap scouts ($441 each) still fit.
-- 9 Basic Soldiers ($4,761) is the biggest template rush, so the 10-soldier `RUSH` archetype becomes 9.
-- The mortar battery, fire splash nest, ice wall + snipers, shield wall, storm crowd and storm runners rows are the armies the balance test fields (§14 M8.8 balance); the spec's versions (2 mortars + 3 soldiers + 4 walls; 2 Shield Bearers + 2 towers + 6 walls; 7 Lightning Soldiers + 1 Basic Soldier; 2 Storm Runners + 2 soldiers, now $5,104) were re-made there.
-
-As before, budgets are never pooled between teammates, and the player count, map and team mode don't change them.
-
-### M8.8 economy: migration
-
-- **Templates** are server-owned and replaced at boot. The template version goes up, and the kit's `units/basic_*.js` files get the new arithmetic in their header comments. The new stats:
-  - Basic Soldier 600 HP / 50 dmg;
-  - Basic Tower 625 HP / 75 dmg / range 140;
-  - Basic Wall 2,000 HP;
-  - Basic Factory 1,500 HP.
-
-  The templates show element and support examples in comments.
-- **Stored designs** (players' units and armory entries) are re-priced with the new formula and bounds through the existing re-price path:
-  - **Below a new minimum** (HP < 50, wall < 250, factory < 500): the unit gets `status: "invalid"` and `STAT_OUT_OF_RANGE`, with the fix "This unit was built for the $1,000 game: multiply maxHealth and damage by 5 (it would then cost $X)". The price is still computed. The unit is dropped from selections with the usual toast.
-  - **Legal but old-scale** (record `scaleVersion < 2`, HP ≤ 500 and damage ≤ 60, not a template): a non-fatal `W_OLD_SCALE` warning on the card and in `list_my_units`: "Made for the old game: about 5× weaker and 5× cheaper. Ask Claude to multiply maxHealth and damage by 5."
-  - **Never silently multiply stats.** The player's source would disagree with the battle, and Claude's next edit would shrink the unit again. Records gain `scaleVersion: 2` when they are submitted or resubmitted.
-- **Config patches** (`configPatch` in `state.json`, and the admin quick settings):
-  - `migrateConfigPatch` gets a v2 step. A patch without `economyVersion: 2` has its **scale-sensitive keys dropped**: `cost.*`, `caps.budget`, `caps.unitCost`, `stats.bounds.maxHealth/damage/wallHealth/factoryHealth` and `factory.minions.*.maxHealth/damage`.
-  - The rest of the patch is kept (timers, sudden death, copy caps, scoring, map). The server logs the dropped keys, and /admin shows a banner: "Your economy overrides were for the $1,000 game and were reset."
-  - A mechanical ×5 conversion is rejected, because an old `curveK: 2` or `cost.hp` would silently undo this retune.
-- **Timing:** the migration runs at boot. *(As built:* it runs in every phase. Keeping a $1,000-game patch for a running match would mix its old budget and coefficients with the ×5 defaults and templates, so a boot mid-match drops the old keys too, re-prices the units and logs a warning that suggests a New match.*)*
-- **Replays and past battles** keep their recorded numbers. The replay header carries `scaleVersion`, and the past-battles UI labels v1 reports "($1,000 game)". Rendering uses `hp / maxHp`, so old replays play unchanged.
-- **Event day:** running `npm run wipe` before the event avoids all of this (§15). The path above is for rehearsal data.
+- **Templates** are server-owned and replaced at boot: Basic Soldier 1,400 HP / 56 dmg, Basic Tower 1,200 HP / 72 dmg / range 140, Basic Wall 3,200 HP, Basic Factory 2,400 HP every 600 ticks (10 s).
+- **Stored player units are wiped, not migrated** (user decision 2026-10-24: "none of the player submitted units need to be migrated. They can be wiped"; "No need to do any banners or notification about migration. We are still at the play test stage"). At boot, if any stored design or Open Armory entry was made for an older economy (`scaleVersion` below 3), every player-made design, every armory entry and every selection, placement and last layout that names them is removed (`Store.wipeOldScaleUnits`). Players, PINs, keys and templates stay. Only a server log line; no banner. The M8.8 old-scale warnings (`W_OLD_SCALE`, the ×5 fix) are gone.
+- **Config patches** (`configPatch` in `state.json`): a patch without `economyVersion: 3` has its scale-sensitive keys dropped (`ECONOMY_DROPPED`: `cost.*`, `caps.budget`, `caps.unitCost`, `caps.maxFactoryCopies`, `caps.maxWallCopies`, the HP, damage, wall, factory, interval and heal bounds, `timers.battleTicks`, the sudden-death ticks, `factory.maxMinionsPerFactory`, `factory.maxAlivePerPlayer` and the minions' HP, damage and heal); the rest is kept. Logged only.
+- **Replays and past battles** keep their recorded numbers; results carry `scaleVersion` 3, and the past-battles UI labels older ones "($1,000 game)" or "($5,000 game)".
+- **Event day:** `npm run wipe` before the event avoids all of this (§15).
 
 ---
 

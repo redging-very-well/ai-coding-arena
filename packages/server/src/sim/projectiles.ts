@@ -78,6 +78,23 @@ export function moveProjectiles(
   const remaining: Projectile[] = [];
   const arrived: PendingHit[] = [];
   for (const p of projectiles) {
+    if (p.miss) {
+      // A miss flies to a fixed spot and lands there whatever happened to the target.
+      const dx = p.miss.x - p.x;
+      const dy = p.miss.y - p.y;
+      const dist = Math.hypot(dx, dy);
+      const target = lookup(p.targetId);
+      if (dist <= speed) {
+        p.x = p.miss.x;
+        p.y = p.miss.y;
+        if (target) arrived.push({ attackerId: p.ownerId, target, damage: p.damage, projectile: p });
+        continue;
+      }
+      p.x += (dx / dist) * speed;
+      p.y += (dy / dist) * speed;
+      remaining.push(p);
+      continue;
+    }
     const target = lookup(p.targetId);
     // The target died (this tick or earlier): the shot fizzles.
     if (!target || !target.alive || target.hp <= 0) continue;
@@ -106,7 +123,7 @@ export function moveProjectiles(
 export function resolveHits(hits: readonly PendingHit[], onHit: (hit: PendingHit) => void): void {
   const ordered = hits.slice().sort((a, b) => compareIds(a.attackerId, b.attackerId) || (a.projectile?.id ?? 0) - (b.projectile?.id ?? 0));
   for (const h of ordered) {
-    if (h.projectile && h.target.hp <= 0) continue;
+    if (h.projectile && !h.projectile.miss && h.target.hp <= 0) continue;
     onHit(h);
   }
 }

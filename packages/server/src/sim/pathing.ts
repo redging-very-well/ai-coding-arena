@@ -3,8 +3,16 @@
 // (`move` + destination); the engine plans a waypoint and the wall steering
 // (sim/steering.ts) moves the body toward it. Deterministic, no PRNG.
 //
-//   * Grid: the 40 px arena cells. Only walls block cells (towers and
-//     factories are left to separation and the minion sidestep).
+//   * Grid: the 40 px arena cells. Walls block cells. Buildings (towers and
+//     factories, which never move and sit on cell centres) are solid too
+//     (redesign 2026-10-24): a building's cell is never entered on the way
+//     (only as the destination), diagonals never cut past one, and every
+//     line-of-sight check sees its real circle inflated by the moving body's
+//     radius, so a gap between two buildings is used only when the body fits.
+//     Buildings are never "the wall to break": when buildings close every
+//     open way, the body follows the walls-only field instead (it walks up to
+//     them; an enemy building in the way is then hit by normal targeting, and
+//     separation slides it round its own).
 //   * Size classes: radius ≤ 18 routes on cell nodes (one-cell gaps fit),
 //     19-20 on 2×2 nodes at cell corners (needs a two-cell gap). 8 neighbours,
 //     a diagonal only when both orthogonal neighbours are open.
@@ -24,6 +32,7 @@
 import { CELL_SIZE, type Point } from '@pixel-clash/shared';
 import { markBlocked, segmentClear, steerStep, type SteerResult } from './steering.js';
 import { distanceToWall, type WallGrid } from './walls.js';
+import { BuildingGrid } from './buildings.js';
 import type { PathingMode, RoutePlan, SimUnit } from './types.js';
 
 /** Bodies up to this radius fit a one-cell gap (§5.2 gates). */
@@ -64,6 +73,10 @@ interface Layer {
   n: number;
   /** 1 = the node holds a wall. */
   blocked: Uint8Array;
+  /** 1 = the node holds a building (tower or factory): never entered on the way, never cut past diagonally. */
+  solid: Uint8Array;
+  /** Whether `solid` is in use (the walls-only layer leaves it all 0). */
+  withBuildings: boolean;
 }
 
 /** A small deterministic string hash (staggers the first re-plan by instanceId). */
@@ -80,15 +93,24 @@ export class Pathfinder {
   /** Fields built and cache hits (tests and diagnostics). */
   readonly stats = { built: 0, hits: 0, plans: 0 };
   private readonly cache = new Map<number, Field>();
-  private readonly layers = new Map<1 | 2, Layer>();
+  private readonly layers = new Map<number, Layer>();
   private readonly heap: number[] = [];
+  /** Towers and factories (redesign: solid for routing). Empty when none are given. */
+  private readonly buildings: BuildingGrid;
 
   constructor(
     private readonly grid: WallGrid,
     private readonly arena: number,
     private readonly center: Point,
-    private readonly opts: { replanTicks: number; slideMemoryTicks: number; cacheSize?: number },
-  ) {}
+    private readonly opts: { replanTicks: number; slideMemoryTicks: number; cacheSize?: number; buildings?: BuildingGrid },
+  ) {
+    this.buildings = opts.buildings ?? new BuildingGrid(arena);
+  }
+
+  /** Walls and buildings together: a field or layer stamped with an older version is stale. */
+  private get version(): number {
+    return this.grid.version + this.buildings.version;
+  }
 
   /**
    * Move a soldier or minion toward `dest` for this tick (engine step 4):
@@ -129,15 +151,24 @@ export class Pathfinder {
   plan(u: Pick<SimUnit, 'x' | 'y' | 'radius'>, dest: Point): RoutePlan {
     this.stats.plans++;
     const direct: RoutePlan = { mode: 'direct', waypoint: null, press: -1, nextPlan: 0 };
-    if (this.grid.size === 0) return direct;
+    if (this.grid.size === 0 && this.buildings.size === 0) return direct;
     const k = sizeClassOf(u.radius);
     const r = u.radius + CLEARANCE;
-    const layer = this.layer(k);
-    const n0 = this.nodeOf(u, k, layer.n);
-    const goal = this.nodeOf(dest, k, layer.n);
-    if (n0 === goal || segmentClear(u, dest, r, this.grid)) return direct;
+    const n = this.grid.cols - k + 1;
+    const n0 = this.nodeOf(u, k, n);
+    const goal = this.nodeOf(dest, k, n);
+    if (n0 === goal || this.clear(u, dest, r, true)) return direct;
 
-    const field = this.field(k, goal);
+    // Walls and buildings first; when buildings close every open way, the
+    // walls-only field (buildings are never the wall to break).
+    let withBuildings = this.buildings.size > 0;
+    let layer = this.layer(k, withBuildings);
+    let field = this.field(k, goal, withBuildings);
+    if (withBuildings && field.dist[n0]! >= WALL_STEP) {
+      withBuildings = false;
+      layer = this.layer(k, false);
+      field = this.field(k, goal, false);
+    }
     const mode: PathingMode = field.dist[n0]! >= WALL_STEP ? 'no-route' : 'detour';
     // Follow the field downhill.
     const chain: number[] = [n0];
@@ -160,16 +191,26 @@ export class Pathfinder {
     let best = 1;
     for (let i = 2; i < chain.length; i++) {
       const node = chain[i]!;
-      if (layer.blocked[node] || !segmentClear(u, this.nodePos(node, k, layer.n), r, this.grid)) break;
+      if (layer.blocked[node] || !this.clear(u, this.nodePos(node, k, layer.n), r, withBuildings)) break;
       best = i;
     }
     return { mode, waypoint: this.nodePos(chain[best]!, k, layer.n), press: -1, nextPlan: 0 };
   }
 
+  /**
+   * Line of sight for a body of clearance radius `r` from `p` to `q`: no wall
+   * square and (with `withBuildings`) no building circle in the way, each
+   * inflated by `r` (a building that is the destination itself is skipped).
+   */
+  private clear(p: Point, q: Point, r: number, withBuildings: boolean): boolean {
+    if (!segmentClear(p, q, r, this.grid)) return false;
+    return !withBuildings || this.buildings.segmentClear(p, q, r);
+  }
+
   /** The flow field toward `goal` for size class `k` (cached, §9.3 Cache). */
-  field(k: 1 | 2, goal: number): Field {
-    const key = k * KEY * KEY + goal;
-    const version = this.grid.version;
+  field(k: 1 | 2, goal: number, withBuildings = this.buildings.size > 0): Field {
+    const key = (withBuildings ? 4 : 0) * KEY * KEY + k * KEY * KEY + goal;
+    const version = this.version;
     const hit = this.cache.get(key);
     if (hit && hit.version === version) {
       this.stats.hits++;
@@ -178,7 +219,7 @@ export class Pathfinder {
       this.cache.set(key, hit);
       return hit;
     }
-    const field: Field = { version, dist: this.dijkstra(k, goal) };
+    const field: Field = { version, dist: this.dijkstra(k, goal, withBuildings) };
     this.stats.built++;
     this.cache.delete(key);
     this.cache.set(key, field);
@@ -188,7 +229,7 @@ export class Pathfinder {
   }
 
   /** The node of a point: its cell (class 1) or the nearest cell corner (class 2). */
-  nodeOf(p: Point, k: 1 | 2, n = this.layer(k).n): number {
+  nodeOf(p: Point, k: 1 | 2, n = this.grid.cols - k + 1): number {
     const f = (v: number) => {
       const i = k === 1 ? Math.floor(v / CELL_SIZE) : Math.round(v / CELL_SIZE) - 1;
       return Math.min(n - 1, Math.max(0, i));
@@ -197,29 +238,38 @@ export class Pathfinder {
   }
 
   /** A node's position: the cell centre (class 1) or the cell corner (class 2). */
-  nodePos(i: number, k: 1 | 2, n = this.layer(k).n): Point {
+  nodePos(i: number, k: 1 | 2, n = this.grid.cols - k + 1): Point {
     const c = i % n;
     const r = (i - c) / n;
     return { x: (c + k / 2) * CELL_SIZE, y: (r + k / 2) * CELL_SIZE };
   }
 
-  /** Which nodes hold a wall, for size class `k` at the current grid version. */
-  private layer(k: 1 | 2): Layer {
-    const version = this.grid.version;
-    const old = this.layers.get(k);
+  /** Which nodes hold a wall (and, with buildings, a building), for size class `k` at the current version. */
+  private layer(k: 1 | 2, withBuildings = this.buildings.size > 0): Layer {
+    const version = this.version;
+    const id = k + (withBuildings ? 4 : 0);
+    const old = this.layers.get(id);
     if (old && old.version === version) return old;
     const cols = this.grid.cols;
     const n = cols - k + 1;
     const blocked = old && old.n === n ? old.blocked : new Uint8Array(n * n);
+    const solid = old && old.n === n ? old.solid : new Uint8Array(n * n);
     for (let r = 0; r < n; r++) {
       for (let c = 0; c < n; c++) {
         let b = 0;
-        for (let dr = 0; dr < k && !b; dr++) for (let dc = 0; dc < k && !b; dc++) if (this.grid.has(c + dc, r + dr)) b = 1;
+        let s = 0;
+        for (let dr = 0; dr < k; dr++) {
+          for (let dc = 0; dc < k; dc++) {
+            if (this.grid.has(c + dc, r + dr)) b = 1;
+            else if (withBuildings && this.buildings.has(c + dc, r + dr)) s = 1;
+          }
+        }
         blocked[r * n + c] = b;
+        solid[r * n + c] = b ? 0 : s;
       }
     }
-    const layer = { version, n, blocked };
-    this.layers.set(k, layer);
+    const layer = { version, n, blocked, solid, withBuildings };
+    this.layers.set(id, layer);
     return layer;
   }
 
@@ -230,7 +280,9 @@ export class Pathfinder {
     const r2 = r + DR[d]!;
     if (c2 < 0 || r2 < 0 || c2 >= n || r2 >= n) return false;
     if (d < 4) return true;
-    return !layer.blocked[r * n + c2] && !layer.blocked[r2 * n + c];
+    const a = r * n + c2;
+    const b = r2 * n + c;
+    return !layer.blocked[a] && !layer.blocked[b] && !layer.solid[a] && !layer.solid[b];
   }
 
   /** The next node downhill from `cur` (lowest distance + step cost; -1 when none). */
@@ -245,6 +297,8 @@ export class Pathfinder {
       const b = (r + DR[d]!) * n + c + DC[d]!;
       const db = dist[b]!;
       if (db === UNREACHED) continue;
+      // A building's node is only ever the destination (never a node on the way).
+      if (layer.solid[b] && b !== goal) continue;
       const cost = db + (d < 4 ? STRAIGHT : DIAGONAL) + (layer.blocked[b] && b !== goal ? WALL_STEP : 0);
       if (cost < bestCost) {
         bestCost = cost;
@@ -255,8 +309,8 @@ export class Pathfinder {
   }
 
   /** Dijkstra from `goal` over the class-k nodes (§9.3 Algorithm). */
-  private dijkstra(k: 1 | 2, goal: number): Int32Array {
-    const layer = this.layer(k);
+  private dijkstra(k: 1 | 2, goal: number, withBuildings: boolean): Int32Array {
+    const layer = this.layer(k, withBuildings);
     const n = layer.n;
     const dist = new Int32Array(n * n).fill(UNREACHED);
     const heap = this.heap;
@@ -278,7 +332,9 @@ export class Pathfinder {
         const da = db + (d < 4 ? STRAIGHT : DIAGONAL) + pen;
         if (da < dist[a]!) {
           dist[a] = da;
-          heapPush(heap, da * KEY + a);
+          // A building's node gets a distance (a body standing in its cell
+          // can leave it) but the field never runs on through it.
+          if (!layer.solid[a]) heapPush(heap, da * KEY + a);
         }
       }
     }
@@ -288,7 +344,7 @@ export class Pathfinder {
   /** A wall of the press node's block that the body touches (nearest first, ties lower id), else undefined. */
   private touchingWall(u: SimUnit, node: number): SimUnit | undefined {
     const k = sizeClassOf(u.radius);
-    const n = this.layer(k).n;
+    const n = this.grid.cols - k + 1;
     const c = node % n;
     const r = (node - c) / n;
     let best: SimUnit | undefined;

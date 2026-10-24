@@ -282,7 +282,7 @@ export class PlayStore {
       this.set({
         rules,
         bounds,
-        caps: capsFromRules(caps, rules.budget, this.state.caps),
+        caps: capsFromRules(caps, rules.budget, this.state.caps, rules.copyRamp),
       });
     } catch {
       // defaults are fine

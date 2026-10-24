@@ -110,7 +110,7 @@ describe('buildings worst case (M8.5 timing)', () => {
       submit(FACTORY_SRC, config, 'f'),
       submit(WALL_SRC, config, 'w'),
     ]);
-    expect(factory!.battle.cost).toBe(247 + 3 * 148); // E = floor(1899 / 600) = 3: priced for this battle length
+    expect(factory!.battle.cost).toBe(167 + 3 * 177); // E = floor(1899 / 600) = 3: priced for this battle length
     const { layout, specs } = worstCaseSpecs();
     const designs = [soldier!, factory!, wall!];
     const { engine, result, wallMs, p50, p99, engineP99, runs } = await bestRun(async () => {

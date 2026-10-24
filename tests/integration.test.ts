@@ -2,8 +2,9 @@
 //   starter-kit templates → validator (§7) → StatsSnapshot + compiledJs
 //   → ivmRunner (isolates in child processes, §8) → BattleEngine (§9).
 //
-// Checks: a template-vs-template battle produces a ranking, a 5400-tick
-// battle finishes in < 2 s of wall time, and the per-tick cost (p50/p99) of
+// Checks: a template-vs-template battle produces a ranking, a full-length
+// battle (7200 ticks since the redesign) finishes in < 2.7 s of wall time (the
+// M2 budget of 2 s per 5400 ticks, scaled), and the per-tick cost (p50/p99) of
 // a 4-player × 8-unit battle and of the §9.2 / §14 load shape (8 players × 12
 // copies = 96 units on Ring 8 and as 4v4 on Lanes 8, 1200 arena) stays within
 // the 8 ms p99 budget.
@@ -163,10 +164,10 @@ describe('integration: validator → ivm runner → engine (M2 acceptance)', () 
   });
 
   it('validates both templates into snapshots the engine accepts', () => {
-    expect(soldier.battle).toMatchObject({ unitId: 'basic-soldier', cost: 529 });
-    expect(tower.battle).toMatchObject({ unitId: 'basic-tower', cost: 954 });
-    expect(soldier.battle.stats).toMatchObject({ type: 'soldier', maxHealth: 600, damage: 50, range: 40, speed: 1.5, attackCooldown: 60 });
-    expect(tower.battle.stats).toMatchObject({ type: 'tower', maxHealth: 625, damage: 75, range: 140, speed: 0, attackCooldown: 45 });
+    expect(soldier.battle).toMatchObject({ unitId: 'basic-soldier', cost: 807 });
+    expect(tower.battle).toMatchObject({ unitId: 'basic-tower', cost: 1200 });
+    expect(soldier.battle.stats).toMatchObject({ type: 'soldier', maxHealth: 1400, damage: 56, range: 40, speed: 1.5, attackCooldown: 60 });
+    expect(tower.battle.stats).toMatchObject({ type: 'tower', maxHealth: 1200, damage: 72, range: 140, speed: 0, attackCooldown: 45 });
   });
 
   // 4 soldiers in the front cells, 3 towers just behind: $4,998 per side.
@@ -177,7 +178,7 @@ describe('integration: validator → ivm runner → engine (M2 acceptance)', () 
     at(2, 0, T()), at(0, 2, T()), at(2, 2, T()),
   ];
 
-  it('template vs template (4 soldiers + 3 towers each) runs a full-length battle in < 2 s and produces a ranking', async () => {
+  it('template vs template (4 soldiers + 3 towers each) runs a full-length battle in < 2.7 s (2 s per 5400 ticks) and produces a ranking', async () => {
     const config = DEFAULT_CONFIG;
     const zones = assignZones(['a', 'b'], 0);
     const specs: PlayerSpec[] = ['a', 'b'].map((id, seat) => ({
@@ -204,12 +205,12 @@ describe('integration: validator → ivm runner → engine (M2 acceptance)', () 
 
     expectCleanRun(result);
     // The mirrored armies fight in the middle; the towers stay home, and the
-    // shrinking circle (§9 sudden death, from 50 s at 7%/s since M6) takes
-    // both armies' last towers on the same tick shortly before 90 s.
-    expect(result.endTick).toBeGreaterThan(config.suddenDeath.startTick + 1800);
+    // shrinking circle (§9 sudden death, from 75 s at 10%/s since the redesign)
+    // takes both armies' last towers on the same tick before the end.
+    expect(result.endTick).toBeGreaterThan(config.suddenDeath.startTick);
     expect(result.endTick).toBeLessThanOrEqual(config.timers.battleTicks);
     expect(result.endReason).toBe('elimination');
-    expect(wallMs).toBeLessThan(2000);
+    expect(wallMs).toBeLessThan((2000 * config.timers.battleTicks) / 5400);
     // Combat really happened through the sandbox.
     // (The towers sit too far back to reach the melee in the middle.)
     expect(result.units.some((u) => u.damageDealt > 0 && u.unitId === S())).toBe(true);

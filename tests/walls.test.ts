@@ -230,7 +230,7 @@ describe('walls in battle (§9.3)', () => {
     );
     const result = await engine.run();
     const w = result.units.find((u) => u.instanceId === '0-0-0')!;
-    expect(w).toMatchObject({ type: 'wall', disabled: false, errors: [], survived: true, livingValue: 0, cost: 149 });
+    expect(w).toMatchObject({ type: 'wall', disabled: false, errors: [], survived: true, livingValue: 0, cost: 98 }); // a 2000-HP wall
     // Walls are listed in the first frame, then only when their hp changes.
     expect(engine.frames[0]!.units.some((u) => u[0] === '0-0-0')).toBe(true);
     expect(engine.frames.slice(1).some((f) => f.units.some((u) => u[0] === '0-0-0'))).toBe(false);
@@ -293,11 +293,11 @@ describe('walls in battle (§9.3)', () => {
     const broken = walls.filter((w) => !w.survived);
     expect(broken.length).toBeGreaterThanOrEqual(1);
     const a = result.units.find((u) => u.instanceId === '0-0-0')!;
-    // The tower died too (elimination), and every wall killed credited its full price ($149).
+    // The tower died too (elimination), and every wall killed credited its full price ($98 for a 2000-HP wall).
     expect(result.endReason).toBe('elimination');
     expect(a.kills).toBeGreaterThanOrEqual(2);
     const towerCost = result.units.find((u) => u.type === 'tower')!.cost;
-    expect(a.valueDestroyed).toBe(towerCost + 149 * (a.kills - 1));
+    expect(a.valueDestroyed).toBe(towerCost + 98 * (a.kills - 1));
     // B's leftover walls crumbled at the elimination, credited to nobody.
     const crumble = allEvents(engine.frames).find((x) => x.e.type === 'crumble');
     expect(crumble).toBeDefined();
@@ -413,8 +413,8 @@ describe('walls in battle (§9.3)', () => {
     const result = await engine.run();
     expect(result.endReason).toBe('timeout');
     const a = result.players.find((p) => p.playerId === 'a')!;
-    expect(a.livingCost).toBe(529);
-    // The tower ($1,191) beats a soldier + 5 walls ($522 + $0).
+    expect(a.livingCost).toBe(533);
+    // The tower ($1,151) beats a soldier + 5 walls ($533 + $0).
     expect(result.ranking[0]!.playerId).toBe('b');
   });
 
@@ -431,7 +431,7 @@ describe('walls in battle (§9.3)', () => {
     expect(frame.units.some((u) => u[0] === '0-0-1')).toBe(false);
     const trimmed = resultAtTick(result, engine.countersAt(100), frame, 100);
     expect(trimmed.units.find((u) => u.instanceId === '0-0-1')).toMatchObject({ survived: true, livingValue: 0 });
-    expect(trimmed.players.find((p) => p.playerId === 'a')!.livingCost).toBe(529);
+    expect(trimmed.players.find((p) => p.playerId === 'a')!.livingCost).toBe(533);
     expect(trimmed.players.find((p) => p.playerId === 'a')!.livingUnits).toBe(3);
   });
 

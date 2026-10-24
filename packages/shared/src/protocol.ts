@@ -207,7 +207,7 @@ export interface UnitCardDTO {
   orders?: MinionOrder[];
   /** M8.8 heal support: whether update() returned { action: 'heal' } in the dry run (§7). */
   healUsed?: boolean;
-  /** M8.8: 2 = made for the ×5 economy; older designs have 1 (or none) and may carry W_OLD_SCALE (§6 M8.8 migration). */
+  /** The economy scale the design was made for (3 = the $10,000 redesign). Older designs are wiped at boot. */
   scaleVersion?: number;
   cost: number;
   breakdown: CostBreakdown;
@@ -605,6 +605,8 @@ export interface RulesDTO {
   timers: Record<string, number>;
   budget: number;
   caps: Record<string, number>;
+  /** Redesign (§6 copy ramp): copies of one design beyond `freeCopies` cost `pctPerCopy`% more each, cumulatively (walls never; 0 = off). */
+  copyRamp?: { freeCopies: number; pctPerCopy: number; text: string };
   costFormula: string;
   /** Cost coefficients (§6), incl. the `wall` and `factory` blocks (M8.5). */
   coefficients: Record<string, number | Record<string, number>>;
@@ -659,6 +661,9 @@ export const FRAME_FLAGS = {
   SHIELDED: 2048,
 } as const;
 
+/** Redesign synergies: a hit made stronger by burning (kindle), frozen (brittle) or both (§5.4). */
+export type SynergyName = 'kindle' | 'brittle' | 'both';
+
 /** M8.8: what kind of damage a `hit` event is (§9.4 Frames). Absent = 'hit'. */
 export type HitKind = 'hit' | 'splash' | 'burn' | 'zap' | 'shatter';
 
@@ -696,7 +701,9 @@ export type FrameEvent =
   | { type: 'crumble'; ids: string[] }
   | { type: 'fire'; instanceId: string; targetId: string; melee: boolean }
   /** M8.8: `kind` (absent = a plain hit) and the attack's `element` (absent = normal). Burn pulses name the burn's last fire attacker. */
-  | { type: 'hit'; instanceId: string; targetId: string; damage: number; kind?: HitKind; element?: Element }
+  | { type: 'hit'; instanceId: string; targetId: string; damage: number; kind?: HitKind; element?: Element; combo?: SynergyName }
+  /** Redesign (accuracy): a ranged shot at a moving body missed and landed on the ground at (x, y) (its splash still hits there). */
+  | { type: 'miss'; instanceId: string; targetId: string; x: number; y: number }
   /** M8.8: a lightning zap from `from` (the struck target) to each body in `to`, in hop order. */
   | { type: 'arc'; from: string; to: string[] }
   /** M8.8: a splash ring round the struck target (its centre, radius and element). */
@@ -1119,8 +1126,6 @@ export interface AdminOverviewDTO {
    * see and hide them, also for retired or deleted designs. Empty when off.
    */
   armory: AdminArmoryEntryDTO[];
-  /** M8.8 (§6 migration): config override paths the v2 migration dropped at boot (the /admin banner); empty when none. */
-  economyReset: string[];
 }
 
 /** One Open Armory entry in the admin overview (Hide sprite goes to the creator's design id). */
@@ -1199,12 +1204,6 @@ export interface AdminConfigResponse {
   repriced: string[];
   /** "playerId/unitId" of units that became invalid. */
   invalidated: string[];
-  /**
-   * M8.8 (§6 migration): the $1,000-game config override paths dropped at
-   * boot ("Your economy overrides were for the $1,000 game and were reset.");
-   * empty when nothing was dropped. Cleared by DELETE /admin/config/economy-reset or a wipe.
-   */
-  economyReset: string[];
 }
 
 // ---------------------------------------------------------------------------

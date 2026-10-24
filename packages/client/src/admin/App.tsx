@@ -119,18 +119,6 @@ function Console({ onLoggedOut }: { onLoggedOut: () => void }) {
           {sandbox === 'inproc-unsafe' ? ' (UNSAFE: development only, never at the event)' : ''}.
         </div>
       )}
-      {(data.overview?.economyReset.length ?? 0) > 0 && (
-        <div class="banner-warn" role="status">
-          <span>
-            Your economy overrides were for the $1,000 game and were reset (prices and stats are 5× bigger now). Reset:{' '}
-            <code>{data.overview!.economyReset.join(', ')}</code>. Check the quick settings below, and start a New match if one was
-            running.
-          </span>
-          <button class="btn small" disabled={busy} onClick={() => void act(() => api.admin.dismissEconomyReset())}>
-            OK, got it
-          </button>
-        </div>
-      )}
       <div class="notices" aria-live="polite">
         {data.notices.map((n) => (
           <div key={n.id} class={cx('notice', `notice-${n.level}`)} onClick={() => data.dismiss(n.id)}>

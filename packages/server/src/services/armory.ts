@@ -268,7 +268,6 @@ export class ArmoryService {
     const repriced: string[] = [];
     const invalidated: string[] = [];
     for (const e of this.a.entries) {
-      // M8.8: an entry from the $1,000 game (no scaleVersion) below the new minimum gets the ×5 fix.
       const r = UnitsService.checkVersion(e, config);
       e.breakdown = r.cost.breakdown;
       if (r.cost.cost !== e.cost) {

@@ -8,6 +8,9 @@
 // (soldiers, towers, factories), factories among them, and walls apart.
 
 import {
+  layoutSpent,
+  nextCopyCost,
+  type CopyRamp,
   CELL_SIZE,
   DEFAULT_CONFIG,
   GRID_SIZE,
@@ -63,12 +66,15 @@ export interface PlayCaps {
   maxFactoryCopies: number;
   /** Walls placed (on top of the fighters). */
   maxWallCopies: number;
+  /** Redesign (§6 copy ramp): copies of one design beyond freeCopies cost more (pctPerCopy 0 = off). */
+  copyRamp: CopyRamp;
 }
 
 /** The caps from GET /rules (`caps`), falling back to `prev` (an older server's single `maxTypes` caps both groups). */
-export function capsFromRules(caps: Partial<Record<string, number>>, budget: number | undefined, prev: PlayCaps): PlayCaps {
+export function capsFromRules(caps: Partial<Record<string, number>>, budget: number | undefined, prev: PlayCaps, copyRamp?: CopyRamp): PlayCaps {
   const legacy = caps.maxTypes;
   return {
+    copyRamp: copyRamp ? { freeCopies: copyRamp.freeCopies, pctPerCopy: copyRamp.pctPerCopy } : prev.copyRamp,
     budget: caps.budget ?? budget ?? prev.budget,
     maxUnitTypes: caps.maxUnitTypes ?? legacy ?? prev.maxUnitTypes,
     maxBuildingTypes: caps.maxBuildingTypes ?? legacy ?? prev.maxBuildingTypes,
@@ -85,6 +91,7 @@ export const DEFAULT_PLAY_CAPS: PlayCaps = {
   maxCopies: DEFAULT_CONFIG.caps.maxCopies,
   maxFactoryCopies: DEFAULT_CONFIG.caps.maxFactoryCopies,
   maxWallCopies: DEFAULT_CONFIG.caps.maxWallCopies,
+  copyRamp: DEFAULT_CONFIG.caps.copyRamp,
 };
 
 
@@ -227,6 +234,8 @@ export interface PlacementRules {
   typeOf?: TypeOf;
   maxWallCopies?: number;
   maxFactoryCopies?: number;
+  /** Redesign: the copy ramp (absent or pctPerCopy 0 = every copy costs the same). */
+  copyRamp?: CopyRamp;
 }
 
 export type PlaceResult =
@@ -285,8 +294,17 @@ export function trappedKeys(zone: ZoneRef, placements: readonly PlacementDTO[], 
   return new Set(trappedCells(zone, placements, typeOf).map((p) => `${p.col},${p.row}`));
 }
 
-export function spentOf(placements: readonly PlacementDTO[], costs: ReadonlyMap<string, number>): number {
-  return placements.reduce((s, p) => s + (costs.get(p.unitId) ?? 0), 0);
+/** What the placements cost (with the copy ramp when `rules` carry one). */
+export function spentOf(placements: readonly PlacementDTO[], costs: ReadonlyMap<string, number>, rules?: Pick<PlacementRules, 'typeOf' | 'copyRamp'>): number {
+  const ids = placements.map((p) => p.unitId).filter((id) => costs.has(id));
+  return layoutSpent(ids, (id) => costs.get(id), (id) => rules?.typeOf?.(id), rules?.copyRamp) ?? 0;
+}
+
+/** What one more copy of `unitId` costs on top of `placements` (the copy ramp), or undefined when it isn't in the palette. */
+export function nextCostOf(placements: readonly PlacementDTO[], unitId: string, rules: Pick<PlacementRules, 'costs' | 'typeOf' | 'copyRamp'>): number | undefined {
+  const cost = rules.costs.get(unitId);
+  if (cost === undefined) return undefined;
+  return nextCopyCost(placements.map((p) => p.unitId), unitId, cost, rules.typeOf?.(unitId), rules.copyRamp);
 }
 
 export function placementAt(placements: readonly PlacementDTO[], col: number, row: number): PlacementDTO | undefined {
@@ -315,18 +333,18 @@ export function tapCell(
     return { ok: true, placements: removeAt(placements, col, row), removed: true };
   }
   if (unitId === null) return { ok: false, code: 'NOT_SELECTED', message: 'Tap a unit below first, then tap a square.' };
-  const cost = rules.costs.get(unitId);
-  if (cost === undefined) return { ok: false, code: 'NOT_SELECTED', message: "That unit isn't in your army this round." };
   const without = placements.slice();
+  const cost = nextCostOf(without, unitId, rules);
+  if (cost === undefined) return { ok: false, code: 'NOT_SELECTED', message: "That unit isn't in your army this round." };
   if (rules.typeOf) {
     const problem = copyCapProblem(copyCounts(without, rules.typeOf), rules.typeOf(unitId), rules);
     if (problem) return { ok: false, code: 'TOO_MANY_COPIES', message: problem };
   } else if (without.length >= rules.maxCopies) {
     return { ok: false, code: 'TOO_MANY_COPIES', message: fighterCapMessage(rules.maxCopies) };
   }
-  const spent = spentOf(without, rules.costs) + cost;
+  const spent = spentOf(without, rules.costs, rules) + cost;
   if (spent > rules.budget) {
-    const left = rules.budget - spentOf(without, rules.costs);
+    const left = rules.budget - spentOf(without, rules.costs, rules);
     return {
       ok: false,
       code: 'OVER_BUDGET',
@@ -350,7 +368,7 @@ export function copyLastLayout(
   let spent = 0;
   const cells = new Set<string>();
   for (const p of lastLayout ?? []) {
-    const cost = rules.costs.get(p.unitId);
+    const cost = nextCostOf(out, p.unitId, rules);
     const key = `${p.col},${p.row}`;
     const full = rules.typeOf ? copyCapProblem(copyCounts(out, rules.typeOf), rules.typeOf(p.unitId), rules) !== null : out.length >= rules.maxCopies;
     if (cost === undefined || !isValidCell(p.col, p.row) || cells.has(key) || full || spent + cost > rules.budget) {
@@ -369,6 +387,12 @@ export function copiesOf(placements: readonly PlacementDTO[]): Map<string, numbe
   const m = new Map<string, number>();
   for (const p of placements) m.set(p.unitId, (m.get(p.unitId) ?? 0) + 1);
   return m;
+}
+
+/** Redesign (§6 copy ramp): "Copy 4+ of one design costs +15%, +30%, … (walls never)". */
+export function copyRampHint(r: CopyRamp): string {
+  const n = r.freeCopies + 1;
+  return `Copy ${n}+ of one design costs more: +${r.pctPerCopy}%, +${2 * r.pctPerCopy}%, … (walls never). Mix designs!`;
 }
 
 /** "$4,370 / $5,000 — $630 left" pieces. */

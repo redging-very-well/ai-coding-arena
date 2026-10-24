@@ -110,6 +110,9 @@ function other(id: string, ownerId: string, type: BodyType, x: number, y: number
     splashRadius: 0,
     support: null,
     status: noStatus(healable ? b.hp * 0.05 : 0),
+    // Practice soldiers and minions walk (redesign: accuracy), so code reading `moving` runs.
+    moving: type === 'soldier' || type === 'minion',
+    currentSpeed: type === 'soldier' || type === 'minion' ? 1.5 : 0,
     ...extra,
   };
 }
@@ -414,6 +417,8 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
             splashRadius: self.splashRadius,
             support: self.support,
             status: self.status,
+            moving: false,
+            currentSpeed: 0,
           },
           ...world.allies,
         ],

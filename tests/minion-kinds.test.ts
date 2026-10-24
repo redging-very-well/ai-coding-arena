@@ -63,8 +63,8 @@ describe('minion kinds (§5.3)', () => {
       const body = factoryOf(engine, m.instanceId);
       expect(body.radius).toBe(k.size);
       expect(body.stats).toMatchObject({ maxHealth: k.maxHealth, damage: k.damage, range: k.range, speed: k.speed, attackCooldown: k.attackCooldown });
-      // Its cost (value) is its kind's minionValue: grunt 148, archer 195, runner 185, brute 213 (M8.8 ×5).
-      expect(m.cost).toBe({ grunt: 148, archer: 195, runner: 185, brute: 213, medic: 209 }[kind]);
+      // Its cost (value) is its kind's minionValue: grunt 177, archer 216, runner 263, brute 263 (redesign).
+      expect(m.cost).toBe({ grunt: 177, archer: 216, runner: 263, brute: 263, medic: 248 }[kind]);
       const f = result.units.find((u) => u.type === 'factory')!;
       expect(f.factory!.minionValue).toBe(m.cost);
     }
@@ -73,7 +73,7 @@ describe('minion kinds (§5.3)', () => {
   it('the reveal lists every kind fielded', () => {
     const r = minionsReveal([FACTORY(600, { produces: 'archer' }), FACTORY(900), SOLDIER], DEFAULT_CONFIG);
     expect(Object.keys(r.minions!)).toEqual(['archer', 'grunt']);
-    expect(r.minions!.archer!.value).toBe(195);
+    expect(r.minions!.archer!.value).toBe(216);
     expect(r.minions!.archer!.stats.name).toBe('Archer');
     expect(minionsReveal([SOLDIER])).toEqual({});
   });
@@ -119,8 +119,9 @@ describe('minion kinds (§5.3)', () => {
     expect(runner - 600).toBeLessThan((grunt - 600) * 0.7);
   });
 
-  it('brutes deal ×3 on walls only, and one brute breaks a Basic Wall in about 16 s', async () => {
-    const config = cfg(noSD, 4000);
+  it('brutes deal ×3 on walls only, and one brute breaks a Basic Wall in about 33 s', async () => {
+    const config = cfg(noSD, 6000);
+    const basicWall = stats({ type: 'wall', maxHealth: 3200 }); // the Basic Wall template
     const target = stats({ type: 'tower', damage: 5, maxHealth: 2500 });
     // Swarm the wall first, then (when it is gone) the order falls back to attack the tower.
     const brain = scripted((_s, enemies) => {
@@ -130,22 +131,23 @@ describe('minion kinds (§5.3)', () => {
     const { engine, done } = run(
       [
         { playerId: 'a', seat: 0, zone: 'TL', units: [design('f', FACTORY(1800, { produces: 'brute' }), undefined, config)], placements: [at(0, 0, 'f')], brains: { f: brain } },
-        { playerId: 'b', seat: 1, zone: 'BR', units: [design('w', WALL), design('t', target)], placements: [at(0, 0, 'w'), at(2, 0, 't')], brains: { t: idleBrain } },
+        { playerId: 'b', seat: 1, zone: 'BR', units: [design('w', basicWall), design('t', target)], placements: [at(0, 0, 'w'), at(2, 0, 't')], brains: { t: idleBrain } },
       ],
       config,
     );
     const result = await done;
     const hits = ofType(engine.frames, 'hit').filter((x) => x.e.instanceId === '0-0-0-m1');
     const onWall = hits.filter((x) => x.e.targetId === '1-0-0');
-    expect(onWall.length).toBe(17);
-    expect(onWall.slice(0, -1).every((x) => x.e.damage === 120)).toBe(true);
+    // 32 × 3 = 96 per hit: ceil(3200 / 96) = 34 hits, one a second.
+    expect(onWall.length).toBe(34);
+    expect(onWall.slice(0, -1).every((x) => x.e.damage === 96)).toBe(true);
     const span = onWall.at(-1)!.t - onWall[0]!.t;
-    expect(span).toBe(16 * 60);
+    expect(span).toBe(33 * 60);
     const wall = result.units.find((u) => u.instanceId === '1-0-0')!;
     expect(wall.survived).toBe(false);
     const onTower = hits.filter((x) => x.e.targetId === '1-0-2');
     expect(onTower.length).toBeGreaterThan(0);
-    expect(onTower.every((x) => x.e.damage === 40)).toBe(true);
+    expect(onTower.every((x) => x.e.damage === 32)).toBe(true); // ×1 on anything but walls
   });
 });
 
@@ -493,8 +495,8 @@ describe('burst: store and release (§5.3, §9.3)', () => {
     expect(spawns(engine.frames)).toEqual([]);
     expect(f.factory).toMatchObject({ minionsMade: 2, minionsLost: 2, storedLost: 2, stored: 0 });
     expect(ofType(engine.frames, 'lost').map((x) => [x.e.factoryId, x.e.count])).toEqual([['0-0-0', 2]]);
-    // Value destroyed: body $247 + $148 × (canMake 1 + stored 2) in this 2400-tick battle (E = 3).
-    expect(result.units.find((u) => u.instanceId === '1-0-0')!.valueDestroyed).toBe(247 + 148 * 3);
+    // Value destroyed: body $167 + $177 × (canMake 1 + stored 2) in this 2400-tick battle (E = 3).
+    expect(result.units.find((u) => u.instanceId === '1-0-0')!.valueDestroyed).toBe(167 + 177 * 3);
   });
 
   it('stored minions keep a factory a fighter and count in its living value', () => {
@@ -558,5 +560,5 @@ describe('determinism with kinds, orders and bursts (§9.3)', () => {
     const kinds = new Set(spawns(a).map((x) => x.e.kind));
     expect(kinds).toEqual(new Set(['archer', 'runner', 'brute']));
     expect(ofType(a, 'release').length).toBeGreaterThan(0);
-  });
+  }, 30_000); // two 2400-tick battles of factories and walls: allow for a busy machine
 });

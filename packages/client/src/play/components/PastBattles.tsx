@@ -103,9 +103,12 @@ export function PastBattles({ onClose }: { onClose: () => void }) {
       {!end && !error && <p class="dim">Loading round {round}…</p>}
       {end && (
         <>
-          {/* M8.8 (§6): results from before the ×5 economy carry no scaleVersion. */}
+          {/* §6: results from before the ×5 economy carry no scaleVersion; 2 = the $5,000 game. */}
           {end.scaleVersion === undefined && (
             <p class="dim small old-game">($1,000 game) This round was played before prices and stats went up 5×, so its numbers are smaller.</p>
+          )}
+          {end.scaleVersion === 2 && (
+            <p class="dim small old-game">($5,000 game) This round was played before the $10,000 economy, with less health and more damage per unit.</p>
           )}
           <table class="past-ranking">
             <thead>

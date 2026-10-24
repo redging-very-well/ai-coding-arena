@@ -34,8 +34,15 @@ import type {
   ValidationError,
   ValidationWarning,
 } from '@pixel-clash/shared';
-import { cornerZone, isMapStyle, isTeamMode, migrateEconomyPatch, type Corner } from '@pixel-clash/shared';
+import { ECONOMY_VERSION, cornerZone, isMapStyle, isTeamMode, migrateEconomyPatch, type Corner } from '@pixel-clash/shared';
 import { log } from '../util/log.js';
+
+/**
+ * The scale of units submitted now: 1 = the $1,000 game, 2 = the ×5 $5,000
+ * game (M8.8), 3 = the $10,000 redesign (HP ×1.6, damage ×0.8). Older stored
+ * units are wiped at boot (`wipeOldScaleUnits`).
+ */
+export const SCALE_VERSION = 3;
 import type { MatchStats } from './awards.js';
 
 // ---------------------------------------------------------------------------
@@ -81,7 +88,7 @@ export interface UnitVersionRecord {
   orders?: MinionOrder[];
   /** M8.8 heal support: whether update() healed in the dry run (§7), for the card. */
   healUsed?: boolean;
-  /** M8.8: 2 = submitted for the ×5 economy; absent (or 1) = the $1,000 game (§6 M8.8 migration, W_OLD_SCALE). */
+  /** The economy scale it was submitted for (SCALE_VERSION; absent = 1, the $1,000 game). Older ones are wiped at boot. */
   scaleVersion?: number;
   sha256: string;
   createdAt: number;
@@ -249,8 +256,6 @@ export interface PersistedState {
   configPatch: DeepPartial<GameConfig>;
   /** /setup settings (Claude box address, preferred LAN URL, seat password). */
   setup?: Partial<SetupRecord>;
-  /** M8.8: the $1,000-game config overrides the v2 migration dropped (the /admin banner), until a wipe. */
-  economyReset?: string[];
 }
 
 export function newMatchState(defaultRounds: number): MatchState {
@@ -303,14 +308,6 @@ export class Store {
   adminSessions = new Set<string>();
   adminPassword: string | undefined;
   configPatch: DeepPartial<GameConfig> = {};
-  /**
-   * M8.8 (§6 M8.8 migration): the scale-sensitive overrides of a $1,000-game
-   * config patch dropped at boot (cost.*, caps.budget, caps.unitCost, HP and
-   * damage bounds, minion HP/damage), for the log and the /admin banner
-   * "Your economy overrides were for the $1,000 game and were reset."
-   * Empty when nothing was dropped.
-   */
-  economyReset: string[] = [];
   /** /setup settings; kept across a wipe (they describe the venue, not the game). */
   setup: SetupRecord = { claudeBoxHost: null, preferredUrl: null, seatSecret: null };
   /** Monotonic counter for join order. */
@@ -431,14 +428,11 @@ export class Store {
     // conversion would let an old curveK or cost.hp undo the retune).
     const migrated = migrateEconomyPatch(data.configPatch ?? {});
     this.configPatch = migrated.patch;
-    this.economyReset = [...new Set([...(data.economyReset ?? []), ...migrated.dropped])];
     if (migrated.dropped.length > 0) {
-      log.warn(`config overrides from the $1,000 game were reset (M8.8 economy): ${migrated.dropped.join(', ')}`);
-      if (this.match.phase !== 'LOBBY' && this.match.phase !== 'MATCH_RESULTS') {
-        log.warn('a match was running: it continues on the M8.8 economy (units are re-priced at boot); start a New match to begin cleanly');
-      }
+      log.warn(`config overrides from an older economy were dropped ($10,000 economy): ${migrated.dropped.join(', ')}`);
       this.dirty = true;
     }
+    this.wipeOldScaleUnits();
     if (data.setup) {
       this.setup = {
         claudeBoxHost: data.setup.claudeBoxHost ?? null,
@@ -499,9 +493,8 @@ export class Store {
       adminSessions: [...this.adminSessions],
       ...(this.adminPassword !== undefined ? { adminPassword: this.adminPassword } : {}),
       // M8.8: every override written from here on is at the ×5 scale.
-      configPatch: Object.keys(this.configPatch).length > 0 ? { ...this.configPatch, economyVersion: 2 } : this.configPatch,
+      configPatch: Object.keys(this.configPatch).length > 0 ? { ...this.configPatch, economyVersion: ECONOMY_VERSION } : this.configPatch,
       setup: this.setup,
-      ...(this.economyReset.length > 0 ? { economyReset: this.economyReset } : {}),
     };
     try {
       mkdirSync(this.dataDir, { recursive: true });
@@ -595,6 +588,44 @@ export class Store {
   }
 
   /** Delete data/ and reset the in-memory state (admin wipe). Admin sessions survive. */
+  /**
+   * The $10,000 redesign (§6 migration, 2026-10-24, user decision "they can be
+   * wiped"): player-submitted designs and Open Armory entries made for an
+   * older economy (scaleVersion below SCALE_VERSION) are not re-priced: they
+   * are all removed at boot, with every selection and placement that named
+   * them. Templates are rebuilt from the starter kit; players, PINs and keys
+   * stay. Only a log line, no banner.
+   */
+  private wipeOldScaleUnits(): void {
+    const stale = [...this.designs.values()].some((m) => [...m.values()].some((d) => !d.isTemplate && d.versions.some((v) => (v.scaleVersion ?? 1) < SCALE_VERSION)));
+    const staleArmory = this.match.armory.entries.some((e) => (e.scaleVersion ?? 1) < SCALE_VERSION);
+    if (!stale && !staleArmory) return;
+    let removed = 0;
+    const gone = new Set<string>();
+    for (const m of this.designs.values()) {
+      for (const [id, d] of m) {
+        if (d.isTemplate) continue;
+        m.delete(id);
+        gone.add(id);
+        removed++;
+      }
+    }
+    const armory = this.match.armory.entries.length;
+    this.match.armory = { ...this.match.armory, entries: [] };
+    delete this.match.armory.pendingRemovals;
+    // Templates stay (server-owned); every own design and every borrowed (armory:) one is gone.
+    const known = (id: string) => !gone.has(id) && !id.startsWith('armory:');
+    for (const rs of Object.values(this.match.perPlayer)) {
+      rs.selection = rs.selection.filter(known);
+      rs.prevSelection = rs.prevSelection?.filter(known) ?? null;
+      rs.locked = rs.locked?.filter((l) => known(l.unitId)) ?? null;
+      rs.placements = rs.placements.filter((p) => known(p.unitId));
+      rs.lastLayout = rs.lastLayout?.filter((p) => known(p.unitId)) ?? null;
+    }
+    log.warn(`units from an older economy were cleared ($10,000 redesign): ${removed} designs, ${armory} armory entries`);
+    this.dirty = true;
+  }
+
   wipe(defaultRounds: number): void {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = undefined;
@@ -604,7 +635,6 @@ export class Store {
     this.sessions.clear();
     this.match = newMatchState(defaultRounds);
     this.configPatch = {};
-    this.economyReset = [];
     this.joinSeq = 0;
     this.dirty = true;
     this.flush();

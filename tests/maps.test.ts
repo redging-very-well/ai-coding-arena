@@ -386,7 +386,7 @@ describe('sudden death scales with the arena', () => {
   it('570 → 60 at 800, 741 → 78 at 1040, 855 → 90 at 1200, and still covers every corner', () => {
     const sd = DEFAULT_CONFIG.suddenDeath;
     expect(scaleSuddenDeath(sd, 800)).toBe(sd);
-    expect(scaleSuddenDeath(sd, 1040)).toMatchObject({ startRadius: 741, endRadius: 78, startTick: 3000, endTick: 5400, damagePctPerSecond: 7 });
+    expect(scaleSuddenDeath(sd, 1040)).toMatchObject({ startRadius: 741, endRadius: 78, startTick: 4500, endTick: 7200, damagePctPerSecond: 10 });
     expect(scaleSuddenDeath(sd, 1200)).toMatchObject({ startRadius: 855, endRadius: 90 });
     for (const S of [800, 1040, 1200]) expect((S * Math.SQRT2) / 2).toBeLessThan(scaleSuddenDeath(sd, S).startRadius);
   });

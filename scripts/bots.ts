@@ -32,7 +32,7 @@
 
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { GameStateDTO, MapZoneDTO, PlacementDTO, UnitCardDTO } from '@pixel-clash/shared';
+import { copyCost, type CopyRamp, type GameStateDTO, type MapZoneDTO, type PlacementDTO, type UnitCardDTO } from '@pixel-clash/shared';
 import { frontCells } from '../packages/server/src/sim/autoPlace.js';
 
 // ---------------------------------------------------------------------------
@@ -93,35 +93,35 @@ const B = (
 
 /** Fighters all around $355-$1,300 (M8.8 ×5 scale), so a bot always fields 4-12 copies (walls $114 on top). */
 export const DESIGNS = {
-  brawler: D('Brawler', 'soldier', { maxHealth: 750, damage: 70, range: 30, speed: 1.6, attackCooldown: 60, size: 11, color: '#E8413C', shape: 'square', behaviour: 'weakest' }),
-  archer: D('Archer', 'soldier', { maxHealth: 400, damage: 60, range: 120, speed: 1.4, attackCooldown: 60, size: 9, color: '#3CB371', shape: 'triangle', behaviour: 'kite' }),
-  turret: D('Turret', 'tower', { maxHealth: 900, damage: 90, range: 160, attackCooldown: 60, size: 14, color: '#FF9933', shape: 'square', behaviour: 'tower' }),
-  runner: D('Runner', 'soldier', { maxHealth: 350, damage: 40, range: 25, speed: 2.6, attackCooldown: 45, size: 7, color: '#FFD23C', shape: 'diamond', behaviour: 'nearest' }),
-  bastion: D('Bastion', 'tower', { maxHealth: 1500, damage: 40, range: 100, attackCooldown: 60, size: 16, color: '#8C98AC', shape: 'square', behaviour: 'tower' }),
-  gnat: D('Gnat', 'soldier', { maxHealth: 250, damage: 35, range: 25, speed: 1.8, attackCooldown: 60, size: 7, color: '#B04CFF', shape: 'circle', behaviour: 'nearest' }),
-  dart: D('Dart', 'tower', { maxHealth: 250, damage: 40, range: 140, attackCooldown: 60, size: 8, color: '#3CD6FF', shape: 'diamond', behaviour: 'tower' }),
-  pebble: D('Pebble', 'soldier', { maxHealth: 350, damage: 30, range: 35, speed: 1.2, attackCooldown: 60, size: 8, color: '#9BEA3C', shape: 'circle', behaviour: 'weakest' }),
-  // M8.5 buildings: a 1500 HP wall ($114) and a factory making 5 minions ($950).
-  stone: B('Stone Wall', 'wall', { maxHealth: 1500, color: '#8A8F98' }),
-  workshop: B('Workshop', 'factory', { maxHealth: 1250, productionInterval: 900, color: '#C0A060' }),
-  // M8.6 kinds (§5.3, §6): archers $1,185, a burst-4 runner pack $1,135, brutes $1,275 (1250 HP bodies, 5 minions).
-  archerNest: B('Archer Nest', 'factory', { maxHealth: 1250, productionInterval: 900, produces: 'archer', color: '#5BC0EB', behaviour: 'guard' }),
-  runnerPack: B('Runner Pack', 'factory', { maxHealth: 1250, productionInterval: 900, produces: 'runner', burst: 4, color: '#FFD23C', behaviour: 'swarm' }),
-  smasher: B('Brute Smithy', 'factory', { maxHealth: 1250, productionInterval: 900, produces: 'brute', color: '#B5651D', behaviour: 'breach' }),
-  // M8.8 elements, splash and support (§5.4, §5.5, §6): a fire soldier $635 that hits frozen
-  // enemies first, a frost archer $733 (range 140, inside a tower's reach), an ice tower $1,144,
-  // a lightning soldier $635, a mortar $1,179 that splashes the biggest clump, a field medic $759,
-  // a war drummer $603, a shield bearer $982 and a medic tent $1,292 (5 medics guarding a tank).
-  pyro: D('Pyro', 'soldier', { maxHealth: 600, damage: 50, range: 40, attackCooldown: 60, size: 10, color: '#FF6A2A', shape: 'triangle', behaviour: 'shatter', element: 'fire' }),
-  frostbow: D('Frostbow', 'soldier', { maxHealth: 400, damage: 40, range: 140, attackCooldown: 60, size: 9, color: '#7FDBFF', shape: 'diamond', behaviour: 'kite', element: 'ice' }),
-  frostTower: D('Frost Tower', 'tower', { maxHealth: 625, damage: 75, range: 140, attackCooldown: 45, size: 14, color: '#5BC8FF', shape: 'square', behaviour: 'tower', element: 'ice' }),
-  stormling: D('Stormling', 'soldier', { maxHealth: 600, damage: 50, range: 40, attackCooldown: 60, size: 10, color: '#FFE14D', shape: 'diamond', behaviour: 'nearest', element: 'lightning' }),
-  mortar: D('Mortar', 'tower', { maxHealth: 625, damage: 100, range: 140, attackCooldown: 60, size: 14, color: '#A0522D', shape: 'square', behaviour: 'mortar', splashRadius: 40 }),
-  medic: D('Medic', 'soldier', { maxHealth: 500, damage: 0, range: 20, attackCooldown: 60, size: 10, color: '#33CC66', shape: 'circle', behaviour: 'medic', support: { kind: 'heal', power: 60, range: 120 } }),
-  drummer: D('Drummer', 'soldier', { maxHealth: 500, damage: 0, range: 20, attackCooldown: 60, size: 10, color: '#D94040', shape: 'circle', behaviour: 'banner', support: { kind: 'might', power: 30, range: 100 } }),
-  bearer: D('Shield Bearer', 'soldier', { maxHealth: 1000, damage: 30, range: 30, speed: 1.2, attackCooldown: 60, size: 14, color: '#4A7BD0', shape: 'square', behaviour: 'banner', support: { kind: 'shield', power: 25, range: 80 } }),
-  medicTent: B('Medic Tent', 'factory', { maxHealth: 1500, productionInterval: 900, produces: 'medic', color: '#9BEA9B', behaviour: 'guardTank' }),
-  fireGrunts: B('Fire Grunts', 'factory', { maxHealth: 1250, productionInterval: 900, minionElement: 'fire', color: '#FF8A3C' }),
+  brawler: D('Brawler', 'soldier', { maxHealth: 1800, damage: 84, range: 30, speed: 1.6, attackCooldown: 60, size: 11, color: '#E8413C', shape: 'square', behaviour: 'weakest' }),
+  archer: D('Archer', 'soldier', { maxHealth: 960, damage: 72, range: 120, speed: 1.4, attackCooldown: 60, size: 9, color: '#3CB371', shape: 'triangle', behaviour: 'kite' }),
+  turret: D('Turret', 'tower', { maxHealth: 2160, damage: 108, range: 160, attackCooldown: 60, size: 14, color: '#FF9933', shape: 'square', behaviour: 'tower' }),
+  runner: D('Runner', 'soldier', { maxHealth: 840, damage: 48, range: 25, speed: 2.6, attackCooldown: 45, size: 7, color: '#FFD23C', shape: 'diamond', behaviour: 'nearest' }),
+  bastion: D('Bastion', 'tower', { maxHealth: 3600, damage: 48, range: 100, attackCooldown: 60, size: 16, color: '#8C98AC', shape: 'square', behaviour: 'tower' }),
+  gnat: D('Gnat', 'soldier', { maxHealth: 600, damage: 42, range: 25, speed: 1.8, attackCooldown: 60, size: 7, color: '#B04CFF', shape: 'circle', behaviour: 'nearest' }),
+  dart: D('Dart', 'tower', { maxHealth: 600, damage: 48, range: 140, attackCooldown: 60, size: 8, color: '#3CD6FF', shape: 'diamond', behaviour: 'tower' }),
+  pebble: D('Pebble', 'soldier', { maxHealth: 840, damage: 36, range: 35, speed: 1.2, attackCooldown: 60, size: 8, color: '#9BEA3C', shape: 'circle', behaviour: 'weakest' }),
+  // Buildings: a 2,400 HP wall and a factory making a grunt every 10 s.
+  stone: B('Stone Wall', 'wall', { maxHealth: 2400, color: '#8A8F98' }),
+  workshop: B('Workshop', 'factory', { maxHealth: 2000, productionInterval: 600, color: '#C0A060' }),
+  // Minion kinds (§5.3, §6): archers, a burst-4 runner pack and brutes (2,000 HP bodies, a minion every 10 s).
+  archerNest: B('Archer Nest', 'factory', { maxHealth: 2000, productionInterval: 600, produces: 'archer', color: '#5BC0EB', behaviour: 'guard' }),
+  runnerPack: B('Runner Pack', 'factory', { maxHealth: 2000, productionInterval: 600, produces: 'runner', burst: 4, color: '#FFD23C', behaviour: 'swarm' }),
+  smasher: B('Brute Smithy', 'factory', { maxHealth: 2000, productionInterval: 600, produces: 'brute', color: '#B5651D', behaviour: 'breach' }),
+  // Elements, splash and support (§5.4, §5.5, §6): a fire soldier that hits frozen enemies
+  // first, a frost archer (range 140, inside a tower's reach), an ice tower, a lightning
+  // soldier, a mortar that splashes the biggest clump, a field medic, a war drummer, a shield
+  // bearer and a medic tent (medics guarding a tank).
+  pyro: D('Pyro', 'soldier', { maxHealth: 1440, damage: 60, range: 40, attackCooldown: 60, size: 10, color: '#FF6A2A', shape: 'triangle', behaviour: 'shatter', element: 'fire' }),
+  frostbow: D('Frostbow', 'soldier', { maxHealth: 960, damage: 48, range: 140, attackCooldown: 60, size: 9, color: '#7FDBFF', shape: 'diamond', behaviour: 'kite', element: 'ice' }),
+  frostTower: D('Frost Tower', 'tower', { maxHealth: 1500, damage: 90, range: 140, attackCooldown: 45, size: 14, color: '#5BC8FF', shape: 'square', behaviour: 'tower', element: 'ice' }),
+  stormling: D('Stormling', 'soldier', { maxHealth: 1440, damage: 60, range: 40, attackCooldown: 60, size: 10, color: '#FFE14D', shape: 'diamond', behaviour: 'nearest', element: 'lightning' }),
+  mortar: D('Mortar', 'tower', { maxHealth: 1500, damage: 120, range: 140, attackCooldown: 60, size: 14, color: '#A0522D', shape: 'square', behaviour: 'mortar', splashRadius: 40 }),
+  medic: D('Medic', 'soldier', { maxHealth: 1200, damage: 0, range: 20, attackCooldown: 60, size: 10, color: '#33CC66', shape: 'circle', behaviour: 'medic', support: { kind: 'heal', power: 96, range: 120 } }),
+  drummer: D('Drummer', 'soldier', { maxHealth: 1200, damage: 0, range: 20, attackCooldown: 60, size: 10, color: '#D94040', shape: 'circle', behaviour: 'banner', support: { kind: 'might', power: 30, range: 100 } }),
+  bearer: D('Shield Bearer', 'soldier', { maxHealth: 2400, damage: 36, range: 30, speed: 1.2, attackCooldown: 60, size: 14, color: '#4A7BD0', shape: 'square', behaviour: 'banner', support: { kind: 'shield', power: 25, range: 80 } }),
+  medicTent: B('Medic Tent', 'factory', { maxHealth: 2400, productionInterval: 600, produces: 'medic', color: '#9BEA9B', behaviour: 'guardTank' }),
+  fireGrunts: B('Fire Grunts', 'factory', { maxHealth: 2000, productionInterval: 600, minionElement: 'fire', color: '#FF8A3C' }),
 } satisfies Record<string, BotDesign>;
 type DesignKey = keyof typeof DESIGNS;
 
@@ -436,7 +436,7 @@ export class Bot {
   placedRound = -1;
   private stopped = false;
   private seenMatch = false;
-  private caps = { budget: 5000, maxCopies: 12, maxUnitTypes: 4, maxBuildingTypes: 4, maxFactoryCopies: 2, maxWallCopies: 12 };
+  private caps = { budget: 10000, maxCopies: 12, maxUnitTypes: 4, maxBuildingTypes: 4, maxFactoryCopies: 5, maxWallCopies: 16, copyRamp: undefined as CopyRamp | undefined };
 
   constructor(readonly opts: BotOptions) {
     this.api = new Api(opts.url.replace(/\/+$/, ''));
@@ -465,7 +465,7 @@ export class Bot {
     this.playerId = r.body.player.id;
     this.summary.seat = r.body.player.seat ?? null;
     const rules = await this.api.call('GET', '/rules');
-    if (rules.status === 200 && rules.body?.caps) this.caps = { ...this.caps, ...rules.body.caps };
+    if (rules.status === 200 && rules.body?.caps) this.caps = { ...this.caps, ...rules.body.caps, copyRamp: rules.body.copyRamp };
     this.log(`joined (seat ${this.summary.seat})`);
   }
 
@@ -570,7 +570,7 @@ export class Bot {
       zone.facing,
       this.caps.budget,
       Math.min(this.caps.maxCopies, this.opts.maxCopies ?? Infinity),
-      { maxFactoryCopies: this.caps.maxFactoryCopies, maxWallCopies: this.caps.maxWallCopies },
+      { maxFactoryCopies: this.caps.maxFactoryCopies, maxWallCopies: this.caps.maxWallCopies, ...(this.caps.copyRamp ? { copyRamp: this.caps.copyRamp } : {}) },
     );
     const r = await this.api.call('PUT', '/round/placement', { placements });
     if (r.status !== 200) {
@@ -603,7 +603,7 @@ export function planPlacement(
   facing: MapZoneDTO['facing'],
   budget: number,
   maxCopies: number,
-  caps: { maxFactoryCopies?: number; maxWallCopies?: number } = {},
+  caps: { maxFactoryCopies?: number; maxWallCopies?: number; copyRamp?: CopyRamp } = {},
 ): PlacementDTO[] {
   const wallType = [...units].filter((u) => u.type === 'wall').sort((a, b) => a.cost - b.cost)[0];
   const fighters = units.filter((u) => u.type !== 'wall');
@@ -611,15 +611,20 @@ export function planPlacement(
     const picked: typeof units = [];
     let spent = walls * (wallType?.cost ?? 0);
     let factories = 0;
+    const copies = new Map<string, number>();
     const types = [...fighters].sort((a, b) => a.cost - b.cost);
     let added = true;
     while (added && picked.length < maxCopies) {
       added = false;
       for (const t of types) {
-        if (picked.length >= maxCopies || spent + t.cost > budget) continue;
-        if (t.type === 'factory' && factories >= (caps.maxFactoryCopies ?? 2)) continue;
+        // Redesign: the copy ramp makes the next copy of one design dearer (§6).
+        const n = (copies.get(t.unitId) ?? 0) + 1;
+        const cost = copyCost(t.cost, n, t.type, caps.copyRamp);
+        if (picked.length >= maxCopies || spent + cost > budget) continue;
+        if (t.type === 'factory' && factories >= (caps.maxFactoryCopies ?? 5)) continue;
         picked.push(t);
-        spent += t.cost;
+        copies.set(t.unitId, n);
+        spent += cost;
         if (t.type === 'factory') factories++;
         added = true;
       }

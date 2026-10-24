@@ -17,6 +17,7 @@ import {
 import { BattleEngine, type SimUnit } from '../packages/server/src/sim/engine.js';
 import { Pathfinder, WALL_STEP, sizeClassOf } from '../packages/server/src/sim/pathing.js';
 import { WallGrid, distanceToWall, pushOutOfWalls } from '../packages/server/src/sim/walls.js';
+import { BuildingGrid } from '../packages/server/src/sim/buildings.js';
 import { clampBody } from '../packages/server/src/sim/movement.js';
 import { SOLDIER, design, fakePlayers, idleBrain, scripted, stats, type FakePlayerSpec } from './helpers/fakeRunner.js';
 
@@ -254,6 +255,135 @@ describe('routing round walls (§9.3)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Buildings in routing (redesign 2026-10-24): towers and factories are solid
+// ---------------------------------------------------------------------------
+
+function towerAt(col: number, row: number, radius = 14, type: 'tower' | 'factory' = 'tower', team = 1): SimUnit {
+  return body({
+    id: `t-${String(row).padStart(2, '0')}-${String(col).padStart(2, '0')}`,
+    playerId: team === 0 ? 'a' : 'b', teamId: team, seat: team, type, stats: stats({ type, size: radius }), radius,
+    x: col * 40 + 20, y: row * 40 + 20, hp: 600, maxHp: 600, cost: 500,
+  });
+}
+
+function bworld(walls: Array<[number, number]>, towers: SimUnit[]) {
+  const grid = new WallGrid(ARENA);
+  const ws = walls.map(([c, r]) => wallAt(c, r));
+  for (const w of ws) grid.add(w);
+  const buildings = new BuildingGrid(ARENA);
+  for (const t of towers) buildings.add(t);
+  const paths = new Pathfinder(grid, ARENA, CENTER, { replanTicks: DEFAULT_CONFIG.sim.replanTicks, slideMemoryTicks: DEFAULT_CONFIG.sim.slideMemoryTicks, buildings });
+  return { grid, walls: ws, paths, buildings, towers };
+}
+
+/** Like `walk`, plus the deepest overlap with any building circle (the routing must keep clear of them). */
+function bwalk(u: SimUnit, dest: { x: number; y: number }, w: ReturnType<typeof bworld>, ticks: number, onTick?: (t: number) => void) {
+  const path: Step[] = [];
+  let overlap = 0;
+  let arrivedAt = -1;
+  for (let t = 0; t < ticks; t++) {
+    onTick?.(t);
+    w.paths.move(u, dest, u.stats.speed, t);
+    if (pushOutOfWalls(u, w.grid)) clampBody(u, ARENA);
+    for (const b of w.towers) if (b.alive) overlap = Math.max(overlap, u.radius + b.radius - Math.hypot(u.x - b.x, u.y - b.y));
+    path.push({ x: u.x, y: u.y, mode: u.pathing!, blockedTicks: u.blockedTicks ?? 0 });
+    if (arrivedAt < 0 && Math.hypot(u.x - dest.x, u.y - dest.y) < 1e-6) arrivedAt = t;
+  }
+  return { path, overlap, arrivedAt };
+}
+
+describe('routing round towers and factories (redesign: buildings are solid)', () => {
+  it('a unit behind a single tower walks round it instead of pushing into it', () => {
+    const w = bworld([], [towerAt(10, 10, 20)]);
+    const u = body({ x: 420, y: 300 });
+    const { path, overlap, arrivedAt } = bwalk(u, { x: 420, y: 560 }, w, 400);
+    expect(arrivedAt).toBeGreaterThan(0);
+    expect(overlap).toBeLessThanOrEqual(0.01);
+    expect(path.some((p) => p.mode === 'detour')).toBe(true);
+    expect(path.every((p) => p.mode !== 'no-route')).toBe(true);
+  });
+
+  it('a line of towers with gaps too small: it routes the long way round the line', () => {
+    // Size-18 towers in row 10, cols 3-16: neighbours leave 4 px gaps.
+    const towers = Array.from({ length: 14 }, (_, i) => towerAt(3 + i, 10, 18));
+    const w = bworld([], towers);
+    const u = body({ x: 420, y: 300 });
+    const { path, overlap, arrivedAt } = bwalk(u, { x: 420, y: 560 }, w, 900);
+    expect(arrivedAt).toBeGreaterThan(0);
+    expect(overlap).toBeLessThanOrEqual(0.01);
+    const crossing = path.find((p) => p.y > 420)!;
+    expect(crossing.x < 3 * 40 || crossing.x > 17 * 40).toBe(true);
+  });
+
+  it('a gap big enough between two towers: it walks straight through', () => {
+    // Size-6 towers at cols 10 and 11 leave 28 px: a size-10 body (20 px) fits; the line round is long.
+    const towers = [...Array.from({ length: 7 }, (_, i) => towerAt(3 + i, 10, 20)), towerAt(10, 10, 6), towerAt(11, 10, 6), ...Array.from({ length: 6 }, (_, i) => towerAt(12 + i, 10, 20))];
+    const w = bworld([], towers);
+    const u = body({ x: 440, y: 300 });
+    const { path, overlap, arrivedAt } = bwalk(u, { x: 440, y: 560 }, w, 400);
+    expect(arrivedAt).toBeGreaterThan(0);
+    expect(arrivedAt).toBeLessThan(200); // 260 px at 1.5 px/tick: straight through
+    expect(overlap).toBeLessThanOrEqual(0.01);
+    expect(path.every((p) => p.mode === 'direct')).toBe(true);
+    // A size-16 body (32 px) doesn't fit the 28 px gap: it goes round.
+    const big = body({ x: 440, y: 300, radius: 16, stats: stats({ type: 'soldier', size: 16 }) });
+    const round = bwalk(big, { x: 440, y: 560 }, bworld([], towers.map((t) => ({ ...t }))), 900);
+    expect(round.overlap).toBeLessThanOrEqual(0.01);
+    expect(round.arrivedAt).toBeGreaterThan(200);
+  });
+
+  it('a tower in the line dies: the unit takes the new shorter way within replanTicks', () => {
+    const towers = Array.from({ length: 16 }, (_, i) => towerAt(2 + i, 10, 18));
+    const w = bworld([], towers);
+    const u = body({ x: 100, y: 300 });
+    const { path, arrivedAt } = bwalk(u, { x: 100, y: 600 }, w, 900, (t) => {
+      if (t === 40) {
+        const gone = towers[0]!; // (2, 10)
+        gone.alive = false;
+        w.buildings.remove(gone);
+      }
+    });
+    expect(arrivedAt).toBeGreaterThan(0);
+    const crossing = path.find((p) => p.y > 420)!;
+    expect(crossing.x).toBeLessThan(3 * 40);
+    expect(arrivedAt).toBeLessThan(400);
+  });
+
+  it('buildings never trap: boxed in by own buildings it still heads for the destination (never no-route)', () => {
+    // A ring of factories round cell (10, 10), the unit inside.
+    const ring: Array<[number, number]> = [[9, 9], [10, 9], [11, 9], [9, 10], [11, 10], [9, 11], [10, 11], [11, 11]];
+    const w = bworld([], ring.map(([c, r]) => towerAt(c, r, 18, 'factory', 0)));
+    const u = body({ x: 420, y: 420 });
+    const { path } = bwalk(u, { x: 420, y: 700 }, w, 60);
+    expect(path.every((p) => p.mode !== 'no-route')).toBe(true);
+    expect(u.blockedTicks ?? 0).toBe(0);
+    expect(path.at(-1)!.y).toBeGreaterThan(420); // it pressed toward the gap (separation slides it out in battle)
+  });
+
+  it('chasing a tower: the tower itself is the destination, not an obstacle', () => {
+    const w = bworld([], [towerAt(10, 10, 14)]);
+    const plan = w.paths.plan({ x: 420, y: 200, radius: 10 }, { x: 420, y: 420 });
+    expect(plan.mode).toBe('direct');
+  });
+
+  it('buildings are solid only between walls too: a wall line with a tower in its gap is no-route for walls, but the tower is never the wall to break', () => {
+    const w = bworld(row(10, 0, 19, [9]), [towerAt(9, 10, 14)]);
+    const u = body({ x: 300, y: 300 });
+    const { path } = bwalk(u, { x: 300, y: 600 }, w, 300);
+    // The only open way is the tower's cell: it heads there (walls-only field), never presses on a wall.
+    expect(path.every((p) => p.mode !== 'no-route')).toBe(true);
+    // (no separation here: it walks into the tower's cell, the gate, and on; in battle separation slides it round)
+    const crossing = path.find((p) => p.y > 410)!;
+    expect(Math.abs(crossing.x - 380)).toBeLessThan(20);
+  });
+
+  it('is deterministic with buildings', () => {
+    const run = () => bwalk(body({ x: 420, y: 300 }), { x: 420, y: 560 }, bworld([], Array.from({ length: 14 }, (_, i) => towerAt(3 + i, 10, 18))), 400).path;
+    expect(run()).toEqual(run());
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Engine level
 // ---------------------------------------------------------------------------
 
@@ -336,6 +466,29 @@ describe('routing in battle (§9.3)', () => {
     const wallIds = new Set(result.units.filter((u) => u.type === 'wall').map((u) => u.instanceId));
     const hitWalls = new Set(allEvents(engine.frames).flatMap((x) => (x.e.type === 'hit' && wallIds.has(x.e.targetId) ? [x.e.targetId] : [])));
     expect(hitWalls.size).toBe(1);
+  });
+
+  it('buildings in battle: soldiers behind their own tower line and minions from behind a tower row reach the enemy, never stuck', async () => {
+    // TL zone: a row of own size-20 towers on row 1 (cols 0-5, solid), soldiers and a factory behind it on row 2-3.
+    const wallTower = stats({ type: 'tower', size: 20, damage: 0, maxHealth: 2500 });
+    const fac = stats({ type: 'factory', maxHealth: 2500, productionInterval: 600 });
+    const towers = [0, 1, 2, 3, 4, 5].map((c) => at(c, 1, 'tw'));
+    const engine = engineOf(
+      [
+        {
+          playerId: 'a', seat: 0, zone: 'TL',
+          units: [design('s', SOLDIER), design('tw', wallTower), design('f', fac)],
+          placements: [...towers, at(0, 2, 's'), at(2, 2, 's'), at(4, 3, 'f')],
+          brains: { s: templateSoldier(), tw: idleBrain, f: idleBrain },
+        },
+        { playerId: 'b', seat: 1, zone: 'BR', units: [design('t', TARGET)], placements: [at(0, 0, 't')], brains: { t: idleBrain } },
+      ],
+      cfg(noSD, 3600),
+    );
+    const result = await engine.run();
+    const soldiers = result.units.filter((u) => u.unitId === 's' && u.type !== 'minion' && u.playerId === 'a');
+    expect(soldiers.reduce((n, u) => n + u.damageDealt, 0)).toBeGreaterThan(0);
+    expect(result.units.find((u) => u.instanceId.startsWith('1-'))!.survived).toBe(false);
   });
 
   it('many soldiers chasing one target share one flow field (cache hits)', async () => {

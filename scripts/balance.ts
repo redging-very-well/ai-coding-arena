@@ -8,7 +8,8 @@
 //   npm run balance                                   exact early stopping (same verdicts as the full matrix)
 //   npm run balance -- --fast                         statistical early stopping (much fewer battles; see the docs)
 //   npm run balance -- --full                         every battle
-//   npm run balance -- --config patch.json            a deep-partial config patch (file or inline JSON)
+//   npm run balance -- --config patch.json            a deep-partial config patch (file or inline JSON); the
+//                                                     archetypes are refit to it (--no-refit: keep the default armies)
 //   npm run balance -- --archetypes bricks,tanks,turtle,scouts
 //   npm run balance -- --seeds 11,4242                both seeds (16 battles per pair; default: the test's seed 11)
 //   npm run balance -- --no-cache --workers 10 --top 15 --all --json out.json
@@ -38,6 +39,7 @@ import {
 import { BalancePool } from '../tests/helpers/balancePool.js';
 import { DEFAULT_SEQUENTIAL, counts, sequential, type Cell, type RuleState, type StopMode } from '../tests/helpers/balanceFast.js';
 import { testRules, type Rule } from '../tests/helpers/balanceRules.js';
+import { refitForPatch } from '../tests/helpers/balanceRefit.js';
 
 interface Args {
   mode: StopMode;
@@ -131,6 +133,8 @@ function parseArgs(argv: string[]): Args {
       case '--quiet':
         a.quiet = true;
         break;
+      case '--no-refit':
+        break;
       case '--help':
       case '-h':
         console.log(readFileSync(new URL(import.meta.url), 'utf8').split('\n').filter((l) => l.startsWith('//')).map((l) => l.slice(3)).join('\n'));
@@ -145,6 +149,8 @@ function parseArgs(argv: string[]): Args {
 }
 
 const args = parseArgs(process.argv.slice(2));
+// A --config patch refits the archetypes (padded units, brick, fills) in a fresh process.
+refitForPatch(args.configPatch, process.argv);
 const log = (s: string) => {
   if (!args.quiet) process.stderr.write(`${s}\n`);
 };
@@ -278,7 +284,9 @@ for (const s of open) console.log(`  OPEN ${label(s)} (p ${s.p.toFixed(3)})`);
 const results: PairResult[] = matchups.map((m) => pairResult(m.cell.a, m.cell.b, m.records.filter((r): r is BattleRecord => r !== undefined)));
 const wallOnly = results.filter((r) => r.wallOnlyWins > 0).map((r) => `${r.a} vs ${r.b}`);
 const healPct = config.support.healRoomPctPerSecond / 100;
-const healBad = results.filter((r) => r.healBattles > 0 && (r.worstHealWindow > healPct + 1e-9 || r.lastHealTick > config.suddenDeath.startTick)).map((r) => `${r.a} vs ${r.b}`);
+// Heal events carry amounts rounded to 0.01 HP, so a window summed from them can read a hair over the limit.
+const HEAL_TOLERANCE = 1e-4;
+const healBad = results.filter((r) => r.healBattles > 0 && (r.worstHealWindow > healPct + HEAL_TOLERANCE || r.lastHealTick > config.suddenDeath.startTick)).map((r) => `${r.a} vs ${r.b}`);
 console.log(`\nIn the played battles: wall-only wins ${wallOnly.length ? wallOnly.join(', ') : 'none'}; heal-limit breaks ${healBad.length ? healBad.join(', ') : 'none'}.`);
 
 let verifyDiff = 0;

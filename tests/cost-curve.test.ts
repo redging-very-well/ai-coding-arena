@@ -1,9 +1,9 @@
 // The cost curve (plan §6): maxing out a stat gets progressively more
 // expensive, so one expensive unit is discouraged.
 //
-//   term_i = c_i × x_i × (1 + k × r_i²),  r_i = x_i / max_i,  k = cost.curveK (1, M8.8)
+//   term_i = c_i × x_i × (1 + k × r_i²),  r_i = x_i / max_i,  k = cost.curveK (1)
 //
-// Property tests over every priced stat (M8.8: plus splashRadius,
+// Property tests over every priced stat (plus splashRadius,
 // supportPower and supportRange), on a deterministic grid plus seeded random
 // sampling: monotonic, convex, exact at max / half max, concentration penalty
 // (one doubled unit never beats two normal ones once a stat reaches 65% of its
@@ -18,6 +18,7 @@ import {
   MIN_PRICED_SIZE,
   PRICED_STATS,
   computeCost,
+  copiesCost,
   nearMaxWarnings,
   parseConfig,
   safeParseConfig,
@@ -38,7 +39,7 @@ const k = coeffs.curveK;
 const raw = (st: CostStats, c: CostCoefficients = coeffs) => computeCost(st, c).raw;
 const cost = (st: CostStats, c: CostCoefficients = coeffs) => computeCost(st, c).cost;
 
-/** Legal range of each stat for a soldier (towers: speed fixed at 0). */
+/** Each stat over its whole priced range (range up to the tower max, 300; towers: speed fixed at 0). */
 const RANGE: Record<PricedStat, { min: number; max: number; step: number }> = {
   maxHealth: { min: bounds.maxHealth.min, max: bounds.maxHealth.max, step: 5 },
   damage: { min: bounds.damage.min, max: bounds.damage.max, step: 1 },
@@ -47,8 +48,8 @@ const RANGE: Record<PricedStat, { min: number; max: number; step: number }> = {
   size: { min: bounds.size.min, max: bounds.size.max, step: 0.05 },
 };
 
-const BASIC_SOLDIER: CostStats = { type: 'soldier', maxHealth: 600, damage: 50, range: 40, speed: 1.5, attackCooldown: 60, size: 10 };
-const BASIC_TOWER: CostStats = { type: 'tower', maxHealth: 625, damage: 75, range: 140, speed: 0, attackCooldown: 45, size: 14 };
+const BASIC_SOLDIER: CostStats = { type: 'soldier', maxHealth: 1400, damage: 56, range: 40, speed: 1.5, attackCooldown: 60, size: 10 };
+const BASIC_TOWER: CostStats = { type: 'tower', maxHealth: 1200, damage: 72, range: 140, speed: 0, attackCooldown: 45, size: 14 };
 
 /** Seeded random legal unit. `half` keeps every stat ≤ half its max (so it can be doubled). */
 function randomUnit(rng: () => number, half = false): CostStats {
@@ -231,18 +232,18 @@ describe('cost curve: concentration penalty (one big unit is never cheaper than 
   });
   const ratio = (u: CostStats, stat: PricedStat) => computeCost(u, coeffs).breakdown.parts[stat].ratio;
   /**
-   * At least one of HP / damage / range / speed at ≥ 65% of its max (M8.8).
+   * At least one of HP / damage / range / speed at ≥ 65% of its max.
    *
    * Why 65% and not the k = 2 test's 50%: k = 1 halves the curve, so doubling
    * a unit adds Σ 6k·c·x·r² of extra curve while two halves pay Base twice.
-   * With the smallest c·max of the four big stats (speed, 60 × 5 = 300) the
-   * doubled unit can only be cheaper below r ≈ (50 / (6 · 300))^(1/3) = 0.30,
-   * a doubled ratio of 0.61; the design spec's conc.mjs measured 0 failures at
-   * 65% (20,000 seeded units per variant plus the worst-case grid; worst
-   * 1.054 / 1.030) and 4 random + 75 grid failures at 50%. The power factor
-   * only makes doubling dearer; the cooldown, splash and element factors
-   * multiply both sides equally, so the variants below hold too (plan §6 M8.8
-   * concentration property).
+   * With the smallest c·max of the four big stats (range, 1.38 × 300 = 414)
+   * the doubled unit can only be cheaper below r ≈ (50 / (6 · 414))^(1/3) =
+   * 0.27, a doubled ratio of 0.54; the redesign's conc.mjs measured 0
+   * failures at 65% (20,000 seeded units per variant plus the worst-case
+   * grid; worst 1.095 / 1.071) and 35 grid failures at 50% (worst 0.98). The
+   * power factor only makes doubling dearer; the cooldown, splash and element
+   * factors multiply both sides equally, so the variants below hold too
+   * (plan §6 concentration property).
    */
   const THRESHOLD = 0.65;
   const bigEnough = (u: CostStats) => (['maxHealth', 'damage', 'range', 'speed'] as const).some((s) => ratio(u, s) >= THRESHOLD);
@@ -268,7 +269,7 @@ describe('cost curve: concentration penalty (one big unit is never cheaper than 
     });
 
     it(`worst case grid (${label}): one stat pushed from 32.5% to 100% of max, every other stat at its minimum, any cooldown`, () => {
-      const minimal: CostStats = { type: 'soldier', maxHealth: 50, damage: 0, range: 20, speed: 0.5, attackCooldown: 60, size: 6, ...variant };
+      const minimal: CostStats = { type: 'soldier', maxHealth: 80, damage: 0, range: 20, speed: 0.5, attackCooldown: 60, size: 6, ...variant };
       for (const cd of [10, 20, 45, 60, 600]) {
         for (const stat of ['maxHealth', 'damage', 'range', 'speed'] as const) {
           for (let r = THRESHOLD / 2; r <= 0.5 + 1e-9; r += 0.005) {
@@ -282,20 +283,21 @@ describe('cost curve: concentration penalty (one big unit is never cheaper than 
     });
   }
 
-  it('explicit (§6 M8.8): max stats $6,660 > 2 × half stats; Huge Tank > 2 × Half Tank; Glass Cannon > 2 × half damage', () => {
-    const half: CostStats = { type: 'soldier', maxHealth: 1250, damage: 150, range: 150, speed: 2.5, attackCooldown: 60, size: 13 };
-    const max: CostStats = { type: 'soldier', maxHealth: 2500, damage: 300, range: 300, speed: 5, attackCooldown: 60, size: 20 };
-    expect(cost(half)).toBe(1536);
-    expect(cost(max)).toBe(6660);
+  it('explicit (§6): max stats $13,206 > 2 × half stats $2,115; max-HP tank > 2 × Half Tank; Glass Cannon > 2 × half damage', () => {
+    const half: CostStats = { type: 'soldier', maxHealth: 2000, damage: 120, range: 150, speed: 2.5, attackCooldown: 60, size: 13 };
+    // Every priced stat at its curve max (range 300 is a tower's reach; priced the same, conc.mjs).
+    const max: CostStats = { type: 'soldier', maxHealth: 4000, damage: 240, range: 300, speed: 5, attackCooldown: 60, size: 20 };
+    expect(cost(half)).toBe(2115);
+    expect(cost(max)).toBe(13206);
     expect(cost(max)).toBeGreaterThan(2 * cost(half));
-    const tank: CostStats = { type: 'soldier', maxHealth: 2500, damage: 100, range: 40, speed: 0.8, attackCooldown: 60, size: 20 };
-    expect(cost(tank)).toBe(2462);
-    expect(cost({ ...tank, maxHealth: 1250 })).toBe(1122);
-    expect(cost(tank)).toBeGreaterThan(2 * cost({ ...tank, maxHealth: 1250 }));
-    const glass: CostStats = { type: 'soldier', maxHealth: 300, damage: 300, range: 40, speed: 2, attackCooldown: 60, size: 8 };
-    expect(cost(glass)).toBe(1359);
-    expect(cost({ ...glass, damage: 150 })).toBe(672);
-    expect(cost(glass)).toBeGreaterThan(2 * cost({ ...glass, damage: 150 }));
+    const tank: CostStats = { type: 'soldier', maxHealth: 4000, damage: 80, range: 40, speed: 0.8, attackCooldown: 60, size: 20 };
+    expect(cost(tank)).toBe(3452);
+    expect(cost({ ...tank, maxHealth: 2000 })).toBe(1386);
+    expect(cost(tank)).toBeGreaterThan(2 * cost({ ...tank, maxHealth: 2000 }));
+    const glass: CostStats = { type: 'soldier', maxHealth: 480, damage: 240, range: 40, speed: 2, attackCooldown: 60, size: 8 };
+    expect(cost(glass)).toBe(1641);
+    expect(cost({ ...glass, damage: 120 })).toBe(789);
+    expect(cost(glass)).toBeGreaterThan(2 * cost({ ...glass, damage: 120 }));
   });
 
   it('the power factor makes doubling strictly dearer (r_HP · r_dmg quadruples)', () => {
@@ -311,43 +313,46 @@ describe('cost curve: concentration penalty (one big unit is never cheaper than 
 
   it('without the curve and the power factor (k = 0, q = 0) the same check fails: one big unit is cheaper than two', () => {
     const linear = { ...coeffs, curveK: 0, powerFactor: 0 };
-    const half: CostStats = { type: 'soldier', maxHealth: 1250, damage: 150, range: 150, speed: 2.5, attackCooldown: 60, size: 13 };
-    expect(cost(doubled(half), linear)).toBe(2106);
-    expect(cost(half, linear)).toBe(1078);
+    const half: CostStats = { type: 'soldier', maxHealth: 2000, damage: 120, range: 150, speed: 2.5, attackCooldown: 60, size: 13 };
+    expect(cost(doubled(half), linear)).toBe(2226);
+    expect(cost(half, linear)).toBe(1138);
     expect(cost(doubled(half), linear)).toBeLessThan(2 * cost(half, linear));
   });
 });
 
 describe('cost curve: archetype guards', () => {
   it('an all-max unit at CD 60 is rejected (> cap)', () => {
-    const max: CostStats = { type: 'soldier', maxHealth: 2500, damage: 300, range: 300, speed: 5, attackCooldown: 60, size: 20 };
+    const max: CostStats = { type: 'soldier', maxHealth: 4000, damage: 240, range: 160, speed: 5, attackCooldown: 60, size: 20 };
+    expect(cost(max)).toBe(11573);
     expect(cost(max)).toBeGreaterThan(cap);
-    // Even as a tower (speed 0) it doesn't fit.
-    expect(cost({ ...max, type: 'tower', speed: 0 })).toBeGreaterThan(cap);
+    // Even as a tower (speed 0, range 300) it doesn't fit.
+    expect(cost({ ...max, type: 'tower', range: 300, speed: 0 })).toBeGreaterThan(cap);
   });
 
-  it('templates stay in their target band and 4-8 unit armies fit the budget', () => {
+  it('templates stay in their target band and 4-8 unit armies fit the budget (copy ramp included)', () => {
     const soldier = cost(BASIC_SOLDIER);
     const tower = cost(BASIC_TOWER);
-    expect(soldier).toBe(529);
-    expect(tower).toBe(954);
-    expect(4 * soldier + 3 * tower).toBeLessThanOrEqual(DEFAULT_CONFIG.caps.budget);
-    expect(8 * soldier).toBeLessThanOrEqual(DEFAULT_CONFIG.caps.budget);
+    expect(soldier).toBe(807);
+    expect(tower).toBe(1200);
+    const ramp = DEFAULT_CONFIG.caps.copyRamp;
+    expect(copiesCost(soldier, 4, 'soldier', ramp) + copiesCost(tower, 3, 'tower', ramp)).toBeLessThanOrEqual(DEFAULT_CONFIG.caps.budget);
+    expect(copiesCost(soldier, 8, 'soldier', ramp)).toBe(8276);
+    expect(copiesCost(soldier, 8, 'soldier', ramp)).toBeLessThanOrEqual(DEFAULT_CONFIG.caps.budget);
   });
 
-  it('Huge Tank (2500 HP) and Sniper Tower (range 280) cost clearly more than their linear price, but stay buildable', () => {
+  it('Huge Tank (3600 HP) and Sniper Tower (range 280) cost clearly more than their linear price, but stay buildable', () => {
     const linear = { ...coeffs, curveK: 0, powerFactor: 0 };
-    const tank: CostStats = { type: 'soldier', maxHealth: 2500, damage: 100, range: 40, speed: 0.8, attackCooldown: 60, size: 20 };
-    const sniper: CostStats = { type: 'tower', maxHealth: 400, damage: 200, range: 280, speed: 0, attackCooldown: 60, size: 14 };
-    expect(cost(tank) / cost(tank, linear)).toBeGreaterThan(2);
-    expect(cost(sniper) / cost(sniper, linear)).toBeGreaterThan(1.6);
+    const tank: CostStats = { type: 'soldier', maxHealth: 3600, damage: 80, range: 40, speed: 0.8, attackCooldown: 60, size: 20 };
+    const sniper: CostStats = { type: 'tower', maxHealth: 640, damage: 160, range: 280, speed: 0, attackCooldown: 60, size: 14 };
+    expect(cost(tank) / cost(tank, linear)).toBeGreaterThan(2.5);
+    expect(cost(sniper) / cost(sniper, linear)).toBeGreaterThan(1.8);
     expect(cost(tank)).toBeLessThanOrEqual(cap); // pricey, but still buildable
     expect(cost(sniper)).toBeLessThanOrEqual(cap);
   });
 
   it('every plan §6 reference row matches computeCost exactly', () => {
     const plan = readFileSync(new URL('../plan.md', import.meta.url), 'utf8');
-    // M8.8: "Reference units (curve k = 1)" (cost.test.ts checks every column; here the plain stat rows).
+    // "Reference units (curve k = 1)" (cost.test.ts checks every column; here the plain stat rows).
     const section = plan.split('### Reference units (curve k = 1)')[1]!.split('\n### ')[0]!;
     const rows = section.split('\n').filter((l) => l.startsWith('| ') && !l.startsWith('| Unit') && !l.startsWith('|---'));
     expect(rows.length).toBeGreaterThanOrEqual(40);
@@ -383,8 +388,8 @@ describe('cost curve: archetype guards', () => {
 });
 
 describe('cost curve: messages follow curveK', () => {
-  const max: CostStats = { type: 'soldier', maxHealth: 2500, damage: 300, range: 300, speed: 5, attackCooldown: 60, size: 20 };
-  const tank: CostStats = { type: 'soldier', maxHealth: 2500, damage: 100, range: 40, speed: 0.8, attackCooldown: 60, size: 20 };
+  const max: CostStats = { type: 'soldier', maxHealth: 4000, damage: 240, range: 160, speed: 5, attackCooldown: 60, size: 20 };
+  const tank: CostStats = { type: 'soldier', maxHealth: 4000, damage: 80, range: 40, speed: 0.8, attackCooldown: 60, size: 20 };
 
   it('k = 1: W_STAT_NEAR_MAX says 2× and the too-expensive fix says "up to 2×"; k = 2 says 3×', () => {
     const w = nearMaxWarnings(tank, computeCost(tank, coeffs), coeffs);
@@ -498,7 +503,7 @@ describe('cost curve: config guards', () => {
     });
 
     it('refuses a curve retune that would make a template invalid', async () => {
-      // A steep curve with pricier range pushes the Basic Tower (range 140) over $2,500.
+      // A steep curve with pricier range pushes the Basic Tower (range 140) over $3,000.
       const r = await admin.put('/admin/config', { cost: { curveK: 5, range: 5 } });
       expect(r.body.error.code).toBe('TEMPLATE_WOULD_BREAK');
       expect(r.body.error.message).toContain('Basic Tower');

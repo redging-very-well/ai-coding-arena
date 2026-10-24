@@ -1,4 +1,4 @@
-// §7 M8.8 (elements, splash and support, the ×5 bounds): the step-6 guards on
+// §7 M8.8 (elements, splash and support, the $10,000 bounds): the step-6 guards on
 // the six new stats (checkStats, fast) and the real pipeline (esbuild + a
 // fresh isolated-vm sandbox) for the dry run's `heal`, the new warnings and
 // the snapshot.
@@ -18,9 +18,9 @@ import { validate } from '../packages/server/src/validator/validate.js';
 import { badActionReason } from '../packages/server/src/validator/dryrun.js';
 
 const B = DEFAULT_CONFIG.stats.bounds;
-const SOLDIER = { name: 'S', type: 'soldier', maxHealth: 600, damage: 50, range: 40, speed: 1.5, attackCooldown: 60, color: '#3399FF' };
-const WALL = { name: 'W', type: 'wall', maxHealth: 2000, color: '#888888' };
-const FACTORY = { name: 'F', type: 'factory', maxHealth: 1500, productionInterval: 900, color: '#C0A060' };
+const SOLDIER = { name: 'S', type: 'soldier', maxHealth: 1400, damage: 56, range: 40, speed: 1.5, attackCooldown: 60, color: '#3399FF' };
+const WALL = { name: 'W', type: 'wall', maxHealth: 3200, color: '#888888' };
+const FACTORY = { name: 'F', type: 'factory', maxHealth: 2400, productionInterval: 600, color: '#C0A060' };
 const codes = (raw: Record<string, unknown>) => {
   const r = checkStats(raw, B);
   return r.ok ? [] : r.errors.map((e) => `${e.code}:${e.field}`);
@@ -73,8 +73,9 @@ describe('step 6: element, splashRadius, support, supportPower, supportRange, mi
     expect(e.fix).toContain("this.support = 'heal'");
     expect(closestSupportKind('armour')).toBe('shield');
     expect(closestSupportKind('Speed')).toBe('haste');
-    expect(codes({ ...SOLDIER, support: 'heal', supportPower: 250, supportRange: 200 })).toEqual([]);
-    expect(codes({ ...SOLDIER, support: 'heal', supportPower: 251, supportRange: 200 })).toEqual(['STAT_OUT_OF_RANGE:supportPower']);
+    expect(codes({ ...SOLDIER, support: 'heal', supportPower: 400, supportRange: 200 })).toEqual([]);
+    expect(codes({ ...SOLDIER, support: 'heal', supportPower: 401, supportRange: 200 })).toEqual(['STAT_OUT_OF_RANGE:supportPower']);
+    expect(codes({ ...SOLDIER, support: 'heal', supportPower: 14, supportRange: 200 })).toEqual(['STAT_OUT_OF_RANGE:supportPower']);
     expect(codes({ ...SOLDIER, support: 'heal', supportPower: 60, supportRange: 19 })).toEqual(['STAT_OUT_OF_RANGE:supportRange']);
     expect(codes({ ...SOLDIER, support: 'shield', supportPower: 41, supportRange: 80 })).toEqual(['STAT_OUT_OF_RANGE:supportPower']);
     expect(codes({ ...SOLDIER, support: 'might', supportPower: 50, supportRange: 151 })).toEqual(['STAT_OUT_OF_RANGE:supportRange']);
@@ -113,15 +114,22 @@ describe('step 6: element, splashRadius, support, supportPower, supportRange, mi
     for (const v of [{}, NaN, Infinity, -0.001, 80.0001]) expect(checkStats({ ...SOLDIER, splashRadius: v }, B).ok).toBe(false);
   });
 
-  it('the ×5 bounds: HP 50-2500, damage 0-300, walls 250-7500, factories 500-5000', () => {
-    expect(codes({ ...SOLDIER, maxHealth: 49 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
-    expect(codes({ ...SOLDIER, maxHealth: 2501 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
-    expect(codes({ ...SOLDIER, damage: 301 })).toEqual(['STAT_OUT_OF_RANGE:damage']);
-    expect(err({ ...SOLDIER, damage: 999 }).message).toBe('damage is 999 but must be between 0 and 300.');
-    expect(codes({ ...WALL, maxHealth: 249 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
-    expect(codes({ ...WALL, maxHealth: 7501 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
-    expect(codes({ ...FACTORY, maxHealth: 499 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
-    expect(codes({ ...FACTORY, maxHealth: 5001 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
+  it('the $10,000 bounds: HP 80-4000, damage 0-240, soldier range 20-160, walls 400-12000, factories 800-8000 every 300-1200 ticks', () => {
+    expect(codes({ ...SOLDIER, maxHealth: 79 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
+    expect(codes({ ...SOLDIER, maxHealth: 4000 })).toEqual([]);
+    expect(codes({ ...SOLDIER, maxHealth: 4001 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
+    expect(codes({ ...SOLDIER, damage: 240 })).toEqual([]);
+    expect(codes({ ...SOLDIER, damage: 241 })).toEqual(['STAT_OUT_OF_RANGE:damage']);
+    expect(err({ ...SOLDIER, damage: 999 }).message).toBe('damage is 999 but must be between 0 and 240.');
+    expect(codes({ ...SOLDIER, range: 161 })).toEqual(['STAT_OUT_OF_RANGE:range']);
+    expect(err({ ...SOLDIER, range: 200 }).fix).toContain('Make it a tower');
+    expect(codes({ ...SOLDIER, type: 'tower', speed: 0, range: 300 })).toEqual([]);
+    expect(codes({ ...WALL, maxHealth: 399 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
+    expect(codes({ ...WALL, maxHealth: 12001 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
+    expect(codes({ ...FACTORY, maxHealth: 799 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
+    expect(codes({ ...FACTORY, maxHealth: 8001 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
+    expect(codes({ ...FACTORY, productionInterval: 299 })).toEqual(['STAT_OUT_OF_RANGE:productionInterval']);
+    expect(codes({ ...FACTORY, productionInterval: 1201 })).toEqual(['STAT_OUT_OF_RANGE:productionInterval']);
   });
 });
 
@@ -136,7 +144,7 @@ function expectOk(r: ValidationResult): ValidationSuccess {
 }
 const unit = (fields: string, update: string) => `export default class U {
   constructor() {
-    this.name = 'Test Unit'; this.type = 'soldier'; this.maxHealth = 500; this.range = 20; this.speed = 1.5;
+    this.name = 'Test Unit'; this.type = 'soldier'; this.maxHealth = 800; this.range = 20; this.speed = 1.5;
     this.attackCooldown = 60; this.color = '#33CC66'; this.size = 10;
     ${fields}
   }
@@ -152,15 +160,15 @@ const MEDIC_UPDATE = `
   return { action: 'move', destination: world.center };`;
 
 describe('the dry run and step 10 (M8.8)', () => {
-  it('the CLAUDE.md Field Medic validates: $759, heal support stored, healUsed, no W_ZERO_DAMAGE', async () => {
-    const r = expectOk(await run(unit("this.damage = 0; this.support = 'heal'; this.supportPower = 60; this.supportRange = 120;", MEDIC_UPDATE)));
-    expect(r.unit.cost).toBe(759);
-    expect(r.unit.stats.support).toEqual({ kind: 'heal', power: 60, range: 120 });
+  it('the CLAUDE.md Field Medic validates: $892, heal support stored, healUsed, no W_ZERO_DAMAGE', async () => {
+    const r = expectOk(await run(unit("this.damage = 0; this.support = 'heal'; this.supportPower = 96; this.supportRange = 120;", MEDIC_UPDATE)));
+    expect(r.unit.cost).toBe(892);
+    expect(r.unit.stats.support).toEqual({ kind: 'heal', power: 96, range: 120 });
     expect(r.unit.healUsed).toBe(true);
     const codes = r.warnings.map((w) => w.code);
     expect(codes).not.toContain('W_ZERO_DAMAGE');
     expect(codes).not.toContain('W_HEAL_NEVER_USED');
-    expect(r.unit.breakdown.heal!.text).toBe('Heal 60 HP up to 120 px away: $382.64 (faster healing costs more)');
+    expect(r.unit.breakdown.heal!.text).toBe('Heal 96 HP up to 120 px away: $476.17 (faster healing costs more)');
   });
 
   it('W_HEAL_NEVER_USED when a heal-support unit never heals; views carry status, element, splash and support', async () => {
@@ -193,11 +201,12 @@ describe('the dry run and step 10 (M8.8)', () => {
   });
 
   it('W_POWER_HIGH for a brick; W_ZERO_DAMAGE gains the elements line', async () => {
-    const brick = expectOk(await run(unit('this.maxHealth = 1750; this.damage = 265; this.size = 16;', "return enemies.length ? { action: 'attack', targetId: enemies[0].id } : { action: 'move', destination: world.center };")));
-    expect(brick.unit.cost).toBe(2463);
+    // The max-cost brick's HP and damage (2480 / 180) at range 20: power ×1.93.
+    const brick = expectOk(await run(unit('this.maxHealth = 2480; this.damage = 180; this.size = 16;', "return enemies.length ? { action: 'attack', targetId: enemies[0].id } : { action: 'move', destination: world.center };")));
+    expect(brick.unit.cost).toBe(2928);
     const w = brick.warnings.find((x) => x.code === 'W_POWER_HIGH')!;
-    expect(w.message).toContain('×1.37');
-    expect(w.fix).toMatch(/drops the power factor from ×1\.37 to ×1\.25/);
+    expect(w.message).toContain('×1.93');
+    expect(w.fix).toMatch(/drops the power factor from ×1\.93 to ×1\.2\d/);
     const zero = expectOk(await run(unit("this.damage = 0; this.element = 'ice';", "return { action: 'move', destination: world.center };")));
     expect(zero.warnings.find((x) => x.code === 'W_ZERO_DAMAGE')!.message).toContain('ice still freezes');
   });

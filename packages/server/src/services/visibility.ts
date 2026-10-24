@@ -225,7 +225,6 @@ export class VisibilityService {
       setup: g.teams.setupDTO(),
       armory: g.armory.adminList(),
       // M8.8 (§6 migration): old economy overrides dropped at boot (the banner).
-      economyReset: g.store.economyReset.slice(),
     };
   }
 }

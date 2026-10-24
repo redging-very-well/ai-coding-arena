@@ -40,8 +40,8 @@ export const CostCoefficientsSchema = z.object({
    * >= 0 (a negative k would make cost fall as a stat rises) and <= 5.
    */
   curveK: nonNeg().refine((n) => n <= 5, 'must be <= 5'),
-  /** M8.8 power factor q: × (1 + q · HP/2500 · damage/300) (tough AND strong costs more). 0-2. */
-  powerFactor: nonNeg().refine((n) => n <= 2, 'must be <= 2'),
+  /** Power factor q: × (1 + q · HP/maxHP · damage/maxDamage) (tough AND strong costs more). 0-4. */
+  powerFactor: nonNeg().refine((n) => n <= 4, 'must be <= 4'),
   /** M8.8 splash factor s: × (1 + s · ρ(2 − ρ)), ρ = splashRadius / 80. 0-2. */
   splash: nonNeg().refine((n) => n <= 2, 'must be <= 2'),
   /** M8.8 element factors (whole-unit multipliers; normal is always 1). Each >= 1. */
@@ -79,6 +79,8 @@ export const StatBoundsSchema = z.object({
   range: RangeSchema,
   /** Soldier speed range. Towers must have speed exactly 0. */
   soldierSpeed: RangeSchema,
+  /** Redesign: soldier range (towers use `range`, which reaches further: towers out-range soldiers). */
+  soldierRange: RangeSchema,
   /** Integer ticks between attacks. */
   attackCooldown: RangeSchema,
   /** Optional body radius in px (hitbox and drawn size). */
@@ -175,10 +177,23 @@ export const ElementsSchema = z.object({
   }),
   /** Shatter: a fire hit on a frozen target does +shatterPct% and thaws it. */
   shatterPct: nonNeg(),
+  /** Redesign synergy "kindle": a burning body takes +kindlePct% from every hit that isn't fire (burn pulses excluded). */
+  kindlePct: nonNeg(),
+  /** Redesign synergy "brittle": a frozen body takes +brittlePct% from every hit that isn't ice or fire (fire shatters instead). */
+  brittlePct: nonNeg(),
   /** Splash hits deal splashPct% of the hit. */
   splashPct: nonNeg(),
 });
 export type ElementsConfig = z.infer<typeof ElementsSchema>;
+
+/** Redesign (2026-10-24): ranged accuracy against the target's speed (§9.4 Accuracy). */
+export const AccuracySchema = z.object({
+  /** The miss chance of a ranged shot at a target moving at `speedRef` px/tick or faster, in %. */
+  missMaxPct: finite().refine((n) => n >= 0 && n <= 100, 'must be 0-100'),
+  /** Speed (px per tick moved this tick) at which the miss chance reaches missMaxPct. */
+  speedRef: z.number().positive(),
+});
+export type AccuracyConfig = z.infer<typeof AccuracySchema>;
 
 /** M8.8 support constants (§5.5). */
 export const SupportSchema = z.object({
@@ -187,8 +202,8 @@ export const SupportSchema = z.object({
 });
 
 export const ConfigSchema = z.object({
-  /** M8.8 economy version: 2 = the ×5 economy (stored config patches without it are migrated, §6). */
-  economyVersion: z.literal(2),
+  /** Economy version: 3 = the $10,000 redesign (stored config patches without it are migrated, §6). */
+  economyVersion: z.literal(3),
   cost: CostCoefficientsSchema,
   stats: z.object({ bounds: StatBoundsSchema }),
   caps: z.object({
@@ -210,6 +225,11 @@ export const ConfigSchema = z.object({
     maxWallCopies: z.number().int().nonnegative(),
     /** Max unit source size in bytes (§7 step 1). */
     maxSourceBytes: posInt(),
+    /**
+     * Redesign "copy ramp" (§6): copies of one design beyond `freeCopies` cost
+     * `pctPerCopy`% more each, cumulatively (walls never). 0 = off.
+     */
+    copyRamp: z.object({ freeCopies: z.number().int().nonnegative(), pctPerCopy: nonNeg() }),
   }),
   timers: z.object({
     defaultRounds: posInt().max(10),
@@ -265,6 +285,8 @@ export const ConfigSchema = z.object({
     slideMemoryTicks: posInt(),
     /** Routing round walls: a body re-plans its route at most every N ticks (plus on reaching its waypoint, §9.3). */
     replanTicks: posInt(),
+    /** Redesign: towers and factories are solid for routing (bodies walk round them; false = the M8.7 walls-only router). */
+    routeRoundBuildings: z.boolean(),
   }),
   /** Factories and their built-in minions (§5.2, §9.3). */
   factory: FactorySchema,
@@ -272,6 +294,8 @@ export const ConfigSchema = z.object({
   elements: ElementsSchema,
   /** M8.8 support (§5.5). */
   support: SupportSchema,
+  /** Redesign: ranged accuracy vs the target's speed (§9.4). */
+  accuracy: AccuracySchema,
   sandbox: z.object({
     mode: z.enum(['ivm', 'process', 'inproc-unsafe']),
     memoryLimitMb: posInt(),
@@ -326,7 +350,7 @@ export const ConfigSchema = z.object({
   const within: Array<['maxHealth' | 'damage' | 'range' | 'speed' | 'attackCooldown' | 'size', { min: number; max: number }]> = [
     ['maxHealth', b.maxHealth],
     ['damage', b.damage],
-    ['range', b.range],
+    ['range', b.soldierRange],
     ['speed', b.soldierSpeed],
     ['attackCooldown', b.attackCooldown],
     ['size', b.size],
@@ -362,42 +386,43 @@ export type GameConfig = z.infer<typeof ConfigSchema>;
 export type SandboxMode = GameConfig['sandbox']['mode'];
 
 export const DEFAULT_CONFIG: GameConfig = {
-  // M8.8: the ×5 economy (§6 M8.8 economy). Stored config patches from before it are migrated (`migrateEconomyPatch`).
-  economyVersion: 2,
+  // The $10,000 redesign (§6). Stored config patches from older economies are migrated (`migrateEconomyPatch`).
+  economyVersion: 3,
   cost: {
     base: 50,
-    hp: 0.3,
-    damage: 1.5,
+    hp: 0.1875,
+    damage: 1.875,
     range: 1.38,
-    speed: 66,
+    speed: 90,
     size: 8,
     referenceCooldown: 60,
     curveK: 1,
-    powerFactor: 0.6,
-    splash: 0.7,
-    element: { fire: 1.2, ice: 1.2, lightning: 1.2 },
-    heal: 4.5,
-    aura: { haste: 5, might: 4, shield: 7 },
+    powerFactor: 2,
+    splash: 0.8,
+    element: { fire: 1.3, ice: 1.75, lightning: 1.3 },
+    heal: 3.5,
+    aura: { haste: 9, might: 8, shield: 7 },
     // §6 Walls and factories (×5 in M8.8).
-    wall: { base: 20, hp: 0.06 },
-    factory: { base: 50, hp: 0.12, minionDiscount: 0.5 },
+    wall: { base: 20, hp: 0.0375 },
+    factory: { base: 50, hp: 0.075, minionDiscount: 0.5 },
   },
   stats: {
     bounds: {
       nameLength: { min: 1, max: 24 },
-      maxHealth: { min: 50, max: 2500 },
-      damage: { min: 0, max: 300 },
+      maxHealth: { min: 80, max: 4000 },
+      damage: { min: 0, max: 240 },
       range: { min: 20, max: 300 },
       soldierSpeed: { min: 0.5, max: 5 },
+      soldierRange: { min: 20, max: 160 },
       attackCooldown: { min: 10, max: 600 },
       size: { min: 6, max: 20 },
-      wallHealth: { min: 250, max: 7500 },
-      factoryHealth: { min: 500, max: 5000 },
-      productionInterval: { min: 600, max: 1800 },
+      wallHealth: { min: 400, max: 12000 },
+      factoryHealth: { min: 800, max: 8000 },
+      productionInterval: { min: 300, max: 1200 },
       burst: { min: 1, max: 4 },
       splashRadius: { min: 0, max: 80 },
       support: {
-        heal: { power: { min: 10, max: 250 }, range: { min: 20, max: 200 } },
+        heal: { power: { min: 15, max: 400 }, range: { min: 20, max: 200 } },
         haste: { power: { min: 5, max: 50 }, range: { min: 40, max: 150 } },
         might: { power: { min: 5, max: 50 }, range: { min: 40, max: 150 } },
         shield: { power: { min: 5, max: 40 }, range: { min: 40, max: 150 } },
@@ -405,22 +430,23 @@ export const DEFAULT_CONFIG: GameConfig = {
     },
   },
   caps: {
-    unitCost: 2500,
-    budget: 5000,
+    unitCost: 3000,
+    budget: 10000,
     maxDesigns: 8,
     maxUnitTypes: 4,
     maxBuildingTypes: 4,
     maxCopies: 12,
-    maxFactoryCopies: 2,
-    maxWallCopies: 12,
+    maxFactoryCopies: 5,
+    maxWallCopies: 16,
     maxSourceBytes: 64 * 1024, // §7 step 1: sprites take room
+    copyRamp: { freeCopies: 3, pctPerCopy: 15 },
   },
   timers: {
     defaultRounds: 3,
     planFirstRoundSec: 15 * 60,
     planLaterRoundsSec: 8 * 60,
     placementSec: 3 * 60,
-    battleTicks: 5400,
+    battleTicks: 7200,
     ticksPerSecond: 60,
     autoAdvanceWhenAllReady: false,
   },
@@ -435,11 +461,11 @@ export const DEFAULT_CONFIG: GameConfig = {
   suddenDeath: {
     // Tuned in M6 against tests/balance.test.ts (docs/balance.md): from 50 s,
     // 7% of max HP per second, so all-tower armies lose towers before 90 s.
-    startTick: 3000,
-    endTick: 5400,
+    startTick: 4500,
+    endTick: 7200,
     startRadius: 570,
     endRadius: 60,
-    damagePctPerSecond: 7,
+    damagePctPerSecond: 10,
   },
   sim: {
     meleeMaxRange: 50,
@@ -449,11 +475,12 @@ export const DEFAULT_CONFIG: GameConfig = {
     frameEveryTicks: 2,
     slideMemoryTicks: 45,
     replanTicks: 10,
+    routeRoundBuildings: true,
   },
   factory: {
-    maxMinionsPerFactory: 8,
+    maxMinionsPerFactory: 12,
     maxAlivePerFactory: 4,
-    maxAlivePerPlayer: 6,
+    maxAlivePerPlayer: 12,
     maxAlivePerBattle: 40,
     rallyGuardRadius: 200,
     rallyArriveRadius: 24,
@@ -463,24 +490,31 @@ export const DEFAULT_CONFIG: GameConfig = {
     guardArriveGap: 16,
     // §5.3 minion kinds (M8.6, ×5 in M8.8). grunt = the M8.5 minion; each must be a legal soldier.
     minions: {
-      grunt: { maxHealth: 180, damage: 25, range: 20, speed: 1.5, attackCooldown: 60, size: 8, aggroRange: 120, impatientTicks: 120, wallDamageMultiplier: 1 },
-      archer: { maxHealth: 120, damage: 25, range: 110, speed: 1.2, attackCooldown: 60, size: 7, aggroRange: 150, impatientTicks: 120, wallDamageMultiplier: 1 },
-      runner: { maxHealth: 140, damage: 20, range: 20, speed: 2.6, attackCooldown: 60, size: 6, aggroRange: 120, impatientTicks: 120, wallDamageMultiplier: 1 },
-      brute: { maxHealth: 550, damage: 40, range: 20, speed: 0.9, attackCooldown: 60, size: 11, aggroRange: 120, impatientTicks: 30, wallDamageMultiplier: 3 },
-      // M8.8 (§5.5): never attacks; heals 40 HP within 60 px, cleanses burning and frozen allies first.
-      medic: { maxHealth: 150, damage: 0, range: 20, speed: 1.4, attackCooldown: 60, size: 7, aggroRange: 150, impatientTicks: 120, wallDamageMultiplier: 1, heal: 40, reach: 60 },
+      grunt: { maxHealth: 360, damage: 20, range: 20, speed: 1.5, attackCooldown: 60, size: 8, aggroRange: 120, impatientTicks: 120, wallDamageMultiplier: 1 },
+      archer: { maxHealth: 240, damage: 20, range: 110, speed: 1.2, attackCooldown: 60, size: 7, aggroRange: 150, impatientTicks: 120, wallDamageMultiplier: 1 },
+      runner: { maxHealth: 480, damage: 24, range: 20, speed: 2.6, attackCooldown: 60, size: 6, aggroRange: 120, impatientTicks: 120, wallDamageMultiplier: 1 },
+      brute: { maxHealth: 1100, damage: 32, range: 20, speed: 0.9, attackCooldown: 60, size: 11, aggroRange: 120, impatientTicks: 30, wallDamageMultiplier: 3 },
+      // M8.8 (§5.5): never attacks; heals 60 HP within 60 px, cleanses burning and frozen allies first.
+      medic: { maxHealth: 300, damage: 0, range: 20, speed: 1.4, attackCooldown: 60, size: 7, aggroRange: 150, impatientTicks: 120, wallDamageMultiplier: 1, heal: 60, reach: 60 },
     },
   },
   elements: {
     fire: { burnPct: 50, pulses: 6, pulseTicks: 30 },
     ice: { slowPct: 35, ticks: 120 },
-    lightning: { chancePct: 35, hopRange: 100, burningExtraHops: 1 },
-    shatterPct: 50,
+    lightning: { chancePct: 35, hopRange: 100, burningExtraHops: 2 },
+    shatterPct: 40,
+    kindlePct: 25,
+    brittlePct: 25,
     splashPct: 50,
   },
   support: {
     // Heals stop at suddenDeath.startTick (§5.5).
-    healRoomPctPerSecond: 5,
+    healRoomPctPerSecond: 4,
+  },
+  accuracy: {
+    // Gentle (the user: "tune against scouts"): at most 20% at speed 5 or more.
+    missMaxPct: 20,
+    speedRef: 5,
   },
   sandbox: {
     mode: 'ivm',
@@ -565,32 +599,66 @@ export function migrateConfigPatch<T>(patch: T): T {
   return { ...rest, scoring } as T;
 }
 
+/** The economy the defaults are for: 3 = the $10,000 redesign (2 was the ×5 $5,000 game, absent the $1,000 game). */
+export const ECONOMY_VERSION = 3;
+
 /**
- * The keys a pre-M8.8 ($1,000 game) config patch may not keep (§6 M8.8
- * migration): every money, HP and damage number changed scale, and an old
- * `curveK: 2` or `cost.hp` would silently undo the M8.8 retune.
+ * The keys an older-economy config patch may not keep (§6 migration): every
+ * money, HP and damage number changed scale (M8.8: ×5; the redesign: HP ×1.6,
+ * damage ×0.8, a $10,000 budget, 120 s battles and new factory numbers), and an
+ * old `curveK`, `cost.hp` or battle length would silently undo the retune.
  */
-export const ECONOMY_V2_DROPPED = [
+export const ECONOMY_DROPPED = [
   'cost',
   'caps.budget',
   'caps.unitCost',
+  'caps.maxFactoryCopies',
+  'caps.maxWallCopies',
   'stats.bounds.maxHealth',
   'stats.bounds.damage',
   'stats.bounds.wallHealth',
   'stats.bounds.factoryHealth',
+  'stats.bounds.productionInterval',
+  'stats.bounds.support.heal.power',
+  'timers.battleTicks',
+  'suddenDeath.startTick',
+  'suddenDeath.endTick',
+  'factory.maxMinionsPerFactory',
+  'factory.maxAlivePerPlayer',
   'factory.minions.*.maxHealth',
   'factory.minions.*.damage',
+  'factory.minions.*.heal',
 ] as const;
+/** @deprecated the M8.8 name of `ECONOMY_DROPPED`. */
+export const ECONOMY_V2_DROPPED = ECONOMY_DROPPED;
+
+/** Delete the dotted path `path` (a `*` segment matches every key) from `obj`, collecting the dropped leaf paths. */
+function dropPath(obj: Record<string, unknown>, path: string[], at: string, dropped: string[]): void {
+  const [head, ...rest] = path;
+  if (head === undefined) return;
+  const keys = head === '*' ? Object.keys(obj) : [head];
+  for (const k of keys) {
+    if (!(k in obj)) continue;
+    const here = at ? `${at}.${k}` : k;
+    if (rest.length === 0) {
+      dropped.push(...leafPaths(obj[k], here));
+      delete obj[k];
+    } else if (isPlainObject(obj[k])) {
+      const child = { ...obj[k] };
+      obj[k] = child;
+      dropPath(child, rest, here, dropped);
+    }
+  }
+}
 
 /**
- * The M8.8 economy step (§6 M8.8 migration) for a STORED config patch (the
- * server's `configPatch` in state.json): a patch without `economyVersion: 2`
- * was made for the $1,000 game, so its scale-sensitive keys
- * (`ECONOMY_V2_DROPPED`) are dropped and the rest (timers, sudden death, copy
- * caps, scoring, map, …) is kept. Returns the migrated patch (stamped
- * `economyVersion: 2` when it has any content) and the dropped key paths,
- * for the log and the admin banner. A mechanical ×5 conversion is
- * deliberately not done.
+ * The economy step (§6 migration) for a STORED config patch (the server's
+ * `configPatch` in state.json): a patch without `economyVersion: 3` was made
+ * for an older economy, so its scale-sensitive keys (`ECONOMY_DROPPED`) are
+ * dropped and the rest (plan timers, map, scoring, …) is kept. Returns the
+ * migrated patch (stamped with the current economyVersion when it has any
+ * content) and the dropped key paths, for the log and the admin banner. A
+ * mechanical conversion is deliberately not done.
  *
  * Not part of `parseConfig`: a fresh override such as `{ cost: { base: 55 } }`
  * is already at the new scale.
@@ -598,37 +666,13 @@ export const ECONOMY_V2_DROPPED = [
 export function migrateEconomyPatch<T>(patch: T): { patch: T; dropped: string[] } {
   if (!isPlainObject(patch)) return { patch, dropped: [] };
   const src = migrateConfigPatch(patch) as Record<string, unknown>;
-  if (src.economyVersion === 2) return { patch: src as T, dropped: [] };
+  if (src.economyVersion === ECONOMY_VERSION) return { patch: src as T, dropped: [] };
   const dropped: string[] = [];
   const out: Record<string, unknown> = { ...src };
-  if ('cost' in out) {
-    dropped.push(...leafPaths(out.cost, 'cost'));
-    delete out.cost;
-  }
-  if (isPlainObject(out.caps)) {
-    const caps = { ...out.caps };
-    for (const k of ['budget', 'unitCost']) if (k in caps) { delete caps[k]; dropped.push(`caps.${k}`); }
-    out.caps = caps;
-  }
-  if (isPlainObject(out.stats) && isPlainObject(out.stats.bounds)) {
-    const bounds = { ...out.stats.bounds };
-    for (const k of ['maxHealth', 'damage', 'wallHealth', 'factoryHealth']) {
-      if (k in bounds) { dropped.push(...leafPaths(bounds[k], `stats.bounds.${k}`)); delete bounds[k]; }
-    }
-    out.stats = { ...out.stats, bounds };
-  }
-  if (isPlainObject(out.factory) && isPlainObject(out.factory.minions)) {
-    const minions: Record<string, unknown> = {};
-    for (const [kind, m] of Object.entries(out.factory.minions)) {
-      if (!isPlainObject(m)) { minions[kind] = m; continue; }
-      const kept = { ...m };
-      for (const k of ['maxHealth', 'damage']) if (k in kept) { delete kept[k]; dropped.push(`factory.minions.${kind}.${k}`); }
-      minions[kind] = kept;
-    }
-    out.factory = { ...out.factory, minions };
-  }
+  delete out.economyVersion;
+  for (const path of ECONOMY_DROPPED) dropPath(out, path.split('.'), '', dropped);
   const pruned = prune(out) as Record<string, unknown>;
-  return { patch: (Object.keys(pruned).length > 0 ? { ...pruned, economyVersion: 2 } : pruned) as T, dropped };
+  return { patch: (Object.keys(pruned).length > 0 ? { ...pruned, economyVersion: ECONOMY_VERSION } : pruned) as T, dropped };
 }
 
 function leafPaths(v: unknown, at: string): string[] {

@@ -18,7 +18,7 @@
 // `maxCopies` counts fighters; walls in a reused last layout count against
 // `maxWallCopies`.
 
-import { GRID_SIZE, groupOf, isValidCell, type Cell, type Facing, type PlacementDTO, type UnitType } from '@pixel-clash/shared';
+import { GRID_SIZE, copyCost, groupOf, isValidCell, layoutSpent, type Cell, type CopyRamp, type Facing, type PlacementDTO, type UnitType } from '@pixel-clash/shared';
 import { compareIds } from './types.js';
 
 export interface AutoPlaceUnit {
@@ -41,6 +41,8 @@ export interface AutoPlaceCaps {
   maxBuildingTypes?: number;
   maxFactoryCopies?: number;
   maxWallCopies?: number;
+  /** Redesign: copies of one design beyond `freeCopies` cost more (§6 copy ramp). */
+  copyRamp?: CopyRamp;
 }
 
 /** Whether a set of types fits the type caps (total and per group). */
@@ -98,15 +100,15 @@ export function frontCells(facing: Facing = 'diag', centred = false): Cell[] {
   );
 }
 
-/** Total cost of a layout, or null if it references an unavailable unit. */
-function layoutCost(layout: readonly PlacementDTO[], costs: ReadonlyMap<string, number>): number | null {
-  let total = 0;
-  for (const p of layout) {
-    const c = costs.get(p.unitId);
-    if (c === undefined) return null;
-    total += c;
-  }
-  return total;
+/** Total cost of a layout (with the copy ramp), or null if it references an unavailable unit. */
+function layoutCost(layout: readonly PlacementDTO[], available: readonly AutoPlaceUnit[], ramp: CopyRamp | undefined): number | null {
+  const by = new Map(available.map((u) => [u.unitId, u]));
+  return layoutSpent(
+    layout.map((p) => p.unitId),
+    (id) => by.get(id)?.cost,
+    (id) => by.get(id)?.type ?? 'soldier',
+    ramp,
+  );
 }
 
 /** Whether a previous layout can be reused as-is this round. */
@@ -116,9 +118,8 @@ export function isLayoutUsable(
   caps: AutoPlaceCaps,
 ): boolean {
   if (layout.length === 0) return false;
-  const costs = new Map(available.map((u) => [u.unitId, u.cost]));
   const typeOf = new Map(available.map((u) => [u.unitId, u.type ?? 'soldier']));
-  const cost = layoutCost(layout, costs);
+  const cost = layoutCost(layout, available, caps.copyRamp);
   if (cost === null || cost > caps.budget) return false;
   const kinds = layout.map((p) => typeOf.get(p.unitId) ?? 'soldier');
   const walls = kinds.filter((t) => t === 'wall').length;
@@ -146,9 +147,9 @@ export function autoPlace(input: AutoPlaceInput): AutoPlaceResult {
   if (input.existing && input.existing.length > 0) {
     const costs = new Map(available.map((u) => [u.unitId, u.cost]));
     const kept = input.existing.filter((p) => costs.has(p.unitId) && isValidCell(p.col, p.row));
-    const keptCost = layoutCost(kept, costs) ?? 0;
+    const keptCost = layoutCost(kept, available, caps.copyRamp) ?? 0;
     const taken = new Set(kept.map((p) => `${p.col},${p.row}`));
-    const res = greedy(input, keptCost, taken);
+    const res = greedy(input, keptCost, taken, kept);
     if (res.placements.length > 0) {
       const placements = [...kept.map((p) => ({ unitId: p.unitId, col: p.col, row: p.row })), ...res.placements];
       return { placements, source: 'fill', spent: keptCost + res.spent };
@@ -159,8 +160,7 @@ export function autoPlace(input: AutoPlaceInput): AutoPlaceResult {
   const last = input.lastLayout;
   if (last && isLayoutUsable(last, available, caps)) {
     const placements = last.map((p) => ({ unitId: p.unitId, col: p.col, row: p.row }));
-    const costs = new Map(available.map((u) => [u.unitId, u.cost]));
-    return { placements, source: 'last-layout', spent: layoutCost(placements, costs) ?? 0 };
+    return { placements, source: 'last-layout', spent: layoutCost(placements, available, caps.copyRamp) ?? 0 };
   }
 
   const res = greedy(input, 0, new Set());
@@ -172,7 +172,7 @@ export function autoPlace(input: AutoPlaceInput): AutoPlaceResult {
  * within the type caps, into the free front cells (`taken` cells skipped),
  * starting from `alreadySpent` of the budget.
  */
-function greedy(input: AutoPlaceInput, alreadySpent: number, taken: ReadonlySet<string>): { placements: PlacementDTO[]; spent: number } {
+function greedy(input: AutoPlaceInput, alreadySpent: number, taken: ReadonlySet<string>, kept: readonly PlacementDTO[] = []): { placements: PlacementDTO[]; spent: number } {
   const { available, caps } = input;
   const sorted = [...new Map(available.map((u) => [u.unitId, u])).values()]
     .filter((u) => u.type !== 'wall')
@@ -183,16 +183,21 @@ function greedy(input: AutoPlaceInput, alreadySpent: number, taken: ReadonlySet<
   const placements: PlacementDTO[] = [];
   let spent = 0;
   let factories = 0;
+  const copies = new Map<string, number>();
+  for (const p of kept) copies.set(p.unitId, (copies.get(p.unitId) ?? 0) + 1);
   let placedSomething = true;
   while (placedSomething && placements.length < Math.min(caps.maxCopies, cells.length)) {
     placedSomething = false;
     for (const t of types) {
       if (placements.length >= Math.min(caps.maxCopies, cells.length)) break;
-      if (alreadySpent + spent + t.cost > caps.budget) continue;
+      const n = (copies.get(t.unitId) ?? 0) + 1;
+      const cost = copyCost(t.cost, n, t.type ?? 'soldier', caps.copyRamp);
+      if (alreadySpent + spent + cost > caps.budget) continue;
       if (t.type === 'factory' && factories >= (caps.maxFactoryCopies ?? Infinity)) continue;
       const cell = cells[placements.length]!;
       placements.push({ unitId: t.unitId, col: cell.col, row: cell.row });
-      spent += t.cost;
+      copies.set(t.unitId, n);
+      spent += cost;
       if (t.type === 'factory') factories++;
       placedSomething = true;
     }

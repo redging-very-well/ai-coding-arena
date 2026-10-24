@@ -6,15 +6,18 @@
 // (inside update) has no effect.
 //
 // Cost = (50 + each stat's price) * max(1, 60 / attackCooldown) * power * splash * element,
-// where a stat's price is its normal price (maxHealth*0.3, damage*1.5, range*1.38,
-// speed*66, (size - 6)*8) times 1 + (stat/max)^2: a maxed stat costs 2x.
-// power = 1 + 0.6 * (maxHealth/2500) * (damage/300): tough AND strong costs a bit more.
-//      = (50 + 190.37 + 77.08 + 56.18 + 107.91 + 34.61) * 1 * 1.024 = 516.15 * 1.024 = 528.54  ->  $529
+// where a stat's price is its normal price (maxHealth*0.1875, damage*1.875, range*1.38,
+// speed*90, (size - 6)*8) times 1 + (stat/max)^2: a maxed stat costs 2x.
+// power = 1 + 2 * (maxHealth/4000) * (damage/240): tough AND strong costs more (up to x3).
+//      = (50 + 294.66 + 110.72 + 56.18 + 147.15 + 34.61) * 1 * 1.163 = 693.32 * 1.163 = 806.56  ->  $807
+// 12 fighters, make them count: copy 4 of the SAME design costs 15% more, copy 5 30% more,
+// and so on, so 3 copies each of several designs go further than one design 12 times.
 //
 // Options (all optional; this template uses none of them):
-//   this.element = 'fire';      'normal' (default), 'fire' (burns +50% over 3 s), 'ice' (slows
-//                               35% for 2 s) or 'lightning' (35% chance to zap a 2nd enemy): x1.2
-//   this.splashRadius = 40;     0-80 px: other enemies this close to the target take half: x1.53 at 40
+//   this.element = 'fire';      'normal' (default), 'fire' (burns +50% over 3 s; x1.3), 'ice' (slows
+//                               35% for 2 s; x1.75) or 'lightning' (35% chance to zap a 2nd enemy; x1.3).
+//                               Burning enemies take +25% from your other hits, frozen ones +25% too.
+//   this.splashRadius = 40;     0-80 px: other enemies this close to the target take half: x1.6 at 40
 //   this.support = 'heal';      'heal' (return { action: 'heal', targetId }), or an aura that
 //   this.supportPower = 60;     works by itself: 'haste', 'might' or 'shield' (power in %)
 //   this.supportRange = 120;    heal reach / aura radius in px, edge to edge
@@ -26,15 +29,15 @@ export default class BasicSoldier {
   constructor() {
     this.name = 'Basic Soldier';
     this.type = 'soldier';      // soldiers can move; towers can't
-    this.maxHealth = 600;       // 50-2500
-    this.damage = 50;           // 0-300 per hit
-    this.range = 40;            // 20-300 px, measured EDGE to edge between the two bodies
+    this.maxHealth = 1400;      // 80-4000
+    this.damage = 56;           // 0-240 per hit
+    this.range = 40;            // 20-160 px for soldiers (towers reach 300), EDGE to edge between the two bodies
     this.speed = 1.5;           // 0.5-5 px per tick (60 ticks = 1 second)
     this.attackCooldown = 60;   // whole ticks between attacks: 60 = once per second
     this.color = '#3399FF';     // "#RRGGBB"
     this.size = 10;             // 6-20 px body radius (hitbox and drawn size); $8 per px above 6 (more near the max)
-    // this.element = 'fire';   // 'normal', 'fire', 'ice' or 'lightning' (x1.2 on the price)
-    // this.splashRadius = 40;  // 0-80 px: other enemies near the target take half (x1.53 at 40)
+    // this.element = 'fire';   // 'normal', 'fire' or 'lightning' (x1.3 on the price) or 'ice' (x1.75)
+    // this.splashRadius = 40;  // 0-80 px: other enemies near the target take half (x1.6 at 40)
     this.shape = 'circle';      // circle, square, triangle or diamond (just for looks)
   }
 

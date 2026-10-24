@@ -23,9 +23,11 @@ import {
   claudeTerminalUrl,
   copiesOf,
   copyLastLayout,
+  copyRampHint,
   errorPrompt,
   groupErrors,
   nameProblem,
+  nextCostOf,
   pinKey,
   scoreLines,
   scoreParts,
@@ -42,8 +44,8 @@ import {
 const soldier: StatsSnapshot = {
   name: 'Basic Soldier',
   type: 'soldier',
-  maxHealth: 600,
-  damage: 50,
+  maxHealth: 1400,
+  damage: 56,
   range: 40,
   speed: 1.5,
   attackCooldown: 60,
@@ -159,6 +161,30 @@ describe('placement taps (§12.1)', () => {
     expect(budgetText(937, 1000)).toBe('$937 / $1,000 — $63 left');
     expect(budgetText(1050, 1000)).toContain('$50 too much');
   });
+
+  it('prices copies of one design on the copy ramp (walls never ramp)', () => {
+    const typeOf = (id: string) => (id === 'w' ? 'wall' : id === 'a' || id === 'b' ? 'soldier' : undefined);
+    const ramp = { ...rules({ a: 100, b: 200, w: 100 }, 1000), typeOf, maxWallCopies: 16, maxFactoryCopies: 5, copyRamp: { freeCopies: 3, pctPerCopy: 15 } } as PlacementRules;
+    const three: PlacementDTO[] = [0, 1, 2].map((col) => ({ unitId: 'a', col, row: 0 }));
+    // Copies 1-3 at the price, copy 4 +15%, copy 5 +30%; another design starts at its own price.
+    expect(nextCostOf(three.slice(0, 2), 'a', ramp)).toBe(100);
+    expect(nextCostOf(three, 'a', ramp)).toBe(115);
+    expect(nextCostOf(three, 'b', ramp)).toBe(200);
+    expect(nextCostOf(three, 'zzz', ramp)).toBeUndefined();
+    const five: PlacementDTO[] = [0, 1, 2, 3, 4].map((col) => ({ unitId: 'a', col, row: 0 }));
+    expect(spentOf(five, ramp.costs, ramp)).toBe(3 * 100 + 115 + 130);
+    expect(spentOf(five, ramp.costs)).toBe(500); // no ramp passed: the plain sum
+    const walls: PlacementDTO[] = [0, 1, 2, 3, 4].map((col) => ({ unitId: 'w', col, row: 1 }));
+    expect(spentOf(walls, ramp.costs, ramp)).toBe(500);
+    expect(nextCostOf(walls, 'w', ramp)).toBe(100);
+    // The 4th copy is refused when its ramped price doesn't fit (it would at the plain price).
+    const tight = { ...ramp, budget: 410 };
+    expect(tapCell(three, 3, 0, 'a', tight)).toMatchObject({ ok: false, code: 'OVER_BUDGET' });
+    expect(tapCell(three, 3, 0, 'a', { ...tight, budget: 415 }).ok).toBe(true);
+    // Copy last layout prices each copy on the ramp too.
+    expect(copyLastLayout(five, tight).placements).toHaveLength(3);
+    expect(copyRampHint({ freeCopies: 3, pctPerCopy: 15 })).toBe('Copy 4+ of one design costs more: +15%, +30%, … (walls never). Mix designs!');
+  });
 });
 
 describe('Copy last layout', () => {
@@ -196,7 +222,7 @@ describe('stat bars and cost breakdown', () => {
     const bars = statBars(soldier);
     expect(bars.map((b) => b.key)).toEqual(['hp', 'damage', 'range', 'speed', 'rate', 'size']);
     const by = Object.fromEntries(bars.map((b) => [b.key, b]));
-    expect(by.hp!.frac).toBeCloseTo(600 / 2500);
+    expect(by.hp!.frac).toBeCloseTo(1400 / 4000);
     expect(by.size!.display).toBe('10');
     expect(by.size!.frac).toBeCloseTo(10 / 20);
     expect(by.rate!.display).toBe('1/s');
@@ -209,9 +235,10 @@ describe('stat bars and cost breakdown', () => {
     const rows = breakdownRows(breakdown);
     // M8.8: the power factor (tough AND strong) is a row of its own whenever it isn't ×1.
     expect(rows.map((r) => r.label)).toEqual(['Base', 'Health', 'Damage', 'Range', 'Speed', 'Size', 'Sum', 'Fast-attack ×', 'Tough + strong ×', 'Cost']);
-    expect(rows.find((r) => r.label === 'Sum')!.value).toBe('516.15');
+    // The Basic Soldier's sum (plan §6 worked example) at twice the attack speed: 693.32 × 2 × 1.163.
+    expect(rows.find((r) => r.label === 'Sum')!.value).toBe('693.32');
     expect(rows.find((r) => r.label === 'Fast-attack ×')!.value).toBe('×2');
-    expect(rows.at(-1)!.value).toBe('$1,058');
+    expect(rows.at(-1)!.value).toBe('$1,614');
   });
 });
 

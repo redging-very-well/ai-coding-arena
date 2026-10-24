@@ -14,6 +14,7 @@ import {
   isArmoryUnitId,
   isFighterDesign,
   isValidCell,
+  layoutSpent,
   mapFor,
   money,
   ok,
@@ -90,8 +91,9 @@ export class RoundService {
   }
 
   spent(playerId: string): number {
-    const costs = new Map(this.lockedDesigns(playerId).map((d) => [d.unitId, d.cost]));
-    return this.stateOf(playerId).placements.reduce((s, p) => s + (costs.get(p.unitId) ?? 0), 0);
+    const designs = new Map(this.lockedDesigns(playerId).map((d) => [d.unitId, d]));
+    const ids = this.stateOf(playerId).placements.map((p) => p.unitId).filter((id) => designs.has(id));
+    return layoutSpent(ids, (id) => designs.get(id)?.cost, (id) => designs.get(id)?.type, this.game.config.caps.copyRamp) ?? 0;
   }
 
   // -------------------------------------------------------------------------
@@ -290,7 +292,6 @@ export class RoundService {
     const placements: PlacementDTO[] = [];
     const cells = new Set<string>();
     const counts = { fighters: 0, factories: 0, walls: 0 };
-    let spent = 0;
     for (const raw of input as unknown[]) {
       const p = raw as Partial<PlacementDTO> | null;
       if (!p || typeof p !== 'object' || typeof p.unitId !== 'string' || typeof p.col !== 'number' || typeof p.row !== 'number') {
@@ -310,7 +311,6 @@ export class RoundService {
       if (d === undefined) {
         return fail('NOT_SELECTED', `"${p.unitId}" is not one of your units for this round.`, { details: { unitId: p.unitId } });
       }
-      spent += d.cost;
       if (d.type === 'wall') counts.walls++;
       else counts.fighters++;
       if (d.type === 'factory') counts.factories++;
@@ -331,6 +331,8 @@ export class RoundService {
         details: { group: 'walls', max: caps.maxWallCopies, count: counts.walls },
       });
     }
+    // Redesign: copies of one design beyond caps.copyRamp.freeCopies cost more (§6 copy ramp).
+    const spent = layoutSpent(placements.map((p) => p.unitId), (id) => designs.get(id)?.cost, (id) => designs.get(id)?.type, caps.copyRamp) ?? 0;
     if (spent > caps.budget) {
       return fail('OVER_BUDGET', `That army costs ${money(spent)} but your budget is ${money(caps.budget)}.`, {
         details: { spent, budget: caps.budget },
@@ -522,6 +524,7 @@ export class RoundService {
           maxBuildingTypes: caps.maxBuildingTypes,
           maxFactoryCopies: caps.maxFactoryCopies,
           maxWallCopies: caps.maxWallCopies,
+          copyRamp: caps.copyRamp,
         },
         ...(this.zoneOf(p.id) ? { facing: this.zoneOf(p.id)!.facing, centred: zoneCentredOnLine(this.zoneOf(p.id)!) } : {}),
       });

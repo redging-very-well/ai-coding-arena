@@ -294,6 +294,8 @@ interface ProjectileState {
 }
 
 const HP_COLORS = { good: '#4ADE80', mid: '#FACC15', low: '#F87171', back: '#14121F', border: '#05040A' };
+/** Redesign: at most one synergy pop (KINDLE! / BRITTLE!) per body this often. */
+export const COMBO_POP_MS = 800;
 export const DROP_MS = 450;
 export const DROP_STAGGER_MS = 35;
 /** A first frame later than this means we joined mid-battle: no drop-in. */
@@ -805,6 +807,9 @@ export class ArenaRenderer {
     this.trackProjectiles();
   }
 
+  /** Last synergy pop per target (ms), so a kindled crowd doesn't flood the screen with words. */
+  private readonly comboPopAt = new Map<string, number>();
+
   private applyEvent(event: FrameEvent, now: number): void {
     if (event.type === 'fire' && !event.melee) this.lastFireByTarget.set(event.targetId, event.instanceId);
     const ids =
@@ -926,6 +931,24 @@ export class ArenaRenderer {
       if (kind !== 'burn') this.fx.sparks(p.sx, p.sy - h * 0.5, view.zoom, el !== 'normal' ? ELEMENT_COLOR[el] : shake ? '#FFD447' : '#FFFFFF');
       this.fx.damageNumber(p.sx, p.sy - h * 0.9, ev.damage, big, now, el === 'normal' && kind !== 'burn' && kind !== 'shatter' ? null : damageColor(kind, el, big), side);
       if (shake) this.fx.bigHit(ev.damage / max, now);
+      // Redesign synergies: a kindled (burning) or brittle (frozen) hit pops a word, at most every 0.8 s per body.
+      if (ev.combo) {
+        const key = ev.combo === 'brittle' ? 'brittle' : 'kindle';
+        this.effects.legend.note(key, now);
+        if (ev.combo === 'both') this.effects.legend.note('brittle', now);
+        const last = this.comboPopAt.get(ev.targetId) ?? Number.NEGATIVE_INFINITY;
+        if (now - last >= COMBO_POP_MS) {
+          this.comboPopAt.set(ev.targetId, now);
+          const text = ev.combo === 'both' ? 'COMBO!' : ev.combo === 'kindle' ? 'KINDLE!' : 'BRITTLE!';
+          this.effects.pop(p.sx, p.sy - h * 1.15, text, ev.combo === 'brittle' ? ELEMENT_COLOR.ice : ELEMENT_COLOR.fire, now);
+        }
+      }
+    } else if (ev.type === 'miss') {
+      // Redesign accuracy: the shot lands on the ground where the target was: a dust puff and a small "MISS".
+      this.effects.legend.note('miss', now);
+      const p = toScreen(view, ev.x, ev.y);
+      this.fx.dust(p.sx, p.sy, view.zoom);
+      this.fx.label(p.sx, p.sy - 14 * view.zoom, 'MISS', '#D9D2C3', now);
     } else if (ev.type === 'arc' || ev.type === 'splash') {
       this.effectFx(ev, now);
       if (ev.type === 'arc') {

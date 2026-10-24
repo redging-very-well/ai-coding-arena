@@ -150,8 +150,8 @@ function missingFix(type: UnitType | undefined, field: string, bounds: StatBound
     const eg = Math.min(p.max, Math.max(p.min, 900));
     return `A factory needs this.productionInterval: ticks between two minions, ${p.min}-${p.max}. Try ${eg}${eg === 900 ? ' (one every 15 s)' : ''}.`;
   }
-  if (type === 'wall' && field === 'maxHealth') return `A wall needs this.maxHealth, ${range(bounds.wallHealth, 2000)}.`;
-  if (type === 'factory' && field === 'maxHealth') return `A factory needs this.maxHealth, ${range(bounds.factoryHealth, 1500)}.`;
+  if (type === 'wall' && field === 'maxHealth') return `A wall needs this.maxHealth, ${range(bounds.wallHealth, 3200)}.`;
+  if (type === 'factory' && field === 'maxHealth') return `A factory needs this.maxHealth, ${range(bounds.factoryHealth, 2400)}.`;
   return `In the constructor add this.${field} = …; as a plain data property (see the contract).`;
 }
 
@@ -390,8 +390,8 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
   }
 
   const hpRange = type === 'wall' ? bounds.wallHealth : type === 'factory' ? bounds.factoryHealth : bounds.maxHealth;
-  // The example is the type's starter template value (Basic Wall 2000, Basic Factory 1500).
-  const hpExample = type === 'wall' ? 2000 : type === 'factory' ? 1500 : undefined;
+  // The example is the type's starter template value (Basic Wall 3200, Basic Factory 2400).
+  const hpExample = type === 'wall' ? 3200 : type === 'factory' ? 2400 : undefined;
   const maxHealth = has('maxHealth')
     ? checkNumber(errors, 'maxHealth', raw.maxHealth, hpRange, hpExample !== undefined && hpExample >= hpRange.min && hpExample <= hpRange.max ? { example: hpExample } : {})
     : undefined;
@@ -501,7 +501,13 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
     attackCooldown = 0;
   } else {
     damage = has('damage') ? checkNumber(errors, 'damage', raw.damage, bounds.damage) : undefined;
-    range = has('range') ? checkNumber(errors, 'range', raw.range, bounds.range) : undefined;
+    // Redesign: towers out-range soldiers (soldiers within soldierRange, towers within range).
+    const rangeBounds = type === 'soldier' ? bounds.soldierRange : bounds.range;
+    range = has('range')
+      ? checkNumber(errors, 'range', raw.range, rangeBounds, type === 'soldier' && bounds.soldierRange.max < bounds.range.max && typeof raw.range === 'number' && raw.range > rangeBounds.max
+          ? { fix: `In the constructor set this.range to a number from ${rangeBounds.min} to ${rangeBounds.max} (px, edge to edge): soldiers reach at most ${rangeBounds.max} px. Want to shoot further (up to ${bounds.range.max} px)? Make it a tower.` }
+          : {})
+      : undefined;
     attackCooldown = has('attackCooldown')
       ? checkNumber(errors, 'attackCooldown', raw.attackCooldown, bounds.attackCooldown, { integer: true })
       : undefined;

@@ -136,7 +136,7 @@ const FIELDS: Record<StatField, FieldDoc> = {
   },
   range: {
     what: 'How far it can hit, EDGE to edge: the gap between the two bodies. Above 50 px it fires homing shots that fly over walls.',
-    allowed: (c, t) => (fighter(t) ? `${span(c.stats.bounds.range, ' px')} (required)` : null),
+    allowed: (c, t) => (t === 'soldier' ? `${span(c.stats.bounds.soldierRange, ' px')} (required; towers reach further)` : fighter(t) ? `${span(c.stats.bounds.range, ' px')} (required)` : null),
     cost: (c) => `${money(c.cost.range)} per px, up to ${x(1 + c.cost.curveK)} near the max`,
   },
   speed: {
@@ -322,6 +322,8 @@ const OTHER_FIELDS: Record<keyof OtherView, string> = {
   splashRadius: 'spread out if this is above 0!',
   support: 'its support or null: find the enemy medic',
   status: 'its burns, freezes and buffs',
+  moving: 'it moved last tick: your ranged shots can miss it (shoot slow targets first)',
+  currentSpeed: 'px it moved last tick (0 = standing still); the faster, the more ranged shots miss',
 };
 
 const STATUS_FIELDS: Record<keyof StatusView, (c: GameConfig) => string> = {
@@ -473,7 +475,7 @@ function unitStats(c: GameConfig, s: CostStats): CostStats {
     ...s,
     maxHealth: clampTo(s.maxHealth, b.maxHealth),
     damage: clampTo(s.damage, b.damage),
-    range: clampTo(s.range, b.range),
+    range: clampTo(s.range, s.type === 'soldier' ? b.soldierRange : b.range),
     speed: s.type === 'tower' ? 0 : clampTo(s.speed, b.soldierSpeed),
     attackCooldown: clampTo(s.attackCooldown, b.attackCooldown),
     size: clampTo(s.size ?? DEFAULT_SIZE[s.type], b.size),
@@ -548,7 +550,7 @@ const ARCHETYPES: ArchetypeSpec[] = [
     note: 'every stat at its max: way over the price cap!',
     stats: (c) => {
       const b = c.stats.bounds;
-      return { type: 'soldier', maxHealth: b.maxHealth.max, damage: b.damage.max, range: b.range.max, speed: b.soldierSpeed.max, attackCooldown: clampTo(60, b.attackCooldown), size: b.size.max };
+      return { type: 'soldier', maxHealth: b.maxHealth.max, damage: b.damage.max, range: b.soldierRange.max, speed: b.soldierSpeed.max, attackCooldown: clampTo(60, b.attackCooldown), size: b.size.max };
     },
   },
 ];

@@ -16,12 +16,12 @@ import { armyValues } from '../packages/client/src/screen/model.js';
 const factory = (extra: Partial<StatsSnapshot> = {}): StatsSnapshot => ({
   name: 'Fac',
   type: 'factory',
-  maxHealth: 1500,
+  maxHealth: 2400,
   damage: 0,
   range: 0,
   speed: 0,
   attackCooldown: 0,
-  productionInterval: 900,
+  productionInterval: 600,
   color: '#C0A060',
   size: 18,
   shape: 'square',
@@ -75,9 +75,10 @@ describe('/play factory card (§12.5 M8.6)', () => {
   it('the price pop-up and the editor panel name the kind', () => {
     const b = computeCost({ ...factory({ produces: 'archer' }) }, DEFAULT_CONFIG.cost, pricingOf(DEFAULT_CONFIG)).breakdown;
     const rows = breakdownRows(b);
-    expect(rows.find((r) => r.label === 'Archers')!.value).toBe('5 × $195');
-    expect(rows.at(-1)!.value).toBe('$1,222');
-    expect(costPanel(b, 2500).rows.map((r) => r.label)).toEqual(['Base', 'Health', 'Archers']);
+    // The Basic Factory's $247 body + 11 archers × $216.
+    expect(rows.find((r) => r.label === 'Archers')!.value).toBe('11 × $216');
+    expect(rows.at(-1)!.value).toBe('$2,623');
+    expect(costPanel(b, 3000).rows.map((r) => r.label)).toEqual(['Base', 'Health', 'Archers']);
   });
 });
 
@@ -125,6 +126,7 @@ describe('release sound and admin preview (M8.6)', () => {
 
   it("previews each kind's factory price from the draft config", () => {
     const by = Object.fromEntries(costPreview(DEFAULT_CONFIG).rows.map((r) => [r.key, r.cost]));
-    expect(by).toMatchObject({ basicFactory: 987, archerFactory: 1222, runnerFactory: 1172, bruteFactory: 1312 });
+    // The Basic Factory ($247 body, 11 minions) building each kind: grunt $177, archer $216, runner and brute $263.
+    expect(by).toMatchObject({ basicFactory: 247 + 11 * 177, archerFactory: 247 + 11 * 216, runnerFactory: 247 + 11 * 263, bruteFactory: 247 + 11 * 263 });
   });
 });

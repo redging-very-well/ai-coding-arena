@@ -4,8 +4,8 @@
 // it just stops everybody (your own units too, so leave a gap!) until it is smashed.
 // Walls don't count as survivors at the end: you still need fighters.
 //
-// Cost = 20 + maxHealth*0.06 * (1 + (maxHealth/7500)^2)
-//      = 20 + 120 * 1.0711 = 148.53  ->  $149
+// Cost = 20 + maxHealth*0.0375 * (1 + (maxHealth/12000)^2)
+//      = 20 + 120 * 1.0711 = 148.53  ->  $149   (walls never cost more for extra copies)
 //
 // No imports, no timers, no network, no async.
 
@@ -13,7 +13,7 @@ export default class BasicWall {
   constructor() {
     this.name = 'Basic Wall';
     this.type = 'wall';         // a building: never moves, never attacks
-    this.maxHealth = 2000;      // 250-7500
+    this.maxHealth = 3200;      // 400-12000
     this.color = '#8A8F98';     // "#RRGGBB": the block's colour
   }
 

@@ -5,8 +5,8 @@ const bounds = DEFAULT_CONFIG.stats.bounds;
 const soldier = {
   name: ' Basic Soldier ',
   type: 'soldier',
-  maxHealth: 600,
-  damage: 50,
+  maxHealth: 1400,
+  damage: 56,
   range: 40,
   speed: 1.5,
   attackCooldown: 60,
@@ -37,9 +37,9 @@ describe('checkStats (§7 step 6)', () => {
         code: 'STAT_OUT_OF_RANGE',
         field: 'damage',
         value: 999,
-        allowed: { min: 0, max: 300 },
-        message: 'damage is 999 but must be between 0 and 300.',
-        fix: 'In the constructor set this.damage to a number from 0 to 300, e.g. this.damage = 50.',
+        allowed: { min: 0, max: 240 },
+        message: 'damage is 999 but must be between 0 and 240.',
+        fix: 'In the constructor set this.damage to a number from 0 to 240, e.g. this.damage = 50.',
       },
     ]);
   });
@@ -68,6 +68,27 @@ describe('checkStats (§7 step 6)', () => {
     expect(codes({ ...soldier, type: 'tower', speed: 0 })).toEqual([]);
     expect(codes({ ...soldier, speed: 0 })).toEqual(['STAT_OUT_OF_RANGE:speed']);
     expect(codes({ ...soldier, speed: 5.5 })).toEqual(['STAT_OUT_OF_RANGE:speed']);
+  });
+
+  it('towers out-range soldiers: soldiers 20-160 px, towers 20-300 px', () => {
+    expect(bounds.soldierRange).toEqual({ min: 20, max: 160 });
+    expect(bounds.range).toEqual({ min: 20, max: 300 });
+    expect(codes({ ...soldier, range: 160 })).toEqual([]);
+    const r = checkStats({ ...soldier, range: 161 }, bounds);
+    expect(!r.ok && r.errors).toEqual([
+      {
+        code: 'STAT_OUT_OF_RANGE',
+        field: 'range',
+        value: 161,
+        allowed: { min: 20, max: 160 },
+        message: 'range is 161 but must be between 20 and 160.',
+        fix: 'In the constructor set this.range to a number from 20 to 160 (px, edge to edge): soldiers reach at most 160 px. Want to shoot further (up to 300 px)? Make it a tower.',
+      },
+    ]);
+    expect(codes({ ...soldier, type: 'tower', speed: 0, range: 300 })).toEqual([]);
+    const t = checkStats({ ...soldier, type: 'tower', speed: 0, range: 301 }, bounds);
+    expect(!t.ok && t.errors[0]).toMatchObject({ code: 'STAT_OUT_OF_RANGE', field: 'range', allowed: { min: 20, max: 300 } });
+    expect(!t.ok && t.errors[0]!.fix).not.toContain('tower');
   });
 
   it('reports every problem, not just the first', () => {
@@ -124,7 +145,7 @@ describe('review regressions', () => {
       const r = checkStats({ ...soldier, ...stats }, bounds);
       return !r.ok && playerHintForIssue(r.errors[0]!);
     };
-    const maxRange = bounds.range.max;
+    const maxRange = bounds.soldierRange.max; // the test unit is a soldier
     expect(hint({ range: maxRange + 100 })).toBe(`Your unit's range is too big! (${maxRange + 100}, the max is ${maxRange}) Ask Claude to lower it.`);
     expect(hint({ damage: bounds.damage.max + 1 })).toMatch(/WAY too hard/);
     expect(hint({ attackCooldown: bounds.attackCooldown.min - 1 })).toMatch(/attacks too fast/);
@@ -132,8 +153,8 @@ describe('review regressions', () => {
       'Your unit costs too much! ($612, the max is $500) Ask Claude to make it cheaper.',
     );
     // §12: thousands separators wherever money is shown.
-    expect(playerHintForIssue({ code: 'UNIT_TOO_EXPENSIVE', field: 'cost', value: 3998, allowed: { max: 2500 }, message: '', fix: '' })).toBe(
-      'Your unit costs too much! ($3,998, the max is $2,500) Ask Claude to make it cheaper.',
+    expect(playerHintForIssue({ code: 'UNIT_TOO_EXPENSIVE', field: 'cost', value: 5032, allowed: { max: 3000 }, message: '', fix: '' })).toBe(
+      'Your unit costs too much! ($5,032, the max is $3,000) Ask Claude to make it cheaper.',
     );
   });
 });

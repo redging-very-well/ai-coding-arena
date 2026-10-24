@@ -1,5 +1,5 @@
 // get_rules / get_unit_contract / MCP text and the kit's CLAUDE.md + PROMPTS.md
-// for walls and factories (M8.5, plan §10.5, §11).
+// for walls and factories (M8.5, plan §10.5, §11; numbers of the $10,000 redesign).
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -37,11 +37,15 @@ describe('get_rules (M8.5)', () => {
 
   it('has the per-type bounds, the new caps and coefficients', () => {
     const bounds = rules.bounds as { byType: Record<string, Record<string, unknown>> };
-    expect(bounds.byType.wall).toEqual({ maxHealth: { min: 250, max: 7500 } });
-    expect(bounds.byType.factory).toEqual({ maxHealth: { min: 500, max: 5000 }, productionInterval: { min: 600, max: 1800 } });
-    expect(rules.caps).toMatchObject({ maxUnitTypes: 4, maxBuildingTypes: 4, maxCopies: 12, maxFactoryCopies: 2, maxWallCopies: 12 });
+    expect(bounds.byType.wall).toEqual({ maxHealth: { min: 400, max: 12000 } });
+    expect(bounds.byType.factory).toEqual({ maxHealth: { min: 800, max: 8000 }, productionInterval: { min: 300, max: 1200 } });
+    // Towers out-range soldiers.
+    expect(bounds.byType.soldier).toMatchObject({ range: { min: 20, max: 160 } });
+    expect(bounds.byType.tower).toMatchObject({ range: { min: 20, max: 300 } });
+    expect(rules.caps).toMatchObject({ maxUnitTypes: 4, maxBuildingTypes: 4, maxCopies: 12, maxFactoryCopies: 5, maxWallCopies: 16 });
     expect(rules.caps).not.toHaveProperty('maxTypes');
-    expect(rules.coefficients).toMatchObject({ wall: { base: 20, hp: 0.06 }, factory: { base: 50, hp: 0.12, minionDiscount: 0.5 } });
+    expect(rules.copyRamp).toMatchObject({ freeCopies: 3, pctPerCopy: 15 });
+    expect(rules.coefficients).toMatchObject({ wall: { base: 20, hp: 0.0375 }, factory: { base: 50, hp: 0.075, minionDiscount: 0.5 } });
     expect(rules.costFormula).toMatch(/Walls: cost = /);
     expect(rules.costFormula).toMatch(/Factories: cost = /);
   });
@@ -53,11 +57,11 @@ describe('get_rules (M8.5)', () => {
     };
     expect(Object.keys(t.types)).toEqual(['soldier', 'tower', 'wall', 'factory']);
     expect(Object.values(t.types).map((x) => x.group)).toEqual(['unit', 'building', 'building', 'building']);
-    expect(t.factories.minionsPerBattle).toEqual({ 600: 8, 900: 5, 1200: 4, 1800: 2 });
-    expect(t.factories).toMatchObject({ minionCost: 296, minionValue: 148, minion: { maxHealth: 180 } });
+    expect(t.factories.minionsPerBattle).toEqual({ 300: 12, 900: 7, 1200: 5 });
+    expect(t.factories).toMatchObject({ minionCost: 353, minionValue: 177, minion: { maxHealth: 360 } });
     expect(String(t.fighters)).toContain('NO_FIGHTERS');
     expect(String(t.livingValue)).toContain('walls are worth $0');
-    expect(rules.factory).toMatchObject({ maxAlivePerFactory: 4, maxMinionsPerFactory: 8 });
+    expect(rules.factory).toMatchObject({ maxAlivePerFactory: 4, maxMinionsPerFactory: 12, maxAlivePerPlayer: 12 });
   });
 
   it('lists the minion kinds with prices, the squad orders and burst (M8.6)', () => {
@@ -70,14 +74,15 @@ describe('get_rules (M8.5)', () => {
       };
     };
     expect(Object.keys(t.factories.minionKinds)).toEqual(['grunt', 'archer', 'runner', 'brute', 'medic']);
-    expect(t.factories.minionKinds.archer).toMatchObject({ name: 'Archer', minionCost: 389, minionValue: 195, range: 110 });
-    expect(t.factories.minionKinds.runner).toMatchObject({ minionCost: 369, minionValue: 185 });
-    expect(t.factories.minionKinds.brute).toMatchObject({ minionValue: 213, wallDamageMultiplier: 3 });
+    expect(t.factories.minionKinds.archer).toMatchObject({ name: 'Archer', minionCost: 432, minionValue: 216, range: 110 });
+    expect(t.factories.minionKinds.runner).toMatchObject({ minionCost: 525, minionValue: 263 });
+    expect(t.factories.minionKinds.brute).toMatchObject({ minionValue: 263, wallDamageMultiplier: 3 });
     // M8.8: the medic and the per-element prices (medics ignore the element).
-    expect(t.factories.minionKinds.medic).toMatchObject({ name: 'Medic', minionCost: 418, minionValue: 209, damage: 0, heal: 40, reach: 60 });
+    expect(t.factories.minionKinds.medic).toMatchObject({ name: 'Medic', minionCost: 496, minionValue: 248, damage: 0, heal: 60, reach: 60 });
     const byElement = (t.factories.minionKinds.brute as unknown as { byElement: Record<string, { minionValue: number }> }).byElement;
-    expect(byElement.fire!.minionValue).toBe(256);
-    expect((t.factories.minionKinds.medic as unknown as { byElement: Record<string, { minionValue: number }> }).byElement.ice!.minionValue).toBe(209);
+    expect(byElement.fire!.minionValue).toBe(342);
+    expect(byElement.ice!.minionValue).toBe(460);
+    expect((t.factories.minionKinds.medic as unknown as { byElement: Record<string, { minionValue: number }> }).byElement.ice!.minionValue).toBe(248);
     expect(Object.keys(t.factories.orders)).toEqual(['text', 'attack', 'defend', 'swarm', 'guard']);
     expect(t.factories.burst).toMatchObject({ min: 1, max: 4, default: 1 });
     expect(t.factories.burst.text).toMatch(/LOST if the factory is destroyed/);
@@ -91,8 +96,9 @@ describe('get_rules (M8.5)', () => {
   it('follows a config retune (minion price and E per interval)', () => {
     const cfg = deepMerge(DEFAULT_CONFIG, { cost: { factory: { minionDiscount: 1 } }, timers: { battleTicks: 3600 } });
     const t = unitTypeRules(cfg) as { factories: { minionValue: number; minionsPerBattle: Record<string, number> } };
-    expect(t.factories.minionValue).toBe(296);
-    expect(t.factories.minionsPerBattle[600]).toBe(5);
+    expect(t.factories.minionValue).toBe(353);
+    expect(t.factories.minionsPerBattle[300]).toBe(11);
+    expect(t.factories.minionsPerBattle[900]).toBe(3);
   });
 });
 
@@ -115,7 +121,8 @@ describe('starter kit text (M8.5, §11)', () => {
       'Shots fly over walls',
       'funnelling enemies',
       'Factories pay off over time',
-      '600 = 8 minions, 900 = 5, 1200 = 4, 1800 = 2',
+      '300-599 = 12 minions, 600 = 11, 720 = 9, 900 = 7, 1200 = 5',
+      'Up to **5 factories** per army',
     ]) {
       expect(claudeMd).toContain(tip);
     }
@@ -124,11 +131,11 @@ describe('starter kit text (M8.5, §11)', () => {
 
   it('CLAUDE.md wall and factory cost examples match computeCost', () => {
     const cases: Array<[CostStats, number]> = [
-      [{ type: 'wall', maxHealth: 2000, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 149],
-      [{ type: 'wall', maxHealth: 4000, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 329],
-      [{ type: 'wall', maxHealth: 7500, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 920],
-      [{ type: 'factory', maxHealth: 1500, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900 }, 987],
-      [{ type: 'factory', maxHealth: 1500, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 600 }, 1431],
+      [{ type: 'wall', maxHealth: 3200, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 149],
+      [{ type: 'wall', maxHealth: 6400, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 329],
+      [{ type: 'wall', maxHealth: 12000, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 920],
+      [{ type: 'factory', maxHealth: 2400, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900 }, 1486],
+      [{ type: 'factory', maxHealth: 2400, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 600 }, 2194],
     ];
     for (const [stats, cost] of cases) {
       expect(computeCost(stats, DEFAULT_CONFIG.cost).cost).toBe(cost);
@@ -141,8 +148,9 @@ describe('starter kit text (M8.5, §11)', () => {
   it('CLAUDE.md budget rules use the 4 + 4 type limits and the per-group copy caps', () => {
     expect(claudeMd).toContain('Up to **4 unit types** (soldiers) **and 4 building types**');
     expect(claudeMd).toContain('At most **12 fighters** placed');
-    expect(claudeMd).toContain('at most **2 factories**');
-    expect(claudeMd).toContain('at most **12 walls**');
+    expect(claudeMd).toContain('at most **5 factories**');
+    expect(claudeMd).toContain('at most **16 walls**');
+    expect(claudeMd).toContain('copies of the same design beyond the 3rd cost more');
     expect(claudeMd).not.toMatch(/3 unit types|toward the 3 types/);
   });
 

@@ -37,6 +37,7 @@ import {
   FRAME_FLAGS,
   deepMerge,
   computeCost,
+  copiesCost,
   pricingOf,
   mapFor,
   zoneCentredOnLine,
@@ -136,80 +137,149 @@ function buildingStats(
   }) as StatsSnapshot;
 }
 
-/** The designs the archetypes are built from (§6 M8.8 reference units, walls, minions and factories). */
+/**
+ * The economy the matrices are priced and fought on: the default config ($10,000
+ * redesign). `BALANCE_FIT` (a JSON config patch; the balance CLI sets it for
+ * `--config`) refits the archetypes to a tuning patch: the padded units, the
+ * max-cost brick and every 'fill' are priced on it.
+ */
+export const BALANCE_CONFIG: GameConfig = process.env.BALANCE_FIT ? ConfigSchema.parse(deepMerge(DEFAULT_CONFIG, JSON.parse(process.env.BALANCE_FIT))) : DEFAULT_CONFIG;
+const priceOf = (s: UnitSpec): number => computeCost(unitStats(s), BALANCE_CONFIG.cost, pricingOf(BALANCE_CONFIG)).cost;
+const B = BALANCE_CONFIG.stats.bounds;
+
+/** The Max-cost Brick: the most HP × damage (HP in 80s, damage in 4s; ties: more HP) under the unit cap, range 40, speed 1.5, size 16. */
+function maxCostBrick(): UnitSpec {
+  const base = { name: 'Brick', type: 'soldier', range: 40, speed: 1.5, attackCooldown: 60, size: 16 } as const;
+  let best = { ...base, maxHealth: 1600, damage: 120 };
+  for (let damage = 120; damage <= B.damage.max; damage += 4)
+    for (let maxHealth = 1600; maxHealth <= B.maxHealth.max; maxHealth += 80) {
+      const u = { ...base, maxHealth, damage };
+      if (priceOf(u) > BALANCE_CONFIG.caps.unitCost) break;
+      if (maxHealth * damage > best.maxHealth * best.damage || (maxHealth * damage === best.maxHealth * best.damage && maxHealth > best.maxHealth)) best = u;
+    }
+  return best;
+}
+
+/**
+ * A unit padded to fill the budget at the fighter cap (the "12 fighters, make
+ * them count" stress armies): `stat` (HP in 16s, damage in 2s, or both in
+ * turn) raised from `base` until a fighter cap's worth costs the whole budget.
+ */
+function padded(base: UnitSpec, stat: 'maxHealth' | 'damage' | 'both'): UnitSpec {
+  const n = BALANCE_CONFIG.caps.maxCopies;
+  const fits = (u: UnitSpec) => u.maxHealth <= B.maxHealth.max && u.damage! <= B.damage.max && copiesCost(priceOf(u), n, u.type, BALANCE_CONFIG.caps.copyRamp) <= BALANCE_CONFIG.caps.budget && priceOf(u) <= BALANCE_CONFIG.caps.unitCost;
+  let u: UnitSpec = { ...base };
+  for (let i = 0; i < 2000; i++) {
+    const hp = stat === 'maxHealth' || (stat === 'both' && i % 2 === 0);
+    const next = hp ? { ...u, maxHealth: u.maxHealth + 16 } : { ...u, damage: u.damage! + 2 };
+    if (!fits(next)) {
+      if (stat !== 'both') break;
+      const other = hp ? { ...u, damage: u.damage! + 2 } : { ...u, maxHealth: u.maxHealth + 16 };
+      if (!fits(other)) break;
+      u = other;
+      continue;
+    }
+    u = next;
+  }
+  return u;
+}
+
+const SCOUT: UnitSpec = { name: 'Scout', type: 'soldier', maxHealth: 480, damage: 32, range: 20, speed: 2.5, attackCooldown: 60, size: 6 };
+const BASIC_SOLDIER: UnitSpec = { name: 'Basic Soldier', type: 'soldier', maxHealth: 1400, damage: 56, range: 40, speed: 1.5, attackCooldown: 60 };
+const HALF_TANK: UnitSpec = { name: 'Half Tank', type: 'soldier', maxHealth: 2000, damage: 80, range: 40, speed: 0.8, attackCooldown: 60, size: 20 };
+
+/**
+ * The designs the archetypes are built from (§6 reference units, walls,
+ * minions and factories at the redesign scale: HP ×1.6, damage ×0.8 of M8.8).
+ */
 export const UNITS = {
-  /** Basic Soldier (template, $522). */
-  soldier: unitStats({ name: 'Basic Soldier', type: 'soldier', maxHealth: 600, damage: 50, range: 40, speed: 1.5, attackCooldown: 60 }),
-  /** Basic Tower (template, $970: range 140, 625 HP). */
-  tower: unitStats({ name: 'Basic Tower', type: 'tower', maxHealth: 625, damage: 75, range: 140, speed: 0, attackCooldown: 45 }),
-  /** The Max-cost Brick: the most HP × damage under the $2,500 cap ($2,493, power ×1.37). */
-  brick: unitStats({ name: 'Brick', type: 'soldier', maxHealth: 1700, damage: 270, range: 40, speed: 1.5, attackCooldown: 60, size: 16 }),
-  /** Half Tank ($1,120). */
-  tank: unitStats({ name: 'Half Tank', type: 'soldier', maxHealth: 1250, damage: 100, range: 40, speed: 0.8, attackCooldown: 60, size: 20 }),
-  /** Huge Tank: max HP ($2,459). */
-  hugeTank: unitStats({ name: 'Huge Tank', type: 'soldier', maxHealth: 2500, damage: 100, range: 40, speed: 0.8, attackCooldown: 60, size: 20 }),
-  scout: unitStats({ name: 'Scout', type: 'soldier', maxHealth: 300, damage: 40, range: 20, speed: 2.5, attackCooldown: 60, size: 6 }),
-  /** The stress scout: the same Scout with its HP raised until 11 copies fill the budget (§14 M8.8 `scoutsFilled`). */
-  scoutFilled: unitStats({ name: 'Padded Scout', type: 'soldier', maxHealth: 340, damage: 40, range: 20, speed: 2.5, attackCooldown: 60, size: 6 }),
-  /** Sniper Tower ($1,544). */
-  sniper: unitStats({ name: 'Sniper Tower', type: 'tower', maxHealth: 400, damage: 200, range: 280, speed: 0, attackCooldown: 60 }),
-  /** Max Sniper: max range ($1,905). */
-  maxSniper: unitStats({ name: 'Max Sniper', type: 'tower', maxHealth: 400, damage: 250, range: 300, speed: 0, attackCooldown: 60 }),
-  /** Glass Cannon: max damage, minimum-ish HP ($1,347). */
-  glass: unitStats({ name: 'Glass Cannon', type: 'soldier', maxHealth: 300, damage: 300, range: 40, speed: 2, attackCooldown: 60, size: 8 }),
-  /** The Basic Soldier with an element ($626 each). */
-  fireSoldier: unitStats({ name: 'Fire Soldier', type: 'soldier', maxHealth: 600, damage: 50, range: 40, speed: 1.5, attackCooldown: 60, element: 'fire' }),
-  stormSoldier: unitStats({ name: 'Lightning Soldier', type: 'soldier', maxHealth: 600, damage: 50, range: 40, speed: 1.5, attackCooldown: 60, element: 'lightning' }),
-  /** Frost Archer: a ranged ice soldier ($765). */
-  frostArcher: unitStats({ name: 'Frost Archer', type: 'soldier', maxHealth: 400, damage: 40, range: 140, speed: 1.5, attackCooldown: 60, size: 9, element: 'ice' }),
+  /** Basic Soldier (template). */
+  soldier: unitStats(BASIC_SOLDIER),
+  /** Basic Tower (template: range 140, CD 45). */
+  tower: unitStats({ name: 'Basic Tower', type: 'tower', maxHealth: 1200, damage: 72, range: 140, speed: 0, attackCooldown: 45 }),
+  /** The Max-cost Brick: the most HP × damage under the unit cap (computed). */
+  brick: unitStats(maxCostBrick()),
+  tank: unitStats(HALF_TANK),
+  /** Huge Tank: about the most HP a damage-80 soldier gets under the unit cap (3,600). */
+  hugeTank: unitStats({ name: 'Huge Tank', type: 'soldier', maxHealth: 3600, damage: 80, range: 40, speed: 0.8, attackCooldown: 60, size: 20 }),
+  /** Scout: a fast skirmisher, damage padded until a fighter cap's worth fills the budget (computed). */
+  scout: unitStats(padded(SCOUT, 'damage')),
+  /** The HP-padded scout (the `scoutsFilled` stress army, computed). */
+  scoutFilled: unitStats(padded({ ...SCOUT, name: 'Padded Scout' }, 'maxHealth')),
+  /** The Basic Soldier padded (HP and damage in turn) until 12 fill the budget (`soldiersFilled`, computed). */
+  soldierFilled: unitStats(padded({ ...BASIC_SOLDIER, name: 'Padded Soldier' }, 'both')),
+  /** The Half Tank padded with HP until a fighter cap's worth fills the budget (`tanksFilled`, computed). */
+  tankFilled: unitStats(padded({ ...HALF_TANK, name: 'Padded Tank', maxHealth: 800, damage: 60 }, 'both')),
+  sniper: unitStats({ name: 'Sniper Tower', type: 'tower', maxHealth: 640, damage: 160, range: 280, speed: 0, attackCooldown: 60 }),
+  /** Max Sniper: max range. */
+  maxSniper: unitStats({ name: 'Max Sniper', type: 'tower', maxHealth: 640, damage: 200, range: 300, speed: 0, attackCooldown: 60 }),
+  /** Glass Cannon: max damage, little HP. */
+  glass: unitStats({ name: 'Glass Cannon', type: 'soldier', maxHealth: 480, damage: B.damage.max, range: 40, speed: 2, attackCooldown: 60, size: 8 }),
+  fireSoldier: unitStats({ ...BASIC_SOLDIER, name: 'Fire Soldier', element: 'fire' }),
+  stormSoldier: unitStats({ ...BASIC_SOLDIER, name: 'Lightning Soldier', element: 'lightning' }),
+  iceSoldier: unitStats({ ...BASIC_SOLDIER, name: 'Ice Soldier', element: 'ice' }),
+  /** Frost Archer: a ranged ice soldier. */
+  frostArcher: unitStats({ name: 'Frost Archer', type: 'soldier', maxHealth: 640, damage: 32, range: 140, speed: 1.5, attackCooldown: 60, size: 9, element: 'ice' }),
   /** Archer: the Frost Archer made normal (the shatter squad's twin). */
-  archer: unitStats({ name: 'Archer', type: 'soldier', maxHealth: 400, damage: 40, range: 140, speed: 1.5, attackCooldown: 60, size: 9 }),
-  /** Ice Tower: the Basic Tower in ice ($1,164). */
-  iceTower: unitStats({ name: 'Ice Tower', type: 'tower', maxHealth: 625, damage: 75, range: 140, speed: 0, attackCooldown: 45, element: 'ice' }),
-  /** Frost Sniper: the Sniper Tower in ice ($1,853). */
-  frostSniper: unitStats({ name: 'Frost Sniper', type: 'tower', maxHealth: 400, damage: 200, range: 280, speed: 0, attackCooldown: 60, element: 'ice' }),
-  /** Mortar Tower: splash 40 ($1,198). */
-  mortar: unitStats({ name: 'Mortar Tower', type: 'tower', maxHealth: 625, damage: 100, range: 140, speed: 0, attackCooldown: 60, splashRadius: 40 }),
-  /** Fire Mortar: the Mortar Tower in fire ($1,438). */
-  fireMortar: unitStats({ name: 'Fire Mortar', type: 'tower', maxHealth: 625, damage: 100, range: 140, speed: 0, attackCooldown: 60, element: 'fire', splashRadius: 40 }),
-  /** Fireball Catapult: fire splash 40 ($2,153). */
-  catapult: unitStats({ name: 'Fireball Catapult', type: 'tower', maxHealth: 600, damage: 150, range: 220, speed: 0, attackCooldown: 60, element: 'fire', splashRadius: 40 }),
-  /** Blizzard Totem: damage 0, ice splash 60 ($1,275). Not a fighter. */
-  blizzardTotem: unitStats({ name: 'Blizzard Totem', type: 'tower', maxHealth: 650, damage: 0, range: 160, speed: 0, attackCooldown: 60, element: 'ice', splashRadius: 60 }),
-  /** Field Medic: damage 0, heal 60 in 120 px ($751). Not a fighter. */
-  medic: unitStats({ name: 'Field Medic', type: 'soldier', maxHealth: 500, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, support: { kind: 'heal', power: 60, range: 120 } }),
-  /** Shield Bearer: a tough hitter with a 25% shield aura in 80 px ($977). */
-  shieldBearer: unitStats({ name: 'Shield Bearer', type: 'soldier', maxHealth: 1000, damage: 30, range: 30, speed: 1.2, attackCooldown: 60, size: 14, support: { kind: 'shield', power: 25, range: 80 } }),
-  /** Healing Shrine: a damage-0 healing tower, heal 80 in 160 px ($1,009). Not a fighter. */
-  shrine: unitStats({ name: 'Healing Shrine', type: 'tower', maxHealth: 800, damage: 0, range: 20, speed: 0, attackCooldown: 60, support: { kind: 'heal', power: 80, range: 160 } }),
-  /** War Drummer: damage 0, might 30% in 100 px ($595). Not a fighter. */
-  drummer: unitStats({ name: 'War Drummer', type: 'soldier', maxHealth: 500, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, support: { kind: 'might', power: 30, range: 100 } }),
-  /** Wind Banner: damage 0, haste 30% in 100 px ($652). Not a fighter. */
-  banner: unitStats({ name: 'Wind Banner', type: 'soldier', maxHealth: 500, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, support: { kind: 'haste', power: 30, range: 100 } }),
-  /** Basic Wall (template, $149). */
-  wall: buildingStats({ name: 'Basic Wall', type: 'wall', maxHealth: 2000 }),
-  /** Basic Factory (template, $982): 5 grunts. */
-  factory: buildingStats({ name: 'Basic Factory', type: 'factory', maxHealth: 1500, productionInterval: 900 }),
-  /** Swarm Factory ($1,423): 8 grunts, one every 10 s. */
-  swarmFactory: buildingStats({ name: 'Swarm Factory', type: 'factory', maxHealth: 1500, productionInterval: 600 }),
-  /** Fortress Factory ($1,544): max HP, slowest (2 grunts). */
-  fortressFactory: buildingStats({ name: 'Fortress Factory', type: 'factory', maxHealth: 5000, productionInterval: 1800 }),
-  /** Archer Nest (M8.6, $1,807): 8 archers, one every 10 s. */
-  archerNest: buildingStats({ name: 'Archer Nest', type: 'factory', maxHealth: 1500, productionInterval: 600, produces: 'archer' }),
-  /** Runner Rush with burst 4 (M8.6, $1,655): 8 runners, released 4 at a time. */
-  runnerRush: buildingStats({ name: 'Runner Rush', type: 'factory', maxHealth: 1500, productionInterval: 600, produces: 'runner', burst: 4 }),
+  archer: unitStats({ name: 'Archer', type: 'soldier', maxHealth: 640, damage: 32, range: 140, speed: 1.5, attackCooldown: 60, size: 9 }),
+  iceTower: unitStats({ name: 'Ice Tower', type: 'tower', maxHealth: 1000, damage: 60, range: 140, speed: 0, attackCooldown: 45, element: 'ice' }),
+  fireTower: unitStats({ name: 'Fire Tower', type: 'tower', maxHealth: 1000, damage: 60, range: 140, speed: 0, attackCooldown: 45, element: 'fire' }),
+  frostSniper: unitStats({ name: 'Frost Sniper', type: 'tower', maxHealth: 640, damage: 144, range: 280, speed: 0, attackCooldown: 60, element: 'ice' }),
+  /** Mortar Tower: splash 40. */
+  mortar: unitStats({ name: 'Mortar Tower', type: 'tower', maxHealth: 1000, damage: 80, range: 140, speed: 0, attackCooldown: 60, splashRadius: 40 }),
+  fireMortar: unitStats({ name: 'Fire Mortar', type: 'tower', maxHealth: 1000, damage: 80, range: 140, speed: 0, attackCooldown: 60, element: 'fire', splashRadius: 40 }),
+  /** Fireball Catapult: fire splash 40. */
+  catapult: unitStats({ name: 'Fireball Catapult', type: 'tower', maxHealth: 960, damage: 120, range: 220, speed: 0, attackCooldown: 60, element: 'fire', splashRadius: 40 }),
+  /** Blizzard Totem: damage 0, ice splash 60. Not a fighter. */
+  blizzardTotem: unitStats({ name: 'Blizzard Totem', type: 'tower', maxHealth: 1040, damage: 0, range: 160, speed: 0, attackCooldown: 60, element: 'ice', splashRadius: 60 }),
+  /** The first exploit search's top build at the redesign scale: a slow ice splash-60 brawler... */
+  iceBrawler: unitStats({ name: 'Ice Brawler', type: 'soldier', maxHealth: 960, damage: 80, range: 130, speed: 0.6, attackCooldown: 80, size: 10, element: 'ice', splashRadius: 60 }),
+  /** ...behind fast-firing glass sniper towers. */
+  glassSniper: unitStats({ name: 'Glass Sniper', type: 'tower', maxHealth: 480, damage: 112, range: 170, speed: 0, attackCooldown: 35 }),
+  /** The redesign exploit search's top builds (2026-10-24, before the range and ice retune): a fast splash sniper soldier... */
+  splashSniper: unitStats({ name: 'Splash Sniper', type: 'soldier', maxHealth: 480, damage: 160, range: 240, speed: 2.7, attackCooldown: 45, size: 6, splashRadius: 20 }),
+  /** ...ranged lightning soldiers... */
+  stormArcher: unitStats({ name: 'Storm Archer', type: 'soldier', maxHealth: 1280, damage: 80, range: 100, speed: 1.5, attackCooldown: 55, size: 10, element: 'lightning' }),
+  /** ...and slow, small tanks; */
+  slowTank: unitStats({ name: 'Slow Tank', type: 'soldier', maxHealth: 1760, damage: 84, range: 40, speed: 0.6, attackCooldown: 50, size: 6 }),
+  /** an ice splash-80 caster with fast runners. */
+  frostCaster: unitStats({ name: 'Frost Caster', type: 'soldier', maxHealth: 480, damage: 112, range: 130, speed: 2, attackCooldown: 65, size: 9, element: 'ice', splashRadius: 80 }),
+  fastRunner: unitStats({ name: 'Fast Runner', type: 'soldier', maxHealth: 1360, damage: 44, range: 20, speed: 3.2, attackCooldown: 85, size: 10 }),
+  /** Field Medic: damage 0, heal 96 in 120 px. Not a fighter. */
+  medic: unitStats({ name: 'Field Medic', type: 'soldier', maxHealth: 800, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, support: { kind: 'heal', power: 96, range: 120 } }),
+  /** Shield Bearer: a tough hitter with a 25% shield aura in 80 px. */
+  shieldBearer: unitStats({ name: 'Shield Bearer', type: 'soldier', maxHealth: 1600, damage: 24, range: 30, speed: 1.2, attackCooldown: 60, size: 14, support: { kind: 'shield', power: 25, range: 80 } }),
+  /** Healing Shrine: a damage-0 healing tower, heal 128 in 160 px. Not a fighter. */
+  shrine: unitStats({ name: 'Healing Shrine', type: 'tower', maxHealth: 1280, damage: 0, range: 20, speed: 0, attackCooldown: 60, support: { kind: 'heal', power: 128, range: 160 } }),
+  /** War Drummer: damage 0, might 30% in 100 px. Not a fighter. */
+  drummer: unitStats({ name: 'War Drummer', type: 'soldier', maxHealth: 800, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, support: { kind: 'might', power: 30, range: 100 } }),
+  /** Wind Banner: damage 0, haste 30% in 100 px. Not a fighter. */
+  banner: unitStats({ name: 'Wind Banner', type: 'soldier', maxHealth: 800, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, support: { kind: 'haste', power: 30, range: 100 } }),
+  /** Basic Wall (template). */
+  wall: buildingStats({ name: 'Basic Wall', type: 'wall', maxHealth: 3200 }),
+  /** Basic Factory (template): grunts every 10 s. */
+  factory: buildingStats({ name: 'Basic Factory', type: 'factory', maxHealth: 2400, productionInterval: 600 }),
+  /** Swarm Factory: grunts every 5 s (the most a factory makes). */
+  swarmFactory: buildingStats({ name: 'Swarm Factory', type: 'factory', maxHealth: 2400, productionInterval: 300 }),
+  /** Fortress Factory: max HP, slowest. */
+  fortressFactory: buildingStats({ name: 'Fortress Factory', type: 'factory', maxHealth: 8000, productionInterval: 1200 }),
+  archerNest: buildingStats({ name: 'Archer Nest', type: 'factory', maxHealth: 2400, productionInterval: 300, produces: 'archer' }),
+  /** Runner Rush with burst 4. */
+  runnerRush: buildingStats({ name: 'Runner Rush', type: 'factory', maxHealth: 2400, productionInterval: 720, produces: 'runner', burst: 4 }),
   /** The same Runner Rush releasing each runner at once (burst 1), for the burst comparison. */
-  runnerTrickle: buildingStats({ name: 'Runner Trickle', type: 'factory', maxHealth: 1500, productionInterval: 600, produces: 'runner', burst: 1 }),
-  /** Brute Forge (M8.6, $1,935): 8 brutes, one every 10 s. */
-  bruteForge: buildingStats({ name: 'Brute Forge', type: 'factory', maxHealth: 1500, productionInterval: 600, produces: 'brute' }),
-  /** Ice Archer Nest (M8.8, $2,119): 8 ice archers. */
-  iceArcherNest: buildingStats({ name: 'Ice Archer Nest', type: 'factory', maxHealth: 1500, productionInterval: 600, produces: 'archer', minionElement: 'ice' }),
-  /** Fire Brute Pack (M8.8, $1,512): 5 fire brutes. */
-  fireBrutePack: buildingStats({ name: 'Fire Brute Pack', type: 'factory', maxHealth: 1500, productionInterval: 900, produces: 'brute', minionElement: 'fire' }),
-  /** Storm Runners (M8.8, $1,935): 8 lightning runners, burst 4. */
-  stormRunners: buildingStats({ name: 'Storm Runners', type: 'factory', maxHealth: 1500, productionInterval: 600, produces: 'runner', burst: 4, minionElement: 'lightning' }),
-  /** Medic Tent (M8.8, $1,272): 5 medics. Not a fighter. */
-  medicTent: buildingStats({ name: 'Medic Tent', type: 'factory', maxHealth: 1500, productionInterval: 900, produces: 'medic' }),
+  runnerTrickle: buildingStats({ name: 'Runner Trickle', type: 'factory', maxHealth: 2400, productionInterval: 720, produces: 'runner', burst: 1 }),
+  bruteForge: buildingStats({ name: 'Brute Forge', type: 'factory', maxHealth: 2400, productionInterval: 720, produces: 'brute' }),
+  iceArcherNest: buildingStats({ name: 'Ice Archer Nest', type: 'factory', maxHealth: 2400, productionInterval: 900, produces: 'archer', minionElement: 'ice' }),
+  fireBrutePack: buildingStats({ name: 'Fire Brute Pack', type: 'factory', maxHealth: 2400, productionInterval: 900, produces: 'brute', minionElement: 'fire' }),
+  /** Storm Runners: lightning runners, burst 4. */
+  stormRunners: buildingStats({ name: 'Storm Runners', type: 'factory', maxHealth: 2400, productionInterval: 900, produces: 'runner', burst: 4, minionElement: 'lightning' }),
+  /** Slower, cheaper factories (a minion every 15 s) for the five-factory army. */
+  steadyFactory: buildingStats({ name: 'Steady Factory', type: 'factory', maxHealth: 2400, productionInterval: 900 }),
+  steadyArchers: buildingStats({ name: 'Steady Archers', type: 'factory', maxHealth: 2400, productionInterval: 900, produces: 'archer' }),
+  steadyBrutes: buildingStats({ name: 'Steady Brutes', type: 'factory', maxHealth: 2400, productionInterval: 900, produces: 'brute' }),
+  steadyMedics: buildingStats({ name: 'Steady Medics', type: 'factory', maxHealth: 2400, productionInterval: 900, produces: 'medic' }),
+  /** Medic Tent: medics. Not a fighter. */
+  medicTent: buildingStats({ name: 'Medic Tent', type: 'factory', maxHealth: 2400, productionInterval: 600, produces: 'medic' }),
 } as const;
 export type UnitKey = keyof typeof UNITS;
 
@@ -316,145 +386,201 @@ export function sealFighterCells(facing: Facing, front: Cell[], backOnEdge = tru
   return [{ col: 2, row: 1 }, { col: 3, row: 1 }, { col: 2, row: 2 }];
 }
 
-/** The §14 archetypes, $5,000 budget each (checked by the test). M8.8: Half Tanks 5 → 4 (5 cost $5,610). */
+
+// ---------------------------------------------------------------------------
+// The $10,000 archetypes (redesign, 2026-10-24)
+// ---------------------------------------------------------------------------
+//
+// Each archetype is its fixed parts plus, where it had Basic Soldiers (or
+// another filler) topping it up, a 'fill': as many copies as fit both the
+// budget and the copy caps (fighters `caps.maxCopies`, walls
+// `caps.maxWallCopies`). So the archetypes refit themselves when prices or
+// caps change, and the cheap-unit armies (the template rush, the padded
+// swarms) are held by the fighter cap, not the budget.
+
+type Part = [UnitKey, number | 'fill'];
+const costOf = (k: UnitKey): number => computeCost(UNITS[k], BALANCE_CONFIG.cost, pricingOf(BALANCE_CONFIG)).cost;
+const isFighterKey = (k: UnitKey) => UNITS[k].type !== 'wall';
+
+/**
+ * Resolve the parts: fixed parts that break the budget lose copies first (one
+ * copy of the dearest fixed fighter part at a time, never its last copy),
+ * then a 'fill' part gets the most copies that fit the budget and the copy caps.
+ */
+function resolve(parts: Part[]): Array<[UnitKey, number]> {
+  const caps = BALANCE_CONFIG.caps;
+  const groupCost = (k: UnitKey, c: number) => copiesCost(costOf(k), c, UNITS[k].type, caps.copyRamp);
+  const fixed = parts.filter((p): p is [UnitKey, number] => p[1] !== 'fill').map(([k, c]) => [k, c] as [UnitKey, number]);
+  const total = () => fixed.reduce((n, [k, c]) => n + groupCost(k, c), 0);
+  while (total() > caps.budget) {
+    let dearest = -1;
+    fixed.forEach(([k, c], i) => {
+      if (c > 1 && isFighterKey(k) && (dearest < 0 || costOf(k) > costOf(fixed[dearest]![0]))) dearest = i;
+    });
+    if (dearest < 0) break;
+    fixed[dearest]![1] -= 1;
+  }
+  const countOf = new Map(fixed);
+  const filler = parts.find((p) => p[1] === 'fill')?.[0];
+  if (!filler) return fixed;
+  const spent = total();
+  const used = fixed.reduce((n, [k, c]) => n + (isFighterKey(k) === isFighterKey(filler) ? c : 0), 0);
+  const room = isFighterKey(filler) ? caps.maxCopies - used : caps.maxWallCopies - used;
+  let n = 0;
+  while (n < room && spent + groupCost(filler, n + 1) <= caps.budget) n++;
+  return parts.map(([k, c]) => [k, c === 'fill' ? n : countOf.get(k)!] as [UnitKey, number]).filter(([, c]) => c > 0);
+}
+
+const plural = (name: string, n: number) =>
+  n === 1 || name.endsWith('s') ? name : name.endsWith('y') ? `${name.slice(0, -1)}ies` : /(sh|ch)$/.test(name) ? `${name}es` : `${name}s`;
+/** "8 Basic Soldiers, 6 Basic Towers" */
+export const composition = (army: Array<[UnitKey, number]>) => army.map(([k, n]) => `${n} ${plural(UNITS[k].name, n)}`).join(', ');
+
+/**
+ * "12 fighters, make them count": an army that leaves money unspent has its
+ * attacking soldier and tower designs padded, HP and damage raised together
+ * (×1.02 steps, whole numbers, inside the bounds and the unit cap) until the
+ * next step would break the budget. Support units, walls and factories keep
+ * their stats. The padded designs go in `designs` under the same keys.
+ */
+function pad(army: Array<[UnitKey, number]>): Partial<Record<string, StatsSnapshot>> | undefined {
+  const caps = BALANCE_CONFIG.caps;
+  const pricing = pricingOf(BALANCE_CONFIG);
+  const padKeys = army.filter(([k]) => (UNITS[k].type === 'soldier' || UNITS[k].type === 'tower') && UNITS[k].damage > 0 && !UNITS[k].support).map(([k]) => k);
+  if (padKeys.length === 0) return undefined;
+  const at = (m: number): Record<string, StatsSnapshot> | null => {
+    const out: Record<string, StatsSnapshot> = {};
+    for (const k of padKeys) {
+      const u = UNITS[k];
+      const d = { ...u, maxHealth: Math.round(u.maxHealth * m), damage: Math.round(u.damage * m) } as StatsSnapshot;
+      if (d.maxHealth > B.maxHealth.max || d.damage > B.damage.max) return null;
+      if (computeCost(d, BALANCE_CONFIG.cost, pricing).cost > caps.unitCost) return null;
+      out[k] = d;
+    }
+    const total = army.reduce((n, [k, c]) => n + copiesCost(computeCost(out[k] ?? UNITS[k], BALANCE_CONFIG.cost, pricing).cost, c, UNITS[k].type, caps.copyRamp), 0);
+    return total <= caps.budget ? out : null;
+  };
+  let best: Record<string, StatsSnapshot> | null = null;
+  for (let m = 1.02; m < 4; m *= 1.02) {
+    const next = at(m);
+    if (!next) break;
+    best = next;
+  }
+  return best ?? undefined;
+}
+
+function arch(key: string, title: string, parts: Part[], opts: Omit<Archetype, 'key' | 'label' | 'army'> & { pad?: boolean } = {}): Archetype {
+  const { pad: padIt = true, ...rest } = opts;
+  const army = resolve(parts);
+  const designs = padIt ? pad(army) : undefined;
+  const padded = designs ? ` padded to ${Object.entries(designs).map(([k, d]) => `${UNITS[k as UnitKey].name} ${d!.maxHealth}/${d!.damage}`).join(', ')}` : '';
+  return { key, label: `${title} (${composition(army)}${padded})`, army, ...(designs ? { designs } : {}), ...rest };
+}
+
+/** The classic six (§14), at $10,000: twice the M8.8 copies, or filled to the caps. */
 export const ARCHETYPES: Archetype[] = [
-  { key: 'bricks', label: '2 max-cost bricks', army: [['brick', 2]] },
-  { key: 'templates', label: '7 templates (4 soldiers + 3 towers)', army: [['soldier', 4], ['tower', 3]] },
-  { key: 'tanks', label: 'tank army (4 Half Tanks)', army: [['tank', 4]] },
-  { key: 'turtle', label: 'all-tower turtle (5 Basic Towers)', army: [['tower', 5]] },
-  { key: 'scouts', label: 'scout swarm (11 Scouts)', army: [['scout', 11]] },
-  { key: 'snipers', label: 'sniper nest (3 Sniper Towers)', army: [['sniper', 3]] },
+  arch('bricks', 'two max-cost bricks + soldiers', [['brick', 2], ['soldier', 'fill']]),
+  arch('templates', 'templates', [['soldier', 'fill'], ['tower', 4]], { pad: false }),
+  arch('tanks', 'tank army', [['tank', 'fill']]),
+  arch('turtle', 'all-tower turtle', [['tower', 'fill']]),
+  arch('scouts', 'scout swarm (damage-padded)', [['scout', 'fill']]),
+  arch('snipers', 'sniper nest', [['sniper', 'fill']]),
 ];
 
-/**
- * The M8.5 building archetypes (§6 "Example armies with buildings"). Copies
- * are placed in army order into the front cells, so the walls listed first
- * form the front line and the fighters listed after them stand behind it.
- * M8.8 refit: walls + rush 9 → 8 soldiers, all four templates 5 → 4.
- */
+/** The building archetypes (M8.5). The walled range armies seal their towers in (11 walls). */
 export const BUILDING_ARCHETYPES: Archetype[] = [
-  { key: 'fortress', label: 'wall fortress (11 Basic Walls sealing in 3 Basic Towers)', army: [['wall', 11], ['tower', 3]], layout: 'seal' },
-  { key: 'snipewall', label: 'walled sniper nest (6 Basic Walls in front of 2 Sniper Towers + 1 Basic Tower)', army: [['wall', 6], ['sniper', 2], ['tower', 1]], layout: 'nest' },
-  { key: 'swarm', label: 'factory swarm (4 Basic Soldiers in front of 2 Swarm Factories)', army: [['soldier', 4], ['swarmFactory', 2]] },
-  { key: 'wallrush', label: 'walls + rush (4 Basic Walls in front of 8 Basic Soldiers)', army: [['wall', 4], ['soldier', 8]] },
-  { key: 'mixed', label: 'mixed (4 Basic Soldiers, 6 Basic Walls, 2 Basic Towers behind them)', army: [['soldier', 4], ['wall', 6], ['tower', 2]] },
-  { key: 'quad', label: 'all four templates (4 Basic Soldiers, 4 Basic Walls, 1 Basic Tower, 1 Basic Factory)', army: [['soldier', 4], ['wall', 4], ['tower', 1], ['factory', 1]] },
-  { key: 'bunker', label: 'all-building bunker (2 Basic Towers in front of 2 Swarm Factories)', army: [['tower', 2], ['swarmFactory', 2]] },
+  arch('fortress', 'wall fortress', [['wall', 11], ['tower', 'fill']], { layout: 'seal' }),
+  arch('snipewall', 'walled sniper nest', [['wall', 11], ['sniper', 4], ['tower', 'fill']], { layout: 'seal' }),
+  arch('swarm', 'factory swarm', [['soldier', 'fill'], ['swarmFactory', 3]]),
+  arch('wallrush', 'walls + rush', [['wall', 8], ['soldier', 'fill']]),
+  arch('mixed', 'mixed', [['soldier', 'fill'], ['wall', 12], ['tower', 4]]),
+  arch('quad', 'all four templates', [['soldier', 'fill'], ['wall', 8], ['tower', 2], ['factory', 2]]),
+  arch('bunker', 'all-building bunker', [['tower', 'fill'], ['swarmFactory', 4]]),
 ];
 
-/** The plan §14 wall fortress: 10 Basic Walls in a U (front row + both outer columns of rows 1-2), 3 Basic Towers on rows 3-4. */
-export const OPEN_FORTRESS: Archetype = { key: 'openfort', label: 'open wall fortress (10 Basic Walls in a U round 3 Basic Towers)', army: [['wall', 10], ['tower', 3]], layout: 'u' };
+/** The plan §14 open fortress: 10 Basic Walls in a U (front row + both outer columns of rows 1-2), towers on rows 3-4. */
+export const OPEN_FORTRESS: Archetype = arch('openfort', 'open wall fortress', [['wall', 10], ['tower', 'fill']], { layout: 'u' });
 
-/**
- * The M8.6 minion-kind archetypes (§5.3, §14): each kind with the order its
- * CLAUDE.md example gives, and a burst. M8.8 refit: the archer nest 4 → 2
- * walls, the brute breakers 3 → 2 soldiers.
- */
+/** The minion-kind archetypes (M8.6): each kind with the order its CLAUDE.md example gives. */
 export const KIND_ARCHETYPES: Archetype[] = [
-  { key: 'archers', label: 'archer nest (2 Basic Walls, 1 Basic Tower, 2 Archer Nests guarding it)', army: [['wall', 2], ['tower', 1], ['archerNest', 2]], factoryBrain: 'guard' },
-  { key: 'runners', label: 'runner swarm (2 Basic Soldiers, 2 burst-4 Runner Rushes swarming the weakest enemy)', army: [['soldier', 2], ['runnerRush', 2]], factoryBrain: 'swarm' },
-  { key: 'brutes', label: 'brute breakers (2 Basic Soldiers, 2 Brute Forges swarming the nearest enemy wall)', army: [['soldier', 2], ['bruteForge', 2]], factoryBrain: 'breach' },
-  { key: 'homeguard', label: 'grunt home guard (2 Basic Towers, 2 Swarm Factories on defend)', army: [['tower', 2], ['swarmFactory', 2]], factoryBrain: 'defend' },
+  arch('archers', 'archer nest', [['wall', 4], ['tower', 'fill'], ['archerNest', 4]], { factoryBrain: 'guard' }),
+  arch('runners', 'runner swarm', [['soldier', 'fill'], ['runnerRush', 3]], { factoryBrain: 'swarm' }),
+  arch('brutes', 'brute breakers', [['soldier', 'fill'], ['bruteForge', 3]], { factoryBrain: 'breach' }),
+  arch('homeguard', 'grunt home guard', [['tower', 'fill'], ['swarmFactory', 4]], { factoryBrain: 'defend' }),
 ];
 
-/**
- * M8.8 specialist archetypes (§14 M8.8 balance, item 2): one stat pushed to
- * the max now that a maxed stat costs 2× (was 3×), and the scout-swarm stress
- * army (the spec's watch item).
- */
+/** Specialist archetypes: one stat pushed to the max, and the padded full-12 mono armies ("12 fighters, make them count"). */
 export const SPECIALIST_ARCHETYPES: Archetype[] = [
-  { key: 'hugetanks', label: '2 Huge Tanks (max HP)', army: [['hugeTank', 2]] },
-  { key: 'glass', label: '3 Glass Cannons (max damage) + 1 Basic Soldier', army: [['glass', 3], ['soldier', 1]] },
-  { key: 'longbow', label: '2 Max Snipers (max range) + 2 Basic Soldiers', army: [['soldier', 2], ['maxSniper', 2]] },
-  { key: 'scoutsFilled', label: 'padded scout swarm (11 Scouts with HP raised to fill the budget)', army: [['scoutFilled', 11]] },
+  arch('hugetanks', 'Huge Tanks (max HP) + soldiers', [['hugeTank', 2], ['soldier', 'fill']]),
+  arch('glass', 'Glass Cannons (max damage)', [['glass', 6], ['soldier', 'fill']]),
+  arch('longbow', 'Max Snipers (max range)', [['soldier', 'fill'], ['maxSniper', 4]]),
+  arch('soldiersFilled', 'padded soldiers (HP and damage)', [['soldierFilled', 'fill']]),
 ];
 
-/**
- * M8.8 element and support archetypes (§6 "M8.8 example armies", §14 M8.8
- * balance, item 3), plus the fire-splash bombard and the storm-runner factories.
- */
+/** Element and support archetypes (§6 example armies at $10,000), the combo armies and the exploit search's top build. */
 export const ELEMENT_ARCHETYPES: Archetype[] = [
-  { key: 'firesquad', label: 'fire squad (4 Fire Soldiers, 1 Basic Soldier, 2 Basic Towers)', army: [['fireSoldier', 4], ['soldier', 1], ['tower', 2]] },
-  { key: 'shatter', label: 'shatter squad (5 Fire Soldiers + 2 Frost Archers)', army: [['fireSoldier', 5], ['frostArcher', 2]] },
-  { key: 'frostnest', label: 'frost nest (1 Basic Soldier holding by 2 Ice Towers and 1 Frost Sniper)', army: [['soldier', 1], ['iceTower', 2], ['frostSniper', 1]], soldierBrain: 'hold' },
-  { key: 'storm', label: 'storm crowd (7 Lightning Soldiers)', army: [['stormSoldier', 7]] },
-  { key: 'mortars', label: 'mortar battery (4 Mortar Towers)', army: [['mortar', 4]] },
-  { key: 'firenest', label: 'fire splash nest (6 Basic Walls closing in 2 Fire Mortars + 1 Basic Tower)', army: [['wall', 6], ['fireMortar', 2], ['tower', 1]], layout: 'nest' },
-  { key: 'icewall', label: 'ice wall + snipers (6 Basic Walls closing in 1 Frost Sniper, 1 Ice Tower, 1 Basic Tower)', army: [['wall', 6], ['frostSniper', 1], ['iceTower', 1], ['tower', 1]], layout: 'nest' },
-  { key: 'bombard', label: 'fire-splash bombard (1 Basic Soldier, 2 Fireball Catapults)', army: [['soldier', 1], ['catapult', 2]] },
-  { key: 'blizzard', label: 'blizzard + fire (5 Fire Soldiers and 1 Basic Soldier holding by 1 Blizzard Totem)', army: [['fireSoldier', 5], ['soldier', 1], ['blizzardTotem', 1]], soldierBrain: 'hold' },
-  { key: 'healerball', label: 'healer ball (2 Half Tanks, 1 Shield Bearer, 1 Basic Soldier, 1 Field Medic)', army: [['tank', 2], ['shieldBearer', 1], ['soldier', 1], ['medic', 1]] },
-  { key: 'buffedrush', label: 'buffed rush (6 Basic Soldiers, 1 War Drummer, 1 Wind Banner, 2 Basic Walls)', army: [['soldier', 6], ['drummer', 1], ['banner', 1], ['wall', 2]] },
-  { key: 'shieldwall', label: 'shield wall (2 Shield Bearers in front of 3 Basic Towers)', army: [['shieldBearer', 2], ['tower', 3]] },
-  { key: 'bigFriends', label: 'Huge Tank + friends (1 Huge Tank, 1 Basic Soldier and 1 Field Medic holding by 1 Basic Tower)', army: [['hugeTank', 1], ['soldier', 1], ['medic', 1], ['tower', 1]], soldierBrain: 'hold' },
-  {
-    key: 'elemfactories',
-    label: 'elemental factories (2 Basic Soldiers, an Ice Archer Nest guarding them, a Fire Brute Pack)',
-    army: [['soldier', 2], ['iceArcherNest', 1], ['fireBrutePack', 1]],
-    factoryBrain: { iceArcherNest: 'guardTank', fireBrutePack: 'rally' },
-  },
-  { key: 'stormrunners', label: 'storm runners (1 Basic Soldier, 2 burst-4 lightning Runner factories)', army: [['soldier', 1], ['stormRunners', 2]] },
-  { key: 'medictent', label: 'medic tent + tanks (2 Half Tanks, 2 Basic Soldiers, a Medic Tent guarding the tank)', army: [['tank', 2], ['soldier', 2], ['medicTent', 1]], factoryBrain: 'guardTank' },
+  arch('firesquad', 'fire squad', [['fireSoldier', 'fill'], ['tower', 4]]),
+  arch('shatter', 'shatter squad', [['fireSoldier', 'fill'], ['frostArcher', 4]]),
+  arch('frostnest', 'frost nest', [['soldier', 'fill'], ['iceTower', 4], ['frostSniper', 2]], { soldierBrain: 'hold' }),
+  arch('storm', 'storm crowd', [['stormSoldier', 'fill']]),
+  arch('mortars', 'mortar battery', [['mortar', 'fill']]),
+  arch('firenest', 'fire splash nest', [['wall', 11], ['fireMortar', 4], ['tower', 'fill']], { layout: 'seal' }),
+  arch('icewall', 'ice wall + snipers', [['wall', 11], ['frostSniper', 2], ['iceTower', 2], ['tower', 'fill']], { layout: 'seal' }),
+  arch('bombard', 'fire-splash bombard', [['soldier', 'fill'], ['catapult', 4]]),
+  arch('blizzard', 'blizzard + fire', [['fireSoldier', 'fill'], ['blizzardTotem', 2]], { soldierBrain: 'hold' }),
+  arch('healerball', 'healer ball', [['tank', 4], ['shieldBearer', 2], ['soldier', 'fill'], ['medic', 2]]),
+  arch('buffedrush', 'buffed rush', [['soldier', 'fill'], ['drummer', 2], ['banner', 2], ['wall', 4]]),
+  arch('shieldwall', 'shield wall', [['shieldBearer', 4], ['tower', 'fill']]),
+  arch('bigFriends', 'Huge Tank + friends', [['hugeTank', 2], ['soldier', 'fill'], ['medic', 2], ['tower', 2]], { soldierBrain: 'hold' }),
+  arch('elemfactories', 'elemental factories', [['soldier', 'fill'], ['iceArcherNest', 2], ['fireBrutePack', 2]], { factoryBrain: { iceArcherNest: 'guardTank', fireBrutePack: 'rally' } }),
+  arch('stormrunners', 'storm runners', [['soldier', 'fill'], ['stormRunners', 2]]),
+  arch('medictent', 'medic tent + tanks', [['tank', 4], ['soldier', 'fill'], ['medicTent', 2]], { factoryBrain: 'guardTank' }),
+  // Redesign: the combo armies (kindle, brittle, overload) and five factories.
+  arch('overload', 'overload (lightning soldiers round fire towers)', [['stormSoldier', 'fill'], ['fireTower', 4]], { soldierBrain: 'hold' }),
+  arch('icebreak', 'brittle (ice towers freeze, soldiers and snipers hit harder)', [['soldier', 'fill'], ['iceTower', 3], ['sniper', 2]], { soldierBrain: 'hold' }),
+  arch('factories5', 'five factories (grunts, archers, brutes, medics) + soldiers', [['soldier', 'fill'], ['steadyFactory', 2], ['steadyArchers', 1], ['steadyBrutes', 1], ['steadyMedics', 1]], {
+    factoryBrain: { steadyFactory: 'rally', steadyArchers: 'guardTank', steadyBrutes: 'rally', steadyMedics: 'guardTank' },
+  }),
+  arch('exploit', 'exploit search: ice splash brawlers behind glass snipers', [['iceBrawler', 2], ['glassSniper', 4], ['soldier', 'fill']]),
+  // The redesign exploit search's top two builds (kept in the pool so the prices answer them).
+  arch('exploitIce', 'exploit search: frost casters and fast runners', [['frostCaster', 2], ['fastRunner', 4]], { pad: false }),
+  // Redesign: mixed armies with a splash answer to soldier blobs (what a $10,000 player builds against a rush).
+  arch('splashline', 'splash line (soldiers in front of mortars behind walls)', [['soldier', 'fill'], ['mortar', 3], ['wall', 4]], { soldierBrain: 'hold' }),
+  arch('firebrawl', 'fire brawl (fire soldiers with fire mortars)', [['fireSoldier', 'fill'], ['fireMortar', 3]]),
+  arch('guardedcatapults', 'guarded catapults (shield bearers in front of catapults)', [['shieldBearer', 3], ['catapult', 3], ['soldier', 'fill']], { soldierBrain: 'hold' }),
+  arch('icemortars', 'ice and mortars (ice towers and mortars sealed in, soldiers holding)', [['wall', 11], ['iceTower', 2], ['mortar', 3], ['soldier', 'fill']], { layout: 'seal', soldierBrain: 'hold' }),
 ];
 
 /** The burst-1 twin of the runner swarm (not in the round robin): the burst comparison. */
-export const RUNNER_TRICKLE: Archetype = {
-  key: 'trickle',
-  label: 'runner trickle (2 Basic Soldiers, 2 burst-1 Runner Rushes swarming the weakest enemy)',
-  army: [['soldier', 2], ['runnerTrickle', 2]],
-  factoryBrain: 'swarm',
-};
+export const RUNNER_TRICKLE: Archetype = arch('trickle', 'runner trickle', [['soldier', 'fill'], ['runnerTrickle', 3]], { factoryBrain: 'swarm' });
 
-/**
- * Every round-robin archetype: the six §14 ones, the M8.5 building ones, the
- * M8.6 kind ones (the first 17: the M8.7 matrix), then the M8.8 specialist and
- * element/support ones.
- */
-export const ALL_ARCHETYPES: Archetype[] = [...ARCHETYPES, ...BUILDING_ARCHETYPES, ...KIND_ARCHETYPES, ...SPECIALIST_ARCHETYPES, ...ELEMENT_ARCHETYPES];
+/** The plain template armies, in the round robin since the $10,000 redesign: the template rush (the fighter cap of Basic Soldiers) and the template mix. */
+export const RUSH: Archetype = arch('rush', 'template rush', [['soldier', 'fill']], { pad: false });
+export const TEMPLATE_MIX: Archetype = arch('tmix', 'templates mixed', [['soldier', 'fill'], ['tower', 2], ['factory', 1], ['wall', 6]], { pad: false });
+export const TEMPLATE_ARCHETYPES: Archetype[] = [RUSH, TEMPLATE_MIX];
 
-/**
- * M8.8 "no element dominates per dollar" twins (not in the round robin): the
- * element army made `normal`, with the leftover money spent on Basic Soldiers.
- */
+/** Every round-robin archetype: the six, the building ones, the kind ones (the first 17), the specialist, element/support/combo and template ones. */
+export const ALL_ARCHETYPES: Archetype[] = [...ARCHETYPES, ...BUILDING_ARCHETYPES, ...KIND_ARCHETYPES, ...SPECIALIST_ARCHETYPES, ...ELEMENT_ARCHETYPES, ...TEMPLATE_ARCHETYPES];
+
+/** "No element dominates per dollar" twins (not in the round robin): the element army made `normal`, refilled. */
 export const NORMAL_TWINS: Record<string, Archetype> = {
-  firesquad: { key: 'firesquadNormal', label: 'fire squad made normal (5 Basic Soldiers, 2 Basic Towers)', army: [['soldier', 5], ['tower', 2]] },
-  shatter: { key: 'shatterNormal', label: 'shatter squad without ice (5 Fire Soldiers, 2 Archers, 1 Basic Soldier)', army: [['fireSoldier', 5], ['archer', 2], ['soldier', 1]] },
-  storm: { key: 'stormNormal', label: 'storm crowd made normal (9 Basic Soldiers)', army: [['soldier', 9]] },
-  frostnest: {
-    key: 'frostnestNormal',
-    label: 'frost nest made normal (2 Basic Soldiers holding by 2 Basic Towers and 1 Sniper Tower)',
-    army: [['soldier', 2], ['tower', 2], ['sniper', 1]],
-    soldierBrain: 'hold',
-  },
+  firesquad: arch('firesquadNormal', 'fire squad made normal', [['soldier', 'fill'], ['tower', 4]]),
+  shatter: arch('shatterNormal', 'shatter squad without ice', [['fireSoldier', 'fill'], ['archer', 4]]),
+  storm: arch('stormNormal', 'storm crowd made normal', [['soldier', 'fill']]),
+  frostnest: arch('frostnestNormal', 'frost nest made normal', [['soldier', 'fill'], ['tower', 4], ['sniper', 2]], { soldierBrain: 'hold' }),
 };
 
-/**
- * The dormant-factory turtle (not in the round robin): walls in front of two
- * Fortress Factories that never build. It deals no damage; unbuilt minions
- * must not keep it alive or win it the timeout (§9.3 canMake).
- */
-export const DORMANT: Archetype = {
-  key: 'dormant',
-  label: 'dormant factories (10 Basic Walls in front of 2 holding Fortress Factories)',
-  army: [['wall', 10], ['fortressFactory', 2]],
-  holdFactories: true,
-};
+/** The dormant-factory turtle (not in the round robin): walls in front of Fortress Factories that never build. */
+export const DORMANT: Archetype = arch('dormant', 'dormant factories', [['wall', 10], ['fortressFactory', 5]], { holdFactories: true });
 
-/** The "soldier rush" of the turtle-vs-rush check: 9 Basic Soldiers (M8.8: 10 cost $5,220). */
-export const RUSH: Archetype = { key: 'rush', label: 'soldier rush (9 Basic Soldiers)', army: [['soldier', 9]] };
-/** The other plain template army (watch item, measured by scripts/balance-matrix.ts, not in the round robin): 5 Basic Soldiers + 2 Basic Towers. */
-export const TEMPLATE_MIX: Archetype = { key: 'tmix', label: 'templates mixed (5 Basic Soldiers + 2 Basic Towers)', army: [['soldier', 5], ['tower', 2]] };
-
-/** M8.8: a side of damage-0 units only (pure support: not fighters, §9.4), for the elimination check. */
-export const SUPPORT_ONLY: Archetype = { key: 'supportonly', label: 'pure support (2 Field Medics, 2 War Drummers, 2 Wind Banners)', army: [['medic', 2], ['drummer', 2], ['banner', 2]] };
-
-/** The economy the matrices are priced and fought on: the default config (M8.8). */
-export const BALANCE_CONFIG: GameConfig = DEFAULT_CONFIG;
+/** A side of damage-0 units only (pure support: not fighters), for the elimination check. */
+export const SUPPORT_ONLY: Archetype = arch('supportonly', 'pure support', [['medic', 2], ['drummer', 2], ['banner', 2]]);
 
 export const unitCost = (k: UnitKey, config: GameConfig = BALANCE_CONFIG): number => computeCost(UNITS[k], config.cost, pricingOf(config)).cost;
 
+
 export function armyCost(a: Archetype, config: GameConfig = BALANCE_CONFIG): number {
-  return a.army.reduce((sum, [k, n]) => sum + n * computeCost(statsOf(a, k), config.cost, pricingOf(config)).cost, 0);
+  return a.army.reduce((sum, [k, n]) => sum + copiesCost(computeCost(statsOf(a, k), config.cost, pricingOf(config)).cost, n, statsOf(a, k).type, config.caps.copyRamp), 0);
 }
 
 /** Copies placed (`group` 'fighters' = everything but walls, §5.2 Copies). */
@@ -495,7 +621,8 @@ function deploy(a: Archetype, zone: MapZone, config: GameConfig): { units: Battl
   const fighterCells = u ? u.fighters : nest ? nest.fighters : a.layout === 'seal' ? sealFighterCells(zone.facing, front, backOnEdge) : front;
   const taken = new Set<string>();
   const take = (from: Cell[]): Cell => {
-    const cell = from.find((c) => !taken.has(`${c.col},${c.row}`))!;
+    // A layout with fewer cells than copies (a seal on a zone off the arena edge) spills into the front cells.
+    const cell = from.find((c) => !taken.has(`${c.col},${c.row}`)) ?? front.find((c) => !taken.has(`${c.col},${c.row}`))!;
     taken.add(`${cell.col},${cell.row}`);
     return cell;
   };
@@ -642,6 +769,10 @@ async function playBalanceBattle(
       yieldEveryTicks: 0,
       onFrame: (f) => {
         if (hashFrames) hashFrame(f);
+        for (const ev of f.events) {
+          // A minion may be hit before the first frame lists it: its max HP comes from its kind, not that frame.
+          if (ev.type === 'spawn' && ev.kind) maxHp.set(ev.instanceId, config.factory.minions[ev.kind].maxHealth);
+        }
         for (const [id, , , hp] of f.units) if (!maxHp.has(id)) maxHp.set(id, hp);
         for (const ev of f.events) {
           if (ev.type === 'hit') {

@@ -33,6 +33,8 @@ import {
   isFrontCell,
   placementAt,
   spentOf,
+  nextCostOf,
+  copyRampHint,
   tapCell,
   towardCentre,
   trappedKeys,
@@ -99,6 +101,7 @@ export function Placement() {
       typeOf,
       maxWallCopies: st.caps.maxWallCopies,
       maxFactoryCopies: st.caps.maxFactoryCopies,
+      copyRamp: st.caps.copyRamp,
     }),
     [palette, typeOf, priv?.budget, st.caps],
   );
@@ -120,7 +123,7 @@ export function Placement() {
 
   const placements = local ?? priv?.placement ?? [];
   latest.current = placements;
-  const spent = spentOf(placements, rules.costs);
+  const spent = spentOf(placements, rules.costs, rules);
   const copies = copiesOf(placements);
   const counts = copyCounts(placements, typeOf);
   const trapped = useMemo(() => (zone ? trappedKeys(zone, placements, typeOf) : new Set<string>()), [zone, placements, typeOf]);
@@ -343,6 +346,9 @@ export function Placement() {
               <span class="budget-fill" style={{ width: `${pct}%` }} />
             </div>
             <div class="budget-text">{budgetText(spent, rules.budget)}</div>
+            {rules.copyRamp && rules.copyRamp.pctPerCopy > 0 && (
+              <div class="dim small copy-ramp">{copyRampHint(rules.copyRamp)}</div>
+            )}
             <div class="dim small copy-counts">
               {copyCounterText(counts, rules, {
                 walls: palette.some((u) => u.stats.type === 'wall'),
@@ -374,7 +380,9 @@ export function Placement() {
               <span class="palette-title">{GROUP_TITLES[group]}</span>
               <div class="palette">
                 {items.map((u) => {
-                  const affordable = spent + u.cost <= rules.budget;
+                  // Redesign (§6 copy ramp): the next copy may cost more than the card price.
+                  const next = nextCostOf(placements, u.unitId, rules) ?? u.cost;
+                  const affordable = spent + next <= rules.budget;
                   return (
                     <button
                       key={u.unitId}
@@ -407,7 +415,10 @@ export function Placement() {
                           </span>
                         )}
                       </span>
-                      <span class="pal-cost">{formatMoney(u.cost)}</span>
+                      <span class="pal-cost" title={next > u.cost ? `Copy ${(copies.get(u.unitId) ?? 0) + 1} of the same design costs more (+${Math.round((100 * (next - u.cost)) / u.cost)}%): mix designs to save money` : undefined}>
+                        {formatMoney(next)}
+                        {next > u.cost && <span class="pal-ramp"> ↑</span>}
+                      </span>
                       <span class="pal-copies">×{copies.get(u.unitId) ?? 0}</span>
                     </button>
                   );

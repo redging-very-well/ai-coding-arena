@@ -39,7 +39,9 @@ import { repoPath } from '../util/paths.js';
 import { RateLimiter, Semaphore } from '../util/ratelimit.js';
 import type { Game } from './game.js';
 import type { GuideTemplate } from './guide.js';
-import type { DesignRecord, PlayerRecord, UnitVersionRecord } from './store.js';
+import { SCALE_VERSION, type DesignRecord, type PlayerRecord, type UnitVersionRecord } from './store.js';
+
+export { SCALE_VERSION } from './store.js';
 
 export const TEMPLATE_FILES = {
   basic_soldier: 'basic_soldier.js',
@@ -471,22 +473,15 @@ export class UnitsService {
     v: Pick<UnitVersionRecord, 'stats' | 'scaleVersion'>,
     config: GameConfig,
     opts: { template?: boolean } = {},
-  ): { error?: ValidationError; cost: ReturnType<typeof computeCost>; oldScale?: ValidationWarning } {
+  ): { error?: ValidationError; cost: ReturnType<typeof computeCost> } {
     // Per type (§6): a factory's price also follows the minion, battle length and soldier coefficients.
     const pricing = pricingOf(config);
     const priced = computeCost(v.stats, config.cost, pricing);
-    const old = !opts.template && (v.scaleVersion ?? 1) < SCALE_VERSION;
     const checked = checkStats(snapshotInput(v.stats), config.stats.bounds);
-    if (!checked.ok) {
-      const error = checked.errors[0]!;
-      // M8.8 (§6 migration): a $1,000-game unit below the new minimum gets the ×5 fix.
-      return { error: old ? oldScaleFix(error, v.stats, config) : error, cost: priced };
-    }
+    if (!checked.ok) return { error: checked.errors[0]!, cost: priced };
     if (!Number.isFinite(priced.raw) || priced.cost > config.caps.unitCost) {
       return { error: tooExpensiveError(v.stats, priced, config.caps.unitCost, config.cost, config.stats.bounds, pricing), cost: priced };
     }
-    // Legal but made for the old scale: a non-fatal hint (never silently multiplied).
-    if (old && withinOldScale(v.stats)) return { cost: priced, oldScale: oldScaleWarning(v.stats, config) };
     return { cost: priced };
   }
 
@@ -514,15 +509,6 @@ export class UnitsService {
           const wasValid = v.status === 'valid';
           // Always refresh the breakdown (it explains the curve per stat).
           v.breakdown = r.cost.breakdown;
-          // M8.8: W_OLD_SCALE follows the record (it goes once the unit is resubmitted at the new scale),
-          // and an old-scale record's price tips are worked out again: the stored ones used the old curve.
-          if (!d.isTemplate && (v.scaleVersion ?? 1) < SCALE_VERSION) {
-            const warnings = oldScaleWarnings(v.stats, v.warnings, r, config);
-            if (JSON.stringify(warnings) !== JSON.stringify(v.warnings)) {
-              v.warnings = warnings;
-              touched.add(playerId);
-            }
-          }
           if (r.cost.cost !== v.cost) {
             v.cost = r.cost.cost;
             if (v === UnitsService.latest(d)) repriced.push(`${playerId}/${d.unitId}`);
@@ -591,101 +577,11 @@ export class UnitsService {
   }
 }
 
-/** M8.8: the scale of units submitted now (§6 M8.8 migration). */
-export const SCALE_VERSION = 2;
-
-/** The $1,000 game's HP maxima per type and its damage maximum: a legal old unit within them is probably old-scale. */
-const OLD_SCALE_HEALTH: Record<StatsSnapshot['type'], number> = { soldier: 500, tower: 500, wall: 1500, factory: 1000 };
-const OLD_SCALE_DAMAGE = 60;
-
-/** Soldiers and towers attack; walls and factories have no damage to scale. */
-function attacks(stats: StatsSnapshot): boolean {
-  return stats.type === 'soldier' || stats.type === 'tower';
-}
-
-/** Whether the stats fit the $1,000 game's maxima for their type. */
-function withinOldScale(stats: StatsSnapshot): boolean {
-  return stats.maxHealth <= OLD_SCALE_HEALTH[stats.type] && (!attacks(stats) || stats.damage <= OLD_SCALE_DAMAGE);
-}
-
 /** A stored snapshot as checkStats input: its support back as the three contract fields. */
 function snapshotInput(stats: StatsSnapshot): Record<string, unknown> {
   const { support, ...rest } = stats;
   if (!support) return support === null ? { ...rest } : rest;
   return { ...rest, support: support.kind, supportPower: support.power, supportRange: support.range };
-}
-
-/** The stats multiplied by 5 the way the migration fix suggests (HP, and damage for units that attack). */
-function times5(stats: StatsSnapshot): StatsSnapshot {
-  return { ...stats, maxHealth: stats.maxHealth * 5, damage: attacks(stats) ? stats.damage * 5 : stats.damage };
-}
-
-/** "multiply maxHealth and damage by 5" (walls and factories: maxHealth only). */
-function times5Words(stats: StatsSnapshot): string {
-  return attacks(stats) ? 'multiply maxHealth and damage by 5' : 'multiply maxHealth by 5';
-}
-
-/**
- * The end of the ×5 advice sentence: what the ×5 version would cost, e.g. " (it
- * would then cost $1,850)."; over the unit cap it says so and adds the usual
- * levers, so following the advice never ends in a surprise UNIT_TOO_EXPENSIVE.
- */
-function times5Cost(stats: StatsSnapshot, config: GameConfig): string {
-  const scaled = times5(stats);
-  const pricing = pricingOf(config);
-  const priced = computeCost(scaled, config.cost, pricing);
-  const cap = config.caps.unitCost;
-  if (Number.isFinite(priced.raw) && priced.cost <= cap) return ` (it would then cost ${money(priced.cost)}).`;
-  return (
-    `. That would cost ${money(priced.cost)}, over the ${money(cap)} cap, so also make it cheaper. ` +
-    tooExpensiveLevers(scaled, priced, cap, config.cost, config.stats.bounds, pricing)
-  );
-}
-
-/** §6 M8.8 migration: a $1,000-game unit below the new minimum gets "multiply maxHealth and damage by 5". */
-function oldScaleFix(error: ValidationError, stats: StatsSnapshot, config: GameConfig): ValidationError {
-  if (error.code !== 'STAT_OUT_OF_RANGE' || (error.field !== 'maxHealth' && error.field !== 'damage')) return error;
-  return {
-    ...error,
-    fix: `This unit was built for the $1,000 game: ${times5Words(stats)}${times5Cost(stats, config)} ${error.fix}`,
-  };
-}
-
-/** W_OLD_SCALE (§6 M8.8 migration, §7 step 10). */
-function oldScaleWarning(stats: StatsSnapshot, config: GameConfig): ValidationWarning {
-  return {
-    code: 'W_OLD_SCALE',
-    field: 'maxHealth',
-    value: stats.maxHealth,
-    message: 'Made for the old game: about 5× weaker and 5× cheaper.',
-    fix: `Ask Claude to ${times5Words(stats)} (maxHealth ${stats.maxHealth} → ${stats.maxHealth * 5}${
-      attacks(stats) ? `, damage ${stats.damage} → ${stats.damage * 5}` : ''
-    }) and resubmit it${times5Cost(stats, config)}`,
-  };
-}
-
-/** Warnings an old-scale record gets afresh from the current config (the stored price tips used the old curve). */
-const PRICE_WARNINGS = new Set(['W_OLD_SCALE', 'W_STAT_NEAR_MAX', 'W_POWER_HIGH']);
-
-/**
- * An old-scale record's warnings under `config`: W_OLD_SCALE (if it still
- * applies) first, the stored warnings that aren't about the price, then the
- * near-max and power tips priced now (none for an invalid record).
- */
-function oldScaleWarnings(
-  stats: StatsSnapshot,
-  stored: readonly ValidationWarning[],
-  r: ReturnType<typeof UnitsService.checkVersion>,
-  config: GameConfig,
-): ValidationWarning[] {
-  const out = [...(r.oldScale ? [r.oldScale] : []), ...stored.filter((w) => !PRICE_WARNINGS.has(w.code))];
-  if (r.error) return out;
-  // The same tips, in the same order, as validation gives (pricing tips last).
-  const pricing = pricingOf(config);
-  const power = powerHighWarning(stats, r.cost, config.cost, config.stats.bounds, pricing);
-  if (power) out.push(power);
-  out.push(...nearMaxWarnings(stats, r.cost, config.cost, config.stats.bounds, pricing));
-  return out;
 }
 
 function notFoundUnit(unitId: unknown): Result<never> {

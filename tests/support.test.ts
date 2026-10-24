@@ -1,12 +1,12 @@
 // Support (plan §5.5, §9.4 Heals, Auras, Elimination change, M8.8): the
-// heal action's rules (§5 rule 4), the 5% heal room per window shared by every
+// heal action's rules (§5 rule 4), the 4% heal room per window shared by every
 // healer, cleanse-only, no heals in sudden death, dead stays dead, auras
 // (edge-to-edge radius, strongest per kind, kinds combine, never on the
 // source, teammates count, disabled sources keep working), the medic minion's
 // AI, damage-0 sides, and the Best Medic / Combo Master badges.
 
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CONFIG, deepMerge, type FrameDTO, type GameConfig, type PlacementDTO, type StatsSnapshot } from '@pixel-clash/shared';
+import { DEFAULT_CONFIG, deepMerge, minionPrice, pricingOf, type FrameDTO, type GameConfig, type PlacementDTO, type StatsSnapshot } from '@pixel-clash/shared';
 import { resolveAction } from '../packages/server/src/sim/actions.js';
 import { BattleEngine, runBattle, type SimUnit } from '../packages/server/src/sim/engine.js';
 import { BodyIndex, HitPipeline, noAura } from '../packages/server/src/sim/effects.js';
@@ -115,15 +115,15 @@ describe('heals (§9.4 step 7b)', () => {
     expect(m.healing ?? 0).toBe(0);
   });
 
-  it('the heal room is 5% of max HP per window, 0 for walls and factories and from sudden death', () => {
-    expect(freshHealRoom({ type: 'soldier', maxHp: 600 }, 0, C)).toBe(30);
-    expect(freshHealRoom({ type: 'minion', maxHp: 150 }, 600, C)).toBe(7.5);
+  it('the heal room is 4% of max HP per window, 0 for walls and factories and from sudden death', () => {
+    expect(freshHealRoom({ type: 'soldier', maxHp: 600 }, 0, C)).toBe(24);
+    expect(freshHealRoom({ type: 'minion', maxHp: 150 }, 600, C)).toBe(6);
     expect(freshHealRoom({ type: 'wall', maxHp: 2000 }, 0, C)).toBe(0);
     expect(freshHealRoom({ type: 'factory', maxHp: 1500 }, 0, C)).toBe(0);
     expect(freshHealRoom({ type: 'soldier', maxHp: 600 }, C.suddenDeath.startTick, C)).toBe(0);
   });
 
-  it('in battle: a medic heals at most 5% per second, and nothing from sudden death on (the action idles, keeping its cooldown)', async () => {
+  it('in battle: a medic heals at most 4% per second, and nothing from sudden death on (the action idles, keeping its cooldown)', async () => {
     // b's sniper wounds a's soldier; a's medic stands next to it and heals whatever it can.
     const config: GameConfig = deepMerge(C, { timers: { battleTicks: 900 }, suddenDeath: { startTick: 600, endTick: 100_000, damagePctPerSecond: 0 } });
     // The soldier walks into the sniper's range; the medic follows it and heals it whenever it can.
@@ -151,7 +151,7 @@ describe('heals (§9.4 step 7b)', () => {
     const result = await engine.run();
     const heals = engine.frames.flatMap((f) => f.events.map((e) => ({ t: f.t, e }))).filter((x) => x.e.type === 'heal');
     expect(heals.length).toBeGreaterThan(3);
-    // Never more than 5% of 2500 (125 HP) restored in one 60-tick window, and none from tick 600.
+    // Never more than 4% of 2500 (100 HP) restored in one 60-tick window, and none from tick 600.
     const perWindow = new Map<number, number>();
     for (const h of heals) {
       const amount = (h.e as { amount: number }).amount;
@@ -159,7 +159,7 @@ describe('heals (§9.4 step 7b)', () => {
       perWindow.set(w, (perWindow.get(w) ?? 0) + amount);
       expect(h.t).toBeLessThanOrEqual(600);
     }
-    for (const v of perWindow.values()) expect(v).toBeLessThanOrEqual(125 + 1e-9);
+    for (const v of perWindow.values()) expect(v).toBeLessThanOrEqual(100 + 1e-9);
     const medic = result.units.find((u) => u.instanceId === '0-0-1')!;
     expect(medic.healing).toBeGreaterThan(0);
     expect(medic.healer).toBe(true);
@@ -235,7 +235,7 @@ describe('the medic minion (§5.5)', () => {
       x: 100, y: 100,
       factory: {
         productionInterval: 900, timer: 0, minionsLeft: 5, canMake: 5, noSpot: false, made: 1, released: 1, kind: 'medic', burst: 1, stored: 0,
-        releaseRequested: false, order, orderTargetId, storedLost: 0, rally: { x: 600, y: 100 }, holding: false, bodyCost: 247, minionValue: 205,
+        releaseRequested: false, order, orderTargetId, storedLost: 0, rally: { x: 600, y: 100 }, holding: false, bodyCost: 247, minionValue: 248,
         spawnedSinceFrame: false, minionsLost: 0,
       },
     });
@@ -243,9 +243,11 @@ describe('the medic minion (§5.5)', () => {
     body('0-0-9-m1', minionStats(config, '#ffffff', 'medic') as StatsSnapshot, { type: 'minion', minion: { factory: f, n: 1, kind: 'medic' }, ...over });
   const world = (living: SimUnit[], healsOff = false) => ({ living, safeCenter: { x: 400, y: 400 }, safeRadius: 9999, rangeTolerance: 0.5, lookup: (id: string) => living.find((u) => u.id === id), healsOff });
 
-  it('is a preset healer: 150 HP, damage 0, heal 40 within 60 px, priced as a $410 soldier ($205 per minion)', () => {
+  it('is a preset healer: 300 HP, damage 0, heal 60 within 60 px, priced as a $496 soldier ($248 per minion)', () => {
     const s = minionStats(config, '#ffffff', 'medic');
-    expect(s).toMatchObject({ name: 'Medic', maxHealth: 150, damage: 0, range: 20, speed: 1.4, size: 7, element: 'normal', support: { kind: 'heal', power: 40, range: 60 } });
+    expect(s).toMatchObject({ name: 'Medic', maxHealth: 300, damage: 0, range: 20, speed: 1.4, size: 7, element: 'normal', support: { kind: 'heal', power: 60, range: 60 } });
+    expect(minionPrice(config.cost, pricingOf(config), 'medic')).toEqual({ minionCost: 496, minionValue: 248 });
+    expect(minionPrice(config.cost, pricingOf(config), 'medic', 'fire')).toEqual({ minionCost: 496, minionValue: 248 }); // no element
     expect(minionStats(config, '#ffffff', 'medic', 'fire').element).toBe('normal'); // medics ignore minionElement
     expect(minionStats(config, '#ffffff', 'grunt', 'fire').element).toBe('fire');
   });

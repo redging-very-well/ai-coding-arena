@@ -4,14 +4,16 @@
 // The constructor sets the stats; the game reads them once and prices the unit.
 //
 // Cost = (50 + each stat's price) * max(1, 60 / attackCooldown) * power * splash * element,
-// where a stat's price is its normal price (maxHealth*0.3, damage*1.5, range*1.38,
-// speed*66, (size - 6)*8) times 1 + (stat/max)^2: a maxed stat costs 2x.
-// power = 1 + 0.6 * (maxHealth/2500) * (damage/300) = 1.0375 here.
-//      = (50 + 199.22 + 119.53 + 235.27 + 0 + 84.9) * (60 / 45) * 1.0375 = 688.92 * 1.333... * 1.0375 = 953.01  ->  $954
+// where a stat's price is its normal price (maxHealth*0.1875, damage*1.875, range*1.38,
+// speed*90, (size - 6)*8) times 1 + (stat/max)^2: a maxed stat costs 2x.
+// power = 1 + 2 * (maxHealth/4000) * (damage/240) = 1.18 here.
+//      = (50 + 245.25 + 147.15 + 235.27 + 0 + 84.9) * (60 / 45) * 1.18 = 762.57 * 1.333... * 1.18 = 1199.78  ->  $1,200
+// Towers out-range soldiers: a tower can reach 300 px, a soldier only 160.
 //
-// Options (all optional): this.element ('fire', 'ice' or 'lightning': x1.2), this.splashRadius
-// (0-80 px: x1.53 at 40), or a support: this.support = 'heal' with this.supportPower = 80 (HP per
+// Options (all optional): this.element ('fire' or 'lightning': x1.3, 'ice': x1.75), this.splashRadius
+// (0-80 px: x1.6 at 40), or a support: this.support = 'heal' with this.supportPower = 128 (HP per
 // heal) and this.supportRange = 160 (reach) makes a Healing Shrine (return { action: 'heal', targetId }).
+// Shots at a MOVING enemy can miss (up to 20% at full speed): standing and frozen enemies are easy.
 //
 // No imports, no timers, no network, no async.
 
@@ -19,15 +21,15 @@ export default class BasicTower {
   constructor() {
     this.name = 'Basic Tower';
     this.type = 'tower';        // towers never move
-    this.maxHealth = 625;       // 50-2500
-    this.damage = 75;           // 0-300 per hit
+    this.maxHealth = 1200;      // 80-4000
+    this.damage = 72;           // 0-240 per hit
     this.range = 140;           // 20-300 px, EDGE to edge; above 50 it fires homing shots
     this.speed = 0;             // towers: always 0
     this.attackCooldown = 45;   // faster than 60 multiplies the whole cost (here x1.33)
     this.color = '#FF9933';     // "#RRGGBB"
     this.size = 14;             // 6-20 px body radius (hitbox and drawn size); $8 per px above 6 (more near the max)
-    // this.element = 'ice';    // 'normal', 'fire', 'ice' or 'lightning' (x1.2 on the price)
-    // this.splashRadius = 40;  // 0-80 px: other enemies near the target take half (x1.53 at 40)
+    // this.element = 'ice';    // 'normal', 'fire' or 'lightning' (x1.3 on the price) or 'ice' (x1.75)
+    // this.splashRadius = 40;  // 0-80 px: other enemies near the target take half (x1.6 at 40)
     this.shape = 'square';      // circle, square, triangle or diamond (just for looks)
   }
 

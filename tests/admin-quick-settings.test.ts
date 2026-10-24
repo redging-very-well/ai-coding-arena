@@ -3,7 +3,7 @@
 // refusal mapping and the live cost preview.
 
 import { describe, expect, it } from 'vitest';
-import { ConfigSchema, DEFAULT_CONFIG, computeCost, safeParseConfig, type GameConfig } from '@pixel-clash/shared';
+import { ConfigSchema, DEFAULT_CONFIG, computeCost, copiesCost, safeParseConfig, type GameConfig } from '@pixel-clash/shared';
 import { configDiff } from '../packages/client/src/admin/configDiff.js';
 import {
   BASIC_SOLDIER,
@@ -42,7 +42,7 @@ describe('quick settings field table', () => {
       expect(f.help.length).toBeGreaterThan(0);
     }
     expect(new Set(QUICK_FIELDS.map((f) => f.path)).size).toBe(QUICK_FIELDS.length);
-    expect(QUICK_GROUPS.map((g) => g.title)).toEqual(['Match', 'Economy', 'Timers', 'Costs', 'Walls & factories', 'Elements & support', 'Scoring', 'Sudden death']);
+    expect(QUICK_GROUPS.map((g) => g.title)).toEqual(['Match', 'Economy', 'Timers', 'Costs', 'Walls & factories', 'Elements & support', 'Movement', 'Scoring', 'Sudden death']);
   });
 
   it('has the M8.8 economy, element and support knobs (§10.6)', () => {
@@ -150,12 +150,12 @@ describe('quick settings edits → patch', () => {
 
   it('battle length drags the sudden-death end along when they were equal', () => {
     const base = cfg();
-    const longer = applyField(base, 'timers.battleTicks', 7200);
-    expect(longer.suddenDeath.endTick).toBe(7200);
-    expect(configDiff(base, longer)).toEqual({ timers: { battleTicks: 7200 }, suddenDeath: { endTick: 7200 } });
+    const longer = applyField(base, 'timers.battleTicks', 8400);
+    expect(longer.suddenDeath.endTick).toBe(8400);
+    expect(configDiff(base, longer)).toEqual({ timers: { battleTicks: 8400 }, suddenDeath: { endTick: 8400 } });
     // A custom end (not equal to the battle length) is left alone.
     const custom = setPath(base, 'suddenDeath.endTick', 5000);
-    expect(applyField(custom, 'timers.battleTicks', 7200).suddenDeath.endTick).toBe(5000);
+    expect(applyField(custom, 'timers.battleTicks', 8400).suddenDeath.endTick).toBe(5000);
   });
 });
 
@@ -184,9 +184,9 @@ describe('quick settings validation', () => {
     expect(r.byField['scoring.valueBonusMax']?.length).toBeGreaterThan(0);
     expect(r.other).toEqual([]);
     // Object-level rule: start must be before end → shown on the sudden-death fields.
-    const late = setPath(cfg(), 'suddenDeath.startTick', 6000);
+    const late = setPath(cfg(), 'suddenDeath.startTick', 7200);
     const s = validateDraft(late);
-    expect(s.byField['suddenDeath.startTick']?.join(' ')).toMatch(/must start before the circle finishes shrinking \(at 90 s\), which is the end of the battle/);
+    expect(s.byField['suddenDeath.startTick']?.join(' ')).toMatch(/must start before the circle finishes shrinking \(at 120 s\), which is the end of the battle/);
     // ...only on the start field, and on Battle length too since the end follows it.
     expect(s.byField['suddenDeath.damagePctPerSecond']).toBeUndefined();
     expect(s.byField['timers.battleTicks']).toEqual(s.byField['suddenDeath.startTick']);
@@ -286,24 +286,26 @@ describe('quick settings cost preview', () => {
     expect(by.basicSoldier!.cost).toBe(computeCost(BASIC_SOLDIER, DEFAULT_CONFIG.cost).cost);
     expect(by.basicTower!.cost).toBe(computeCost(BASIC_TOWER, DEFAULT_CONFIG.cost).cost);
     expect(by.bigTank!.cost).toBe(computeCost(BIG_TANK, DEFAULT_CONFIG.cost).cost);
-    // The worked examples in the starter kit's CLAUDE.md.
-    expect(by.basicSoldier!.cost).toBe(529);
-    expect(by.basicTower!.cost).toBe(954);
-    expect(by.bigTank!.cost).toBe(2462);
+    // The $10,000 redesign templates and the Huge Tank (plan §6 reference units).
+    expect(by.basicSoldier!.cost).toBe(807);
+    expect(by.basicTower!.cost).toBe(1200);
+    expect(by.bigTank!.cost).toBe(2868);
     expect(by.basicSoldier!.overCap || by.basicTower!.overCap || by.bigTank!.overCap).toBe(false);
     // All maxed with the fastest cooldown is far over the cap.
     expect(by.allMax!.overCap).toBe(true);
-    expect(by.allMax!.stats).toMatchObject({ maxHealth: 2500, damage: 300, range: 300, speed: 5, size: 20, attackCooldown: 10 });
-    expect(p.army).toEqual({ soldiers: 4, towers: 3, total: 4 * 529 + 3 * 954, overBudget: false });
+    // A soldier: its range stops at the soldier bound (160), not the tower bound (300).
+    expect(by.allMax!.stats).toMatchObject({ maxHealth: 4000, damage: 240, range: 160, speed: 5, size: 20, attackCooldown: 10 });
+    expect(p.army).toEqual({ soldiers: 5, towers: 3, total: 3 * 807 + 929 + 1050 + 3 * 1200, overBudget: false }); // copies 4 and 5 ramp (+15%, +30%)
     // M8.8 reference units (§6): element, splash and support prices.
-    expect(by.fireSoldier!.cost).toBe(635);
-    expect(by.mortarTower!.cost).toBe(1179);
-    expect(by.fieldMedic!.cost).toBe(759);
-    expect(by.warDrummer!.cost).toBe(603);
-    expect(by.medicFactory!.cost).toBe(1292);
+    expect(by.fireSoldier!.cost).toBe(1049);
+    expect(by.mortarTower!.cost).toBe(1374);
+    expect(by.fieldMedic!.cost).toBe(892);
+    expect(by.warDrummer!.cost).toBe(869);
+    // The Basic Factory (2,400 HP, every 600 ticks) making medics: $247 body + 11 × $248.
+    expect(by.medicFactory!.cost).toBe(247 + 11 * 248);
     expect(p.rows.every((r) => r.outOfBounds === null)).toBe(true);
-    expect(p.cap).toBe(2500);
-    expect(p.budget).toBe(5000);
+    expect(p.cap).toBe(3000);
+    expect(p.budget).toBe(10000);
   });
 
   it('follows the draft coefficients and caps', () => {
@@ -314,13 +316,13 @@ describe('quick settings cost preview', () => {
     expect(by.basicTower!.cost).toBe(computeCost(BASIC_TOWER, draft.cost).cost);
     expect(by.bigTank!.overCap).toBe(true);
     expect(by.basicTower!.template).toBe(true);
-    expect(p.army.total).toBe(4 * by.basicSoldier!.cost + 3 * by.basicTower!.cost);
-    expect(p.army.overBudget).toBe(p.army.total > 5000);
+    expect(p.army.total).toBe(copiesCost(by.basicSoldier!.cost, 5, 'soldier', draft.caps.copyRamp) + copiesCost(by.basicTower!.cost, 3, 'tower', draft.caps.copyRamp));
+    expect(p.army.overBudget).toBe(p.army.total > draft.caps.budget);
     expect(costPreview(applyField(cfg(), 'caps.budget', 900)).army.overBudget).toBe(true);
   });
 
   it('flags a starter template outside the draft stat bounds (the server refuses that too)', () => {
-    expect(costPreview(DEFAULT_CONFIG).rows.every((r) => r.outOfBounds === null)).toBe(true);
+    expect(costPreview(DEFAULT_CONFIG).rows.filter((r) => r.outOfBounds !== null).map((r) => [r.key, r.outOfBounds])).toEqual([]);
     const p = costPreview(setPath(cfg(), 'stats.bounds.range.max', 100));
     const tower = p.rows.find((r) => r.key === 'basicTower')!;
     expect(tower.overCap).toBe(false);

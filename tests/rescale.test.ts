@@ -1,9 +1,13 @@
 // The ×5 rescale on its own changes no outcome (plan §9.4 Scoring and
 // reports, §14 rescale.test.ts, M8.8): HP, damage, prices and minion stats
-// are all ×5, sudden death is a percentage and the geometry is unchanged, so
-// every time-to-kill is identical. Run the same battle (k = 2, no elements,
-// no support) at the ×1 scale and at ×5: identical positions, flags, events
-// and ranking, with HP and damage exactly ×5.
+// are all ×5, sudden death and the heal room are percentages and the geometry
+// is unchanged, so every time-to-kill is identical. Run the same battle
+// (k = 2, no elements, no support) at the ×1 scale and at ×5: identical
+// positions, flags, events and ranking, with HP and damage exactly ×5.
+//
+// The redesign's new mechanics stay on here (building routing, the accuracy
+// roll): both are geometry (who moved how far, where the buildings stand),
+// never HP or damage, so they must be scale-invariant too.
 
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG, deepMerge, type FrameDTO, type GameConfig, type PlacementDTO, type StatsSnapshot } from '@pixel-clash/shared';
@@ -13,11 +17,22 @@ import { LEGACY_ECONOMY_CONFIG } from './helpers/legacyEconomy.js';
 
 const at = (col: number, row: number, unitId: string): PlacementDTO => ({ unitId, col, row });
 
-/** The M8.7 minions at ×1 (the ×5 ones are LEGACY_ECONOMY_CONFIG's: exactly ×5, brute 500). */
-const X1_MINIONS = { grunt: { maxHealth: 40, damage: 5 }, archer: { maxHealth: 24, damage: 5 }, runner: { maxHealth: 28, damage: 4 }, brute: { maxHealth: 100, damage: 8 } };
+/** The M8.7 minions at ×1; X5 gets every one of them at exactly ×5 (HP, damage, heal). */
+const X1_MINIONS = {
+  grunt: { maxHealth: 40, damage: 5 },
+  archer: { maxHealth: 24, damage: 5 },
+  runner: { maxHealth: 28, damage: 4 },
+  brute: { maxHealth: 100, damage: 8 },
+  medic: { maxHealth: 30, damage: 0, heal: 8 },
+};
+const times5 = <T extends Record<string, number>>(m: T): T => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v * 5])) as T;
+const X5_MINIONS = Object.fromEntries(Object.entries(X1_MINIONS).map(([k, m]) => [k, times5(m)])) as typeof X1_MINIONS;
+// Both configs are built explicitly from the same base (the k = 2 legacy
+// pricing, so prices scale ×5 too) and differ only in the minion numbers.
 const battle = { timers: { battleTicks: 4200 }, suddenDeath: { startTick: 2400, endTick: 4200 } };
-const X1: GameConfig = deepMerge(LEGACY_ECONOMY_CONFIG, { ...battle, factory: { minions: X1_MINIONS } });
-const X5: GameConfig = deepMerge(LEGACY_ECONOMY_CONFIG, battle);
+const BASE: GameConfig = deepMerge(LEGACY_ECONOMY_CONFIG, battle);
+const X1: GameConfig = deepMerge(BASE, { factory: { minions: X1_MINIONS } });
+const X5: GameConfig = deepMerge(BASE, { factory: { minions: X5_MINIONS } });
 
 function army(scale: 1 | 5, seat: number, zone: 'TL' | 'BR', variant: number): FakePlayerSpec {
   const k = (s: StatsSnapshot) => ({ ...s, maxHealth: s.maxHealth * scale, damage: s.damage * scale }) as StatsSnapshot;
@@ -62,6 +77,8 @@ describe('the ×5 rescale changes no battle (§9.4)', () => {
     expect(a.frames.length).toBe(b.frames.length);
     expect(a.frames.flatMap((f) => f.events).some((e) => e.type === 'death')).toBe(true);
     expect(a.frames.flatMap((f) => f.events).some((e) => e.type === 'spawn' && e.factoryId)).toBe(true);
+    // The accuracy roll really played: some shots at moving bodies missed (in both, identically).
+    expect(a.frames.flatMap((f) => f.events).some((e) => e.type === 'miss')).toBe(true);
     for (let i = 0; i < a.frames.length; i++) {
       const fa = a.frames[i]!;
       const fb = b.frames[i]!;
@@ -80,17 +97,45 @@ describe('the ×5 rescale changes no battle (§9.4)', () => {
     expect(b.ranking.map((r) => r.damage)).toEqual(a.ranking.map((r) => Math.round(r.damage * 5)));
   });
 
-  it('the default (M8.8) config only differs from the ×5 rescale in the economy, the brute and the grunt', () => {
-    const d = DEFAULT_CONFIG.factory.minions;
-    for (const k of ['archer', 'runner'] as const) {
-      expect(d[k].maxHealth).toBe(X1_MINIONS[k].maxHealth * 5);
-      expect(d[k].damage).toBe(X1_MINIONS[k].damage * 5);
+  it('the two configs are the redesign default but for the pricing, the battle length and the minion scale', () => {
+    // The new mechanics are on in both (so the battle above exercises them).
+    for (const c of [X1, X5]) {
+      expect(c.sim.routeRoundBuildings).toBe(true);
+      expect(c.accuracy).toEqual(DEFAULT_CONFIG.accuracy);
+      expect(c.elements).toEqual(DEFAULT_CONFIG.elements);
+      expect(c.support).toEqual(DEFAULT_CONFIG.support);
     }
-    expect([d.brute.maxHealth, d.brute.damage]).toEqual([550, 40]);
-    // The M8.8 balance retune (§14): grunt HP 200 → 180.
-    expect([d.grunt.maxHealth, d.grunt.damage]).toEqual([180, X1_MINIONS.grunt.damage * 5]);
-    expect(LEGACY_ECONOMY_CONFIG.factory.minions.grunt.maxHealth).toBe(X1_MINIONS.grunt.maxHealth * 5);
-    expect(DEFAULT_CONFIG.suddenDeath).toEqual(LEGACY_ECONOMY_CONFIG.suddenDeath);
-    expect(DEFAULT_CONFIG.stats.bounds).toEqual(LEGACY_ECONOMY_CONFIG.stats.bounds);
+    for (const k of Object.keys(X1_MINIONS) as (keyof typeof X1_MINIONS)[]) {
+      expect(X5.factory.minions[k]).toMatchObject(times5(X1_MINIONS[k]));
+      // Everything but HP, damage and heal is the default's.
+      expect({ ...X5.factory.minions[k], ...X1_MINIONS[k] }).toEqual(X1.factory.minions[k]);
+    }
+  });
+});
+
+describe('how the redesign default differs from the M8.8 ×5 world', () => {
+  it('a longer battle, minions at ×2 HP and ×0.8 damage, gentler shatter, new synergies, accuracy and building routing', () => {
+    const d = DEFAULT_CONFIG;
+    // Battle length: 90 s → 120 s; sudden death from 75 s (was 50 s to 90 s).
+    expect(d.timers.battleTicks).toBe(7200);
+    expect([d.suddenDeath.startTick, d.suddenDeath.endTick, d.suddenDeath.damagePctPerSecond]).toEqual([4500, 7200, 10]);
+    // Economy: a $10,000 budget, $3,000 unit cap, and the copy ramp.
+    expect([d.caps.budget, d.caps.unitCost, d.caps.maxCopies, d.caps.maxFactoryCopies, d.caps.maxWallCopies]).toEqual([10000, 3000, 12, 5, 16]);
+    expect(d.caps.copyRamp).toEqual({ freeCopies: 3, pctPerCopy: 15 });
+    expect([d.factory.maxMinionsPerFactory, d.factory.maxAlivePerFactory, d.factory.maxAlivePerPlayer]).toEqual([12, 4, 12]);
+    // Minions: time-to-kill ×2.5 against M8.8 (HP ×2, damage ×0.8); the runner was retuned on top.
+    const m88 = { grunt: [180, 25], archer: [120, 25], brute: [550, 40] } as const;
+    for (const [k, [hp, dmg]] of Object.entries(m88) as [keyof typeof m88, readonly [number, number]][]) {
+      expect([d.factory.minions[k].maxHealth, d.factory.minions[k].damage]).toEqual([hp * 2, dmg * 0.8]);
+    }
+    expect([d.factory.minions.runner.maxHealth, d.factory.minions.runner.damage]).toEqual([480, 24]);
+    expect([d.factory.minions.medic.maxHealth, d.factory.minions.medic.heal]).toEqual([300, 60]);
+    // Elements: shatter +40% (was +50%), overload 3 zaps, and the kindle / brittle synergies (+25%).
+    expect([d.elements.shatterPct, d.elements.kindlePct, d.elements.brittlePct, d.elements.lightning.burningExtraHops]).toEqual([40, 25, 25, 2]);
+    // Heals: 4% of max HP per second (was 5%).
+    expect(d.support.healRoomPctPerSecond).toBe(4);
+    // Moving targets dodge up to 20% of ranged shots; towers and factories are solid for routing.
+    expect(d.accuracy.missMaxPct).toBe(20);
+    expect(d.sim.routeRoundBuildings).toBe(true);
   });
 });

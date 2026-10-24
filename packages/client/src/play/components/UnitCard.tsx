@@ -60,7 +60,6 @@ export function UnitCard(props: UnitCardProps) {
   const chip = factory ? factoryKindChip(u.stats) : null;
   const minion = chip ? minionLook(u.stats.color, chip.kind) : null;
   const chips = combatChips(u.stats);
-  const oldScale = (u.scaleVersion ?? 2) < 2 || u.warnings.some((w) => w.code === 'W_OLD_SCALE');
   const seen = () => props.onSeen?.();
 
   const stop = (fn: () => void) => (e: Event) => {
@@ -119,11 +118,6 @@ export function UnitCard(props: UnitCardProps) {
             {isSupportOnly(u.stats) && (
               <span class="tag support-only" title="Damage 0: it helps, it can't win on its own">
                 support only
-              </span>
-            )}
-            {oldScale && (
-              <span class="tag old-scale" title="Made for the old $1,000 game: its numbers are 5× too small now">
-                Old game numbers: ask Claude to ×5
               </span>
             )}
             {u.warnings.length > 0 && (

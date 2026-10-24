@@ -168,7 +168,7 @@ describe('NO_FIGHTERS (§5.2 Fighters)', () => {
     const soldiers = placed.filter((p) => p.unitId === 'basic-soldier');
     expect(soldiers.length).toBeGreaterThan(0);
     for (const p of soldiers) expect(walls.some((w) => w.col === p.col && w.row === p.row)).toBe(false);
-    expect(s.game.round.spent(a.id)).toBeLessThanOrEqual(5000);
+    expect(s.game.round.spent(a.id)).toBeLessThanOrEqual(10000);
   }, T);
 
   it('the selection fallback adds a starter fighter to a walls-only pick', async () => {
@@ -184,7 +184,7 @@ describe('NO_FIGHTERS (§5.2 Fighters)', () => {
 });
 
 describe('placement: copy caps per group and W_TRAPPED (§5.2 Copies, §9.3)', () => {
-  it('≤ 12 fighters, ≤ 2 factories, ≤ 12 walls; counts and W_TRAPPED in the result', async () => {
+  it('≤ 12 fighters, ≤ 5 factories, ≤ 16 walls; counts and W_TRAPPED in the result', async () => {
     const s = await boot();
     const a = await newPlayer(s.url, 'Ann');
     const b = await newPlayer(s.url, 'Ben');
@@ -193,29 +193,30 @@ describe('placement: copy caps per group and W_TRAPPED (§5.2 Copies, §9.3)', (
     await pick(a.client, ['basic-soldier', 'basic-wall', 'basic-factory']);
     await pick(b.client, ['basic-soldier']);
     await admin.post('/admin/phase/next'); // → PLACEMENT
-    expect((await state(a.client)).me!.copyCaps).toEqual({ fighters: 12, factories: 2, walls: 12 });
+    expect((await state(a.client)).me!.copyCaps).toEqual({ fighters: 12, factories: 5, walls: 16 });
 
     const all: Array<[number, number]> = [];
     for (let row = 0; row < 6; row++) for (let col = 0; col < 6; col++) all.push([col, row]);
 
-    // 13 walls: over the wall cap (checked before the budget).
-    const tooManyWalls = await place(a.client, cells('basic-wall', all.slice(0, 13)));
-    expect(tooManyWalls.body.error).toMatchObject({ code: 'TOO_MANY_COPIES', details: { group: 'walls', max: 12 } });
+    // 17 walls: over the wall cap (checked before the budget).
+    const tooManyWalls = await place(a.client, cells('basic-wall', all.slice(0, 17)));
+    expect(tooManyWalls.body.error).toMatchObject({ code: 'TOO_MANY_COPIES', details: { group: 'walls', max: 16 } });
 
     // 13 fighters.
     const tooManyFighters = await place(a.client, cells('basic-soldier', all.slice(0, 13)));
     expect(tooManyFighters.body.error).toMatchObject({ code: 'TOO_MANY_COPIES', details: { group: 'fighters', max: 12 } });
 
-    // A 3rd factory.
-    const tooManyFactories = await place(a.client, cells('basic-factory', all.slice(0, 3)));
-    expect(tooManyFactories.body.error).toMatchObject({ code: 'TOO_MANY_COPIES', details: { group: 'factories', max: 2 } });
+    // A 6th factory.
+    const tooManyFactories = await place(a.client, cells('basic-factory', all.slice(0, 6)));
+    expect(tooManyFactories.body.error).toMatchObject({ code: 'TOO_MANY_COPIES', details: { group: 'factories', max: 5 } });
 
-    // 12 walls + 6 soldiers is fine: walls don't use fighter slots.
-    const fine = await place(a.client, [...cells('basic-wall', all.slice(0, 12)), ...cells('basic-soldier', all.slice(12, 18))]);
+    // 16 walls + 6 soldiers is fine: walls don't use fighter slots.
+    const fine = await place(a.client, [...cells('basic-wall', all.slice(0, 16)), ...cells('basic-soldier', all.slice(16, 22))]);
     expect(fine.status).toBe(200);
     const body = fine.body as PlacementResponse;
-    expect(body.counts).toEqual({ fighters: 6, factories: 0, walls: 12 });
-    expect(body.spent).toBe(12 * 149 + 6 * 529);
+    expect(body.counts).toEqual({ fighters: 6, factories: 0, walls: 16 });
+    // Walls never ramp; soldier copies 4-6 cost +15%, +30%, +45% ($929, $1,050, $1,171).
+    expect(body.spent).toBe(16 * 149 + 3 * 807 + 929 + 1050 + 1171);
     expect(body.warnings).toEqual([]);
 
     // A soldier boxed in by four walls: placed, with a W_TRAPPED warning.
@@ -268,10 +269,10 @@ describe('privacy with walls and factories (§3)', () => {
       const reveal = wsScreen.next((m) => m.type === 'battle:reveal');
       expect((await admin.post('/admin/start', { force: true })).body.phase).toBe('BATTLE');
       const r = ((await reveal) as { data: BattleRevealDTO }).data;
-      expect(r.minion).toMatchObject({ value: 148, stats: { type: 'minion', maxHealth: 180 } });
+      expect(r.minion).toMatchObject({ value: 177, stats: { type: 'minion', maxHealth: 360 } });
       const a = r.players.find((p) => p.playerId === alice.id)!;
       expect(a.units.map((u) => u.stats.type).sort()).toEqual(['factory', 'soldier', 'wall']);
-      expect(a.units.find((u) => u.unitId === facId)!.stats.productionInterval).toBe(900);
+      expect(a.units.find((u) => u.unitId === facId)!.stats.productionInterval).toBe(600);
       // The factory's body price under the live config (the /screen bars count body + minions it can still make).
       expect(a.units.find((u) => u.unitId === facId)!.bodyCost).toBe(247);
       expect(a.units.find((u) => u.unitId === 'basic-soldier')!.bodyCost).toBeUndefined();
@@ -319,7 +320,7 @@ describe('minion kinds stay hidden until START (M8.6)', () => {
       expect(fac.stats).toMatchObject({ produces: 'archer', burst: 3 });
       expect(fac.bodyCost).toBe(247);
       expect(Object.keys(r.minions!)).toEqual(['archer']);
-      expect(r.minions!.archer).toMatchObject({ value: 195, stats: { name: 'Archer', range: 110 } });
+      expect(r.minions!.archer).toMatchObject({ value: 216, stats: { name: 'Archer', range: 110 } });
     } finally {
       wsBob.close();
       wsScreen.close();

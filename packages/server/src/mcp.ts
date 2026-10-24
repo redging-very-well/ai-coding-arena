@@ -14,7 +14,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { BADGES, money, type Result, type ServiceError, type SpriteSpec, type ValidationResult } from '@pixel-clash/shared';
+import { BADGES, DEFAULT_CONFIG, money, type Result, type ServiceError, type SpriteSpec, type ValidationResult } from '@pixel-clash/shared';
 import { bearerOf } from './routes/common.js';
 import type { Game } from './services/game.js';
 import { buildContract, buildRules } from './services/rules.js';
@@ -31,7 +31,7 @@ export const MCP_INSTRUCTIONS = [
   'Call get_unit_contract once to learn the unit format, and get_rules for costs and limits.',
   'Four unit types: soldier, tower, wall, factory (see get_unit_contract). Walls block everyone and never attack; factories build minions (grunt, archer, runner, brute or medic via this.produces) and their update() gives them orders (rally, or command attack/defend/swarm/guard) and can save them up for a burst (this.burst, release). A player needs at least one unit that attacks: walls and damage-0 support units alone never win.',
   'Units can have an element (fire, ice, lightning), splash (splashRadius) and one support (heal, haste, might, shield); factories can give minions an element (this.minionElement). See get_unit_contract.',
-  'Numbers are 5x the old game (by default $5,000 per army, up to $2,500 per unit, HP 50-2,500, damage 0-300; get_rules has the exact ones). Never reuse $1,000-game numbers; a W_OLD_SCALE warning means a unit was made for the old game: multiply its maxHealth and damage by 5 (walls and factories: maxHealth), and if that goes over the unit cap, follow the fix in the warning to make it cheaper.',
+  `The $10,000 game: by default $${DEFAULT_CONFIG.caps.budget.toLocaleString('en-US')} per army, at most ${DEFAULT_CONFIG.caps.maxCopies} fighters (12 fighters, make them count), up to $${DEFAULT_CONFIG.caps.unitCost.toLocaleString('en-US')} per unit, HP ${DEFAULT_CONFIG.stats.bounds.maxHealth.min}-${DEFAULT_CONFIG.stats.bounds.maxHealth.max.toLocaleString('en-US')}, damage 0-${DEFAULT_CONFIG.stats.bounds.damage.max}; get_rules has the exact numbers and the copy ramp (more copies of ONE design cost more each: mix designs). Never reuse numbers from older games.`,
   'Always validate_unit before submit_unit, and fix problems using each error\'s "fix" text. validate_unit checks everything (sprite rows included), so never run scripts or shell commands to check a unit file.',
   'submit_unit works only in the PLAN phase (get_game_state shows submissionsOpen). Otherwise keep the unit validated and say "we\'ll send it when Plan starts".',
   'Players can also edit their own units on the web page. So before changing an existing unit ALWAYS call get_unit_source for its latest source and version, change that code, and pass unitId plus baseVersion (that version) to validate_unit and submit_unit, even if you rename it.',
@@ -241,7 +241,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     'list_my_units',
     {
       title: 'My units',
-      description: 'All of the player\'s designs with unitId, stats, cost, breakdown, version, status (valid/invalid + error), warnings (W_OLD_SCALE = made for the old $1,000 game), selected and last-battle summary (incl. healing).',
+      description: 'All of the player\'s designs with unitId, stats, cost, breakdown, version, status (valid/invalid + error), warnings, selected and last-battle summary (incl. healing).',
       inputSchema: { apiKey: API_KEY },
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },

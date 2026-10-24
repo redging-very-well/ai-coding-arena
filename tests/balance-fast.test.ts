@@ -7,10 +7,10 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '@pixel-clash/shared';
 import { mulberry32 } from '../packages/server/src/sim/prng.js';
-import { allPairs, archetypeByKey, balanceConfig, jobKey, pairJobs } from './helpers/balance.js';
+import { ALL_ARCHETYPES, allPairs, archetypeByKey, balanceConfig, jobKey, pairJobs } from './helpers/balance.js';
 import { configKey, engineHash } from './helpers/balanceCache.js';
 import { cellProbability, exactCell, sequential, spreadOrder, type Cell, type Outcome } from './helpers/balanceFast.js';
-import { testRules, type MatrixDef, type Rule } from './helpers/balanceRules.js';
+import { FULL_DOMINANCE_EXCEPTIONS, STATED, WATCH_ITEMS, testRules, type MatrixDef, type Rule } from './helpers/balanceRules.js';
 
 describe('early stopping (helpers/balanceFast.ts)', () => {
   it('exact cell bounds: decided only when no unplayed outcome can change it', () => {
@@ -89,12 +89,24 @@ describe('early stopping (helpers/balanceFast.ts)', () => {
   });
 
   it("the CLI's rules are the balance test's: every matrix, cap, stated outcome and shape check", () => {
+    // A custom selection is its own matrix (the redesign dropped the old 6, 13 and 17 sub-matrices).
     const keys = ['bricks', 'templates', 'tanks', 'turtle', 'scouts', 'snipers'];
     const { matrices, rules } = testRules(keys);
-    expect(matrices.map((m) => m.name)).toEqual(['6']);
+    expect(matrices.map((m) => m.name)).toEqual(['selected']);
     expect(rules.filter((r) => r.kind === 'cap')).toHaveLength(6);
-    expect(rules.filter((r) => r.kind === 'struct')).toHaveLength(12); // the six don't need a losing matchup
-    expect(rules.filter((r) => r.kind === 'cells').map((r) => r.label)).toHaveLength(5);
+    expect(rules.filter((r) => r.kind === 'struct')).toHaveLength(18); // beats someone, not everyone, loses to someone
+    expect(rules.filter((r) => r.kind === 'cells').map((r) => r.label)).toEqual([
+      'shape: bricks beat tanks',
+      'shape: turtle beats templates',
+      "shape: tanks don't beat the turtle",
+    ]);
+    // The whole pool: the full matrix with its recorded exception and watch item, and every stated outcome.
+    const all = testRules(ALL_ARCHETYPES.map((a) => a.key));
+    expect(all.matrices.map((m) => m.name)).toEqual(['full']);
+    expect(all.matrices[0]!.caps).toEqual({ bricks: FULL_DOMINANCE_EXCEPTIONS.bricks!.roundRobinWinCap, soldiersFilled: WATCH_ITEMS.soldiersFilled!.roundRobinWinCap });
+    expect(all.rules.filter((r) => r.kind === 'cap')).toHaveLength(ALL_ARCHETYPES.length);
+    expect(all.rules.filter((r) => r.kind === 'struct')).toHaveLength(3 * ALL_ARCHETYPES.length);
+    expect(all.rules.filter((r) => r.kind === 'cells' && r.stated)).toHaveLength(STATED.length);
   });
 });
 

@@ -218,11 +218,13 @@ export class HitPipeline {
           hitIds.add(next.id);
           to.push(next.id);
           const shield = next.aura?.shield ?? 0;
-          const applied = h.damage * (1 - shield / 100);
+          const combo = synergyOf('lightning', next, this.config.elements);
+          const zap = h.damage * combo.factor;
+          const applied = zap * (1 - shield / 100);
           const hit = applyHit(A, next, applied);
           creditSplit(A, 'zap', hit.dealt);
-          creditAssist(next.aura?.shieldSrc, h.damage - applied);
-          this.recorder.event({ type: 'hit', instanceId: A.id, targetId: next.id, damage: round2(hit.dealt), kind: 'zap', element: 'lightning' });
+          creditAssist(next.aura?.shieldSrc, zap - applied);
+          this.recorder.event({ type: 'hit', instanceId: A.id, targetId: next.id, damage: round2(hit.dealt), kind: 'zap', element: 'lightning', ...(combo.name ? { combo: combo.name } : {}) });
           // An overload hop (past the first) is a combo.
           if (i >= 1) A.combos = (A.combos ?? 0) + 1;
           from = next;
@@ -230,6 +232,26 @@ export class HitPipeline {
         if (to.length > 0) this.recorder.event({ type: 'arc', from: T.id, to });
       }
     }
+  }
+
+  /**
+   * Redesign (§9.4 Accuracy): a missed ranged shot lands on the ground where
+   * its target was at fire time. No direct hit and no lightning; its splash
+   * still hits every living enemy body (the old target too) whose edge is
+   * within the splash radius of that spot, with its fire or ice.
+   */
+  landMiss(m: Omit<LandedHit, 'target'> & { targetId: string; at: { x: number; y: number } }): void {
+    const A = m.attacker;
+    this.recorder.event({ type: 'miss', instanceId: m.attackerId, targetId: m.targetId, x: round2(m.at.x), y: round2(m.at.y) });
+    if (m.splash <= 0 || !A) return;
+    const h: LandedHit = { ...m, target: A };
+    const ds = (m.damage * this.config.elements.splashPct) / 100;
+    for (const E of this.index.near(m.at.x, m.at.y, m.splash)) {
+      if (!E.alive || E.hp <= 0 || !takesEffects(E) || E.teamId === A.teamId) continue;
+      if (Math.hypot(E.x - m.at.x, E.y - m.at.y) - E.radius > m.splash) continue;
+      this.strike(h, E, ds, 'splash');
+    }
+    this.recorder.event({ type: 'splash', x: round2(m.at.x), y: round2(m.at.y), r: m.splash, element: m.element });
   }
 
   /**
@@ -241,12 +263,14 @@ export class HitPipeline {
     const E = this.config.elements;
     let dealtAs: HitKind = kind;
     let amount = d;
+    const combo = synergyOf(h.element, T, E);
     if (h.element === 'fire' && (T.frozen ?? 0) > 0) {
       amount = d * (1 + E.shatterPct / 100);
       T.frozen = 0;
       dealtAs = 'shatter';
       if (A) A.combos = (A.combos ?? 0) + 1;
     }
+    amount *= combo.factor;
     const shield = T.aura?.shield ?? 0;
     const applied = amount * (1 - shield / 100);
     const hit = applyHit(A, T, applied);
@@ -260,6 +284,7 @@ export class HitPipeline {
       damage: kind === 'hit' && dealtAs === 'hit' ? hit.dealt : round2(hit.dealt),
       ...(dealtAs !== 'hit' ? { kind: dealtAs } : {}),
       ...(h.element !== 'normal' ? { element: h.element } : {}),
+      ...(combo.name ? { combo: combo.name } : {}),
     });
     if (dealtAs === 'shatter') this.recorder.event({ type: 'shatter', id: T.id, amount: round2(hit.dealt) });
     // Status from the pre-shatter damage (§9.4 step 5).
@@ -339,4 +364,22 @@ export class HitPipeline {
 /** The element an attacker's hits carry (a minion: its factory's minionElement). */
 export function attackElement(u: Pick<SimUnit, 'stats'>): Element {
   return elementOf(u.stats);
+}
+
+/**
+ * Redesign synergies (§5.4): kindle, a burning body takes +kindlePct% from
+ * every hit that isn't fire; brittle, a frozen body takes +brittlePct% from
+ * every hit that isn't ice or fire (a fire hit shatters it instead). Burn
+ * pulses never get either. Read before the hit's own status lands.
+ */
+export function synergyOf(
+  element: Element,
+  T: Pick<SimUnit, 'burns' | 'frozen'>,
+  E: Pick<GameConfig['elements'], 'kindlePct' | 'brittlePct'>,
+): { factor: number; name: 'kindle' | 'brittle' | 'both' | null } {
+  const kindle = element !== 'fire' && (T.burns?.length ?? 0) > 0 && E.kindlePct > 0;
+  const brittle = element !== 'ice' && element !== 'fire' && (T.frozen ?? 0) > 0 && E.brittlePct > 0;
+  if (!kindle && !brittle) return { factor: 1, name: null };
+  const factor = (kindle ? 1 + E.kindlePct / 100 : 1) * (brittle ? 1 + E.brittlePct / 100 : 1);
+  return { factor, name: kindle && brittle ? 'both' : kindle ? 'kindle' : 'brittle' };
 }

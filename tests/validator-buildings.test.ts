@@ -1,14 +1,14 @@
 // §7 per type (M8.5, §5.2): walls and factories through the real validation
 // pipeline (esbuild + a fresh isolated-vm sandbox), plus the practice worlds
-// with an enemy wall and minion.
+// with an enemy wall and minion. Prices and bounds of the $10,000 redesign.
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CONFIG, type ValidationError, type ValidationFailure, type ValidationResult, type ValidationSuccess } from '@pixel-clash/shared';
+import { DEFAULT_CONFIG, parseConfig, type ValidationError, type ValidationFailure, type ValidationResult, type ValidationSuccess } from '@pixel-clash/shared';
 import { validate } from '../packages/server/src/validator/validate.js';
 
 const template = (file: string) => readFileSync(new URL(`../packages/starter-kit/units/${file}`, import.meta.url), 'utf8');
-const run = (source: string) => validate(source, {}, DEFAULT_CONFIG);
+const run = (source: string, config = DEFAULT_CONFIG) => validate(source, {}, config);
 
 function expectOk(r: ValidationResult): ValidationSuccess {
   if (!r.ok) throw new Error(`expected ok, got ${JSON.stringify(r.errors, null, 2)}`);
@@ -56,7 +56,7 @@ describe('validator: wall and factory templates', () => {
     const r = expectOk(await run(template('basic_wall.js')));
     expect(r.unit).toMatchObject({ unitId: 'basic-wall', cost: 149 });
     expect(r.unit.stats).toEqual({
-      name: 'Basic Wall', type: 'wall', maxHealth: 2000, damage: 0, range: 0, speed: 0, attackCooldown: 0,
+      name: 'Basic Wall', type: 'wall', maxHealth: 3200, damage: 0, range: 0, speed: 0, attackCooldown: 0,
       element: 'normal', splashRadius: 0, support: null,
       color: '#8A8F98', size: 20, shape: 'square',
     });
@@ -64,37 +64,38 @@ describe('validator: wall and factory templates', () => {
     expect(r.warnings).toEqual([]);
   });
 
-  it('Basic Factory: valid, $987 = $247 body + 5 minions × $148, size 18', async () => {
+  it('Basic Factory: valid, $2,194 = $247 body + 11 minions × $177, size 18', async () => {
     const r = expectOk(await run(template('basic_factory.js')));
-    expect(r.unit).toMatchObject({ unitId: 'basic-factory', cost: 987 });
-    expect(r.unit.stats).toMatchObject({ type: 'factory', maxHealth: 1500, productionInterval: 900, damage: 0, range: 0, speed: 0, attackCooldown: 0, size: 18, minionElement: 'normal' });
-    expect(r.unit.breakdown.production).toMatchObject({ expected: 5, minionValue: 148, total: 740 });
+    expect(r.unit).toMatchObject({ unitId: 'basic-factory', cost: 2194 });
+    expect(r.unit.stats).toMatchObject({ type: 'factory', maxHealth: 2400, productionInterval: 600, damage: 0, range: 0, speed: 0, attackCooldown: 0, size: 18, minionElement: 'normal' });
+    expect(r.unit.breakdown.body).toBe(247);
+    expect(r.unit.breakdown.production).toMatchObject({ expected: 11, minionValue: 177, total: 1947 });
     expect(r.warnings).toEqual([]);
   });
 
   it('the wall-aware soldier and tower templates keep their prices and stay warning-free', async () => {
-    expect(expectOk(await run(template('basic_soldier.js'))).unit.cost).toBe(529);
+    expect(expectOk(await run(template('basic_soldier.js'))).unit.cost).toBe(807);
     const tower = expectOk(await run(template('basic_tower.js')));
-    expect(tower.unit.cost).toBe(954);
+    expect(tower.unit.cost).toBe(1200);
     expect(tower.warnings).toEqual([]);
   });
 });
 
 describe('validator: per-type required fields and guards (§5.2, §7 steps 5-6)', () => {
   it('a wall needs only name, type, maxHealth and color (no update, no sprite → just W_NO_SPRITE)', async () => {
-    const r = expectOk(await run(wall('this.maxHealth = 2000;')));
+    const r = expectOk(await run(wall('this.maxHealth = 3200;')));
     expect(r.unit.cost).toBe(149);
     expect(codes(r)).toEqual(['W_NO_SPRITE']);
   });
 
   it('a wall without maxHealth: STAT_MISSING with a wall-specific fix', async () => {
     const e = errorWith(await run(wall('')), 'STAT_MISSING', 'maxHealth');
-    expect(e.fix).toContain('250 to 7500');
+    expect(e.fix).toContain('400 to 12000');
   });
 
   it('a factory without productionInterval: STAT_MISSING with "Try 900"', async () => {
     const e = errorWith(await run(factory('this.maxHealth = 1500;')), 'STAT_MISSING', 'productionInterval');
-    expect(e.fix).toContain('600-1800');
+    expect(e.fix).toContain('300-1200');
     expect(e.fix).toContain('900');
   });
 
@@ -122,22 +123,24 @@ describe('validator: per-type required fields and guards (§5.2, §7 steps 5-6)'
   });
 
   it.each([
-    ['wall HP 249', wall('this.maxHealth = 249;'), 'maxHealth', { min: 250, max: 7500 }],
-    ['wall HP 7501', wall('this.maxHealth = 7501;'), 'maxHealth', { min: 250, max: 7500 }],
-    ['factory HP 499', factory('this.maxHealth = 499; this.productionInterval = 900;'), 'maxHealth', { min: 500, max: 5000 }],
-    ['factory HP 5001', factory('this.maxHealth = 5001; this.productionInterval = 900;'), 'maxHealth', { min: 500, max: 5000 }],
-    ['interval 599', factory('this.maxHealth = 1500; this.productionInterval = 599;'), 'productionInterval', { min: 600, max: 1800 }],
-    ['interval 1801', factory('this.maxHealth = 1500; this.productionInterval = 1801;'), 'productionInterval', { min: 600, max: 1800 }],
+    ['wall HP 399', wall('this.maxHealth = 399;'), 'maxHealth', { min: 400, max: 12000 }],
+    ['wall HP 12001', wall('this.maxHealth = 12001;'), 'maxHealth', { min: 400, max: 12000 }],
+    ['factory HP 799', factory('this.maxHealth = 799; this.productionInterval = 900;'), 'maxHealth', { min: 800, max: 8000 }],
+    ['factory HP 8001', factory('this.maxHealth = 8001; this.productionInterval = 900;'), 'maxHealth', { min: 800, max: 8000 }],
+    ['interval 299', factory('this.maxHealth = 1500; this.productionInterval = 299;'), 'productionInterval', { min: 300, max: 1200 }],
+    ['interval 1201', factory('this.maxHealth = 1500; this.productionInterval = 1201;'), 'productionInterval', { min: 300, max: 1200 }],
   ])('%s → STAT_OUT_OF_RANGE with the per-type bounds', async (_label, source, field, allowed) => {
     expect(errorWith(await run(source), 'STAT_OUT_OF_RANGE', field).allowed).toEqual(allowed);
   });
 
-  it('a 5000-HP wall (far above the soldier max of 2500) is valid: $454', async () => {
-    expect(expectOk(await run(wall('this.maxHealth = 5000;'))).unit.cost).toBe(454);
+  it('an 8000-HP wall (far above the soldier max of 4000) is valid: $454', async () => {
+    expect(expectOk(await run(wall('this.maxHealth = 8000;'))).unit.cost).toBe(454);
   });
 
-  it('a maxed storm-runner factory (5000 HP, interval 600) is $2,938: UNIT_TOO_EXPENSIVE naming a lever', async () => {
-    const e = errorWith(await run(factory("this.maxHealth = 5000; this.productionInterval = 600; this.produces = 'runner'; this.minionElement = 'lightning';")), 'UNIT_TOO_EXPENSIVE');
+  it('a maxed storm-runner factory (8000 HP, interval 300) is $5,342: UNIT_TOO_EXPENSIVE naming a lever', async () => {
+    const r = await run(factory("this.maxHealth = 8000; this.productionInterval = 300; this.produces = 'runner'; this.minionElement = 'lightning';"));
+    const e = errorWith(r, 'UNIT_TOO_EXPENSIVE');
+    expect(e.value).toBe(5342);
     expect(e.fix).toMatch(/productionInterval|maxHealth/);
   });
 
@@ -235,15 +238,15 @@ describe('validator: fix texts for walls and factories (real-Claude dry run, M8.
   });
 
   it('a too-tough wall or factory suggests its starter health as the example', async () => {
-    expect(errorWith(await run(wall('this.maxHealth = 9000;')), 'STAT_OUT_OF_RANGE', 'maxHealth').fix).toContain('this.maxHealth = 2000');
+    expect(errorWith(await run(wall('this.maxHealth = 13000;')), 'STAT_OUT_OF_RANGE', 'maxHealth').fix).toContain('this.maxHealth = 3200');
     expect(errorWith(await run(factory('this.maxHealth = 9000; this.productionInterval = 900;')), 'STAT_OUT_OF_RANGE', 'maxHealth').fix).toContain(
-      'this.maxHealth = 1500',
+      'this.maxHealth = 2400',
     );
   });
 
   it('a too-expensive factory has no "before the factor" (buildings have no cooldown factor)', async () => {
-    const e = errorWith(await run(factory("this.maxHealth = 5000; this.productionInterval = 600; this.produces = 'runner'; this.minionElement = 'lightning';")), 'UNIT_TOO_EXPENSIVE');
-    expect(e.fix).toContain('The most expensive stat is maxHealth: 5000 costs $1,200 (');
+    const e = errorWith(await run(factory("this.maxHealth = 8000; this.productionInterval = 300; this.produces = 'runner'; this.minionElement = 'lightning';")), 'UNIT_TOO_EXPENSIVE');
+    expect(e.fix).toContain('The most expensive stat is maxHealth: 8000 costs $1,200 (');
     expect(e.fix).not.toContain('before the factor');
   });
 
@@ -262,11 +265,11 @@ describe('validator: produces, burst and squad orders (M8.6)', () => {
   it('produces and burst are stored on the snapshot (defaults grunt / 1); the price follows the kind only', async () => {
     const plain = expectOk(await run(factory('this.maxHealth = 1500; this.productionInterval = 900;')));
     expect(plain.unit.stats).toMatchObject({ produces: 'grunt', burst: 1 });
-    expect(plain.unit.cost).toBe(987);
+    expect(plain.unit.cost).toBe(167 + 7 * 177);
     const archers = expectOk(await run(factory("this.maxHealth = 1500; this.productionInterval = 900; this.produces = 'archer'; this.burst = 3;")));
     expect(archers.unit.stats).toMatchObject({ produces: 'archer', burst: 3 });
-    expect(archers.unit.cost).toBe(1222);
-    expect(archers.unit.breakdown.production!.text).toContain('5 archers × $195');
+    expect(archers.unit.cost).toBe(167 + 7 * 216);
+    expect(archers.unit.breakdown.production!.text).toContain('7 archers × $216');
   });
 
   it('a wrong produces names the closest kind; burst must be a whole number 1-4', async () => {
@@ -282,10 +285,14 @@ describe('validator: produces, burst and squad orders (M8.6)', () => {
   });
 
   it('W_BURST_NEVER_FULL when the factory makes fewer minions than its burst', async () => {
-    const r = expectOk(await run(factory('this.maxHealth = 1500; this.productionInterval = 1800; this.burst = 4;')));
+    // With the default 120 s battle even the slowest factory (1200) makes 5 minions, more than the burst max of 4;
+    // a 60 s battle makes 2 at interval 1200.
+    const short = parseConfig({ timers: { battleTicks: 3600 }, suddenDeath: { startTick: 2400, endTick: 3600 } });
+    const r = expectOk(await run(factory('this.maxHealth = 1500; this.productionInterval = 1200; this.burst = 4;'), short));
     const w = r.warnings.find((x) => x.code === 'W_BURST_NEVER_FULL')!;
     expect(w.message).toContain('only 2 minions');
     expect(w.fix).toContain('this.burst to 2');
+    expect(codes(expectOk(await run(factory('this.maxHealth = 1500; this.productionInterval = 1200; this.burst = 4;'))))).not.toContain('W_BURST_NEVER_FULL');
     expect(codes(expectOk(await run(factory('this.maxHealth = 1500; this.productionInterval = 900; this.burst = 4;'))))).not.toContain('W_BURST_NEVER_FULL');
   });
 
@@ -346,7 +353,7 @@ describe('validator: produces, burst and squad orders (M8.6)', () => {
       const ctor = /\/\/ constructor: (.*)/.exec(block)![1]!;
       const update = block.slice(block.indexOf('update('));
       const src = `export default class F {
-        constructor() { this.name = 'Example'; this.type = 'factory'; this.maxHealth = 1500; this.productionInterval = 900; this.color = '#C0A060'; ${ctor} }
+        constructor() { this.name = 'Example'; this.type = 'factory'; this.maxHealth = 2400; this.productionInterval = 900; this.color = '#C0A060'; ${ctor} }
         ${update}
       }`;
       const r = expectOk(await run(src));

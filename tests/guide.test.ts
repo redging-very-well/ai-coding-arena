@@ -175,10 +175,10 @@ describe('a config retune changes the guide', () => {
     const after = buildGuide(tuned);
     expect(after.stamp).not.toBe(before.stamp);
     expect(after.examples.map((e) => e.cost)).not.toEqual(before.examples.map((e) => e.cost));
-    expect(allText(before)).toContain('$5,000');
+    expect(allText(before)).toContain('$10,000');
     expect(allText(after)).toContain('**$6,000**');
     expect(allText(after)).toContain('0-250 (required)');
-    expect(allText(before)).toContain('0-300 (required)');
+    expect(allText(before)).toContain('0-240 (required)');
     expect(allText(after)).toContain('50% slower');
   });
 });
