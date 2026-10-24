@@ -12,6 +12,7 @@ import {
   isFighterDesign,
   isValidCell,
   mapFor,
+  money,
   ok,
   resolveMapStyle,
   trappedCells,
@@ -319,7 +320,7 @@ export class RoundService {
       });
     }
     if (spent > caps.budget) {
-      return fail('OVER_BUDGET', `That army costs $${spent} but your budget is $${caps.budget}.`, {
+      return fail('OVER_BUDGET', `That army costs ${money(spent)} but your budget is ${money(caps.budget)}.`, {
         details: { spent, budget: caps.budget },
       });
     }

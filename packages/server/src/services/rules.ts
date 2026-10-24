@@ -28,6 +28,7 @@ import {
   expectedMinions,
   isValidTeamMode,
   minionPrice,
+  money,
   pricingOf,
   placePointsTable,
   scaledBonusMax,
@@ -178,7 +179,7 @@ export function unitTypeRules(config: GameConfig): Record<string, unknown> {
     },
     fighters:
       "Fighters are soldiers and towers with damage above 0, attacking minions and factories that can still build (not medic-only factories). Walls, damage-0 support units (medics, banners, healing shrines) and medic factories are NOT fighters: Ready needs at least one fighter (NO_FIGHTERS), and a side with no fighters left is out (its walls and support units crumble). Support units still count toward the fighter copies cap.",
-    livingValue: `At the time limit walls are worth $0, a factory is worth its body price only (minions it never built count nothing), and each living minion $${minionValue}. During the battle a factory counts $${minionValue} per minion it can still build in time, and one that holds or is walled in until it no longer has time to build one is not a fighter any more. Breaking an enemy wall still scores its full price as value destroyed.`,
+    livingValue: `At the time limit walls are worth $0, a factory is worth its body price only (minions it never built count nothing), and each living minion ${money(minionValue)}. During the battle a factory counts ${money(minionValue)} per minion it can still build in time, and one that holds or is walled in until it no longer has time to build one is not a fighter any more. Breaking an enemy wall still scores its full price as value destroyed.`,
   };
 }
 
@@ -351,10 +352,13 @@ function fmtX(n: number): string {
   return String(Math.round(n * 100) / 100);
 }
 
-/** The cost-curve tip, with the multipliers from curveK. */
-export function curveTip(curveK: number): string {
-  if (!(curveK > 0)) return 'Cost grows in a straight line with each stat (curveK = 0). 4-8 units per $5,000 is a good army.';
-  return `Maxing a stat costs ${fmtX(1 + curveK)}× its normal price (half its max costs ${fmtX(1 + curveK / 4)}×); being tough AND strong at once costs up to ×1.6 more (the power factor), so pair a tank with a hitter. 4-8 units per $5,000 is a good army.`;
+/** The cost-curve tip, with the multipliers, power factor and budget from config. */
+export function curveTip(config: GameConfig = DEFAULT_CONFIG): string {
+  const { curveK, powerFactor } = config.cost;
+  const army = `4-8 units per ${money(config.caps.budget)} is a good army.`;
+  if (!(curveK > 0)) return `Cost grows in a straight line with each stat (curveK = 0). ${army}`;
+  const power = powerFactor > 0 ? `being tough AND strong at once costs up to ×${fmtX(1 + powerFactor)} more (the power factor), so pair a tank with a hitter. ` : '';
+  return `Maxing a stat costs ${fmtX(1 + curveK)}× its normal price (half its max costs ${fmtX(1 + curveK / 4)}×); ${power}${army}`;
 }
 
 /** The sudden-death tip, with the start time and damage rate from config. */
@@ -385,10 +389,6 @@ export function healTip(config: GameConfig = DEFAULT_CONFIG): string {
   return `Healing limits: at most ${config.support.healRoomPctPerSecond}% of an ally's max HP per second, nothing after ${sdS} s (sudden death), never walls, factories or the healer itself. A heal on a burning or frozen ally only cleanses it, so fire is how you beat medics.`;
 }
 
-function money(n: number): string {
-  return `$${n.toLocaleString('en-US')}`;
-}
-
 function num(n: number): string {
   return n.toLocaleString('en-US');
 }
@@ -396,7 +396,7 @@ function num(n: number): string {
 /** Strategy tips; the cost-curve, sudden-death and M8.8 number tips follow the config. */
 export function strategyTips(config: GameConfig = DEFAULT_CONFIG): string[] {
   const slots: Record<string, (c: GameConfig) => string> = {
-    [CURVE_TIP_SLOT]: (c) => curveTip(c.cost.curveK),
+    [CURVE_TIP_SLOT]: curveTip,
     [SUDDEN_DEATH_TIP_SLOT]: suddenDeathTip,
     [SCALE_TIP_SLOT]: scaleTip,
     [ELEMENT_TIP_SLOT]: elementTip,

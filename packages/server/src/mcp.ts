@@ -14,7 +14,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { BADGES, type Result, type ServiceError, type SpriteSpec, type ValidationResult } from '@pixel-clash/shared';
+import { BADGES, money, type Result, type ServiceError, type SpriteSpec, type ValidationResult } from '@pixel-clash/shared';
 import { bearerOf } from './routes/common.js';
 import type { Game } from './services/game.js';
 import { buildContract, buildRules } from './services/rules.js';
@@ -31,7 +31,7 @@ export const MCP_INSTRUCTIONS = [
   'Call get_unit_contract once to learn the unit format, and get_rules for costs and limits.',
   'Four unit types: soldier, tower, wall, factory (see get_unit_contract). Walls block everyone and never attack; factories build minions (grunt, archer, runner, brute or medic via this.produces) and their update() gives them orders (rally, or command attack/defend/swarm/guard) and can save them up for a burst (this.burst, release). A player needs at least one unit that attacks: walls and damage-0 support units alone never win.',
   'Units can have an element (fire, ice, lightning), splash (splashRadius) and one support (heal, haste, might, shield); factories can give minions an element (this.minionElement). See get_unit_contract.',
-  'Numbers are 5x the old game (by default $5,000 per army, up to $2,500 per unit, HP 50-2,500, damage 0-300; get_rules has the exact ones). Never reuse $1,000-game numbers; a W_OLD_SCALE warning means a unit was made for the old game: multiply its maxHealth and damage by 5.',
+  'Numbers are 5x the old game (by default $5,000 per army, up to $2,500 per unit, HP 50-2,500, damage 0-300; get_rules has the exact ones). Never reuse $1,000-game numbers; a W_OLD_SCALE warning means a unit was made for the old game: multiply its maxHealth and damage by 5 (walls and factories: maxHealth), and if that goes over the unit cap, follow the fix in the warning to make it cheaper.',
   'Always validate_unit before submit_unit, and fix problems using each error\'s "fix" text. validate_unit checks everything (sprite rows included), so never run scripts or shell commands to check a unit file.',
   'submit_unit works only in the PLAN phase (get_game_state shows submissionsOpen). Otherwise keep the unit validated and say "we\'ll send it when Plan starts".',
   'Players can also edit their own units on the web page. So before changing an existing unit ALWAYS call get_unit_source for its latest source and version, change that code, and pass unitId plus baseVersion (that version) to validate_unit and submit_unit, even if you rename it.',
@@ -128,7 +128,7 @@ function validationResult(r: Result<ValidationResult>, verb: 'Valid' | 'Submitte
       verb === 'Valid' && unit.version === 1
         ? `new design: submit WITHOUT unitId; it will get unitId "${unit.unitId}"`
         : `unitId "${unit.unitId}", version ${unit.version}`;
-    const s = `${verb}: ${unit.stats.name} (${id}) costs $${unit.cost}.` +
+    const s = `${verb}: ${unit.stats.name} (${id}) costs ${money(unit.cost)}.` +
       (v.warnings.length ? ` Warnings: ${v.warnings.map((w) => w.code).join(', ')}.` : '');
     return toolResult(structured as unknown as Record<string, unknown>, s);
   }
@@ -251,7 +251,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
         const units = game.units.list(p.id).map(({ sprite: _s, ...u }) => ({ ...u, hasSprite: _s !== null }));
         return toolResult(
           { ok: true, units },
-          `${units.length} units: ${units.map((u) => `${u.name} [${u.unitId}] $${u.cost}${u.status === 'invalid' ? ' (INVALID)' : ''}`).join(', ')}.`,
+          `${units.length} units: ${units.map((u) => `${u.name} [${u.unitId}] ${money(u.cost)}${u.status === 'invalid' ? ' (INVALID)' : ''}`).join(', ')}.`,
         );
       }),
   );
@@ -361,7 +361,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
           ? 'Open Armory is off in this match.'
           : entries.length === 0
             ? 'Open Armory is on, but no units are in it yet (units enter when a battle ends).'
-            : `${entries.length} Armory units: ${entries.map((e) => `${e.displayName} $${e.cost}${e.status === 'invalid' ? ' (INVALID)' : ''}`).join(', ')}. The player picks them on the Pixel Clash page; they can't be changed.`;
+            : `${entries.length} Armory units: ${entries.map((e) => `${e.displayName} ${money(e.cost)}${e.status === 'invalid' ? ' (INVALID)' : ''}`).join(', ')}. The player picks them on the Pixel Clash page; they can't be changed.`;
         return toolResult({ ok: true, enabled, entries }, summary);
       }),
   );
@@ -390,7 +390,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
         }
         const sc = report.score;
         const score = sc
-          ? ` Place ${sc.place}: ${sc.placePoints} place + ${sc.damageBonus} damage bonus (${sc.damage} damage) + ${sc.valueBonus} value bonus ($${sc.valueDestroyed} destroyed) = ${sc.total} points${sc.badges.length > 0 ? `; badges: ${sc.badges.map((b) => BADGES[b].title).join(', ')}` : ''}.`
+          ? ` Place ${sc.place}: ${sc.placePoints} place + ${sc.damageBonus} damage bonus (${sc.damage} damage) + ${sc.valueBonus} value bonus (${money(sc.valueDestroyed)} destroyed) = ${sc.total} points${sc.badges.length > 0 ? `; badges: ${sc.badges.map((b) => BADGES[b].title).join(', ')}` : ''}.`
           : '';
         // Top damage units of the round, without sprite pixels (Claude only needs who and how much).
         const top = (report.topUnits ?? []).map(({ sprite: _s, stats: _st, ...t }) => ({ ...t, mine: t.playerId === p.id }));

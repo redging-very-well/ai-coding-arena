@@ -79,8 +79,43 @@ describe('W_OLD_SCALE and the ×5 fix (UnitsService.checkVersion)', () => {
     const r = UnitsService.checkVersion({ stats: soldier(30, 5) }, config);
     expect(r.error).toMatchObject({ code: 'STAT_OUT_OF_RANGE', field: 'maxHealth' });
     expect(r.error!.fix).toMatch(/^This unit was built for the \$1,000 game: multiply maxHealth and damage by 5 \(it would then cost \$\d+\)\./);
+    // Walls and factories have no damage: the fix only scales maxHealth.
     const wall = UnitsService.checkVersion({ stats: { name: 'W', type: 'wall', maxHealth: 200, damage: 0, range: 0, speed: 0, attackCooldown: 0, color: '#123456', size: 20, shape: 'square' } }, config);
-    expect(wall.error!.fix).toContain('multiply maxHealth and damage by 5');
+    expect(wall.error!.fix).toMatch(/^This unit was built for the \$1,000 game: multiply maxHealth by 5 \(it would then cost \$\d+\)\./);
+  });
+
+  it('when the ×5 unit would be over the unit cap, the advice says so and names a lever (never a silent UNIT_TOO_EXPENSIVE)', () => {
+    // An old brick (430 HP / 50 dmg, size 16): ×5 is legal but over $2,500.
+    const brick = { ...soldier(430, 50), size: 16 };
+    const priced = UnitsService.checkVersion({ stats: { ...brick, maxHealth: 2150, damage: 250 }, scaleVersion: 2 }, config);
+    expect(priced.error).toMatchObject({ code: 'UNIT_TOO_EXPENSIVE' });
+    const r = UnitsService.checkVersion({ stats: brick }, config);
+    expect(r.oldScale!.fix).toContain('maxHealth 430 → 2150, damage 50 → 250');
+    expect(r.oldScale!.fix).toContain(`and resubmit it. That would cost $${priced.cost.cost.toLocaleString('en-US')}, over the $2,500 cap, so also make it cheaper. `);
+    expect(r.oldScale!.fix).toMatch(/Lowering (maxHealth|damage) from/);
+    // Below the minimum (a 40 HP fast sniper): the invalid fix says it too.
+    const sniper = { ...soldier(40, 60), range: 300, attackCooldown: 30 };
+    const low = UnitsService.checkVersion({ stats: sniper }, config);
+    expect(low.error).toMatchObject({ code: 'STAT_OUT_OF_RANGE', field: 'maxHealth' });
+    expect(low.error!.fix).toMatch(/multiply maxHealth and damage by 5\. That would cost \$\d{1,3}(,\d{3})+, over the \$2,500 cap, so also make it cheaper\. /);
+    // Under the cap: just the price, with thousands separators.
+    expect(UnitsService.checkVersion({ stats: soldier(300, 40) }, config).oldScale!.fix).toMatch(/and resubmit it \(it would then cost \$\d,\d{3}\)\.$/);
+  });
+
+  it('old walls and factories are judged by their own old maxima (1,500 and 1,000 HP)', () => {
+    const wall = (maxHealth: number) => ({ name: 'W', type: 'wall', maxHealth, damage: 0, range: 0, speed: 0, attackCooldown: 0, color: '#123456', size: 20, shape: 'square' }) as const;
+    const factory = (maxHealth: number) =>
+      ({ name: 'F', type: 'factory', maxHealth, damage: 0, range: 0, speed: 0, attackCooldown: 0, color: '#123456', size: 20, shape: 'square', productionInterval: 600 }) as const;
+    const w = UnitsService.checkVersion({ stats: wall(1200) }, config);
+    expect(w.error).toBeUndefined();
+    expect(w.oldScale).toMatchObject({ code: 'W_OLD_SCALE' });
+    expect(w.oldScale!.fix).toContain('Ask Claude to multiply maxHealth by 5 (maxHealth 1200 → 6000)');
+    expect(w.oldScale!.fix).not.toContain('damage');
+    const f = UnitsService.checkVersion({ stats: factory(800) }, config);
+    expect(f.error).toBeUndefined();
+    expect(f.oldScale).toMatchObject({ code: 'W_OLD_SCALE' });
+    expect(UnitsService.checkVersion({ stats: wall(1600) }, config).oldScale).toBeUndefined();
+    expect(UnitsService.checkVersion({ stats: factory(1100) }, config).oldScale).toBeUndefined();
   });
 });
 
@@ -110,7 +145,14 @@ describe('boot migration with stored data', () => {
     const state = JSON.parse(readFileSync(file, 'utf8'));
     for (const d of state.designs) {
       const v = d.versions.at(-1);
-      if (d.unitId === 'old-guard') v.stats = { ...v.stats, maxHealth: 120, damage: 10 };
+      if (d.unitId === 'old-guard') {
+        v.stats = { ...v.stats, maxHealth: 120, damage: 10 };
+        // A price tip from the $1,000 game's curve (k = 2, max 500 HP): no longer true.
+        v.warnings = [
+          ...v.warnings,
+          { code: 'W_STAT_NEAR_MAX', field: 'maxHealth', value: 450, message: 'maxHealth is at 90% of max and costs 2.62× its normal price.', fix: 'Set this.maxHealth to 300 to save $90.' },
+        ];
+      }
       if (d.unitId === 'tiny-tim') v.stats = { ...v.stats, maxHealth: 30, damage: 5 };
       if (d.unitId !== 'new-guy') delete v.scaleVersion;
     }
@@ -130,6 +172,9 @@ describe('boot migration with stored data', () => {
     const card = (id: string) => cards.find((u) => u.unitId === id)!;
     expect(card('old-guard')).toMatchObject({ status: 'valid', scaleVersion: 1 });
     expect(card('old-guard').warnings.map((w) => w.code)).toContain('W_OLD_SCALE');
+    // Its old-curve price tip is worked out again (120 HP is nowhere near the new max): gone.
+    expect(card('old-guard').warnings[0]!.code).toBe('W_OLD_SCALE');
+    expect(card('old-guard').warnings.map((w) => w.code)).not.toContain('W_STAT_NEAR_MAX');
     expect(card('tiny-tim')).toMatchObject({ status: 'invalid', error: { code: 'STAT_OUT_OF_RANGE', field: 'maxHealth' } });
     expect(card('tiny-tim').error!.fix).toContain('built for the $1,000 game');
     expect(card('new-guy').warnings.map((w) => w.code)).not.toContain('W_OLD_SCALE');
