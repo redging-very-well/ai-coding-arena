@@ -148,6 +148,12 @@ export const FactorySchema = z.object({
    * window. false: they build until the end of the battle (the pre-2026-10-25 rule).
    */
   stopAtSuddenDeath: z.boolean(),
+  /**
+   * When a factory is destroyed, its living minions crumble with it in the same
+   * tick (§9.3, 2026-10-25 "Minions die with their factory"), credited to the
+   * factory's killer. false: they keep fighting (the pre-2026-10-25 rule).
+   */
+  minionsDieWithFactory: z.boolean(),
   maxAlivePerFactory: posInt(),
   /** Alive minions per player: min(this, floor(maxAlivePerBattle / players)). */
   maxAlivePerPlayer: posInt(),
@@ -488,6 +494,9 @@ export const DEFAULT_CONFIG: GameConfig = {
     // Off by default: on, it nerfed attacking factory armies and broke the 70% cap
     // without moving the factory camp (§14 "Factories stop at sudden death").
     stopAtSuddenDeath: false,
+    // Off by default: on, the camp fell (62.9% -> 42.1%) but attacking factory armies
+    // collapsed and 12 rules failed (§14 "Minions die with their factory").
+    minionsDieWithFactory: false,
     maxAlivePerFactory: 4,
     maxAlivePerPlayer: 12,
     maxAlivePerBattle: 40,

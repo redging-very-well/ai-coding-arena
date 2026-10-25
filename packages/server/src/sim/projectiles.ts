@@ -41,6 +41,7 @@ export function applyHit(attacker: SimUnit | undefined, target: SimUnit, damage:
   if (attacker) {
     attacker.damageDealt += dealt;
     if (killed) {
+      target.killedBy = attacker;
       attacker.kills += 1;
       // Walls their full price, factories their living value at death (§9.3).
       attacker.valueDestroyed += killValueOf(target);

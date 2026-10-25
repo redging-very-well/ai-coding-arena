@@ -364,6 +364,15 @@ export class FxLayer {
     }
   }
 
+  /** A minion crumbles with its destroyed factory: a few falling bits and a puff of dust (cheap: 6 particles, 3 reduced). */
+  crumblePop(x: number, y: number, scale: number, colors: readonly string[]): void {
+    const n = this.reducedMotion ? 3 : 6;
+    for (let i = 0; i < n; i++) {
+      const color = i % 3 === 2 ? '#B8B2A6' : (colors[i % colors.length] ?? '#888');
+      this.spawn(x + (rand() - 0.5) * 8 * scale, y, (rand() - 0.5) * 50 * scale, -(20 + rand() * 40) * scale, 380 + rand() * 200, Math.max(1, Math.round(scale * 2)), color, 360 * scale);
+    }
+  }
+
   /** A wall crumbles: stone chunks falling off and a dust cloud (§12.5). */
   crumble(x: number, y: number, width: number, scale: number, colors: readonly string[]): void {
     const chunks = this.reducedMotion ? 6 : 18;

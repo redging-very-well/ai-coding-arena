@@ -18,7 +18,8 @@
 //      tick's melee hits and projectile impacts together in seat, then
 //      instanceId order (§9 Value destroyed);
 //   8) apply sudden-death damage;
-//   9) remove the dead (hp ≤ 0);
+//   9) remove the dead (hp ≤ 0); 9a) with factory.minionsDieWithFactory, the
+//      living minions of each factory removed in 9 crumble (credited to its killer);
 //  10) check elimination.
 // After tick k the sim time is k+1; a frame is recorded whenever the time is a
 // multiple of `sim.frameEveryTicks`, and always at the end.
@@ -112,7 +113,7 @@ import { FrameRecorder, frameAt } from './frames.js';
 import { hitDamage, kindConfig, minionAction, minionStats, minionValueOf } from './minion.js';
 import { isFixedBody, separate } from './movement.js';
 import { Pathfinder } from './pathing.js';
-import { aliveInFrame, canFight, factoryLeftIn, isFighter, livingValueAt, livingValueOf } from './value.js';
+import { aliveInFrame, canFight, factoryLeftIn, isFighter, killValueOf, livingValueAt, livingValueOf } from './value.js';
 import { applyHeals, computeAuras, freshHealRoom, resetHealRoom, type QueuedHeal } from './support.js';
 import { WallGrid } from './walls.js';
 import { BuildingGrid, isRoutingBuilding } from './buildings.js';
@@ -885,12 +886,18 @@ export class BattleEngine {
     applySuddenDeath(living, tick, cfg, this.center);
 
     // 9) Remove the dead.
+    let deadFactories: SimUnit[] | undefined;
     for (const u of living) {
       if (u.hp <= 0) {
         this.kill(u, tick + 1);
         this.recorder.event({ type: 'death', instanceId: u.id });
+        if (u.factory) (deadFactories ??= []).push(u);
       }
     }
+    // 9a) factory.minionsDieWithFactory (§9.3, 2026-10-25): the living minions of
+    // every factory removed above crumble now, factory by factory in instanceId
+    // order (they are dead for 9b and step 10).
+    if (deadFactories && cfg.factory.minionsDieWithFactory) for (const fac of deadFactories) this.crumbleMinionsOf(fac, living, tick + 1);
     // Shots at units that just died vanish.
     // (A missed shot flies on to the ground it was aimed at.)
     this.projectiles = this.projectiles.filter((p) => p.miss || this.byId.get(p.targetId)?.alive);
@@ -918,6 +925,29 @@ export class BattleEngine {
       own.stored = 0;
       own.releaseRequested = false;
     }
+  }
+
+  /**
+   * Minions die with their factory (factory.minionsDieWithFactory, §9.3): the
+   * factory's living minions crumble at time `t`, in instanceId order, in one
+   * `crumble` event carrying the factory's id. The unit whose hit destroyed the
+   * factory gets a kill and the minion's value destroyed for each (the same
+   * credit as hitting it down); a factory that died to sudden death credits nobody.
+   */
+  private crumbleMinionsOf(fac: SimUnit, living: readonly SimUnit[], t: number): void {
+    let ids: string[] | undefined;
+    const killer = fac.killedBy;
+    for (const m of living) {
+      if (!m.alive || m.minion?.factory !== fac) continue;
+      if (killer) {
+        killer.kills += 1;
+        killer.valueDestroyed += killValueOf(m);
+      }
+      m.killedBy = killer;
+      this.kill(m, t);
+      (ids ??= []).push(m.id);
+    }
+    if (ids) this.recorder.event({ type: 'crumble', ids: ids.sort(compareIds), factoryId: fac.id });
   }
 
   /**
@@ -1753,6 +1783,8 @@ function toOtherView(u: SimUnit, tick: number, config: GameConfig, names: Readon
     moving: (u.moved ?? 0) > 0,
     currentSpeed: Math.round((u.moved ?? 0) * 100) / 100,
   };
+  // 2026-10-25 (§5): a minion names the factory that made it.
+  if (u.minion) view.factoryId = u.minion.factory.id;
   // revealNames (§5): a minion's playerId is its factory's player; a borrowed
   // Armory unit's is the player who fielded it.
   const n = names?.get(u.playerId);

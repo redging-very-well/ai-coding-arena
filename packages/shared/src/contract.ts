@@ -101,6 +101,7 @@ export interface OtherView {
   status: StatusView;
   moving: boolean;       // it moved last tick: ranged shots at a moving body can miss
   currentSpeed: number;  // px it moved last tick (0 standing, blocked or stopped); misses grow with it
+  factoryId?: string;    // minions only: the id of the factory that made it (missing on every other body)
   ownerName?: string;    // only when the match setting 'Show enemy names to units' is on: its player's name (a minion: its factory's player)
   teamName?: string;     // team mode, only with that setting on: its team's name, e.g. 'Team 2'
 }

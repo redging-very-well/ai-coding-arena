@@ -325,6 +325,7 @@ const OTHER_FIELDS: Record<keyof OtherView, string> = {
   status: 'its burns, freezes and buffs',
   moving: 'it moved last tick: ranged shots at a moving body can miss',
   currentSpeed: 'px it moved last tick (0 = standing still); the faster, the more ranged shots miss',
+  factoryId: 'minions only: the `id` of the factory that made it (missing on every other body)',
   ownerName: "its player's name (a minion: its factory's player), only when the match setting 'Show enemy names to units' is on",
   teamName: "team mode: its team's name, e.g. 'Team 2', only when the match setting 'Show enemy names to units' is on",
 };
@@ -871,7 +872,9 @@ function factoriesSection(c: GameConfig): GuideSectionDTO {
           ...(f.stopAtSuddenDeath
             ? [`Factories stop building at sudden death (${secs(c.suddenDeath.startTick, c)}): no new minion appears from then on and \`self.factory.producing\` is false. Minions already out keep fighting, and stored minions still leave.`]
             : []),
-          'Destroying a factory stops it; its minions keep going.',
+          f.minionsDieWithFactory
+            ? 'Destroying a factory stops it, and its minions crumble with it: the ones out on the field die the same tick (the unit that destroyed the factory gets a kill and the value of each), and the stored ones are lost.'
+            : 'Destroying a factory stops it; its minions keep going.',
         ],
       },
       {

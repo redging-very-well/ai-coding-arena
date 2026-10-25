@@ -706,8 +706,12 @@ export type FrameEvent =
   | { type: 'release'; factoryId: string; count: number }
   /** M8.6: a factory died with minions inside; they are lost. */
   | { type: 'lost'; factoryId: string; count: number }
-  /** An eliminated side's walls and spent factories vanish, credited to nobody (§9.3). */
-  | { type: 'crumble'; ids: string[] }
+  /**
+   * An eliminated side's walls and spent factories vanish, credited to nobody (§9.3).
+   * With `factoryId` (host option 'Minions die with their factory'): that factory was
+   * destroyed this tick and these are its minions, crumbling with it.
+   */
+  | { type: 'crumble'; ids: string[]; factoryId?: string }
   | { type: 'fire'; instanceId: string; targetId: string; melee: boolean }
   /** M8.8: `kind` (absent = a plain hit) and the attack's `element` (absent = normal). Burn pulses name the burn's last fire attacker. */
   | { type: 'hit'; instanceId: string; targetId: string; damage: number; kind?: HitKind; element?: Element; combo?: SynergyName }

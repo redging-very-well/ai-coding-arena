@@ -183,7 +183,8 @@ function baseWorlds(stats: StatsSnapshot, self: { x: number; y: number; radius: 
         // M8.5 (§7 step 9): an enemy wall and an engine-made minion, so code
         // that expects every enemy to be a soldier or tower still runs.
         other('enemy-wall', ENEMY, 'wall', 660, 660),
-        other('enemy-minion', ENEMY, 'minion', 600, 640),
+        // Its factory is not in the list (as when the factory is already destroyed).
+        other('enemy-minion', ENEMY, 'minion', 600, 640, { factoryId: 'enemy-factory' }),
       ],
       allies: [],
       expectAttack: false,

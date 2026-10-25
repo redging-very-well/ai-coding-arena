@@ -244,6 +244,8 @@ export interface SimUnit {
   strikes: number;
   errors: UnitErrorRecord[];
   diedAtTick: number | null;
+  /** The unit whose hit took it to ≤ 0 hp (undefined: not killed by a hit, e.g. sudden death). Credits the crumbled minions of a factory (§9.3). */
+  killedBy?: SimUnit;
   // M8.5 (§9.3). Optional so plain test fixtures stay valid; the engine always sets them.
   /** The wall that stopped or turned the last move, else null. */
   blockedBy?: string | null;

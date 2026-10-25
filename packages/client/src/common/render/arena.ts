@@ -1000,7 +1000,11 @@ export class ArenaRenderer {
       for (const id of ev.ids) {
         const t = this.instances.get(id);
         if (!t || t.info.ghost) continue;
-        if (bodyOf(t.info) === 'wall') this.crumbleFx(t);
+        if (ev.factoryId) {
+          // Minions die with their factory (host option, §9.3): a small grey pop each (pooled particles).
+          const p = toScreen(view, t.x, t.y);
+          this.fx.crumblePop(p.sx, p.sy - billboardWidth(t.info.stats.size, view) * 0.3, view.zoom, [t.info.stats.color, '#8A8F98']);
+        } else if (bodyOf(t.info) === 'wall') this.crumbleFx(t);
         else {
           const p = toScreen(view, t.x, t.y);
           this.fx.crumble(p.sx, p.sy, billboardWidth(t.info.stats.size, view), view.zoom, [t.info.stats.color, '#6B6B6B']);

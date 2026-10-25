@@ -151,6 +151,7 @@ export interface OtherView {
   status: StatusView;
   moving: boolean;       // it moved last tick: ranged shots at a moving body can miss
   currentSpeed: number;  // px it moved last tick (0 standing, blocked or stopped); misses grow with it
+  factoryId?: string;    // minions only: the id of the factory that made it (missing on every other body)
   ownerName?: string;    // only when the match setting 'Show enemy names to units' is on: its player's name (a minion: its factory's player)
   teamName?: string;     // team mode, only with that setting on: its team's name, e.g. 'Team 2'
 }
@@ -271,6 +272,7 @@ For soldiers and towers (walls and factories: see **4c**):
 | `status` | burns, freezes and auras on it now (table below) |
 | `moving` | it moved last tick (a ranged shot at a moving body can miss) |
 | `currentSpeed` | px it moved last tick (0 = standing, blocked or stopped) |
+| `factoryId` | minions only: the `id` of the factory that made it; missing on every other body |
 | `ownerName` | its player's name (a minion: its factory's player); only when the match setting 'Show enemy names to units' is on, else missing |
 | `teamName` | team mode: its team's name, e.g. `'Team 2'`; only when the match setting 'Show enemy names to units' is on, else missing |
 
@@ -413,7 +415,7 @@ export default class Knight {
 | **factory** | building | stays put and builds **minions**; can't attack | name, type, maxHealth (**120-1200**), **productionInterval** (whole ticks between minions, **300-1200**), color; optional **produces** (minion kind), **minionElement** and **burst** (1-4). Leave out damage, range, speed, attackCooldown, size | required: gives the minions their orders |
 
 - **Walls** fill their whole 40 × 40 px cell (for range they count as a circle of radius 20). They block **every** body: enemies, your own units and your teammates' units. A wall's `color` is its block colour, and its `sprite()` textures the block's sides (see `units/basic_wall.js`).
-- **Factories** are a circle of radius 18. Every `productionInterval` ticks a factory builds one **Minion** (a grunt: 360 HP, 20 damage, melee, speed 1.5, size 8), up to 12 a battle, at most 4 alive per factory. Minions have built-in brains (you never write their code): they chase enemies near them or near the rally point, otherwise they walk to the rally point. An enemy wall that blocks them for 2 s gets smashed, so minions can break into a walled-in enemy. The factory's `update()` returns `{ action: 'rally', destination: { x, y } }` to move the rally point (it starts at `world.center` and stays until changed) or `{ action: 'hold' }` to pause building for a tick. `self.factory` shows `nextMinionIn`, `minionsLeft`, `minionsAlive`, `maxAlive` and `rally`. The factory's `color` is also its minions' colour. See `units/basic_factory.js`. Destroying a factory stops it; its minions keep going. A factory that holds too long (or is walled in so no minion can get out) stops counting as a fighter once it no longer has time to build one.
+- **Factories** are a circle of radius 18. Every `productionInterval` ticks a factory builds one **Minion** (a grunt: 360 HP, 20 damage, melee, speed 1.5, size 8), up to 12 a battle, at most 4 alive per factory. Minions have built-in brains (you never write their code): they chase enemies near them or near the rally point, otherwise they walk to the rally point. An enemy wall that blocks them for 2 s gets smashed, so minions can break into a walled-in enemy. The factory's `update()` returns `{ action: 'rally', destination: { x, y } }` to move the rally point (it starts at `world.center` and stays until changed) or `{ action: 'hold' }` to pause building for a tick. `self.factory` shows `nextMinionIn`, `minionsLeft`, `minionsAlive`, `maxAlive` and `rally`. The factory's `color` is also its minions' colour. See `units/basic_factory.js`. Destroying a factory stops it; its minions keep going (unless the host option 'Minions die with their factory' below is on). A factory that holds too long (or is walled in so no minion can get out) stops counting as a fighter once it no longer has time to build one.
 - **A factory's `productionInterval` sets how many minions it buys:** 300-599 = 12 minions, 600 = 11, 720 = 9, 900 = 7, 1200 = 5 per battle, and the price follows (section 5). Up to **5 factories** per army.
 - `enemies` and `allies` can now hold `type: 'wall'`, `'factory'` and `'minion'` bodies. Walls and factories have `range` 0.
 - **Getting past walls and buildings:** just `move` to where you want to go. When walls, towers or factories are in the way, the game walks your soldier (and minions) **round them by the shortest open way** (between two buildings only if it fits), through gaps one cell wide (two cells for size 19-20). `self.pathing` says how the last move went: `'direct'` (straight there), `'detour'` (going round walls) or `'no-route'` (walls close the way off completely: the unit walks to the best wall to break and waits there). `self.blockedBy` is the id of the wall that stopped it (or `null`) and `self.blockedTicks` counts the ticks it has been stopped; a unit that is just walking round a wall is not stopped.
@@ -427,6 +429,7 @@ Rules to know:
 - **Enemies walk round walls too**, by the shortest open way. When walls close every way, they have to break a wall.
 - **Factory minions arrive during the battle:** one every `productionInterval` ticks.
 - **Host option 'Factories stop at sudden death'** (off unless the host turns it on; `get_rules` → `factories.stopAtSuddenDeath`): when on, no new minion appears once sudden death starts, `self.factory.producing` turns `false`, minions already out keep fighting and stored ones still leave; a factory then pays only for the minions it can make before sudden death.
+- **Host option 'Minions die with their factory'** (off unless the host turns it on; `get_rules` → `factories.minionsDieWithFactory`): when on, destroying a factory also destroys its minions out on the field, in the same tick, and the unit that destroyed the factory gets a kill and the value of each; stored minions are lost as always. A minion's `factoryId` (in `enemies` and `allies`) is the `id` of the factory that made it.
 
 ### Factories: minion kinds, orders and burst
 
