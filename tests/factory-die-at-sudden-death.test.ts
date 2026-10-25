@@ -39,8 +39,8 @@ const deathTick = (engine: BattleEngine, id: string) =>
   engine.frames.find((f) => f.events.some((e) => e.type === 'death' && 'instanceId' in e && e.instanceId === id))?.t;
 
 describe('factories die at sudden death (§9.3)', () => {
-  it('is on by default', () => {
-    expect(DEFAULT_CONFIG.factory.dieAtSuddenDeath).toBe(true);
+  it('is off by default (user, after the measurements)', () => {
+    expect(DEFAULT_CONFIG.factory.dieAtSuddenDeath).toBe(false);
   });
 
   it('every factory dies on the first sudden-death tick, credited to nobody; towers and minions are untouched', async () => {

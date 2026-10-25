@@ -100,9 +100,9 @@ describe('/admin quick toggle', () => {
     expect(QUICK_TOGGLES.map((t) => t.path)).toEqual(['timers.autoAdvanceWhenAllReady', 'factory.dieAtSuddenDeath', 'factory.stopAtSuddenDeath', 'factory.minionsDieWithFactory', 'sim.routeRoundBuildings']);
     // "Factories stop at sudden death" (2026-10-25) sits with the factories and is off by default.
     expect(QUICK_GROUPS.find((g) => g.id === 'buildings')?.toggles?.[1]?.path).toBe('factory.stopAtSuddenDeath');
-    // "Factories die at sudden death" (2026-10-25) is first and on by default.
+    // "Factories die at sudden death" (2026-10-25) is first and off by default.
     expect(QUICK_GROUPS.find((g) => g.id === 'buildings')?.toggles?.[0]?.path).toBe('factory.dieAtSuddenDeath');
-    expect(toggleValue(DEFAULT_CONFIG, 'factory.dieAtSuddenDeath')).toBe(true);
+    expect(toggleValue(DEFAULT_CONFIG, 'factory.dieAtSuddenDeath')).toBe(false);
     expect(toggleValue(DEFAULT_CONFIG, 'factory.stopAtSuddenDeath')).toBe(false);
     // "Minions die with their factory" (2026-10-25) sits next to it.
     expect(QUICK_GROUPS.find((g) => g.id === 'buildings')?.toggles?.[2]?.path).toBe('factory.minionsDieWithFactory');

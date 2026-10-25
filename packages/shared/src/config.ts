@@ -508,10 +508,10 @@ export const DEFAULT_CONFIG: GameConfig = {
     // Off by default: on, it nerfed attacking factory armies and broke the 70% cap
     // without moving the factory camp (§14 "Factories stop at sudden death").
     stopAtSuddenDeath: false,
-    // On by default (user, 2026-10-25: "add an option that makes factories die at
-    // sudden death. Enable it by default"): every factory is destroyed when sudden
-    // death starts, so factory camps can't sit out a standoff.
-    dieAtSuddenDeath: true,
+    // Off by default (user, 2026-10-25, after the measurements: "turn it off by
+    // default"): on, the factory camp got stronger (62.9% -> 66.7%), attacking
+    // factory armies collapsed and 4 rules failed (§14 "Factories die at sudden death").
+    dieAtSuddenDeath: false,
     // Off by default: on, the camp fell (62.9% -> 42.1%) but attacking factory armies
     // collapsed and 12 rules failed (§14 "Minions die with their factory").
     minionsDieWithFactory: false,

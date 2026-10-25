@@ -428,7 +428,7 @@ Rules to know:
 - **Shots fly over walls** (any range above 50).
 - **Enemies walk round walls too**, by the shortest open way. When walls close every way, they have to break a wall.
 - **Factory minions arrive during the battle:** one every `productionInterval` ticks.
-- **Host option 'Factories die at sudden death'** (ON unless the host turns it off; `get_rules` → `factories.dieAtSuddenDeath`): when on, every factory still standing is destroyed when sudden death starts; nobody gets the credit, and its stored minions are lost.
+- **Host option 'Factories die at sudden death'** (off unless the host turns it on; `get_rules` → `factories.dieAtSuddenDeath`): when on, every factory still standing is destroyed when sudden death starts; nobody gets the credit, and its stored minions are lost.
 - **Host option 'Factories stop at sudden death'** (off unless the host turns it on; `get_rules` → `factories.stopAtSuddenDeath`): when on, no new minion appears once sudden death starts, `self.factory.producing` turns `false`, minions already out keep fighting and stored ones still leave; a factory then pays only for the minions it can make before sudden death.
 - **Host option 'Minions die with their factory'** (off unless the host turns it on; `get_rules` → `factories.minionsDieWithFactory`): when on, destroying a factory also destroys its minions within `factories.crumbleRadius` px of it (centre to centre; 0 = all of them, wherever they are), in the same tick, and the unit that destroyed the factory gets a kill and the value of each; its minions further away keep fighting, and stored minions are lost as always. A minion's `factoryId` (in `enemies` and `allies`) is the `id` of the factory that made it.
 
