@@ -184,6 +184,7 @@ export const QUICK_GROUPS: QuickGroup[] = [
       { path: 'factory.maxAlivePerFactory', label: 'Minions alive per factory', help: 'A factory waits while this many of its minions are alive.', min: 1, step: 1, integer: true },
       { path: 'factory.maxAlivePerPlayer', label: 'Minions alive per player', help: 'All of a player’s factories together (also limited to 40 ÷ players).', min: 1, step: 1, integer: true },
       { path: 'factory.maxAlivePerBattle', label: 'Minions alive per battle', help: 'The most minions in the whole arena at once (keeps big battles smooth).', min: 1, step: 1, integer: true },
+      { path: 'factory.crumbleRadius', label: 'Crumble distance', help: "With 'Minions die with their factory' on: only the minions within this distance of the factory (centre to centre) crumble with it; the ones further away keep fighting. 0 = all of them, wherever they are.", unit: 'px', min: 0, step: 10 },
       // M8.6 (§5.3): the four minion kinds (each must stay within the soldier bounds; prices follow).
       ...(['grunt', 'archer', 'runner', 'brute'] as const).flatMap((k) => {
         const name = k[0]!.toUpperCase() + k.slice(1);
@@ -209,7 +210,7 @@ export const QUICK_GROUPS: QuickGroup[] = [
       {
         path: 'factory.minionsDieWithFactory',
         label: 'Minions die with their factory',
-        help: 'When a factory is destroyed, its minions out on the field crumble at once (the unit that destroyed it gets the kills and their value). Prices are unchanged. Off: they keep fighting.',
+        help: 'When a factory is destroyed, its minions within the crumble distance of it crumble at once (the unit that destroyed it gets the kills and their value); minions further away keep fighting. Prices are unchanged. Off: they all keep fighting.',
       },
     ],
   },

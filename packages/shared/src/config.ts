@@ -154,6 +154,13 @@ export const FactorySchema = z.object({
    * factory's killer. false: they keep fighting (the pre-2026-10-25 rule).
    */
   minionsDieWithFactory: z.boolean(),
+  /**
+   * With minionsDieWithFactory: only the minions whose centre is within this many
+   * px of the factory's centre (distance <= radius) at its death tick crumble; the
+   * rest keep fighting (2026-10-25 "Only minions near the factory crumble").
+   * 0 = every minion of the factory crumbles, wherever it is.
+   */
+  crumbleRadius: nonNeg(),
   maxAlivePerFactory: posInt(),
   /** Alive minions per player: min(this, floor(maxAlivePerBattle / players)). */
   maxAlivePerPlayer: posInt(),
@@ -497,6 +504,9 @@ export const DEFAULT_CONFIG: GameConfig = {
     // Off by default: on, the camp fell (62.9% -> 42.1%) but attacking factory armies
     // collapsed and 12 rules failed (§14 "Minions die with their factory").
     minionsDieWithFactory: false,
+    // With the option on, only minions within 120 px crumble: the one radius that kept
+    // every rule (camp 62.9% -> 60.4%; §14 "Only minions near the factory crumble").
+    crumbleRadius: 120,
     maxAlivePerFactory: 4,
     maxAlivePerPlayer: 12,
     maxAlivePerBattle: 40,

@@ -340,3 +340,12 @@ export function sidestep(m: SimUnit, dest: Point, world: Pick<MinionWorld, 'livi
   }
   return null;
 }
+
+/**
+ * factory.crumbleRadius (§9.3 step 9a, 2026-10-25 "Only minions near the factory
+ * crumble"): does a minion centred at `m` crumble with the factory centred at
+ * `fac`? Centre-to-centre distance <= radius; radius 0 = every minion, wherever.
+ */
+export function withinCrumbleRadius(m: { x: number; y: number }, fac: { x: number; y: number }, radius: number): boolean {
+  return radius <= 0 || (m.x - fac.x) ** 2 + (m.y - fac.y) ** 2 <= radius * radius;
+}

@@ -183,6 +183,7 @@
     "maxMinionsPerFactory": 12,
     "stopAtSuddenDeath": false,
     "minionsDieWithFactory": false,
+    "crumbleRadius": 120,
     "maxAlivePerFactory": 4,
     "maxAlivePerPlayer": 12,
     "maxAlivePerBattle": 40,

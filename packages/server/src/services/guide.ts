@@ -872,9 +872,11 @@ function factoriesSection(c: GameConfig): GuideSectionDTO {
           ...(f.stopAtSuddenDeath
             ? [`Factories stop building at sudden death (${secs(c.suddenDeath.startTick, c)}): no new minion appears from then on and \`self.factory.producing\` is false. Minions already out keep fighting, and stored minions still leave.`]
             : []),
-          f.minionsDieWithFactory
-            ? 'Destroying a factory stops it, and its minions crumble with it: the ones out on the field die the same tick (the unit that destroyed the factory gets a kill and the value of each), and the stored ones are lost.'
-            : 'Destroying a factory stops it; its minions keep going.',
+          !f.minionsDieWithFactory
+            ? 'Destroying a factory stops it; its minions keep going.'
+            : f.crumbleRadius > 0
+              ? `Destroying a factory stops it, and its minions near it crumble with it: the ones within ${f.crumbleRadius} px of it (centre to centre) die the same tick (the unit that destroyed the factory gets a kill and the value of each), the ones further away keep going, and the stored ones are lost.`
+              : 'Destroying a factory stops it, and its minions crumble with it: the ones out on the field die the same tick (the unit that destroyed the factory gets a kill and the value of each), and the stored ones are lost.',
         ],
       },
       {

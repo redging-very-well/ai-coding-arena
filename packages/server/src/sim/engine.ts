@@ -19,7 +19,8 @@
 //      instanceId order (§9 Value destroyed);
 //   8) apply sudden-death damage;
 //   9) remove the dead (hp ≤ 0); 9a) with factory.minionsDieWithFactory, the
-//      living minions of each factory removed in 9 crumble (credited to its killer);
+//      living minions of each factory removed in 9 that are within
+//      factory.crumbleRadius of it crumble (credited to its killer);
 //  10) check elimination.
 // After tick k the sim time is k+1; a frame is recorded whenever the time is a
 // multiple of `sim.frameEveryTicks`, and always at the end.
@@ -110,7 +111,7 @@ import { resolveAction, type ResolvedAction } from './actions.js';
 import { BodyIndex, HitPipeline, emptySplit, noAura, statusOf, tempoOf } from './effects.js';
 import { alivePerPlayerCap, canMakeOf, spawnSpots, zoneFacingDir } from './factory.js';
 import { FrameRecorder, frameAt } from './frames.js';
-import { hitDamage, kindConfig, minionAction, minionStats, minionValueOf } from './minion.js';
+import { hitDamage, kindConfig, minionAction, minionStats, minionValueOf, withinCrumbleRadius } from './minion.js';
 import { isFixedBody, separate } from './movement.js';
 import { Pathfinder } from './pathing.js';
 import { aliveInFrame, canFight, factoryLeftIn, isFighter, killValueOf, livingValueAt, livingValueOf } from './value.js';
@@ -929,7 +930,7 @@ export class BattleEngine {
 
   /**
    * Minions die with their factory (factory.minionsDieWithFactory, §9.3): the
-   * factory's living minions crumble at time `t`, in instanceId order, in one
+   * factory's living minions within factory.crumbleRadius of it crumble at time `t`, in instanceId order, in one
    * `crumble` event carrying the factory's id. The unit whose hit destroyed the
    * factory gets a kill and the minion's value destroyed for each (the same
    * credit as hitting it down); a factory that died to sudden death credits nobody.
@@ -937,8 +938,11 @@ export class BattleEngine {
   private crumbleMinionsOf(fac: SimUnit, living: readonly SimUnit[], t: number): void {
     let ids: string[] | undefined;
     const killer = fac.killedBy;
+    // factory.crumbleRadius (2026-10-25): only minions whose centre is within it of
+    // the factory's centre crumble (0 = all of them); the rest keep fighting.
+    const radius = this.config.factory.crumbleRadius;
     for (const m of living) {
-      if (!m.alive || m.minion?.factory !== fac) continue;
+      if (!m.alive || m.minion?.factory !== fac || !withinCrumbleRadius(m, fac, radius)) continue;
       if (killer) {
         killer.kills += 1;
         killer.valueDestroyed += killValueOf(m);

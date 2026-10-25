@@ -6,23 +6,29 @@
 // The unit whose hit destroyed the factory gets a kill and the minion's value
 // destroyed for each; stored minions are lost as before (the factory's value at
 // death already counts them). Minions show `factoryId` in every view.
+//
+// `factory.crumbleRadius` (user decision 2026-10-25: "Only minions NEAR the
+// factory crumble"): only the minions whose centre is within that many px of
+// the factory's centre (distance <= radius) crumble; the rest keep fighting.
+// 0 = every minion of the factory, wherever it is (the tests above the radius
+// block use 0).
 
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG, deepMerge, type FrameDTO, type GameConfig, type OtherView, type PlacementDTO } from '@pixel-clash/shared';
 import { BattleEngine } from '../packages/server/src/sim/engine.js';
-import { minionValueOf } from '../packages/server/src/sim/minion.js';
+import { minionValueOf, withinCrumbleRadius } from '../packages/server/src/sim/minion.js';
 import { unitTypeRules } from '../packages/server/src/services/rules.js';
 import { buildGuide } from '../packages/server/src/services/guide.js';
 import { design, fakePlayers, idleBrain, scripted, stats, type FakePlayerSpec } from './helpers/fakeRunner.js';
 
 const FACTORY = (interval: number, over: object = {}) => stats({ type: 'factory', productionInterval: interval, maxHealth: 120, ...over });
 const at = (col: number, row: number, unitId: string): PlacementDTO => ({ unitId, col, row });
-/** A 2400-tick battle without sudden death damage; the option on unless patched off. */
-const cfg = (on = true, patch: object = {}): GameConfig =>
+/** A 2400-tick battle without sudden death damage; the option on unless patched off; every minion crumbles unless `radius` is set. */
+const cfg = (on = true, patch: object = {}, radius = 0): GameConfig =>
   deepMerge(DEFAULT_CONFIG, {
     timers: { battleTicks: 2400 },
     suddenDeath: { startTick: 2300, endTick: 2400, damagePctPerSecond: 0 },
-    factory: { minionsDieWithFactory: on },
+    factory: { minionsDieWithFactory: on, crumbleRadius: radius },
     ...patch,
   });
 
@@ -53,7 +59,8 @@ const rallyHome = scripted(() => ({ action: 'rally', destination: { x: 60, y: 60
 const KEEPER = stats({ type: 'tower', damage: 5 });
 
 /** a: factories (+ an idle tower so it stays in the battle); b: one hunter. */
-function battle(config: GameConfig, opts: { factories?: string[][]; target?: string; from?: number; burst?: number; seed?: number } = {}) {
+function battle(config: GameConfig, opts: { factories?: string[][]; target?: string; from?: number; burst?: number; seed?: number; rally?: { x: number; y: number } } = {}) {
+  const rally = opts.rally;
   const facs = opts.factories ?? [['f', '2', '2']];
   return run(
     [
@@ -63,7 +70,7 @@ function battle(config: GameConfig, opts: { factories?: string[][]; target?: str
         zone: 'TL',
         units: [design('f', FACTORY(300, opts.burst ? { burst: opts.burst } : {}), undefined, config), design('k', KEEPER)],
         placements: [...facs.map(([u, c, r]) => at(Number(c), Number(r), u!)), at(0, 5, 'k')],
-        brains: { f: rallyHome, k: idleBrain },
+        brains: { f: rally ? scripted(() => ({ action: 'rally', destination: rally })) : rallyHome, k: idleBrain },
       },
       { playerId: 'b', seat: 1, zone: 'BR', units: [design('s', STRONG)], placements: [at(0, 0, 's')], brains: { s: hunter(opts.from ?? 1000, opts.target) } },
     ],
@@ -75,6 +82,8 @@ function battle(config: GameConfig, opts: { factories?: string[][]; target?: str
 describe('minions die with their factory (§9.3)', () => {
   it('is off by default', () => {
     expect(DEFAULT_CONFIG.factory.minionsDieWithFactory).toBe(false);
+    // The radius a host gets by turning it on (§14 "Only minions near the factory crumble").
+    expect(DEFAULT_CONFIG.factory.crumbleRadius).toBe(120);
   });
 
   it("the factory's living minions crumble in the tick it dies, in one event naming the factory", async () => {
@@ -172,7 +181,7 @@ describe('minions die with their factory (§9.3)', () => {
     const off = unitTypeRules(DEFAULT_CONFIG).factories as { text: string; minionsDieWithFactory: boolean };
     expect(off.minionsDieWithFactory).toBe(false);
     expect(off.text).toContain('its minions keep going');
-    const onCfg = deepMerge(DEFAULT_CONFIG, { factory: { minionsDieWithFactory: true } });
+    const onCfg = deepMerge(DEFAULT_CONFIG, { factory: { minionsDieWithFactory: true, crumbleRadius: 0 } });
     const on = unitTypeRules(onCfg).factories as typeof off;
     expect(on.minionsDieWithFactory).toBe(true);
     expect(on.text).toContain('crumble with it in the same tick');
@@ -189,5 +198,103 @@ describe('minions die with their factory (§9.3)', () => {
     await Promise.all([r1.done, r2.done]);
     expect(crumbles(r1.engine.frames).length).toBeGreaterThan(0);
     expect(JSON.stringify(r1.engine.frames)).toBe(JSON.stringify(r2.engine.frames));
+  });
+});
+
+describe('only minions near the factory crumble (factory.crumbleRadius)', () => {
+  // The factory (centre 140, 140) rallies its minions far away (60, 700): at its death
+  // (the hunter starts at tick 1150, so about tick 1290) three minions are 540-575 px
+  // away and the newest one about 106 px from it.
+  const FAR = { x: 60, y: 700 };
+  const FROM = 1150;
+  const near = (radius: number, on = true) => battle(cfg(on, { sim: { frameEveryTicks: 1 } }, radius), { rally: FAR, from: FROM });
+  /** The factory's minions alive when it died, with their distance to it (from the option-off battle, identical up to then). */
+  async function atDeath() {
+    const { engine, done } = near(0, false);
+    const result = await done;
+    const fac = result.units.find((u) => u.instanceId === '0-2-2')!;
+    const died = fac.diedAtTick!;
+    const before = engine.frames.find((f) => f.t === died - 1)!.units.find((u) => u[0] === '0-2-2')!;
+    const frame = engine.frames.find((f) => f.t === died)!;
+    const minions = frame.units.filter((u) => u[0].startsWith('0-2-2-m')).map((u) => ({ id: u[0], d: Math.hypot(u[1] - before[1], u[2] - before[2]) }));
+    return { died, minions };
+  }
+
+  it('crumbles only the minions within the radius; the ones further out keep fighting', async () => {
+    const { died, minions } = await atDeath();
+    const inside = minions.filter((m) => m.d <= 200).map((m) => m.id);
+    const outside = minions.filter((m) => m.d > 200).map((m) => m.id);
+    expect(inside.length).toBeGreaterThan(0);
+    expect(outside.length).toBeGreaterThan(0);
+    const { engine, done } = near(200);
+    const result = await done;
+    expect(result.units.find((u) => u.instanceId === '0-2-2')!.diedAtTick).toBe(died);
+    const c = crumbles(engine.frames);
+    expect(c).toEqual([{ t: died, type: 'crumble', ids: [...inside].sort(), factoryId: '0-2-2' }]);
+    // The ones out of reach are still alive after the crumble (nothing else attacks them here).
+    for (const id of outside) expect(result.units.find((u) => u.instanceId === id)!.survived).toBe(true);
+    const later = engine.frames.find((f) => f.t === died + 60)!;
+    expect(later.units.filter((u) => u[0].startsWith('0-2-2-m')).map((u) => u[0]).sort()).toEqual([...outside].sort());
+  });
+
+  it('the boundary: a minion exactly at the radius crumbles, one just past it does not; 0 means every minion', async () => {
+    const { minions } = await atDeath();
+    const nearest = minions.reduce((a, b) => (b.d < a.d ? b : a));
+    // Frame positions are rounded to 0.01 px, so step 0.05 px either side of the measured distance.
+    const runIds = async (r: number) => {
+      const b = near(r);
+      await b.done;
+      return crumbles(b.engine.frames).flatMap((c) => c.ids);
+    };
+    expect(await runIds(nearest.d + 0.05)).toEqual([nearest.id]);
+    expect(await runIds(nearest.d - 0.05)).toEqual([]);
+    expect((await runIds(0)).sort()).toEqual(minions.map((m) => m.id).sort());
+    expect((await runIds(10_000)).sort()).toEqual(minions.map((m) => m.id).sort());
+    // Exactly on the radius counts as inside (distance <= radius).
+    expect(withinCrumbleRadius({ x: 100, y: 0 }, { x: 0, y: 0 }, 100)).toBe(true);
+    expect(withinCrumbleRadius({ x: 60, y: 80 }, { x: 0, y: 0 }, 100)).toBe(true);
+    expect(withinCrumbleRadius({ x: 100.001, y: 0 }, { x: 0, y: 0 }, 100)).toBe(false);
+    expect(withinCrumbleRadius({ x: 5000, y: 5000 }, { x: 0, y: 0 }, 0)).toBe(true);
+  });
+
+  it('credits the killer only for the minions that crumbled', async () => {
+    const bOn = near(200);
+    const bOff = near(200, false);
+    const [on, off] = await Promise.all([bOn.done, bOff.done]);
+    const killer = (r: typeof on) => r.units.find((u) => u.instanceId === '1-0-0')!;
+    const crumbled = crumbles(bOn.engine.frames).flatMap((c) => c.ids).length;
+    expect(crumbled).toBeGreaterThan(0);
+    expect(killer(on).kills).toBe(killer(off).kills + crumbled);
+    expect(killer(on).valueDestroyed).toBe(killer(off).valueDestroyed + crumbled * minionValueOf(cfg()));
+    expect(killer(on).damageDealt).toBe(killer(off).damageDealt);
+  });
+
+  it('get_rules and the guide state the radius only when the option is on', () => {
+    type F = { text: string; minionsDieWithFactory: boolean; crumbleRadius?: number };
+    const on = deepMerge(DEFAULT_CONFIG, { factory: { minionsDieWithFactory: true, crumbleRadius: 170 } });
+    const off = deepMerge(DEFAULT_CONFIG, { factory: { minionsDieWithFactory: false, crumbleRadius: 170 } });
+    const all = deepMerge(DEFAULT_CONFIG, { factory: { minionsDieWithFactory: true, crumbleRadius: 0 } });
+    const rOn = unitTypeRules(on).factories as F;
+    expect(rOn.crumbleRadius).toBe(170);
+    expect(rOn.text).toContain('its minions within 170 px of it (centre to centre) crumble with it in the same tick');
+    expect(rOn.text).toContain('its minions further away keep fighting');
+    const rOff = unitTypeRules(off).factories as F;
+    expect(rOff.crumbleRadius).toBeUndefined();
+    expect(rOff.text).not.toContain('170 px');
+    const rAll = unitTypeRules(all).factories as F;
+    expect(rAll.text).toContain('its minions out on the field crumble with it');
+    const g = (c: GameConfig) => JSON.stringify(buildGuide(c));
+    expect(g(on)).toContain('the ones within 170 px of it (centre to centre) die the same tick');
+    expect(g(off)).not.toContain('170 px');
+    expect(g(all)).toContain('the ones out on the field die the same tick');
+  });
+
+  it('is deterministic, and off plays the same frames whatever the radius', async () => {
+    const [a, b] = [near(200), near(200)];
+    await Promise.all([a.done, b.done]);
+    expect(JSON.stringify(a.engine.frames)).toBe(JSON.stringify(b.engine.frames));
+    const [x, y] = [near(0, false), near(200, false)];
+    await Promise.all([x.done, y.done]);
+    expect(JSON.stringify(x.engine.frames)).toBe(JSON.stringify(y.engine.frames));
   });
 });
