@@ -1053,9 +1053,14 @@ gitignored). Battles are deterministic, so every round-robin duel and every
 - **Engine hash:** the files under `packages/server/src/sim`, `packages/server/src/sandbox`
   and `packages/shared/src`, plus the transpile step, the balance harness, the brains,
   the V8 version and the CPU architecture.
-- **Config fields a battle reads:** everything except caps, plan timers, match size
-  and rate limits. Prices count only through each army's priced designs and the
-  minion values. So a price only factories pay replays only the battles with factories.
+- **Config fields that battle can read** (relevance-aware since 2026-10-25, see
+  [Sweeps](#sweeps-and-the-relevance-aware-cache-2026-10-25)): every config leaf is
+  classified in `CONFIG_LEAF_RULES` as global (every battle), unread (caps, plan
+  timers, match size, rate limits, prices) or conditional on what the two armies
+  field (factories, support, each element, any element, splash). The key hashes the
+  global fields plus the conditional ones the armies make readable. Prices count
+  only through each army's priced designs and the minion values. So a price only
+  factories pay, or a factory-only knob, replays only the battles with factories.
 - **Both armies as deployed:** designs, costs, placements and brains.
 - **The battle itself:** map, zone pair, seed and runner.
 
@@ -1885,3 +1890,93 @@ lever the measurements point at (not built, not chosen): what happens to minions
 their factory dies **to sudden death** (e.g. those deaths crumble every minion of the
 factory, or factories outside the circle stop counting), since that is where the camp's
 standoff wins come from. **Watch item.**
+
+## Factories die at sudden death (2026-10-25)
+
+Plan §5.2, §9.3 (step 8b), §14 "Factories die at sudden death", §17. The user's request
+(verbatim): "just add an option that makes factories die at sudden death. Enable it by
+default. Implement this and commit it; then after that you can do some measurements and
+let me know the outcomes." `factory.dieAtSuddenDeath` (commit 7ca5f59) destroys every
+factory still standing on the first sudden-death tick (4,500), credited to nobody; stored
+minions are lost, minions already out keep fighting. Prices are unchanged. **It ships on
+by default, as asked. The measurements below fail 4 rules with it on; the default was not
+changed and no rule was loosened (the user decides).**
+
+### Full matrix (51 archetypes, 800 battles each, seeds 11 and 4242)
+
+`npm run balance -- --full --all --seeds 11,4242 --extra camp,camptowers,campfive`, with
+the default (on) and with `--config '{"factory":{"dieAtSuddenDeath":false}}'` (off; the
+same numbers as "off" in "Only minions near the factory crumble"). Camps: each camp
+against the 51 archetypes, 816 battles, draws half.
+
+| archetype | off | **on (default)** | change |
+|---|---|---|---|
+| `camp`* | 62.9% | **66.7%** | +3.8 |
+| `camptowers`* | 50.1% | 55.9% | +5.8 |
+| `campfive`* | 44.7% | 45.5% | +0.8 |
+| homeguard | 58.4% | 64.6% | +6.3 |
+| brutes | 55.3% | 15.9% | −39.4 |
+| stormrunners | 50.5% | 12.8% | −37.8 |
+| runners | 29.0% | 4.0% | −25.0 |
+| tmix | 49.4% | 29.6% | −19.8 |
+| quad | 33.6% | 17.1% | −16.5 |
+| factories5 | 45.6% | 37.6% | −8.0 |
+| elemfactories | 50.6% | 44.8% | −5.9 |
+| archers | 38.3% | 36.5% | −1.8 |
+| swarm | 32.0% | 31.4% | −0.6 |
+| raiders | 45.0% | 44.9% | −0.1 |
+| bunker | 42.1% | 42.5% | +0.4 |
+| splashline | 68.3% | **75.6%** | +7.4 |
+| exploit | 67.8% | **73.0%** | +5.2 |
+| bricks | 72.4% | 72.4% (cap 72.6%) | 0 |
+| guardedcatapults | 65.8% | **71.8%** | +6.0 |
+| soldiersFilled | 70.4% | 70.4% (cap 71.8%) | 0 |
+| cavalry | 68.4% | 68.4% | 0 |
+| overload | 61.0% | 68.1% | +7.1 |
+| mortars | 59.3% | 67.6% | +8.4 |
+
+\* not in the round robin. The top 8 with it on: splashline 75.6%, exploit 73.0%, bricks
+72.4%, guardedcatapults 71.8%, soldiersFilled 70.4%, cavalry 68.4%, overload 68.1%,
+mortars 67.6%. Every static army that faces factories gains 5-9 points (turtle +9.0,
+shieldwall +8.5, mortars +8.4, snipers +8.3, the walled nests +7-8); armies without
+factories that never meet one are unchanged.
+
+**Off: PASS, 249 rules. On: FAIL, 4 of 249 rules:**
+- full: splashline wins ≤ 70% (75.6%);
+- full: exploit wins ≤ 70% (73.0%);
+- full: guardedcatapults wins ≤ 70% (71.8%);
+- shape: brutes beat fortress ≥ 3 in 4 (0-0-16; it was a pass off).
+
+The balance test pass (`PIXEL_CLASH_PERF=balance npx vitest run`, 114 tests) **fails 2**
+with the default: the full-matrix test (its first failing assertion: exploit 290 of 400
+on seed 11, 72.5%) and the M8.6 stated outcome "a burst of 4 runners loses fewer minions
+per kill than the same runners sent one at a time" (burst 9.6 vs trickle 6.0 lost per
+kill; a stored burst is lost when its factory dies at sudden death). Both pass with
+`BALANCE_FIT='{"factory":{"dieAtSuddenDeath":false}}'`. Parity and cache files pass.
+
+**What it does:** attacking factory armies lose the production they would have kept
+past 4,500 ticks and any stored burst, so the factory rushes collapse (brutes, storm
+runners, runners, the template mix, the quad) and the static armies that used to lose to
+their late waves gain. The camp does not drop: it wins its standoffs with the minions it
+already has out when the circle starts (as in "Only minions near the factory crumble"),
+and its opponents' factories now die too, so `camp` rises 62.9% → 66.7%.
+
+**`--fast` warning:** on this config `npm run balance -- --fast --verify --seeds
+11,4242` disagrees with the full matrix on 2 rules (splashline and guardedcatapults ≤ 70%
+pass in `--fast`, fail in full; its splashline estimate is 63.3%). It is the first config
+where `--verify` found a difference, so confirm any decision with `--full` (see
+[Sweeps](#sweeps-and-the-relevance-aware-cache-2026-10-25)).
+
+### Exploit search with the default
+
+`npm run balance:exploit -- --generations 6 --population 16 --top 3` (seed 1, 79
+armies, 17,952 battles, 331 s): three builds on the watch list, no factories in any.
+
+| win rate | army | cost | beaten by |
+|---|---|---|---|
+| 87.3% | a range-120 diver + 2 fast melee + a range-160 splash-20 soldier + 2 range-130 fire soldiers, focus | $8,968 | cavalry 0-0-16, healerball 1-0-15, bricks, buffedrush 4-0-12 |
+| 81.7% | the same family with 2 range-130 fire towers | $9,331 | healerball 0-0-16, snipers 2-0-14, icebreak, longbow |
+| 71.7% | an ice tank + 5 small towers + 2 splash-20 snipers, hold, focus | $9,595 | archers, homeguard, healerball, elemfactories, factories5, assassins, cavalry 0-0-16 |
+
+The tanks-in-front, hitters-behind family is the one known with the option off (88.4%
+top in "Brittle factories"); each build has 0-0-16 counters.

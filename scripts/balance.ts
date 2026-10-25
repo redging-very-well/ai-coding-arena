@@ -15,6 +15,9 @@
 //   npm run balance -- --no-cache --workers 10 --top 15 --all --json out.json
 //   npm run balance -- --runner ivm                   confirmation pass on the real sandbox (isolated-vm)
 //   npm run balance -- --fast --verify                also play the full matrix and compare the verdicts
+//   npm run balance -- --fast --extra camp,camptowers each extra archetype against the pool, every battle (draws
+//                                                     count half); reported only, no rules (e.g. the factory camps)
+//   npm run balance:sweep -- --param factory.crumbleRadius=120,160   a --fast run per value, compared (scripts/balance-sweep.ts)
 //
 // Exit code 0 when every rule holds, 1 when one fails.
 
@@ -46,6 +49,7 @@ interface Args {
   alpha: number;
   prior?: number;
   archetypes: string[];
+  extra: string[];
   configPatch: unknown;
   seeds: number[];
   cache: boolean;
@@ -63,6 +67,7 @@ function parseArgs(argv: string[]): Args {
     mode: 'exact',
     alpha: DEFAULT_SEQUENTIAL.alpha,
     archetypes: ALL_ARCHETYPES.map((x) => x.key),
+    extra: [],
     configPatch: undefined,
     seeds: MATRIX_SEEDS,
     cache: true,
@@ -99,6 +104,9 @@ function parseArgs(argv: string[]): Args {
         break;
       case '--archetypes':
         a.archetypes = val().split(',').map((s) => s.trim()).filter(Boolean);
+        break;
+      case '--extra':
+        a.extra = val().split(',').map((s) => s.trim()).filter(Boolean);
         break;
       case '--config': {
         const v = val();
@@ -144,7 +152,7 @@ function parseArgs(argv: string[]): Args {
         throw new Error(`unknown option ${arg} (--help)`);
     }
   }
-  for (const k of a.archetypes) archetypeByKey(k);
+  for (const k of [...a.archetypes, ...a.extra]) archetypeByKey(k);
   return a;
 }
 
@@ -222,6 +230,34 @@ if (args.verify && args.mode !== 'full') {
   );
   verifyStates = full.states;
 }
+/** --extra: each extra archetype against every archetype of the run, every battle (reported only). */
+interface ExtraRow {
+  key: string;
+  w: number;
+  d: number;
+  l: number;
+  n: number;
+  rate: number;
+}
+const extraRows: ExtraRow[] = [];
+if (args.extra.length > 0) {
+  log(`extra: ${args.extra.join(', ')} against the ${keys.length} archetypes`);
+  const groups = args.extra.map((e) => ({ e, jobs: keys.filter((k) => k !== e).flatMap((k) => pairJobs(archetypeByKey(e), archetypeByKey(k), args.seeds)) }));
+  const recs = await runJobs(
+    groups.flatMap((g) => g.jobs),
+    args.configPatch,
+    { workers: args.workers, cache: args.cache, runner: args.runner, pool: getPool },
+  );
+  let at = 0;
+  for (const g of groups) {
+    const mine = recs.slice(at, at + g.jobs.length);
+    at += g.jobs.length;
+    const w = mine.filter((r) => r.outcome === 1).length;
+    const l = mine.filter((r) => r.outcome === -1).length;
+    const n = mine.length;
+    extraRows.push({ key: g.e, w, d: n - w - l, l, n, rate: (w + (n - w - l) / 2) / Math.max(1, n) });
+  }
+}
 pool?.close();
 const seconds = (performance.now() - started) / 1000;
 
@@ -289,6 +325,11 @@ const HEAL_TOLERANCE = 1e-4;
 const healBad = results.filter((r) => r.healBattles > 0 && (r.worstHealWindow > healPct + HEAL_TOLERANCE || r.lastHealTick > config.suddenDeath.startTick)).map((r) => `${r.a} vs ${r.b}`);
 console.log(`\nIn the played battles: wall-only wins ${wallOnly.length ? wallOnly.join(', ') : 'none'}; heal-limit breaks ${healBad.length ? healBad.join(', ') : 'none'}.`);
 
+if (extraRows.length > 0) {
+  console.log(`\nExtra archetypes against the ${keys.length} (every battle, draws half; no rules):`);
+  for (const r of extraRows) console.log(`  ${r.key.padEnd(14)} ${pct(r.rate).padStart(6)}  ${r.w}-${r.d}-${r.l} of ${r.n}`);
+}
+
 let verifyDiff = 0;
 if (verifyStates) {
   const diffs = res.states.flatMap((s, i) => (s.verdict !== verifyStates![i]!.verdict ? [`${s.rule.label}: ${String(s.verdict)} (${args.mode}) vs ${String(verifyStates![i]!.verdict)} (full)`] : []));
@@ -314,6 +355,7 @@ if (args.json) {
         rows,
         rules: res.states.map((s) => ({ label: s.rule.label, kind: s.rule.kind, verdict: s.verdict ?? null, exact: s.exact, p: s.p })),
         cells: matchups.map((m) => ({ a: m.cell.a, b: m.cell.b, ...counts(m.cell) })),
+        extra: extraRows,
         battles: { needed: played, total: res.total, played: runStats.played, cached: runStats.cached },
         seconds,
       },

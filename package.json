@@ -20,6 +20,7 @@
     "test:perf": "node scripts/test-perf.mjs",
     "balance": "tsx --conditions=source scripts/balance.ts",
     "balance:exploit": "tsx --conditions=source scripts/balance-exploit.ts",
+    "balance:sweep": "tsx --conditions=source scripts/balance-sweep.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p packages/client/tsconfig.json --noEmit",
     "loadtest": "tsx --conditions=source tests/load/loadtest.ts",
     "bots": "tsx --conditions=source scripts/bots.ts",
