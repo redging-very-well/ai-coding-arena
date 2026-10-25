@@ -20,7 +20,7 @@ import { badActionReason } from '../packages/server/src/validator/dryrun.js';
 const B = DEFAULT_CONFIG.stats.bounds;
 const SOLDIER = { name: 'S', type: 'soldier', maxHealth: 1400, damage: 56, range: 40, speed: 1.5, attackCooldown: 60, color: '#3399FF' };
 const WALL = { name: 'W', type: 'wall', maxHealth: 3200, color: '#888888' };
-const FACTORY = { name: 'F', type: 'factory', maxHealth: 2400, productionInterval: 600, color: '#C0A060' };
+const FACTORY = { name: 'F', type: 'factory', maxHealth: 360, productionInterval: 600, color: '#C0A060' };
 const codes = (raw: Record<string, unknown>) => {
   const r = checkStats(raw, B);
   return r.ok ? [] : r.errors.map((e) => `${e.code}:${e.field}`);
@@ -114,7 +114,7 @@ describe('step 6: element, splashRadius, support, supportPower, supportRange, mi
     for (const v of [{}, NaN, Infinity, -0.001, 80.0001]) expect(checkStats({ ...SOLDIER, splashRadius: v }, B).ok).toBe(false);
   });
 
-  it('the $10,000 bounds: HP 80-4000, damage 0-240, soldier range 20-160, walls 400-12000, factories 800-8000 every 300-1200 ticks', () => {
+  it('the $10,000 bounds: HP 80-4000, damage 0-240, soldier range 20-160, walls 400-12000, factories 120-1200 every 300-1200 ticks', () => {
     expect(codes({ ...SOLDIER, maxHealth: 79 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
     expect(codes({ ...SOLDIER, maxHealth: 4000 })).toEqual([]);
     expect(codes({ ...SOLDIER, maxHealth: 4001 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
@@ -126,8 +126,8 @@ describe('step 6: element, splashRadius, support, supportPower, supportRange, mi
     expect(codes({ ...SOLDIER, type: 'tower', speed: 0, range: 300 })).toEqual([]);
     expect(codes({ ...WALL, maxHealth: 399 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
     expect(codes({ ...WALL, maxHealth: 12001 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
-    expect(codes({ ...FACTORY, maxHealth: 799 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
-    expect(codes({ ...FACTORY, maxHealth: 8001 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
+    expect(codes({ ...FACTORY, maxHealth: 119 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
+    expect(codes({ ...FACTORY, maxHealth: 1201 })).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
     expect(codes({ ...FACTORY, productionInterval: 299 })).toEqual(['STAT_OUT_OF_RANGE:productionInterval']);
     expect(codes({ ...FACTORY, productionInterval: 1201 })).toEqual(['STAT_OUT_OF_RANGE:productionInterval']);
   });

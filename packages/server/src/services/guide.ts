@@ -539,7 +539,7 @@ const ARCHETYPES: ArchetypeSpec[] = [
     name: 'Brute Barracks',
     note: 'a factory of fire brutes',
     stats: (c) =>
-      buildingStats(c, { type: 'factory', maxHealth: 2400, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900, produces: 'brute', minionElement: 'fire' }),
+      buildingStats(c, { type: 'factory', maxHealth: 360, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900, produces: 'brute', minionElement: 'fire' }),
   },
   {
     id: 'big-wall',

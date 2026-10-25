@@ -5,7 +5,7 @@ export default class BasicFactory {
   constructor() {
     this.name = 'Basic Factory';
     this.type = 'factory';           // a building: never moves, never attacks
-    this.maxHealth = 2400;           // 800-8000
+    this.maxHealth = 360;            // 120-1200
     this.productionInterval = 600;   // 300-1200 ticks between minions (600 = 10 s); faster costs more
     this.color = '#C0A060';          // "#RRGGBB": also the colour of its minions
     // this.produces = 'archer';     // 'grunt' (default), 'archer', 'runner', 'brute' or 'medic': the price follows
@@ -92,7 +92,7 @@ export default class BasicFactory {
 //   { action: 'hold' }                                       pause building for a tick
 //
 // Cost = body + production
-//   body       = 50 + maxHealth*0.075 * (1 + (maxHealth/8000)^2) = 50 + 196.2 = 246.2  ->  $247
+//   body       = 50 + maxHealth*0.5 * (1 + (maxHealth/1200)^2) = 50 + 196.2 = 246.2  ->  $247
 //   production = 11 minions (one every 10 s in a 120 s battle) x $177 (half price: they arrive late) = $1,947
 //   total      = $2,194
 //

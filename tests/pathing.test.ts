@@ -471,7 +471,7 @@ describe('routing in battle (§9.3)', () => {
   it('buildings in battle: soldiers behind their own tower line and minions from behind a tower row reach the enemy, never stuck', async () => {
     // TL zone: a row of own size-20 towers on row 1 (cols 0-5, solid), soldiers and a factory behind it on row 2-3.
     const wallTower = stats({ type: 'tower', size: 20, damage: 0, maxHealth: 2500 });
-    const fac = stats({ type: 'factory', maxHealth: 2500, productionInterval: 600 });
+    const fac = stats({ type: 'factory', maxHealth: 375, productionInterval: 600 });
     const towers = [0, 1, 2, 3, 4, 5].map((c) => at(c, 1, 'tw'));
     const engine = engineOf(
       [

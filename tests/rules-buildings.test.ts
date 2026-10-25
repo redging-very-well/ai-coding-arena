@@ -38,14 +38,14 @@ describe('get_rules (M8.5)', () => {
   it('has the per-type bounds, the new caps and coefficients', () => {
     const bounds = rules.bounds as { byType: Record<string, Record<string, unknown>> };
     expect(bounds.byType.wall).toEqual({ maxHealth: { min: 400, max: 12000 } });
-    expect(bounds.byType.factory).toEqual({ maxHealth: { min: 800, max: 8000 }, productionInterval: { min: 300, max: 1200 } });
+    expect(bounds.byType.factory).toEqual({ maxHealth: { min: 120, max: 1200 }, productionInterval: { min: 300, max: 1200 } });
     // Towers out-range soldiers.
     expect(bounds.byType.soldier).toMatchObject({ range: { min: 20, max: 160 } });
     expect(bounds.byType.tower).toMatchObject({ range: { min: 20, max: 300 } });
     expect(rules.caps).toMatchObject({ maxUnitTypes: 4, maxBuildingTypes: 4, maxCopies: 12, maxFactoryCopies: 5, maxWallCopies: 16 });
     expect(rules.caps).not.toHaveProperty('maxTypes');
     expect(rules.copyRamp).toMatchObject({ freeCopies: 3, pctPerCopy: 15 });
-    expect(rules.coefficients).toMatchObject({ wall: { base: 20, hp: 0.0375 }, factory: { base: 50, hp: 0.075, minionDiscount: 0.5 } });
+    expect(rules.coefficients).toMatchObject({ wall: { base: 20, hp: 0.0375 }, factory: { base: 50, hp: 0.5, minionDiscount: 0.5 } });
     expect(rules.costFormula).toMatch(/Walls: cost = /);
     expect(rules.costFormula).toMatch(/Factories: cost = /);
   });
@@ -133,8 +133,8 @@ describe('starter kit text (M8.5, §11)', () => {
       [{ type: 'wall', maxHealth: 3200, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 149],
       [{ type: 'wall', maxHealth: 6400, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 329],
       [{ type: 'wall', maxHealth: 12000, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 920],
-      [{ type: 'factory', maxHealth: 2400, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900 }, 1486],
-      [{ type: 'factory', maxHealth: 2400, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 600 }, 2194],
+      [{ type: 'factory', maxHealth: 360, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900 }, 1486],
+      [{ type: 'factory', maxHealth: 360, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 600 }, 2194],
     ];
     for (const [stats, cost] of cases) {
       expect(computeCost(stats, DEFAULT_CONFIG.cost).cost).toBe(cost);

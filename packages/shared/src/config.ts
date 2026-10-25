@@ -404,7 +404,7 @@ export const DEFAULT_CONFIG: GameConfig = {
     aura: { haste: 9, might: 8, shield: 7 },
     // §6 Walls and factories (×5 in M8.8).
     wall: { base: 20, hp: 0.0375 },
-    factory: { base: 50, hp: 0.075, minionDiscount: 0.5 },
+    factory: { base: 50, hp: 0.5, minionDiscount: 0.5 },
   },
   stats: {
     bounds: {
@@ -417,7 +417,7 @@ export const DEFAULT_CONFIG: GameConfig = {
       attackCooldown: { min: 10, max: 600 },
       size: { min: 6, max: 20 },
       wallHealth: { min: 400, max: 12000 },
-      factoryHealth: { min: 800, max: 8000 },
+      factoryHealth: { min: 120, max: 1200 },
       productionInterval: { min: 300, max: 1200 },
       burst: { min: 1, max: 4 },
       splashRadius: { min: 0, max: 80 },

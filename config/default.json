@@ -28,7 +28,7 @@
     },
     "factory": {
       "base": 50,
-      "hp": 0.075,
+      "hp": 0.5,
       "minionDiscount": 0.5
     }
   },
@@ -71,8 +71,8 @@
         "max": 12000
       },
       "factoryHealth": {
-        "min": 800,
-        "max": 8000
+        "min": 120,
+        "max": 1200
       },
       "productionInterval": {
         "min": 300,

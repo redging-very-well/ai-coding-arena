@@ -301,7 +301,7 @@ describe('quick settings cost preview', () => {
     expect(by.mortarTower!.cost).toBe(1374);
     expect(by.fieldMedic!.cost).toBe(892);
     expect(by.warDrummer!.cost).toBe(869);
-    // The Basic Factory (2,400 HP, every 600 ticks) making medics: $247 body + 11 × $248.
+    // The Basic Factory (360 HP, every 600 ticks) making medics: $247 body + 11 × $248.
     expect(by.medicFactory!.cost).toBe(247 + 11 * 248);
     expect(p.rows.every((r) => r.outOfBounds === null)).toBe(true);
     expect(p.cap).toBe(3000);

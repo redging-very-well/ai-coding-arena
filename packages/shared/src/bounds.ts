@@ -151,7 +151,7 @@ function missingFix(type: UnitType | undefined, field: string, bounds: StatBound
     return `A factory needs this.productionInterval: ticks between two minions, ${p.min}-${p.max}. Try ${eg}${eg === 900 ? ' (one every 15 s)' : ''}.`;
   }
   if (type === 'wall' && field === 'maxHealth') return `A wall needs this.maxHealth, ${range(bounds.wallHealth, 3200)}.`;
-  if (type === 'factory' && field === 'maxHealth') return `A factory needs this.maxHealth, ${range(bounds.factoryHealth, 2400)}.`;
+  if (type === 'factory' && field === 'maxHealth') return `A factory needs this.maxHealth, ${range(bounds.factoryHealth, 360)}.`;
   return `In the constructor add this.${field} = …; as a plain data property (see the contract).`;
 }
 
@@ -390,8 +390,8 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
   }
 
   const hpRange = type === 'wall' ? bounds.wallHealth : type === 'factory' ? bounds.factoryHealth : bounds.maxHealth;
-  // The example is the type's starter template value (Basic Wall 3200, Basic Factory 2400).
-  const hpExample = type === 'wall' ? 3200 : type === 'factory' ? 2400 : undefined;
+  // The example is the type's starter template value (Basic Wall 3200, Basic Factory 360).
+  const hpExample = type === 'wall' ? 3200 : type === 'factory' ? 360 : undefined;
   const maxHealth = has('maxHealth')
     ? checkNumber(errors, 'maxHealth', raw.maxHealth, hpRange, hpExample !== undefined && hpExample >= hpRange.min && hpExample <= hpRange.max ? { example: hpExample } : {})
     : undefined;

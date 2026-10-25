@@ -36,7 +36,7 @@ describe('$10,000 redesign config keys (§6 coefficients, bounds and config keys
     expect(c.cost.element).toEqual({ fire: 1.3, ice: 1.75, lightning: 1.3 });
     expect(c.cost.aura).toEqual({ haste: 9, might: 8, shield: 7 });
     expect(c.cost.wall).toEqual({ base: 20, hp: 0.0375 });
-    expect(c.cost.factory).toEqual({ base: 50, hp: 0.075, minionDiscount: 0.5 });
+    expect(c.cost.factory).toEqual({ base: 50, hp: 0.5, minionDiscount: 0.5 });
     expect(c.caps).toMatchObject({ budget: 10000, unitCost: 3000, maxCopies: 12, maxFactoryCopies: 5, maxWallCopies: 16, copyRamp: { freeCopies: 3, pctPerCopy: 15 } });
     expect(c.stats.bounds).toMatchObject({
       maxHealth: { min: 80, max: 4000 },
@@ -44,7 +44,7 @@ describe('$10,000 redesign config keys (§6 coefficients, bounds and config keys
       range: { min: 20, max: 300 },
       soldierRange: { min: 20, max: 160 },
       wallHealth: { min: 400, max: 12000 },
-      factoryHealth: { min: 800, max: 8000 },
+      factoryHealth: { min: 120, max: 1200 },
       productionInterval: { min: 300, max: 1200 },
       splashRadius: { min: 0, max: 80 },
     });

@@ -67,7 +67,7 @@ describe('validator: wall and factory templates', () => {
   it('Basic Factory: valid, $2,194 = $247 body + 11 minions × $177, size 18', async () => {
     const r = expectOk(await run(template('basic_factory.js')));
     expect(r.unit).toMatchObject({ unitId: 'basic-factory', cost: 2194 });
-    expect(r.unit.stats).toMatchObject({ type: 'factory', maxHealth: 2400, productionInterval: 600, damage: 0, range: 0, speed: 0, attackCooldown: 0, size: 18, minionElement: 'normal' });
+    expect(r.unit.stats).toMatchObject({ type: 'factory', maxHealth: 360, productionInterval: 600, damage: 0, range: 0, speed: 0, attackCooldown: 0, size: 18, minionElement: 'normal' });
     expect(r.unit.breakdown.body).toBe(247);
     expect(r.unit.breakdown.production).toMatchObject({ expected: 11, minionValue: 177, total: 1947 });
     expect(r.warnings).toEqual([]);
@@ -94,14 +94,14 @@ describe('validator: per-type required fields and guards (§5.2, §7 steps 5-6)'
   });
 
   it('a factory without productionInterval: STAT_MISSING with "Try 900"', async () => {
-    const e = errorWith(await run(factory('this.maxHealth = 1500;')), 'STAT_MISSING', 'productionInterval');
+    const e = errorWith(await run(factory('this.maxHealth = 225;')), 'STAT_MISSING', 'productionInterval');
     expect(e.fix).toContain('300-1200');
     expect(e.fix).toContain('900');
   });
 
   it('BUILDING_CANNOT_ATTACK for damage on a wall or factory; damage 0 is fine', async () => {
     errorWith(await run(wall('this.maxHealth = 2000; this.damage = 5;')), 'BUILDING_CANNOT_ATTACK', 'damage');
-    errorWith(await run(factory('this.maxHealth = 1500; this.productionInterval = 900; this.damage = 10;')), 'BUILDING_CANNOT_ATTACK', 'damage');
+    errorWith(await run(factory('this.maxHealth = 225; this.productionInterval = 900; this.damage = 10;')), 'BUILDING_CANNOT_ATTACK', 'damage');
     expectOk(await run(wall('this.maxHealth = 2000; this.damage = 0;')));
   });
 
@@ -114,21 +114,21 @@ describe('validator: per-type required fields and guards (§5.2, §7 steps 5-6)'
 
   it('BUILDING_CANNOT_MOVE for speed on a wall or factory', async () => {
     errorWith(await run(wall('this.maxHealth = 2000; this.speed = 1;')), 'BUILDING_CANNOT_MOVE', 'speed');
-    errorWith(await run(factory('this.maxHealth = 1500; this.productionInterval = 900; this.speed = 2;')), 'BUILDING_CANNOT_MOVE', 'speed');
+    errorWith(await run(factory('this.maxHealth = 225; this.productionInterval = 900; this.speed = 2;')), 'BUILDING_CANNOT_MOVE', 'speed');
   });
 
   it('INTERVAL_NOT_INTEGER for a fractional productionInterval', async () => {
-    const e = errorWith(await run(factory('this.maxHealth = 1500; this.productionInterval = 900.5;')), 'INTERVAL_NOT_INTEGER', 'productionInterval');
+    const e = errorWith(await run(factory('this.maxHealth = 225; this.productionInterval = 900.5;')), 'INTERVAL_NOT_INTEGER', 'productionInterval');
     expect(e.allowed).toMatchObject({ integer: true });
   });
 
   it.each([
     ['wall HP 399', wall('this.maxHealth = 399;'), 'maxHealth', { min: 400, max: 12000 }],
     ['wall HP 12001', wall('this.maxHealth = 12001;'), 'maxHealth', { min: 400, max: 12000 }],
-    ['factory HP 799', factory('this.maxHealth = 799; this.productionInterval = 900;'), 'maxHealth', { min: 800, max: 8000 }],
-    ['factory HP 8001', factory('this.maxHealth = 8001; this.productionInterval = 900;'), 'maxHealth', { min: 800, max: 8000 }],
-    ['interval 299', factory('this.maxHealth = 1500; this.productionInterval = 299;'), 'productionInterval', { min: 300, max: 1200 }],
-    ['interval 1201', factory('this.maxHealth = 1500; this.productionInterval = 1201;'), 'productionInterval', { min: 300, max: 1200 }],
+    ['factory HP 119', factory('this.maxHealth = 119; this.productionInterval = 900;'), 'maxHealth', { min: 120, max: 1200 }],
+    ['factory HP 1201', factory('this.maxHealth = 1201; this.productionInterval = 900;'), 'maxHealth', { min: 120, max: 1200 }],
+    ['interval 299', factory('this.maxHealth = 225; this.productionInterval = 299;'), 'productionInterval', { min: 300, max: 1200 }],
+    ['interval 1201', factory('this.maxHealth = 225; this.productionInterval = 1201;'), 'productionInterval', { min: 300, max: 1200 }],
   ])('%s → STAT_OUT_OF_RANGE with the per-type bounds', async (_label, source, field, allowed) => {
     expect(errorWith(await run(source), 'STAT_OUT_OF_RANGE', field).allowed).toEqual(allowed);
   });
@@ -137,8 +137,8 @@ describe('validator: per-type required fields and guards (§5.2, §7 steps 5-6)'
     expect(expectOk(await run(wall('this.maxHealth = 8000;'))).unit.cost).toBe(454);
   });
 
-  it('a maxed storm-runner factory (8000 HP, interval 300) is $5,342: UNIT_TOO_EXPENSIVE naming a lever', async () => {
-    const r = await run(factory("this.maxHealth = 8000; this.productionInterval = 300; this.produces = 'runner'; this.minionElement = 'lightning';"));
+  it('a maxed storm-runner factory (1200 HP, interval 300) is $5,342: UNIT_TOO_EXPENSIVE naming a lever', async () => {
+    const r = await run(factory("this.maxHealth = 1200; this.productionInterval = 300; this.produces = 'runner'; this.minionElement = 'lightning';"));
     const e = errorWith(r, 'UNIT_TOO_EXPENSIVE');
     expect(e.value).toBe(5342);
     expect(e.fix).toMatch(/productionInterval|maxHealth/);
@@ -174,7 +174,7 @@ describe('validator: dry run per type (§7 step 9)', () => {
     const r = expectOk(
       await run(
         factory(
-          'this.maxHealth = 1500; this.productionInterval = 900;',
+          'this.maxHealth = 225; this.productionInterval = 900;',
           `const f = self.factory;
            if (!f || f.minionsLeft !== 5 || f.rally.x !== world.center.x || f.productionInterval !== 900) throw new Error('no factory view');
            if (self.blockedBy !== null || self.blockedTicks !== 0) throw new Error('no blocked fields');
@@ -187,18 +187,18 @@ describe('validator: dry run per type (§7 step 9)', () => {
   });
 
   it('a factory without update(): UPDATE_MISSING with a rally fix', async () => {
-    const e = errorWith(await run(factory('this.maxHealth = 1500; this.productionInterval = 900;', null)), 'UPDATE_MISSING');
+    const e = errorWith(await run(factory('this.maxHealth = 225; this.productionInterval = 900;', null)), 'UPDATE_MISSING');
     expect(e.fix).toContain('rally');
   });
 
   it('a factory rally without a destination: BAD_ACTION listing the factory actions', async () => {
-    const e = errorWith(await run(factory('this.maxHealth = 1500; this.productionInterval = 900;', "return { action: 'rally' };")), 'BAD_ACTION');
+    const e = errorWith(await run(factory('this.maxHealth = 225; this.productionInterval = 900;', "return { action: 'rally' };")), 'BAD_ACTION');
     expect(JSON.stringify(e.allowed)).toContain('rally');
     expect(e.fix).toContain('hold');
   });
 
   it('W_ACTION_NOT_FOR_TYPE both ways: a factory that moves, a soldier that rallies', async () => {
-    const f = expectOk(await run(factory('this.maxHealth = 1500; this.productionInterval = 900;', "return { action: 'move', destination: world.center };")));
+    const f = expectOk(await run(factory('this.maxHealth = 225; this.productionInterval = 900;', "return { action: 'move', destination: world.center };")));
     expect(codes(f)).toContain('W_ACTION_NOT_FOR_TYPE');
     const s = expectOk(
       await run(template('basic_soldier.js').replace('  update(self, enemies, allies, world) {\n', "  update(self, enemies, allies, world) {\n    return { action: 'rally', destination: world.center };\n")),
@@ -229,7 +229,7 @@ describe('validator: dry run per type (§7 step 9)', () => {
 describe('validator: fix texts for walls and factories (real-Claude dry run, M8.5 QA)', () => {
   it("a factory's broken attack says what a factory can do, not how to aim", async () => {
     const e = errorWith(
-      await run(factory('this.maxHealth = 1500; this.productionInterval = 900;', "return { action: 'attack', targetId: enemies[0] && enemies[0].id };")),
+      await run(factory('this.maxHealth = 225; this.productionInterval = 900;', "return { action: 'attack', targetId: enemies[0] && enemies[0].id };")),
       'BAD_ACTION',
     );
     expect(e.message).toContain("a factory can't attack, it only tells its minions where to go");
@@ -239,14 +239,14 @@ describe('validator: fix texts for walls and factories (real-Claude dry run, M8.
 
   it('a too-tough wall or factory suggests its starter health as the example', async () => {
     expect(errorWith(await run(wall('this.maxHealth = 13000;')), 'STAT_OUT_OF_RANGE', 'maxHealth').fix).toContain('this.maxHealth = 3200');
-    expect(errorWith(await run(factory('this.maxHealth = 9000; this.productionInterval = 900;')), 'STAT_OUT_OF_RANGE', 'maxHealth').fix).toContain(
-      'this.maxHealth = 2400',
+    expect(errorWith(await run(factory('this.maxHealth = 1300; this.productionInterval = 900;')), 'STAT_OUT_OF_RANGE', 'maxHealth').fix).toContain(
+      'this.maxHealth = 360',
     );
   });
 
   it('a too-expensive factory has no "before the factor" (buildings have no cooldown factor)', async () => {
-    const e = errorWith(await run(factory("this.maxHealth = 8000; this.productionInterval = 300; this.produces = 'runner'; this.minionElement = 'lightning';")), 'UNIT_TOO_EXPENSIVE');
-    expect(e.fix).toContain('The most expensive stat is maxHealth: 8000 costs $1,200 (');
+    const e = errorWith(await run(factory("this.maxHealth = 1200; this.productionInterval = 300; this.produces = 'runner'; this.minionElement = 'lightning';")), 'UNIT_TOO_EXPENSIVE');
+    expect(e.fix).toContain('The most expensive stat is maxHealth: 1200 costs $1,200 (');
     expect(e.fix).not.toContain('before the factor');
   });
 
@@ -263,37 +263,37 @@ describe('validator: fix texts for walls and factories (real-Claude dry run, M8.
 
 describe('validator: produces, burst and squad orders (M8.6)', () => {
   it('produces and burst are stored on the snapshot (defaults grunt / 1); the price follows the kind only', async () => {
-    const plain = expectOk(await run(factory('this.maxHealth = 1500; this.productionInterval = 900;')));
+    const plain = expectOk(await run(factory('this.maxHealth = 225; this.productionInterval = 900;')));
     expect(plain.unit.stats).toMatchObject({ produces: 'grunt', burst: 1 });
     expect(plain.unit.cost).toBe(167 + 7 * 177);
-    const archers = expectOk(await run(factory("this.maxHealth = 1500; this.productionInterval = 900; this.produces = 'archer'; this.burst = 3;")));
+    const archers = expectOk(await run(factory("this.maxHealth = 225; this.productionInterval = 900; this.produces = 'archer'; this.burst = 3;")));
     expect(archers.unit.stats).toMatchObject({ produces: 'archer', burst: 3 });
     expect(archers.unit.cost).toBe(167 + 7 * 216);
     expect(archers.unit.breakdown.production!.text).toContain('7 archers × $216');
   });
 
   it('a wrong produces names the closest kind; burst must be a whole number 1-4', async () => {
-    const e = errorWith(await run(factory("this.maxHealth = 1500; this.productionInterval = 900; this.produces = 'archers';")), 'STAT_OUT_OF_RANGE', 'produces');
+    const e = errorWith(await run(factory("this.maxHealth = 225; this.productionInterval = 900; this.produces = 'archers';")), 'STAT_OUT_OF_RANGE', 'produces');
     expect(e.fix).toContain("this.produces = 'archer'");
-    const f = expectFail(await run(factory("this.maxHealth = 1500; this.productionInterval = 900; this.produces = 'archers';")));
+    const f = expectFail(await run(factory("this.maxHealth = 225; this.productionInterval = 900; this.produces = 'archers';")));
     expect(f.playerHint).toMatch(/grunts, archers, runners, brutes or medics/);
-    errorWith(await run(factory('this.maxHealth = 1500; this.productionInterval = 900; this.produces = 2;')), 'STAT_WRONG_TYPE', 'produces');
-    errorWith(await run(factory('this.maxHealth = 1500; this.productionInterval = 900; this.burst = 5;')), 'STAT_OUT_OF_RANGE', 'burst');
-    errorWith(await run(factory('this.maxHealth = 1500; this.productionInterval = 900; this.burst = 0;')), 'STAT_OUT_OF_RANGE', 'burst');
-    errorWith(await run(factory('this.maxHealth = 1500; this.productionInterval = 900; this.burst = 2.5;')), 'BURST_NOT_INTEGER', 'burst');
-    errorWith(await run(factory("this.maxHealth = 1500; this.productionInterval = 900; this.burst = '3';")), 'STAT_WRONG_TYPE', 'burst');
+    errorWith(await run(factory('this.maxHealth = 225; this.productionInterval = 900; this.produces = 2;')), 'STAT_WRONG_TYPE', 'produces');
+    errorWith(await run(factory('this.maxHealth = 225; this.productionInterval = 900; this.burst = 5;')), 'STAT_OUT_OF_RANGE', 'burst');
+    errorWith(await run(factory('this.maxHealth = 225; this.productionInterval = 900; this.burst = 0;')), 'STAT_OUT_OF_RANGE', 'burst');
+    errorWith(await run(factory('this.maxHealth = 225; this.productionInterval = 900; this.burst = 2.5;')), 'BURST_NOT_INTEGER', 'burst');
+    errorWith(await run(factory("this.maxHealth = 225; this.productionInterval = 900; this.burst = '3';")), 'STAT_WRONG_TYPE', 'burst');
   });
 
   it('W_BURST_NEVER_FULL when the factory makes fewer minions than its burst', async () => {
     // With the default 120 s battle even the slowest factory (1200) makes 5 minions, more than the burst max of 4;
     // a 60 s battle makes 2 at interval 1200.
     const short = parseConfig({ timers: { battleTicks: 3600 }, suddenDeath: { startTick: 2400, endTick: 3600 } });
-    const r = expectOk(await run(factory('this.maxHealth = 1500; this.productionInterval = 1200; this.burst = 4;'), short));
+    const r = expectOk(await run(factory('this.maxHealth = 225; this.productionInterval = 1200; this.burst = 4;'), short));
     const w = r.warnings.find((x) => x.code === 'W_BURST_NEVER_FULL')!;
     expect(w.message).toContain('only 2 minions');
     expect(w.fix).toContain('this.burst to 2');
-    expect(codes(expectOk(await run(factory('this.maxHealth = 1500; this.productionInterval = 1200; this.burst = 4;'))))).not.toContain('W_BURST_NEVER_FULL');
-    expect(codes(expectOk(await run(factory('this.maxHealth = 1500; this.productionInterval = 900; this.burst = 4;'))))).not.toContain('W_BURST_NEVER_FULL');
+    expect(codes(expectOk(await run(factory('this.maxHealth = 225; this.productionInterval = 1200; this.burst = 4;'))))).not.toContain('W_BURST_NEVER_FULL');
+    expect(codes(expectOk(await run(factory('this.maxHealth = 225; this.productionInterval = 900; this.burst = 4;'))))).not.toContain('W_BURST_NEVER_FULL');
   });
 
   it('a factory may command and release; the orders it gave are recorded', async () => {
@@ -304,7 +304,7 @@ describe('validator: produces, burst and squad orders (M8.6)', () => {
       const e = enemies.find((x) => x.type !== 'wall');
       if (e) return { action: 'command', order: 'swarm', targetId: e.id };
       return { action: 'command', order: 'defend' };`;
-    const r = expectOk(await run(factory("this.maxHealth = 1500; this.productionInterval = 900; this.produces = 'runner'; this.burst = 4;", body)));
+    const r = expectOk(await run(factory("this.maxHealth = 225; this.productionInterval = 900; this.produces = 'runner'; this.burst = 4;", body)));
     expect(r.unit.orders).toEqual(['guard', 'defend', 'swarm']);
     expect(codes(r)).not.toContain('W_ORDER_TARGET');
     expect(codes(r)).not.toContain('W_ACTION_NOT_FOR_TYPE');
@@ -317,25 +317,25 @@ describe('validator: produces, burst and squad orders (M8.6)', () => {
       const f = self.factory;
       if (f.stored !== 0 || f.burst !== 3 || f.produces !== 'brute' || f.order !== 'attack' || f.orderTargetId !== null) throw new Error('bad view ' + JSON.stringify(f));
       return { action: 'command', order: 'attack', destination: world.center };`;
-    expectOk(await run(factory("this.maxHealth = 1500; this.productionInterval = 900; this.produces = 'brute'; this.burst = 3;", body)));
+    expectOk(await run(factory("this.maxHealth = 225; this.productionInterval = 900; this.produces = 'brute'; this.burst = 3;", body)));
   });
 
   it('BAD_ACTION for an unknown order and for swarm/guard without a targetId, with the right shape in the fix', async () => {
-    const unknown = errorWith(await run(factory('this.maxHealth = 1500; this.productionInterval = 900;', "return { action: 'command', order: 'charge' };")), 'BAD_ACTION');
+    const unknown = errorWith(await run(factory('this.maxHealth = 225; this.productionInterval = 900;', "return { action: 'command', order: 'charge' };")), 'BAD_ACTION');
     expect(unknown.errorMessage).toContain("'attack', 'defend', 'swarm', 'guard'");
-    const swarm = errorWith(await run(factory('this.maxHealth = 1500; this.productionInterval = 900;', "return { action: 'command', order: 'swarm', targetId: enemies.length ? enemies[0].id : undefined };")), 'BAD_ACTION');
+    const swarm = errorWith(await run(factory('this.maxHealth = 225; this.productionInterval = 900;', "return { action: 'command', order: 'swarm', targetId: enemies.length ? enemies[0].id : undefined };")), 'BAD_ACTION');
     expect(swarm.errorMessage).toContain('swarm needs targetId');
     expect(swarm.fix).toContain("return { action: 'command', order: 'attack' } instead");
-    const guard = errorWith(await run(factory('this.maxHealth = 1500; this.productionInterval = 900;', "return { action: 'command', order: 'guard' };")), 'BAD_ACTION');
+    const guard = errorWith(await run(factory('this.maxHealth = 225; this.productionInterval = 900;', "return { action: 'command', order: 'guard' };")), 'BAD_ACTION');
     expect(guard.fix).toContain("order: 'defend'");
-    const dest = errorWith(await run(factory('this.maxHealth = 1500; this.productionInterval = 900;', "return { action: 'command', order: 'attack', destination: { x: 'a', y: 1 } };")), 'BAD_ACTION');
+    const dest = errorWith(await run(factory('this.maxHealth = 225; this.productionInterval = 900;', "return { action: 'command', order: 'attack', destination: { x: 'a', y: 1 } };")), 'BAD_ACTION');
     expect(dest.errorMessage).toContain('finite numbers');
   });
 
   it('W_ORDER_TARGET for a swarm on an ally or a guard on an enemy; W_ACTION_NOT_FOR_TYPE for a soldier that commands', async () => {
-    const r = expectOk(await run(factory('this.maxHealth = 1500; this.productionInterval = 900;', "return allies.length > 1 ? { action: 'command', order: 'swarm', targetId: allies[1].id } : { action: 'idle' };")));
+    const r = expectOk(await run(factory('this.maxHealth = 225; this.productionInterval = 900;', "return allies.length > 1 ? { action: 'command', order: 'swarm', targetId: allies[1].id } : { action: 'idle' };")));
     expect(codes(r)).toContain('W_ORDER_TARGET');
-    const g = expectOk(await run(factory('this.maxHealth = 1500; this.productionInterval = 900;', "return enemies.length ? { action: 'command', order: 'guard', targetId: enemies[0].id } : { action: 'command', order: 'guard', targetId: self.id };")));
+    const g = expectOk(await run(factory('this.maxHealth = 225; this.productionInterval = 900;', "return enemies.length ? { action: 'command', order: 'guard', targetId: enemies[0].id } : { action: 'command', order: 'guard', targetId: self.id };")));
     expect(codes(g)).toContain('W_ORDER_TARGET');
     const soldier = `export default class S {
       constructor() { this.name = 'S'; this.type = 'soldier'; this.maxHealth = 500; this.damage = 25; this.range = 30; this.speed = 1; this.attackCooldown = 60; this.color = '#112233'; }
@@ -353,7 +353,7 @@ describe('validator: produces, burst and squad orders (M8.6)', () => {
       const ctor = /\/\/ constructor: (.*)/.exec(block)![1]!;
       const update = block.slice(block.indexOf('update('));
       const src = `export default class F {
-        constructor() { this.name = 'Example'; this.type = 'factory'; this.maxHealth = 2400; this.productionInterval = 900; this.color = '#C0A060'; ${ctor} }
+        constructor() { this.name = 'Example'; this.type = 'factory'; this.maxHealth = 360; this.productionInterval = 900; this.color = '#C0A060'; ${ctor} }
         ${update}
       }`;
       const r = expectOk(await run(src));

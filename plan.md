@@ -188,7 +188,7 @@ export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 export interface UnitStats {
   name: string;          // 1-24 chars, shown on screen
   type: UnitType;        // soldiers move; towers, walls and factories are buildings and never move
-  maxHealth: number;     // soldier/tower 80-4000, wall 400-12000, factory 800-8000
+  maxHealth: number;     // soldier/tower 80-4000, wall 400-12000, factory 120-1200
   damage?: number;       // soldier/tower: required, 0-240. wall/factory: leave it out (they can't attack)
   range?: number;        // required: soldier 20-160 px, tower 20-300 px (towers out-range soldiers), EDGE to edge (gap between the two bodies). wall/factory: leave it out
   speed?: number;        // soldier: required, 0.5-5 px per tick (60 ticks = 1 s). tower/wall/factory: 0 or leave it out
@@ -344,7 +344,7 @@ Rule 4 for `heal` (M8.8; engine-validated and written into CLAUDE.md):
 - Auras need no action. They keep working while their unit is disabled by strikes, the same way a disabled factory keeps building.
 - The cooldown timing rule changes in M8.8. `cooldownRemaining` is an internal float that drops by the unit's **tempo** each tick: 1 normally, 0.65 while frozen, ×(1 + haste%) while hasted. Views show `Math.ceil` of it, so 0 still means "can act this tick".
 
-**The $10,000 redesign (2026-10-24).** The block above is the redesign's contract (the same three copies, kept identical by the same tests). It adds `OtherView.moving` and `OtherView.currentSpeed` (how far the body moved last tick; ranged shots at a moving body can miss, §9.4 Accuracy), the soldier/tower range split (soldiers 20-160 px, towers 20-300 px: towers out-range soldiers), the redesign's bounds (HP 80-4,000, damage 0-240, walls 400-12,000, factories 800-8,000, interval 300-1,200, heal 15-400), the new element prices in the `element` comment, sudden death from tick 4500, and `pathing` routes round walls **and buildings** (§9.3). Rule 4 `move`: walls, towers and factories in the way are walked round (a gap between two buildings only when the body fits); a body boxed in by buildings still heads for its destination (buildings are never "the wall to break"). Rule 4 `attack`: a ranged shot at a moving body may miss (§9.4); melee never misses.
+**The $10,000 redesign (2026-10-24).** The block above is the redesign's contract (the same three copies, kept identical by the same tests). It adds `OtherView.moving` and `OtherView.currentSpeed` (how far the body moved last tick; ranged shots at a moving body can miss, §9.4 Accuracy), the soldier/tower range split (soldiers 20-160 px, towers 20-300 px: towers out-range soldiers), the redesign's bounds (HP 80-4,000, damage 0-240, walls 400-12,000, factories 800-8,000 (120-1,200 since the brittle-factories change, 2026-10-25), interval 300-1,200, heal 15-400), the new element prices in the `element` comment, sudden death from tick 4500, and `pathing` routes round walls **and buildings** (§9.3). Rule 4 `move`: walls, towers and factories in the way are walked round (a gap between two buildings only when the body fits); a body boxed in by buildings still heads for its destination (buildings are never "the wall to break"). Rule 4 `attack`: a ranged shot at a moving body may miss (§9.4); melee never misses.
 
 ### Stat bounds (config: `stats.bounds`)
 
@@ -489,6 +489,7 @@ export interface Unit extends UnitStats {
 - **Production.** A timer starts at 0 at battle start and goes up by 1 each tick unless the factory holds. When it reaches `productionInterval` the factory makes one minion if (a) `minionsLeft > 0`, (b) fewer than `factory.maxAlivePerFactory` (**4**) of its minions are alive, (c) its owner has fewer than **min(`factory.maxAlivePerPlayer` 6, floor(`factory.maxAlivePerBattle` 40 / players in the battle))** minions alive (6 with 2-6 players, 5 with 7-8; **redesign: min(12, floor(40 / players))**: 12 with 2-3 players, 10 with 4, 8 with 5, 6 with 6, 5 with 7-8), and (d) a spawn spot is free. Otherwise it waits with a full timer (`nextMinionIn = 0`) and tries again every tick. After a spawn the timer restarts at 0.
 - **Output.** `minionsLeft` starts at **E = min(`factory.maxMinionsPerFactory` 8, floor((battleTicks − 1) / productionInterval))**: interval 600 → 8, 720 → 7, 900 → 5, 1200 → 4, 1800 → 2 (**redesign:** cap 12, 120 s battles, interval 300-1200: 300-599 → 12, 600 → 11, 720 → 9, 900 → 7, 1200 → 5). An unhindered factory makes minions at ticks I, 2I, 3I, … (every 10 s at 600). E is what the factory pays for (§6).
 - **Spawn spot:** 8 candidates 28 px (18 + 8 + 2) from the factory centre, at angles θ, θ+45°, θ−45°, θ+90°, θ−90°, θ+135°, θ−135°, θ+180° in that order, where θ points at the rally point (or along the zone's facing when the rally point is the factory itself: out of the front edge on a N/S/E/W zone, diagonally towards the corner nearest the centre on a corner zone, the /play grid's arrow; `zoneFacingDir`). The first candidate inside the arena that overlaps no wall square, tower or factory wins. Overlapping soldiers and minions is allowed; separation sorts it out.
+- **Brittle factories (2026-10-25, user request, §17):** factory HP is `factoryHealth` **120-1,200** (Basic Factory **360**) at the same prices as before (`cost.factory.hp` 0.5 with the curve max 1,200: the redesign's body price on HP ×3/20). One Basic Soldier destroys a Basic Factory in about 6 s, two in 3 s; a 1,200-HP factory falls to four in about 5.4 s (§14 Brittle factories).
 - **Destroying the factory stops production.** Its living minions keep going with the last rally point. A factory with `canMake = 0` (§9.3: no minions left, or no time left to build one, e.g. because it holds or every spawn spot is covered) stays on the field as a building but is no longer a fighter.
 
 **Minions** (built in, config `factory.minion`, the same for everyone):
@@ -702,7 +703,7 @@ army    = Σ over designs of Σ_n copy_n,  copy_n = cost × (1 + max(0, n − 3)
 
 **In one paragraph for Claude** (CLAUDE.md §5 and `get_unit_contract`): "Each stat costs its normal price, more near its max (up to 2× at the max). Healing adds a price too. Then multiply: fast attacks (60 / cooldown), being both tough and strong (up to ×3), splash (×1.6 at 40 px, ×1.8 at 80) and an element (fire and lightning ×1.3, ice ×1.75). An aura is added at the end. From the 4th copy of one design each copy costs 15% more again."
 
-Walls: `raw = 20 + 0.0375·HP·(1 + (HP/12000)²)`. Factories: body = `ceil(50 + 0.075·HP·(1 + (HP/8000)²))`, cost = body + minionValue × E. Minions: `minionCost = ceil(soldier formula on the kind's stats × element factor)`, `minionValue = ceil(minionCost × 0.5)`. The medic's heal term is in its soldier formula, and medics ignore `minionElement`.
+Walls: `raw = 20 + 0.0375·HP·(1 + (HP/12000)²)`. Factories: body = `ceil(50 + 0.5·HP·(1 + (HP/1200)²))`, cost = body + minionValue × E (**brittle factories, 2026-10-25:** HP ×3/20 and `cost.factory.hp` 0.075 → 0.5, so every factory price is unchanged; the redesign had `0.075·HP·(1 + (HP/8000)²)`). Minions: `minionCost = ceil(soldier formula on the kind's stats × element factor)`, `minionValue = ceil(minionCost × 0.5)`. The medic's heal term is in its soldier formula, and medics ignore `minionElement`.
 
 ### Factor tables
 
@@ -743,10 +744,10 @@ The copy-ramp line reads: n copies of a $1,000 design cost n × $1,000 × that f
 | `cost.heal` | 4.5 | **3.5** | 4.5 / 1.6 = 2.81, then up: heals last twice as long |
 | `cost.aura` | 5 / 4 / 7 | **haste 9, might 8, shield 7** | auras work twice as long in a fight |
 | `cost.wall` | 20 / 0.06 | **20 / 0.0375** | 0.06 / 1.6 |
-| `cost.factory` | 50 / 0.12 / 0.5 | **50 / 0.075 / 0.5** | 0.12 / 1.6 |
+| `cost.factory` | 50 / 0.12 / 0.5 | **50 / 0.075 / 0.5** (brittle factories 2026-10-25: **50 / 0.5 / 0.5**) | 0.12 / 1.6; then ×20/3 with the HP ×3/20 |
 | `stats.bounds.maxHealth` / `damage` | 50-2,500 / 0-300 | **80-4,000 / 0-240** | ×1.6 / ×0.8 |
 | `stats.bounds.range` / `soldierRange` (new) | 20-300 | **towers 20-300, soldiers 20-160** | towers out-range soldiers |
-| `stats.bounds.wallHealth` / `factoryHealth` | 250-7,500 / 500-5,000 | **400-12,000 / 800-8,000** | ×1.6 |
+| `stats.bounds.wallHealth` / `factoryHealth` | 250-7,500 / 500-5,000 | **400-12,000 / 800-8,000** (brittle factories 2026-10-25: factories **120-1,200**) | ×1.6; factories then ×3/20 |
 | `stats.bounds.productionInterval` | 600-1,800 | **300-1,200** | faster factories (5-20 s) |
 | `stats.bounds.support.heal.power` | 10-250 | **15-400** | ×1.6 |
 | `factory.maxMinionsPerFactory` / `maxAlivePerPlayer` | 8 / 6 | **12 / 12** | per player min(12, floor(40 / players)) |
@@ -858,25 +859,25 @@ Factories:
 
 | Factory | Kind | Element | HP | Interval | E | Body raw | Body | Production | **Cost** |
 |---|---|---|---|---|---|---|---|---|---|
-| Cheapest legal factory | grunt | normal | 800 | 1200 | 5 | 110.6 | $111 | 5 × $177 = $885 | **$996** |
-| Slow Factory | grunt | normal | 2400 | 1200 | 5 | 246.2 | $247 | 5 × $177 = $885 | **$1,132** |
-| Basic Factory (template) | grunt | normal | 2400 | 600 | 11 | 246.2 | $247 | 11 × $177 = $1,947 | **$2,194** |
-| Swarm Factory | grunt | normal | 2400 | 300 | 12 | 246.2 | $247 | 12 × $177 = $2,124 | **$2,371** |
-| Armoured Factory | grunt | normal | 4800 | 300 | 12 | 539.6 | $540 | 12 × $177 = $2,124 | **$2,664** |
-| Fortress Factory | grunt | normal | 8000 | 1200 | 5 | 1250 | $1,250 | 5 × $177 = $885 | **$2,135** |
-| Maxed grunt factory | grunt | normal | 8000 | 300 | 12 | 1250 | $1,250 | 12 × $177 = $2,124 | **$3,374**, rejected |
-| Archer Nest | archer | normal | 2400 | 300 | 12 | 246.2 | $247 | 12 × $216 = $2,592 | **$2,839** |
-| Runner Rush | runner | normal | 2400 | 720 | 9 | 246.2 | $247 | 9 × $263 = $2,367 | **$2,614** |
-| Brute Forge | brute | normal | 2400 | 720 | 9 | 246.2 | $247 | 9 × $263 = $2,367 | **$2,614** |
-| Steady Factory | grunt | normal | 2400 | 900 | 7 | 246.2 | $247 | 7 × $177 = $1,239 | **$1,486** |
-| Ice Archer Nest | archer | ice | 2400 | 900 | 7 | 246.2 | $247 | 7 × $378 = $2,646 | **$2,893** |
-| Fire Brute Pack | brute | fire | 2400 | 900 | 7 | 246.2 | $247 | 7 × $342 = $2,394 | **$2,641** |
-| Storm Runners | runner | lightning | 2400 | 900 | 7 | 246.2 | $247 | 7 × $341 = $2,387 | **$2,634** |
-| Fire Grunts | grunt | fire | 2400 | 600 | 11 | 246.2 | $247 | 11 × $229 = $2,519 | **$2,766** |
-| Medic Tent | medic | normal | 2400 | 600 | 11 | 246.2 | $247 | 11 × $248 = $2,728 | **$2,975** |
-| Steady Medics | medic | normal | 2400 | 900 | 7 | 246.2 | $247 | 7 × $248 = $1,736 | **$1,983** |
-| Brute Forge at 300 | brute | normal | 2400 | 300 | 12 | 246.2 | $247 | 12 × $263 = $3,156 | **$3,403**, rejected |
-| Maxed storm-runner factory | runner | lightning | 8000 | 300 | 12 | 1250 | $1,250 | 12 × $341 = $4,092 | **$5,342**, rejected |
+| Cheapest legal factory | grunt | normal | 120 | 1200 | 5 | 110.6 | $111 | 5 × $177 = $885 | **$996** |
+| Slow Factory | grunt | normal | 360 | 1200 | 5 | 246.2 | $247 | 5 × $177 = $885 | **$1,132** |
+| Basic Factory (template) | grunt | normal | 360 | 600 | 11 | 246.2 | $247 | 11 × $177 = $1,947 | **$2,194** |
+| Swarm Factory | grunt | normal | 360 | 300 | 12 | 246.2 | $247 | 12 × $177 = $2,124 | **$2,371** |
+| Armoured Factory | grunt | normal | 720 | 300 | 12 | 539.6 | $540 | 12 × $177 = $2,124 | **$2,664** |
+| Fortress Factory | grunt | normal | 1200 | 1200 | 5 | 1250 | $1,250 | 5 × $177 = $885 | **$2,135** |
+| Maxed grunt factory | grunt | normal | 1200 | 300 | 12 | 1250 | $1,250 | 12 × $177 = $2,124 | **$3,374**, rejected |
+| Archer Nest | archer | normal | 360 | 300 | 12 | 246.2 | $247 | 12 × $216 = $2,592 | **$2,839** |
+| Runner Rush | runner | normal | 360 | 720 | 9 | 246.2 | $247 | 9 × $263 = $2,367 | **$2,614** |
+| Brute Forge | brute | normal | 360 | 720 | 9 | 246.2 | $247 | 9 × $263 = $2,367 | **$2,614** |
+| Steady Factory | grunt | normal | 360 | 900 | 7 | 246.2 | $247 | 7 × $177 = $1,239 | **$1,486** |
+| Ice Archer Nest | archer | ice | 360 | 900 | 7 | 246.2 | $247 | 7 × $378 = $2,646 | **$2,893** |
+| Fire Brute Pack | brute | fire | 360 | 900 | 7 | 246.2 | $247 | 7 × $342 = $2,394 | **$2,641** |
+| Storm Runners | runner | lightning | 360 | 900 | 7 | 246.2 | $247 | 7 × $341 = $2,387 | **$2,634** |
+| Fire Grunts | grunt | fire | 360 | 600 | 11 | 246.2 | $247 | 11 × $229 = $2,519 | **$2,766** |
+| Medic Tent | medic | normal | 360 | 600 | 11 | 246.2 | $247 | 11 × $248 = $2,728 | **$2,975** |
+| Steady Medics | medic | normal | 360 | 900 | 7 | 246.2 | $247 | 7 × $248 = $1,736 | **$1,983** |
+| Brute Forge at 300 | brute | normal | 360 | 300 | 12 | 246.2 | $247 | 12 × $263 = $3,156 | **$3,403**, rejected |
+| Maxed storm-runner factory | runner | lightning | 1200 | 300 | 12 | 1250 | $1,250 | 12 × $341 = $4,092 | **$5,342**, rejected |
 
 E = min(12, floor(7199 / interval)): 300-599 → 12, 600 → 11, 720 → 9, 900 → 7, 1200 → 5. `burst` still never changes a price.
 
@@ -914,7 +915,7 @@ Army sizes: mixed armies of 3-4 designs field 7-9 fighters; a one-design army pa
 
 ### Economy: migration
 
-- **Templates** are server-owned and replaced at boot: Basic Soldier 1,400 HP / 56 dmg, Basic Tower 1,200 HP / 72 dmg / range 140, Basic Wall 3,200 HP, Basic Factory 2,400 HP every 600 ticks (10 s).
+- **Templates** are server-owned and replaced at boot: Basic Soldier 1,400 HP / 56 dmg, Basic Tower 1,200 HP / 72 dmg / range 140, Basic Wall 3,200 HP, Basic Factory 2,400 HP every 600 ticks (10 s); since the brittle-factories change (2026-10-25) the Basic Factory has **360 HP** (same price, $2,194).
 - **Stored player units are not migrated, and never deleted automatically** (user decisions 2026-10-24: "none of the player submitted units need to be migrated", then "Don't silently wipe units on server restart. I meant that you didn't need to worry about doing migrations as I'd wipe them myself"). Units from an older economy simply stay; they are priced and checked under the current rules like any unit (one that no longer fits shows as invalid with its usual fix). The facilitator wipes data by hand (admin Wipe or `npm run wipe`) when they want a clean start. No banner. The M8.8 old-scale warnings (`W_OLD_SCALE`, the ×5 fix) are gone.
 - **Config patches** (`configPatch` in `state.json`): a patch without `economyVersion: 3` has its scale-sensitive keys dropped (`ECONOMY_DROPPED`: `cost.*`, `caps.budget`, `caps.unitCost`, `caps.maxFactoryCopies`, `caps.maxWallCopies`, the HP, damage, wall, factory, interval and heal bounds, `timers.battleTicks`, the sudden-death ticks, `factory.maxMinionsPerFactory`, `factory.maxAlivePerPlayer` and the minions' HP, damage and heal); the rest is kept. Logged only.
 - **Replays and past battles** keep their recorded numbers; results carry `scaleVersion` 3, and the past-battles UI labels older ones "($1,000 game)" or "($5,000 game)".

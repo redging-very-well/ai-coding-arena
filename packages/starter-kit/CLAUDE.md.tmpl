@@ -69,7 +69,7 @@ export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 export interface UnitStats {
   name: string;          // 1-24 chars, shown on screen
   type: UnitType;        // soldiers move; towers, walls and factories are buildings and never move
-  maxHealth: number;     // soldier/tower 80-4000, wall 400-12000, factory 800-8000
+  maxHealth: number;     // soldier/tower 80-4000, wall 400-12000, factory 120-1200
   damage?: number;       // soldier/tower: required, 0-240. wall/factory: leave it out (they can't attack)
   range?: number;        // required: soldier 20-160 px, tower 20-300 px (towers out-range soldiers), EDGE to edge (gap between the two bodies). wall/factory: leave it out
   speed?: number;        // soldier: required, 0.5-5 px per tick (60 ticks = 1 s). tower/wall/factory: 0 or leave it out
@@ -195,7 +195,7 @@ For soldiers and towers (walls and factories: see **4c**):
 |---|---|
 | name | text, 1-24 characters (shown on screen) |
 | type | `'soldier'` (moves) or `'tower'` (never moves); also `'wall'` and `'factory'` (4c) |
-| maxHealth | 80-4000 (walls 400-12000, factories 800-8000) |
+| maxHealth | 80-4000 (walls 400-12000, factories 120-1200) |
 | damage | 0-240 per hit (0 is allowed: a pure support unit; see **4d**) |
 | range | soldier 20-160 px, tower 20-300 px (**towers out-range soldiers**), **edge to edge** (the gap between the two bodies) |
 | speed | soldier: 0.5-5 px per tick. tower: exactly 0 |
@@ -408,7 +408,7 @@ export default class Knight {
 | **soldier** | unit | moves and fights | name, type, maxHealth (80-4000), damage, range (20-160), speed (0.5-5), attackCooldown, color; optional element, splashRadius, support (**4d**) | required |
 | **tower** | building | stays put and shoots | the same, with `speed = 0` and range up to **300** | required |
 | **wall** | building | a big solid block that stops everyone; can't attack | name, type, maxHealth (**400-12000**), color. Leave out damage, range, speed, attackCooldown, size | **none** (one is ignored) |
-| **factory** | building | stays put and builds **minions**; can't attack | name, type, maxHealth (**800-8000**), **productionInterval** (whole ticks between minions, **300-1200**), color; optional **produces** (minion kind), **minionElement** and **burst** (1-4). Leave out damage, range, speed, attackCooldown, size | required: gives the minions their orders |
+| **factory** | building | stays put and builds **minions**; can't attack | name, type, maxHealth (**120-1200**), **productionInterval** (whole ticks between minions, **300-1200**), color; optional **produces** (minion kind), **minionElement** and **burst** (1-4). Leave out damage, range, speed, attackCooldown, size | required: gives the minions their orders |
 
 - **Walls** fill their whole 40 × 40 px cell (for range they count as a circle of radius 20). They block **every** body: enemies, your own units and your teammates' units. A wall's `color` is its block colour, and its `sprite()` textures the block's sides (see `units/basic_wall.js`).
 - **Factories** are a circle of radius 18. Every `productionInterval` ticks a factory builds one **Minion** (a grunt: 360 HP, 20 damage, melee, speed 1.5, size 8), up to 12 a battle, at most 4 alive per factory. Minions have built-in brains (you never write their code): they chase enemies near them or near the rally point, otherwise they walk to the rally point. An enemy wall that blocks them for 2 s gets smashed, so minions can break into a walled-in enemy. The factory's `update()` returns `{ action: 'rally', destination: { x, y } }` to move the rally point (it starts at `world.center` and stays until changed) or `{ action: 'hold' }` to pause building for a tick. `self.factory` shows `nextMinionIn`, `minionsLeft`, `minionsAlive`, `maxAlive` and `rally`. The factory's `color` is also its minions' colour. See `units/basic_factory.js`. Destroying a factory stops it; its minions keep going. A factory that holds too long (or is walled in so no minion can get out) stops counting as a fighter once it no longer has time to build one.
@@ -634,13 +634,13 @@ Worked examples:
 ```
 wall:    cost = 20 + maxHealth × 0.0375 × (1 + (maxHealth / 12000)²)
 factory: cost = body + production
-         body       = 50 + maxHealth × 0.075 × (1 + (maxHealth / 8000)²)   (rounded up)
+         body       = 50 + maxHealth × 0.5 × (1 + (maxHealth / 1200)²)   (rounded up)
          production = minions per battle × price per minion   (grunt $177: half the $353 price of a minion, they arrive late; other kinds below)
          minions per battle = min(12, floor(7199 / productionInterval))
 ```
 
 - **Basic Wall** (maxHealth 3200): 20 + 120 × 1.0711 = 148.53 → **$149**. A 6400-HP wall costs $329; a maxed 12000-HP wall $920.
-- **Basic Factory** (maxHealth 2400, productionInterval 600): body 50 + 196.2 = 246.2 → $247, plus 11 minions × $177 = $1,947 → **$2,194**. With productionInterval 900 it builds 7 minions: $247 + $1,239 = **$1,486**.
+- **Basic Factory** (maxHealth 360, productionInterval 600): body 50 + 196.2 = 246.2 → $247, plus 11 minions × $177 = $1,947 → **$2,194**. With productionInterval 900 it builds 7 minions: $247 + $1,239 = **$1,486**.
 - **The minion kind sets the price per minion** (`produces`, 4c): grunt $177, archer $216, runner $263, brute $263, medic $248, each half the price of that minion priced as a soldier. `minionElement` makes it ×1.3 (fire, lightning) or ×1.75 (ice) first (fire grunt $229, ice archer $378, lightning runner $341, fire brute $342). `burst` never changes the price.
 
 Price facts:

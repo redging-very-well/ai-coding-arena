@@ -106,7 +106,7 @@ describe('§6 reference walls, minions and factories (curve k = 1)', () => {
   });
 
   it('the maxed factory is over the cap; the fix names the bigger of HP and production', () => {
-    const st = { ...factory(8000, 300), produces: 'runner' as const, minionElement: 'lightning' as const };
+    const st = { ...factory(1200, 300), produces: 'runner' as const, minionElement: 'lightning' as const };
     const r = computeCost(st, C.cost);
     expect(r.cost).toBe(5342);
     // The production ($4,092) is bigger than the body's HP term ($1,200): raise the interval, or make cheaper minions.
@@ -115,19 +115,19 @@ describe('§6 reference walls, minions and factories (curve k = 1)', () => {
     expect(fix).toContain("Making grunts instead of runners (this.produces = 'grunt') saves");
     expect(fix).toContain('Normal minions instead of lightning ones save $');
     // A fortress body is the bigger lever when the production is small.
-    const body = factory(8000, 1200);
-    const rb = computeCost(body, cfg({ cost: { factory: { hp: 0.3 } } }).cost);
-    expect(tooExpensiveError(body, rb, C.caps.unitCost, cfg({ cost: { factory: { hp: 0.3 } } }).cost, C.stats.bounds).fix).toMatch(/most expensive stat is maxHealth/);
+    const body = factory(1200, 1200);
+    const rb = computeCost(body, cfg({ cost: { factory: { hp: 2 } } }).cost);
+    expect(tooExpensiveError(body, rb, C.caps.unitCost, cfg({ cost: { factory: { hp: 2 } } }).cost, C.stats.bounds).fix).toMatch(/most expensive stat is maxHealth/);
   });
 
   it('the grunt is a $353 soldier, so a factory pays $177 per expected minion', () => {
     expect(minionPrice(C.cost)).toEqual({ minionCost: 353, minionValue: 177 });
-    const b = computeCost(factory(2400, 900), C.cost).breakdown;
+    const b = computeCost(factory(360, 900), C.cost).breakdown;
     expect(b.formula).toBe('factory');
     expect(b.body).toBe(247);
     expect(b.production).toMatchObject({ interval: 900, minionCost: 353, minionValue: 177, expected: 7, total: 1239, element: 'normal' });
     expect(b.production!.text).toBe('Production: 7 minions × $177 (half of a $353 minion, because they arrive during the battle) = $1,239');
-    const fire = computeCost({ ...factory(2400, 900), produces: 'brute', minionElement: 'fire' }, C.cost).breakdown;
+    const fire = computeCost({ ...factory(360, 900), produces: 'brute', minionElement: 'fire' }, C.cost).breakdown;
     expect(fire.production!.text).toBe('Production: 7 fire brutes × $342 (half of a $683 fire brute, because they arrive during the battle) = $2,394');
   });
 
@@ -135,13 +135,13 @@ describe('§6 reference walls, minions and factories (curve k = 1)', () => {
     expect([300, 599, 600, 720, 900, 1200].map((i) => expectedMinions(i))).toEqual([12, 12, 11, 9, 7, 5]);
     const short = pricingOf(cfg({ timers: { battleTicks: 3600 } }));
     expect(expectedMinions(600, short)).toBe(5);
-    expect(cost(factory(2400, 600), cfg({ timers: { battleTicks: 3600 } }))).toBe(247 + 5 * 177);
+    expect(cost(factory(360, 600), cfg({ timers: { battleTicks: 3600 } }))).toBe(247 + 5 * 177);
   });
 
   it('walls and factories price HP on their own curve: maxed = 2× linear, convex', () => {
     const w = computeCost(wall(12000), C.cost).breakdown.parts.maxHealth;
     expect(w.multiplier).toBeCloseTo(2, 9);
-    const f = computeCost(factory(8000, 1200), C.cost).breakdown.parts.maxHealth;
+    const f = computeCost(factory(1200, 1200), C.cost).breakdown.parts.maxHealth;
     expect(f.multiplier).toBeCloseTo(2, 9);
     // Two 6000-HP walls cost less than one 12000-HP wall.
     expect(2 * cost(wall(6000))).toBe(604);
@@ -157,7 +157,7 @@ describe('§6 reference walls, minions and factories (curve k = 1)', () => {
   });
 
   it('walls and factories pay nothing for damage, range, speed, size, cooldown or the M8.8 multipliers', () => {
-    for (const st of [wall(3200), factory(2400, 900)]) {
+    for (const st of [wall(3200), factory(360, 900)]) {
       const b = computeCost({ ...st, damage: 60, range: 300, speed: 5, attackCooldown: 10, size: 20, element: 'fire', splashRadius: 80, support: { kind: 'might', power: 50, range: 150 } }, C.cost).breakdown;
       expect(b.factor).toBe(1);
       expect(b.terms.damage + b.terms.range + b.terms.speed + b.terms.size + b.terms.heal).toBe(0);
@@ -168,15 +168,15 @@ describe('§6 reference walls, minions and factories (curve k = 1)', () => {
   });
 
   it('re-pricing: factories follow the soldier coefficients, the minion stats, the element factors and the discount', () => {
-    const base = cost(factory(2400, 900));
+    const base = cost(factory(360, 900));
     expect(base).toBe(1486);
-    expect(cost(factory(2400, 900), cfg({ cost: { speed: 120 } }))).toBeGreaterThan(base);
-    expect(cost(factory(2400, 900), cfg({ factory: { minions: { grunt: { maxHealth: 600 } } } }))).toBeGreaterThan(base);
-    expect(cost(factory(2400, 900), cfg({ cost: { factory: { minionDiscount: 1 } } }))).toBe(247 + 7 * 353);
-    const fireGrunts = { ...factory(2400, 900), minionElement: 'fire' as const };
+    expect(cost(factory(360, 900), cfg({ cost: { speed: 120 } }))).toBeGreaterThan(base);
+    expect(cost(factory(360, 900), cfg({ factory: { minions: { grunt: { maxHealth: 600 } } } }))).toBeGreaterThan(base);
+    expect(cost(factory(360, 900), cfg({ cost: { factory: { minionDiscount: 1 } } }))).toBe(247 + 7 * 353);
+    const fireGrunts = { ...factory(360, 900), minionElement: 'fire' as const };
     expect(cost(fireGrunts)).toBe(1850);
     expect(cost(fireGrunts, cfg({ cost: { element: { fire: 1.5 } } }))).toBeGreaterThan(1850);
-    expect(cost(factory(2400, 600), cfg({ cost: { factory: { minionDiscount: 1 } } }))).toBeGreaterThan(C.caps.unitCost);
+    expect(cost(factory(360, 600), cfg({ cost: { factory: { minionDiscount: 1 } } }))).toBeGreaterThan(C.caps.unitCost);
     // Soldier and tower prices are unchanged by the building coefficients.
     const soldier: CostStats = { type: 'soldier', maxHealth: 1400, damage: 56, range: 40, speed: 1.5, attackCooldown: 60, size: 10 };
     expect(cost(soldier, cfg({ cost: { wall: { hp: 1 }, factory: { hp: 1 } } }))).toBe(807);
@@ -186,7 +186,7 @@ describe('§6 reference walls, minions and factories (curve k = 1)', () => {
 describe('§7 per-type stat guards', () => {
   const b = C.stats.bounds;
   const W = { name: 'Basic Wall', type: 'wall', maxHealth: 2000, color: '#8A8F98' };
-  const F = { name: 'Basic Factory', type: 'factory', maxHealth: 1500, productionInterval: 900, color: '#C0A060' };
+  const F = { name: 'Basic Factory', type: 'factory', maxHealth: 360, productionInterval: 900, color: '#C0A060' };
   const codes = (r: ReturnType<typeof checkStats>) => (r.ok ? [] : r.errors.map((e) => `${e.code}:${e.field}`));
 
   it('a wall needs only name, type, maxHealth and color; the snapshot fills the rest', () => {
@@ -213,9 +213,9 @@ describe('§7 per-type stat guards', () => {
     expect(codes(checkStats({ ...W, maxHealth: 399 }, b))).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
     expect(codes(checkStats({ ...W, maxHealth: 12001 }, b))).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
     expect(checkStats({ ...W, maxHealth: 12000 }, b).ok).toBe(true);
-    expect(codes(checkStats({ ...F, maxHealth: 799 }, b))).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
-    expect(codes(checkStats({ ...F, maxHealth: 8001 }, b))).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
-    expect(checkStats({ ...F, maxHealth: 8000 }, b).ok).toBe(true);
+    expect(codes(checkStats({ ...F, maxHealth: 119 }, b))).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
+    expect(codes(checkStats({ ...F, maxHealth: 1201 }, b))).toEqual(['STAT_OUT_OF_RANGE:maxHealth']);
+    expect(checkStats({ ...F, maxHealth: 1200 }, b).ok).toBe(true);
     // Soldiers keep the 80-4000 bound.
     expect(codes(checkStats({ name: 'X', type: 'soldier', maxHealth: 4001, damage: 1, range: 20, speed: 1, attackCooldown: 60, color: '#000000' }, b))).toEqual([
       'STAT_OUT_OF_RANGE:maxHealth',
@@ -346,39 +346,39 @@ describe('§6 minion kinds and factory prices (M8.6)', () => {
   });
 
   it.each([
-    ['Basic Factory (produces omitted)', 2400, 600, undefined, 2194],
-    ['Steady Factory', 2400, 900, 'grunt', 1486],
-    ['Steady Archers', 2400, 900, 'archer', 1759],
-    ['Steady Runners', 2400, 900, 'runner', 2088],
-    ['Steady Brutes', 2400, 900, 'brute', 2088],
-    ['Swarm Factory', 2400, 300, 'grunt', 2371],
-    ['Archer Nest', 2400, 300, 'archer', 2839],
-    ['Runner Rush', 2400, 720, 'runner', 2614],
-    ['Brute Forge', 2400, 720, 'brute', 2614],
-    ['Medic Tent', 2400, 600, 'medic', 2975],
-    ['Steady Medics', 2400, 900, 'medic', 1983],
+    ['Basic Factory (produces omitted)', 360, 600, undefined, 2194],
+    ['Steady Factory', 360, 900, 'grunt', 1486],
+    ['Steady Archers', 360, 900, 'archer', 1759],
+    ['Steady Runners', 360, 900, 'runner', 2088],
+    ['Steady Brutes', 360, 900, 'brute', 2088],
+    ['Swarm Factory', 360, 300, 'grunt', 2371],
+    ['Archer Nest', 360, 300, 'archer', 2839],
+    ['Runner Rush', 360, 720, 'runner', 2614],
+    ['Brute Forge', 360, 720, 'brute', 2614],
+    ['Medic Tent', 360, 600, 'medic', 2975],
+    ['Steady Medics', 360, 900, 'medic', 1983],
   ] as const)('%s: $%#', (_name, hp, interval, produces, expected) => {
     expect(cost(kindFactory(hp, interval, produces))).toBe(expected);
   });
 
   it('the production line names the kind; burst never changes the price', () => {
-    const b = computeCost(kindFactory(2400, 900, 'archer'), C.cost, pricingOf(C)).breakdown;
+    const b = computeCost(kindFactory(360, 900, 'archer'), C.cost, pricingOf(C)).breakdown;
     expect(b.production).toMatchObject({ kind: 'archer', minionCost: 432, minionValue: 216, expected: 7, total: 1512 });
     expect(b.production!.text).toBe('Production: 7 archers × $216 (half of a $432 archer, because they arrive during the battle) = $1,512');
-    const withBurst = { ...kindFactory(2400, 900, 'archer'), burst: 4 } as CostStats;
+    const withBurst = { ...kindFactory(360, 900, 'archer'), burst: 4 } as CostStats;
     expect(cost(withBurst)).toBe(1759);
   });
 
   it('a kind retune re-prices only the factories of that kind', () => {
     const tuned = cfg({ factory: { minions: { runner: { speed: 2 } } } });
-    expect(cost(kindFactory(2400, 900, 'runner'), tuned)).toBeLessThan(2088);
-    expect(cost(kindFactory(2400, 900), tuned)).toBe(1486);
-    expect(cost(kindFactory(2400, 900, 'archer'), tuned)).toBe(1759);
+    expect(cost(kindFactory(360, 900, 'runner'), tuned)).toBeLessThan(2088);
+    expect(cost(kindFactory(360, 900), tuned)).toBe(1486);
+    expect(cost(kindFactory(360, 900, 'archer'), tuned)).toBe(1759);
   });
 
   it('a too-expensive non-grunt factory also suggests making grunts', () => {
-    // Production (12 brutes, $3,156) is the bigger cost here (body 4800 HP: $490).
-    const s = kindFactory(4800, 300, 'brute');
+    // Production (12 brutes, $3,156) is the bigger cost here (body 720 HP: $490).
+    const s = kindFactory(720, 300, 'brute');
     const r = computeCost(s, C.cost, pricingOf(C));
     expect(r.cost).toBe(3696);
     expect(r.cost).toBeGreaterThan(C.caps.unitCost);
@@ -405,7 +405,7 @@ describe('§6 minion kinds and factory prices (M8.6)', () => {
 
   it('checkStats: produces and burst defaults, errors and ignored fields', () => {
     const B = C.stats.bounds;
-    const base = { name: 'F', type: 'factory', maxHealth: 1500, productionInterval: 900, color: '#C0A060' };
+    const base = { name: 'F', type: 'factory', maxHealth: 360, productionInterval: 900, color: '#C0A060' };
     const ok = checkStats(base, B);
     expect(ok.ok && ok.stats).toMatchObject({ produces: 'grunt', burst: 1, minionElement: 'normal' });
     const archer = checkStats({ ...base, produces: 'archer', burst: 3 }, B);

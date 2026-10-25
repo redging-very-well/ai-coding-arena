@@ -66,7 +66,7 @@ const frame = (t: number, units: FrameUnit[], extra: Partial<FrameDTO> = {}): Fr
 function snap(type: UnitType, extra: Partial<StatsSnapshot> = {}): StatsSnapshot {
   const base: StatsSnapshot = { name: type, type, maxHealth: 100, damage: 10, range: 40, speed: 1.5, attackCooldown: 60, color: '#8A8F98', size: 10, shape: 'circle' };
   if (type === 'wall') return { ...base, maxHealth: 3200, damage: 0, range: 0, speed: 0, attackCooldown: 0, size: 20, shape: 'square', ...extra };
-  if (type === 'factory') return { ...base, maxHealth: 2400, damage: 0, range: 0, speed: 0, attackCooldown: 0, size: 18, productionInterval: 600, color: '#C0A060', ...extra };
+  if (type === 'factory') return { ...base, maxHealth: 360, damage: 0, range: 0, speed: 0, attackCooldown: 0, size: 18, productionInterval: 600, color: '#C0A060', ...extra };
   if (type === 'tower') return { ...base, speed: 0, size: 14, ...extra };
   return { ...base, ...extra };
 }
@@ -423,7 +423,7 @@ describe('building cards and prices', () => {
       { label: 'Cost', value: '$149' },
     ]);
     // The Basic Factory: $247 body + 11 grunts × $177 (7200-tick battle, one every 600 ticks).
-    const fac = computeCost({ type: 'factory', maxHealth: 2400, damage: 0, range: 0, speed: 0, attackCooldown: 60, productionInterval: 600 }, DEFAULT_CONFIG.cost, pricing);
+    const fac = computeCost({ type: 'factory', maxHealth: 360, damage: 0, range: 0, speed: 0, attackCooldown: 60, productionInterval: 600 }, DEFAULT_CONFIG.cost, pricing);
     const rows = breakdownRows(fac.breakdown);
     // M8.6: the production row names the minion kind (grunts by default).
     expect(rows.map((r) => r.label)).toEqual(['Base', 'Health', 'Body', 'Grunts', 'Cost']);

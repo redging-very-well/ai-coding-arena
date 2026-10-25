@@ -19,7 +19,7 @@ export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 export interface UnitStats {
   name: string;          // 1-24 chars, shown on screen
   type: UnitType;        // soldiers move; towers, walls and factories are buildings and never move
-  maxHealth: number;     // soldier/tower 80-4000, wall 400-12000, factory 800-8000
+  maxHealth: number;     // soldier/tower 80-4000, wall 400-12000, factory 120-1200
   damage?: number;       // soldier/tower: required, 0-240. wall/factory: leave it out (they can't attack)
   range?: number;        // required: soldier 20-160 px, tower 20-300 px (towers out-range soldiers), EDGE to edge (gap between the two bodies). wall/factory: leave it out
   speed?: number;        // soldier: required, 0.5-5 px per tick (60 ticks = 1 s). tower/wall/factory: 0 or leave it out

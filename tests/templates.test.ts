@@ -102,11 +102,11 @@ describe('starter-kit templates (M8.5 walls and factories)', () => {
     expect(computeCost(u as never, DEFAULT_CONFIG.cost).cost).toBe(149);
   });
 
-  it('basic_factory: 2400 HP, interval 600 → $2,194 ($247 body + 11 × $177) (the $10,000 redesign)', async () => {
+  it('basic_factory: 360 HP, interval 600 → $2,194 ($247 body + 11 × $177) (the $10,000 redesign)', async () => {
     const u = await load('basic_factory.js');
     const r = checkStats(u, DEFAULT_CONFIG.stats.bounds);
     expect(r.ok && r.warnings).toEqual([]);
-    expect(u).toMatchObject({ type: 'factory', maxHealth: 2400, productionInterval: 600 });
+    expect(u).toMatchObject({ type: 'factory', maxHealth: 360, productionInterval: 600 });
     const priced = computeCost(u as never, DEFAULT_CONFIG.cost);
     expect(priced.cost).toBe(2194);
     expect(priced.breakdown.body).toBe(247);

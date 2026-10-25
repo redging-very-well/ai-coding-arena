@@ -262,28 +262,28 @@ export const UNITS = {
   /** Basic Wall (template). */
   wall: buildingStats({ name: 'Basic Wall', type: 'wall', maxHealth: 3200 }),
   /** Basic Factory (template): grunts every 10 s. */
-  factory: buildingStats({ name: 'Basic Factory', type: 'factory', maxHealth: 2400, productionInterval: 600 }),
+  factory: buildingStats({ name: 'Basic Factory', type: 'factory', maxHealth: 360, productionInterval: 600 }),
   /** Swarm Factory: grunts every 5 s (the most a factory makes). */
-  swarmFactory: buildingStats({ name: 'Swarm Factory', type: 'factory', maxHealth: 2400, productionInterval: 300 }),
+  swarmFactory: buildingStats({ name: 'Swarm Factory', type: 'factory', maxHealth: 360, productionInterval: 300 }),
   /** Fortress Factory: max HP, slowest. */
-  fortressFactory: buildingStats({ name: 'Fortress Factory', type: 'factory', maxHealth: 8000, productionInterval: 1200 }),
-  archerNest: buildingStats({ name: 'Archer Nest', type: 'factory', maxHealth: 2400, productionInterval: 300, produces: 'archer' }),
+  fortressFactory: buildingStats({ name: 'Fortress Factory', type: 'factory', maxHealth: 1200, productionInterval: 1200 }),
+  archerNest: buildingStats({ name: 'Archer Nest', type: 'factory', maxHealth: 360, productionInterval: 300, produces: 'archer' }),
   /** Runner Rush with burst 4. */
-  runnerRush: buildingStats({ name: 'Runner Rush', type: 'factory', maxHealth: 2400, productionInterval: 720, produces: 'runner', burst: 4 }),
+  runnerRush: buildingStats({ name: 'Runner Rush', type: 'factory', maxHealth: 360, productionInterval: 720, produces: 'runner', burst: 4 }),
   /** The same Runner Rush releasing each runner at once (burst 1), for the burst comparison. */
-  runnerTrickle: buildingStats({ name: 'Runner Trickle', type: 'factory', maxHealth: 2400, productionInterval: 720, produces: 'runner', burst: 1 }),
-  bruteForge: buildingStats({ name: 'Brute Forge', type: 'factory', maxHealth: 2400, productionInterval: 720, produces: 'brute' }),
-  iceArcherNest: buildingStats({ name: 'Ice Archer Nest', type: 'factory', maxHealth: 2400, productionInterval: 900, produces: 'archer', minionElement: 'ice' }),
-  fireBrutePack: buildingStats({ name: 'Fire Brute Pack', type: 'factory', maxHealth: 2400, productionInterval: 900, produces: 'brute', minionElement: 'fire' }),
+  runnerTrickle: buildingStats({ name: 'Runner Trickle', type: 'factory', maxHealth: 360, productionInterval: 720, produces: 'runner', burst: 1 }),
+  bruteForge: buildingStats({ name: 'Brute Forge', type: 'factory', maxHealth: 360, productionInterval: 720, produces: 'brute' }),
+  iceArcherNest: buildingStats({ name: 'Ice Archer Nest', type: 'factory', maxHealth: 360, productionInterval: 900, produces: 'archer', minionElement: 'ice' }),
+  fireBrutePack: buildingStats({ name: 'Fire Brute Pack', type: 'factory', maxHealth: 360, productionInterval: 900, produces: 'brute', minionElement: 'fire' }),
   /** Storm Runners: lightning runners, burst 4. */
-  stormRunners: buildingStats({ name: 'Storm Runners', type: 'factory', maxHealth: 2400, productionInterval: 900, produces: 'runner', burst: 4, minionElement: 'lightning' }),
+  stormRunners: buildingStats({ name: 'Storm Runners', type: 'factory', maxHealth: 360, productionInterval: 900, produces: 'runner', burst: 4, minionElement: 'lightning' }),
   /** Slower, cheaper factories (a minion every 15 s) for the five-factory army. */
-  steadyFactory: buildingStats({ name: 'Steady Factory', type: 'factory', maxHealth: 2400, productionInterval: 900 }),
-  steadyArchers: buildingStats({ name: 'Steady Archers', type: 'factory', maxHealth: 2400, productionInterval: 900, produces: 'archer' }),
-  steadyBrutes: buildingStats({ name: 'Steady Brutes', type: 'factory', maxHealth: 2400, productionInterval: 900, produces: 'brute' }),
-  steadyMedics: buildingStats({ name: 'Steady Medics', type: 'factory', maxHealth: 2400, productionInterval: 900, produces: 'medic' }),
+  steadyFactory: buildingStats({ name: 'Steady Factory', type: 'factory', maxHealth: 360, productionInterval: 900 }),
+  steadyArchers: buildingStats({ name: 'Steady Archers', type: 'factory', maxHealth: 360, productionInterval: 900, produces: 'archer' }),
+  steadyBrutes: buildingStats({ name: 'Steady Brutes', type: 'factory', maxHealth: 360, productionInterval: 900, produces: 'brute' }),
+  steadyMedics: buildingStats({ name: 'Steady Medics', type: 'factory', maxHealth: 360, productionInterval: 900, produces: 'medic' }),
   /** Medic Tent: medics. Not a fighter. */
-  medicTent: buildingStats({ name: 'Medic Tent', type: 'factory', maxHealth: 2400, productionInterval: 600, produces: 'medic' }),
+  medicTent: buildingStats({ name: 'Medic Tent', type: 'factory', maxHealth: 360, productionInterval: 600, produces: 'medic' }),
 } as const;
 export type UnitKey = keyof typeof UNITS;
 

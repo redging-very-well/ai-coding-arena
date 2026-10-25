@@ -25,7 +25,7 @@ export default class SwarmFactory {
   constructor() {
     this.name = 'Swarm Factory';
     this.type = 'factory';
-    this.maxHealth = 1500;
+    this.maxHealth = 225;
     this.productionInterval = 600;
     this.color = '#C0A060';
   }
@@ -166,7 +166,7 @@ export default class KindFactory {
   constructor() {
     this.name = '${name}';
     this.type = 'factory';
-    this.maxHealth = 1500;
+    this.maxHealth = 225;
     this.productionInterval = 600;
     this.produces = '${kind}';
     this.burst = ${burst};
@@ -372,7 +372,7 @@ export default class StormRunners {
   constructor() {
     this.name = 'Storm Runners';
     this.type = 'factory';
-    this.maxHealth = 1500;
+    this.maxHealth = 225;
     this.productionInterval = 600;
     this.produces = 'runner';
     this.minionElement = 'lightning';

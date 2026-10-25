@@ -16,7 +16,7 @@ import { armyValues } from '../packages/client/src/screen/model.js';
 const factory = (extra: Partial<StatsSnapshot> = {}): StatsSnapshot => ({
   name: 'Fac',
   type: 'factory',
-  maxHealth: 2400,
+  maxHealth: 360,
   damage: 0,
   range: 0,
   speed: 0,

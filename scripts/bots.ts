@@ -103,11 +103,11 @@ export const DESIGNS = {
   pebble: D('Pebble', 'soldier', { maxHealth: 840, damage: 36, range: 35, speed: 1.2, attackCooldown: 60, size: 8, color: '#9BEA3C', shape: 'circle', behaviour: 'weakest' }),
   // Buildings: a 2,400 HP wall and a factory making a grunt every 10 s.
   stone: B('Stone Wall', 'wall', { maxHealth: 2400, color: '#8A8F98' }),
-  workshop: B('Workshop', 'factory', { maxHealth: 2000, productionInterval: 600, color: '#C0A060' }),
+  workshop: B('Workshop', 'factory', { maxHealth: 300, productionInterval: 600, color: '#C0A060' }),
   // Minion kinds (§5.3, §6): archers, a burst-4 runner pack and brutes (2,000 HP bodies, a minion every 10 s).
-  archerNest: B('Archer Nest', 'factory', { maxHealth: 2000, productionInterval: 600, produces: 'archer', color: '#5BC0EB', behaviour: 'guard' }),
-  runnerPack: B('Runner Pack', 'factory', { maxHealth: 2000, productionInterval: 600, produces: 'runner', burst: 4, color: '#FFD23C', behaviour: 'swarm' }),
-  smasher: B('Brute Smithy', 'factory', { maxHealth: 2000, productionInterval: 600, produces: 'brute', color: '#B5651D', behaviour: 'breach' }),
+  archerNest: B('Archer Nest', 'factory', { maxHealth: 300, productionInterval: 600, produces: 'archer', color: '#5BC0EB', behaviour: 'guard' }),
+  runnerPack: B('Runner Pack', 'factory', { maxHealth: 300, productionInterval: 600, produces: 'runner', burst: 4, color: '#FFD23C', behaviour: 'swarm' }),
+  smasher: B('Brute Smithy', 'factory', { maxHealth: 300, productionInterval: 600, produces: 'brute', color: '#B5651D', behaviour: 'breach' }),
   // Elements, splash and support (§5.4, §5.5, §6): a fire soldier that hits frozen enemies
   // first, a frost archer (range 140, inside a tower's reach), an ice tower, a lightning
   // soldier, a mortar that splashes the biggest clump, a field medic, a war drummer, a shield
@@ -120,8 +120,8 @@ export const DESIGNS = {
   medic: D('Medic', 'soldier', { maxHealth: 1200, damage: 0, range: 20, attackCooldown: 60, size: 10, color: '#33CC66', shape: 'circle', behaviour: 'medic', support: { kind: 'heal', power: 96, range: 120 } }),
   drummer: D('Drummer', 'soldier', { maxHealth: 1200, damage: 0, range: 20, attackCooldown: 60, size: 10, color: '#D94040', shape: 'circle', behaviour: 'banner', support: { kind: 'might', power: 30, range: 100 } }),
   bearer: D('Shield Bearer', 'soldier', { maxHealth: 2400, damage: 36, range: 30, speed: 1.2, attackCooldown: 60, size: 14, color: '#4A7BD0', shape: 'square', behaviour: 'banner', support: { kind: 'shield', power: 25, range: 80 } }),
-  medicTent: B('Medic Tent', 'factory', { maxHealth: 2400, productionInterval: 600, produces: 'medic', color: '#9BEA9B', behaviour: 'guardTank' }),
-  fireGrunts: B('Fire Grunts', 'factory', { maxHealth: 2000, productionInterval: 600, minionElement: 'fire', color: '#FF8A3C' }),
+  medicTent: B('Medic Tent', 'factory', { maxHealth: 360, productionInterval: 600, produces: 'medic', color: '#9BEA9B', behaviour: 'guardTank' }),
+  fireGrunts: B('Fire Grunts', 'factory', { maxHealth: 300, productionInterval: 600, minionElement: 'fire', color: '#FF8A3C' }),
 } satisfies Record<string, BotDesign>;
 type DesignKey = keyof typeof DESIGNS;
 

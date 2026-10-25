@@ -57,10 +57,10 @@ describe('starter-kit templates (§11)', () => {
       [{ ...body, support: { kind: 'heal', power: 96, range: 120 } }, 892],
       [{ ...body, support: { kind: 'might', power: 30, range: 100 } }, 869],
       [{ type: 'wall', maxHealth: 3200, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 149],
-      [{ type: 'factory', maxHealth: 2400, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 600 }, 2194],
+      [{ type: 'factory', maxHealth: 360, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 600 }, 2194],
       // §4d examples: the Frost Spire (ice + splash 40 at CD 60) and the fire archer factory.
       [{ type: 'tower', maxHealth: 1200, damage: 72, range: 140, speed: 0, attackCooldown: 60, size: 14, element: 'ice', splashRadius: 40 }, 2520],
-      [{ type: 'factory', maxHealth: 2400, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900, produces: 'archer', minionElement: 'fire' }, 2214],
+      [{ type: 'factory', maxHealth: 360, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900, produces: 'archer', minionElement: 'fire' }, 2214],
     ];
     for (const [stats, cost] of cases) {
       expect(computeCost(stats, DEFAULT_CONFIG.cost).cost).toBe(cost);

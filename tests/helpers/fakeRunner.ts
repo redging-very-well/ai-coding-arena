@@ -169,7 +169,7 @@ export const scripted =
  * Test stats at the M8.8 ×5 scale: the Basic Soldier (600 HP, 50 damage), a
  * tower with the old 180 range (750 HP, 75 damage: today's Basic Tower ×5,
  * so the M8.7 geometry of these tests holds), the Basic Wall (2000 HP) and
- * the Basic Factory (1500 HP). The sim is scale-invariant (sudden death is a
+ * the Basic Factory (225 HP: 1500 before the brittle factories, same price). The sim is scale-invariant (sudden death is a
  * percentage), so the battles play exactly like their ×1 originals.
  */
 export function stats(over: Partial<Omit<StatsSnapshot, 'type'>> & Pick<UnitStats, 'type'>): StatsSnapshot {
@@ -178,7 +178,7 @@ export function stats(over: Partial<Omit<StatsSnapshot, 'type'>> & Pick<UnitStat
     const b: StatsSnapshot =
       over.type === 'wall'
         ? { name: 'Basic Wall', type: 'wall', maxHealth: 2000, damage: 0, range: 0, speed: 0, attackCooldown: 0, color: '#8A8F98', size: 20, shape: 'square' }
-        : { name: 'Basic Factory', type: 'factory', maxHealth: 1500, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900, color: '#C0A060', size: 18, shape: 'square' };
+        : { name: 'Basic Factory', type: 'factory', maxHealth: 225, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900, color: '#C0A060', size: 18, shape: 'square' };
     return Object.freeze({ ...b, ...over, damage: 0, range: 0, speed: 0, attackCooldown: 0, size: b.size }) as StatsSnapshot;
   }
   const base: StatsSnapshot =

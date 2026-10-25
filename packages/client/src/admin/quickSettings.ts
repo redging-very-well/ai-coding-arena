@@ -556,7 +556,7 @@ export const BASIC_TOWER: CostStats = { type: 'tower', maxHealth: 1200, damage: 
 export const BIG_TANK: CostStats = { type: 'soldier', maxHealth: 3600, damage: 80, range: 40, speed: 0.8, attackCooldown: 60, size: 20 };
 /** The wall and factory templates (§11) and the plan's Swarm Factory (§6). */
 export const BASIC_WALL: CostStats = { type: 'wall', maxHealth: 3200, damage: 0, range: 0, speed: 0, attackCooldown: 60 };
-export const BASIC_FACTORY: CostStats = { type: 'factory', maxHealth: 2400, damage: 0, range: 0, speed: 0, attackCooldown: 60, productionInterval: 600 };
+export const BASIC_FACTORY: CostStats = { type: 'factory', maxHealth: 360, damage: 0, range: 0, speed: 0, attackCooldown: 60, productionInterval: 600 };
 export const SWARM_FACTORY: CostStats = { ...BASIC_FACTORY, productionInterval: 300 };
 /** §6 reference units: the Mortar Tower and the damage-0 support body (Field Medic, War Drummer). */
 export const MORTAR_TOWER: CostStats = { type: 'tower', maxHealth: 1000, damage: 80, range: 140, speed: 0, attackCooldown: 60, size: 14, splashRadius: 40 };
