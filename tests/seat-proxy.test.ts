@@ -14,6 +14,7 @@ import WebSocket, { WebSocketServer } from 'ws';
 import type { AdminClaudeSeatsDTO, ClaudeSeatsDTO, MeResponse, ServerWsMessage, SetupInfoDTO, TerminalDTO } from '@pixel-clash/shared';
 import type { RunningServer } from '../packages/server/src/server.js';
 import { parseTarget } from '../packages/server/src/terminal/proxy.js';
+import { seatPlayerToken, upstreamWsPath } from '../packages/server/src/terminal/upstream.js';
 import { Client, WsRecorder, adminClient, bootServer, newPlayer, removeDir, sleep, tempDataDir } from './helpers/server.js';
 
 const T = 60_000;
@@ -98,7 +99,8 @@ class FakeTtyd {
         /* none */
       }
       if (!originHost || originHost !== req.headers.host) return deny(403);
-      const m = /^\/terminal\/(\d)\/ws$/.exec(req.url ?? '');
+      // ttyd -a: `?arg=` values become the command's arguments (recorded in conn.url).
+      const m = /^\/terminal\/(\d)\/ws$/.exec((req.url ?? '').split('?')[0]!);
       if (!m) return deny(404);
       this.wss.handleUpgrade(req, socket, head, (ws) => {
         const conn: FakeConn = { seat: Number(m[1]), url: req.url ?? '', headers: req.headers, ws, received: [], hello: null, closed: false };
@@ -426,7 +428,8 @@ describe('seat terminal proxy', () => {
     await sleep(50);
     const conn = fake.conns[fake.conns.length - 1]!;
     expect(conn.seat).toBe(1);
-    expect(conn.url).toBe('/terminal/1/ws');
+    // The seat's player: ttyd gets their token (and nothing from the browser's query).
+    expect(conn.url).toBe(`/terminal/1/ws?arg=${seatPlayerToken(1, sam.id)}`);
     expect(conn.headers.cookie).toBeUndefined();
     expect(conn.headers.authorization).toBe(`Basic ${CREDENTIAL}`);
     expect(conn.headers.origin).toBe(`http://127.0.0.1:${fake.port}`);
@@ -452,6 +455,31 @@ describe('seat terminal proxy', () => {
     await term.until(() => term.closeCode !== null);
     await sleep(100);
     expect(conn.closed).toBe(true);
+  });
+
+  it('names the seat player to ttyd with an opaque token the browser cannot set (§11.2 e)', async () => {
+    const t = seatPlayerToken(1, sam.id);
+    expect(t).toMatch(/^[a-f0-9]{32}$/);
+    expect(seatPlayerToken(1, sam.id)).toBe(t); // a reload resumes
+    expect(seatPlayerToken(1, zoe.id)).not.toBe(t); // another player starts fresh
+    expect(seatPlayerToken(2, sam.id)).not.toBe(t);
+    expect(t).not.toContain(sam.id.replace(/^p_/, ''));
+    expect(upstreamWsPath(3, null)).toBe('/terminal/3/ws');
+    expect(upstreamWsPath(3, 'p_x')).toBe(`/terminal/3/ws?arg=${seatPlayerToken(3, 'p_x')}`);
+
+    // A browser can't pick the token (or add arguments): its query never reaches ttyd.
+    const before = fake.conns.length;
+    const ws = new WebSocket(`${srv.url.replace(/^http/, 'ws')}/terminal/1/ws?arg=${'0'.repeat(32)}&arg=x&pane=p`, 'tty', { headers: { cookie: sam.client.cookieHeader(), origin: srv.url } });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', () => resolve());
+      ws.once('error', reject);
+    });
+    const term = new Term(ws);
+    term.hello();
+    await term.until(() => fake.conns.length > before && fake.conns.at(-1)!.hello !== null);
+    expect(fake.conns.at(-1)!.url).toBe(`/terminal/1/ws?arg=${t}`);
+    ws.close();
+    await term.until(() => term.closeCode !== null);
   });
 
   it('refuses a foreign or missing Origin', async () => {
@@ -501,6 +529,8 @@ describe('seat terminal proxy', () => {
     expect(zoeTerm.text()).toContain('A grown-up opened your terminal');
     const seats = (await admin.get<AdminClaudeSeatsDTO>('/admin/claude-seats')).body;
     expect(seats.seats[1]!.live).toMatchObject({ by: 'admin', pane: null });
+    // Admin rescue: no player token, so the seat resumes Zoe's conversation.
+    expect(fake.conns.filter((c) => c.seat === 2).map((c) => c.url)).toEqual([`/terminal/2/ws?arg=${seatPlayerToken(2, zoe.id)}`, '/terminal/2/ws']);
     adminTerm.ws.send('ping');
     await adminTerm.until(() => adminTerm.messages.length > 0);
     expect(adminTerm.messages[0]!.data.toString()).toBe('echo:ping');

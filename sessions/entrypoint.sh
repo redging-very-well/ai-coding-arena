@@ -2,11 +2,14 @@
 # Pixel Clash seat entrypoint (plan §11.1).
 #
 #   pixel-clash-seat [serve]     render /kit, then exec ttyd (the default)
-#   pixel-clash-seat agent-loop  the program ttyd runs: claude or codex, restarted if it exits
-#                                (claude-loop is an old name for it)
+#   pixel-clash-seat agent-loop [token]
+#                                the program ttyd runs: claude or codex, restarted if it exits
+#                                (claude-loop is an old name for it). token = the seat's player
+#                                (from the game server's proxy, via ttyd -a; see seat_start_mode)
 #   pixel-clash-seat render      render /kit and exit
 #   pixel-clash-seat check       print versions, kit state and game-server reachability
 #   pixel-clash-seat new-player     forget the seat's player (empties /kit, chat history, approvals)
+#   pixel-clash-seat first-prompt   print the message a new player's agent starts with
 #   pixel-clash-seat <cmd...>    render /kit, then exec <cmd> (e.g. `claude` or `codex login` for the adult login)
 #
 # Environment:
@@ -24,7 +27,8 @@
 #                     on start (if it isn't logged in yet); never passed to codex
 #   CLAUDE_PERMISSION_MODE  optional: default | acceptEdits | plan (M0 spike decides)
 #   CLAUDE_CONTINUE   1 (default) = reopen the seat's last conversation after a
-#                     restart or page reload; 0 = always start fresh
+#                     restart or page reload; 0 = always start fresh. A NEW player
+#                     always starts fresh, with FIRST_PROMPT.md as the first message
 #   PC_KIT_DIR, PC_TEMPLATE_DIR  paths (set in the Dockerfile; overridable for local tests)
 set -euo pipefail
 
@@ -113,6 +117,7 @@ render_kit() {
     rel="${src#"$TEMPLATE_DIR"/}"
     case "$rel" in
       .pixel-clash/*) continue ;; # Claude writes player.json here after login
+      FIRST_PROMPT.md.tmpl) continue ;; # seat-only: sent by agent-loop, not a kit file
       units/*)
         dest="$KIT_DIR/$rel"
         if [ ! -e "$dest" ]; then
@@ -153,7 +158,10 @@ serve() {
   # all live under /terminal/N/ (behind the proxy and directly), -c basic auth,
   # -w start dir. Each browser connection gets its own agent-loop (and so its
   # own claude or codex); the proxy keeps one live terminal per seat (plan §11.2).
-  exec ttyd -W -O -p 7781 -b "$base" -w "$KIT_DIR" \
+  # -a: a `?arg=<token>` on the WebSocket URL becomes agent-loop's argument
+  # (argv, no shell). Only the proxy sets it, for the seat's player; agent-loop
+  # accepts nothing but 32 hex digits (seat_start_mode).
+  exec ttyd -W -O -a -p 7781 -b "$base" -w "$KIT_DIR" \
     -c "${user}:${TTYD_PASS}" \
     -t fontSize=18 \
     -t "titleFixed=Pixel Clash · ${AGENT_NAME} · seat ${SEAT}" \
@@ -176,11 +184,89 @@ codex_api_key_login() {
 
 # Codex keeps its chats under $CODEX_HOME/sessions.
 codex_has_history() { [ -n "$(find "$CODEX_DIR/sessions" -type f -name '*.jsonl' -print -quit 2>/dev/null)" ]; }
+claude_has_history() { compgen -G "$(project_history_dir)/*.jsonl" >/dev/null; }
+agent_has_history() { if [ "$AGENT" = codex ]; then codex_has_history; else claude_has_history; fi; }
+
+# --- Which player the seat serves (plan §11.2 e) ------------------------------
+# The game server's proxy adds ?arg=<token> to the ttyd WebSocket only for the
+# seat's assigned player (never for an admin rescue). ttyd -a passes it to
+# `agent-loop <token>`. The token is opaque: 32 hex digits, a hash of the seat
+# and the player's id. It is only compared and written to a file, never put in
+# a command; anything else is ignored (as if there were no token).
+PLAYER_TOKEN_RE='^[a-f0-9]{32}$'
+last_player_file() { printf '%s/.pixel-clash/last-player' "$KIT_DIR"; }
+
+# How this terminal's agent starts. Prints one word:
+#   new-player  token differs from the last one (or none stored yet): forget the
+#               previous player, fresh conversation with FIRST_PROMPT.md
+#   prompt      same player, but no conversation exists: fresh with FIRST_PROMPT.md
+#   resume      reopen the last conversation (CLAUDE_CONTINUE=1 and one exists)
+#   fresh       new conversation, no prompt
+# No token (admin rescue, a direct box:778N tab, the restart after the agent
+# exits) never prompts: resume or fresh as before.
+seat_start_mode() { # [token]
+  local token="${1:-}" last='' file
+  file="$(last_player_file)"
+  if [ -n "$token" ] && ! [[ "$token" =~ $PLAYER_TOKEN_RE ]]; then
+    log "ignoring a malformed player token"
+    token=''
+  fi
+  if [ -n "$token" ]; then
+    [ -f "$file" ] && last="$(head -c 64 "$file" | tr -cd 'a-f0-9')"
+    if [ "$token" != "$last" ]; then echo new-player; return; fi
+    if ! agent_has_history; then echo prompt; return; fi
+  fi
+  if [ "${CLAUDE_CONTINUE:-1}" = 1 ] && agent_has_history; then echo resume; else echo fresh; fi
+}
+
+# Forget the seat's chats, for both agents (a seat can switch agent): Claude's
+# project history, typed-prompt history (it holds the PIN the player typed),
+# file-history and todos; Codex's sessions and prompt history. Logins are kept.
+forget_chats() {
+  rm -rf "$(project_history_dir)" "$CONFIG_DIR/file-history" "$CONFIG_DIR/todos"
+  rm -f "$CONFIG_DIR/history.jsonl"
+  rm -rf "$CODEX_DIR/sessions" "$CODEX_DIR/archived_sessions"
+  rm -f "$CODEX_DIR/history.jsonl"
+}
+
+# A different player took the seat: the previous player's key
+# (.pixel-clash/player.json) and chats must not reach them. Their unit files in
+# units/ stay (`new-player` clears everything).
+switch_player() { # <validated token>
+  local file tmp
+  file="$(last_player_file)"
+  mkdir -p "$(dirname "$file")"
+  rm -f "$KIT_DIR/.pixel-clash/player.json"
+  forget_chats
+  tmp="$(mktemp "${file}.XXXXXX")"
+  printf '%s\n' "$1" >"$tmp"
+  mv -f "$tmp" "$file"
+  log "a new player sat down: previous login and chats cleared, sending the first prompt"
+}
+
+# The first message for a new player (packages/starter-kit/FIRST_PROMPT.md.tmpl,
+# read from the root-owned templates, not /kit). Empty if it is missing.
+first_prompt() {
+  local src="$TEMPLATE_DIR/FIRST_PROMPT.md.tmpl"
+  [ -f "$src" ] || { log "warning: $src is missing; starting without a first prompt"; return 0; }
+  sed -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" "$src"
+}
+
+# Start mode for this connection, after acting on a new player. Sets MODE and PROMPT.
+begin_agent() { # [token]
+  MODE="$(seat_start_mode "${1:-}")"
+  PROMPT=''
+  if [ "$MODE" = new-player ]; then switch_player "$1"; fi
+  if [ "$MODE" = new-player ] || [ "$MODE" = prompt ]; then
+    PROMPT="$(first_prompt)"
+    [ -n "$PROMPT" ] || MODE=fresh
+  fi
+}
 
 # What the player's terminal runs on a Codex seat: codex in /kit, forever.
 # The kit's .codex/config.toml pre-approves the pixel-clash tools; the flags
 # here set the seat's sandbox and approval policy (they win over the kit file).
-codex_loop() {
+codex_loop() { # [token]
   local sandbox="${CODEX_SANDBOX:-danger-full-access}" approval="${CODEX_APPROVAL:-never}"
   case "$sandbox" in
     danger-full-access | workspace-write) ;;
@@ -193,21 +279,24 @@ codex_loop() {
   local -a args=(--sandbox "$sandbox" --ask-for-approval "$approval")
   trap ':' INT QUIT
   cd "$KIT_DIR"
+  begin_agent "${1:-}"
   while true; do
-    if [ "${CLAUDE_CONTINUE:-1}" = 1 ] && codex_has_history; then
+    case "$MODE" in
+      # The prompt is one argv entry: codex [OPTIONS] [PROMPT].
+      new-player | prompt) codex "${args[@]}" "$PROMPT" || true ;;
       # Reopen the last conversation (page reload, ttyd reconnect, restart).
-      codex resume --last "${args[@]}" || codex "${args[@]}" || true
-    else
-      codex "${args[@]}" || true
-    fi
+      resume) codex resume --last "${args[@]}" || codex "${args[@]}" || true ;;
+      *) codex "${args[@]}" || true ;;
+    esac
     printf '\r\nCodex stopped. Starting it again...\r\n'
     sleep 1
+    MODE="$(seat_start_mode)"
   done
 }
 
 # What the player's terminal runs: claude, forever. This is not a security
 # boundary (Claude Code's `!` prefix runs commands); the container is.
-claude_loop() {
+claude_loop() { # [token]
   local -a args=()
   case "${CLAUDE_PERMISSION_MODE:-}" in
     '' | default) ;;
@@ -218,15 +307,19 @@ claude_loop() {
   # claude itself still gets default signal handling.
   trap ':' INT QUIT
   cd "$KIT_DIR"
+  begin_agent "${1:-}"
   while true; do
-    if [ "${CLAUDE_CONTINUE:-1}" = 1 ] && compgen -G "$(project_history_dir)/*.jsonl" >/dev/null; then
+    case "$MODE" in
+      # The prompt is one argv entry: `claude [options] [prompt]` starts an
+      # interactive session with it as the first message.
+      new-player | prompt) claude "${args[@]}" "$PROMPT" || true ;;
       # Reopen the last conversation (page reload, ttyd reconnect, restart).
-      claude --continue "${args[@]}" || claude "${args[@]}" || true
-    else
-      claude "${args[@]}" || true
-    fi
+      resume) claude --continue "${args[@]}" || claude "${args[@]}" || true ;;
+      *) claude "${args[@]}" || true ;;
+    esac
     printf '\r\nClaude stopped. Starting it again...\r\n'
     sleep 1
+    MODE="$(seat_start_mode)"
   done
 }
 
@@ -311,6 +404,8 @@ new_player() {
   # Everything in /kit is re-rendered below: the old key (.pixel-clash/), their
   # unit files (the designs stay on the game server), saved approvals
   # (.claude/settings.local.json) and anything else Claude created.
+  # This also removes .pixel-clash/last-player, so the next player to open the
+  # terminal through /play gets a fresh conversation and the first prompt.
   find "${KIT_DIR:?}" -mindepth 1 -delete
   rm -rf "$(project_history_dir)" "$CONFIG_DIR/file-history" "$CONFIG_DIR/todos"
   rm -f "$CONFIG_DIR/history.jsonl"
@@ -326,8 +421,12 @@ cmd="${1:-serve}"
 case "$cmd" in
   serve) serve ;;
   agent-loop | claude-loop)
-    if [ "$AGENT" = codex ]; then codex_loop; else claude_loop; fi
+    # ttyd -a may add more than one ?arg=: only a single token is accepted.
+    token=''
+    [ "$#" -eq 2 ] && token="$2"
+    if [ "$AGENT" = codex ]; then codex_loop "$token"; else claude_loop "$token"; fi
     ;;
+  first-prompt) first_prompt ;;
   render) render_kit ;;
   check) check ;;
   new-player) new_player ;;

@@ -17,7 +17,7 @@ One Docker container per seat (plan §11.1). Each container runs **ttyd**, which
 | 7 | 7787 | `http://<claude-box>:7787/terminal/7/` | `kit7`, `claude7`, `codex7` |
 | 8 | 7788 | `http://<claude-box>:7788/terminal/8/` | `kit8`, `claude8`, `codex8` |
 
-- `kitN` → `/kit`: the rendered starter kit (CLAUDE.md, `.mcp.json`, `.claude/settings.json`, `units/`) plus `.pixel-clash/player.json` (the player's apiKey, written by Claude after login).
+- `kitN` → `/kit`: the rendered starter kit (CLAUDE.md, `.mcp.json`, `.claude/settings.json`, `units/`) plus `.pixel-clash/player.json` (the player's apiKey, written by Claude after login) and `.pixel-clash/last-player` (which player the seat last served, see "A new player sits down").
 - `claudeN` → `/home/player/.claude`: all Claude Code state (`CLAUDE_CONFIG_DIR`): the login, folder trust, `.claude.json` and chat history.
 - `codexN` → `/home/player/.codex`: all Codex state (`CODEX_HOME`): the login (`auth.json`) and chat history. Only used on Codex seats.
 - On a Codex seat `/kit` has AGENTS.md and `.codex/config.toml` instead of CLAUDE.md, `.mcp.json` and `.claude/`.
@@ -76,7 +76,26 @@ docker compose stop seat5 seat6                         # park them again (volum
 
 A shortcut for "seats 1 to N" (here N = 6): `docker compose up -d $(seq -f seat%g 1 6)`. `docker compose ps` lists only the seats that exist. For a 3-player game run seats 1-3 and put seat cards 1-3 on those three laptops. The Claude seat number (laptop, card, container) is separate from the player's game seat (colour, zone): /play links them when the player scans the card or picks the number. You only need to log in (step 2) the seats you'll use, but logging in all 8 the day before means any seat can be started on the day.
 
-On start, each seat renders `/kit` from `packages/starter-kit/` with `{{HOST}}` taken from `PIXEL_CLASH_URL`. CLAUDE.md, `.mcp.json`, `.claude/settings.json` and PROMPTS.md are re-rendered on every start, and `.claude/settings.local.json` (where Claude Code saves "Yes, and don't ask again" approvals) is deleted, so the rendered template is the only allowlist; `.pixel-clash/player.json` and existing files in `units/` are never overwritten.
+On start, each seat renders `/kit` from `packages/starter-kit/` with `{{HOST}}` taken from `PIXEL_CLASH_URL`. CLAUDE.md, `.mcp.json`, `.claude/settings.json` and PROMPTS.md are re-rendered on every start, and `.claude/settings.local.json` (where Claude Code saves "Yes, and don't ask again" approvals) is deleted, so the rendered template is the only allowlist; `.pixel-clash/player.json` and existing files in `units/` are never overwritten (except that a new player sitting down removes the previous player's `player.json`, see below). `packages/starter-kit/FIRST_PROMPT.md.tmpl` is not copied into `/kit`: it is the seat's first message for a new player.
+
+### A new player sits down: the first prompt
+
+When a player picks a seat on /play and its terminal opens for a **new** player, the seat's agent starts a **fresh** conversation whose first message is `packages/starter-kit/FIRST_PROMPT.md.tmpl` (the same text for Claude and Codex): load the latest rules, unit contract and game state from the pixel-clash MCP server, then greet the player and ask for their player name and 4-digit PIN, call `login` and save the result to `.pixel-clash/player.json`.
+
+How it works: the game server's proxy adds `?arg=<token>` to the ttyd WebSocket it opens for the seat's assigned player (never for an admin, never anything from the browser). The token is 32 hex digits, a hash of the seat and the player's id, so it is the same every time that player opens that seat. ttyd runs with `-a`, which passes it to `pixel-clash-seat agent-loop <token>` as a plain argument (no shell). The entrypoint accepts only `^[a-f0-9]{32}$`, keeps the last one in `/kit/.pixel-clash/last-player`, and compares:
+
+| Who opens the terminal | What the agent does |
+|---|---|
+| A new player (different token from the last one, or none stored yet) | Removes the previous player's `.pixel-clash/player.json` and the seat's chats (Claude's project history, file-history, todos and prompt history `history.jsonl`, which holds the PIN they typed; Codex's `sessions/` and `history.jsonl`), keeps the logins and `units/`, then starts fresh with the first prompt. |
+| The same player again (reload, new tab, "Use it here instead", coming back later) | Resumes their conversation (`claude --continue` / `codex resume --last`), no prompt. If their conversation is gone, it starts fresh with the prompt. |
+| The agent exits and the loop restarts it | Resumes, no prompt. |
+| An admin rescue from /admin | No token: resumes the player's conversation (or a plain fresh one if there is none). Never prompts, never clears anything. |
+| A direct `http://<box>:778N/terminal/N/` tab (seat password) | Same as an admin rescue. To send the prompt by hand, paste it (`docker compose exec seatN pixel-clash-seat first-prompt` prints it). |
+| After `docker compose run --rm seatN new-player` | `/kit` is emptied (including `last-player`), so the next player to open the terminal through /play, even the same one, gets a fresh conversation and the prompt. |
+
+The units in `/kit/units/` stay between players on a seat (their designs are on the game server anyway); run `new-player` to clear everything.
+
+**Edit the prompt:** change `packages/starter-kit/FIRST_PROMPT.md.tmpl` (plain text, sent as is; `{{AGENT_NAME}}` becomes Claude or Codex). Keep it facts and steps only (no tactics: `tests/no-strategy-hints.test.ts` checks it). It is baked into the image, so **rebuild**: `docker compose build && docker compose up -d`. The same rebuild is needed once to get this feature (new entrypoint, ttyd `-a`); the game server needs its update too (it sends the token).
 
 ## 2. Log in each seat (adults, before the event)
 
@@ -154,6 +173,7 @@ Isolation check (dress rehearsal), so facilitators know what a player can reach 
   ```
   `new-player` empties `/kit` completely (the old player's key in `.pixel-clash/`, their unit files, any other files Claude created, and `.claude/settings.local.json` with any "don't ask again" approvals), deletes this seat's chat history, file-history backups and todos, and re-renders the kit from the templates. The old player's designs stay on the game server. The Claude login and folder trust are kept. On a Codex seat it also clears Codex's chats and state in `codexN`, keeping only the login (`auth.json`) and `config.toml`. (Minimal version from the plan: `docker compose run --rm seatN rm -f /kit/.pixel-clash/player.json`.)
 - **Game server IP changed:** edit `PIXEL_CLASH_URL` in `.env`, then `docker compose up -d` (the seats restart and re-render `.mcp.json` and CLAUDE.md).
+- **A different player takes a seat** (picks it on /play, or an admin reassigns it): their terminal starts a fresh conversation that loads the latest game config and asks for their name and PIN, and the previous player's key and chats on that seat are cleared (see "A new player sits down" above). `new-player` is still the way to clear everything, including `units/`.
 - **Reloading /play or opening the terminal in a new tab** starts a new `claude` (or `codex`) process; with `CLAUDE_CONTINUE=1` (default) it reopens the seat's last conversation (`codex resume --last` on a Codex seat), so it costs a 2-3 s restart, not the chat. Through the game server only one terminal per seat is live: the newest tab wins and the older one shows "opened in another tab" until the player switches back. Direct `778N` tabs bypass that rule, so adults should close a direct tab when done.
 
 ## 5. Wipe after the event
@@ -171,7 +191,7 @@ Removes all 24 volumes (`kit1`..`kit8`, `claude1`..`claude8`, `codex1`..`codex8`
 | `PIXEL_CLASH_URL` | (required) | Game server base URL, `http://<ip>:<port>` |
 | `SEAT_SECRET` | (required) | One seat password for all seats (basic auth, user `player`): 12-64 characters of `A-Z a-z 0-9 . _ ~ -`. Enter the same value in /admin → AI seats. Replaces `TTYD_PASS_1..8` (ignored now). |
 | `CLAUDE_PERMISSION_MODE` | empty | `acceptEdits` or `plan` passes `--permission-mode` to claude. Decided in the M0 spike; `bypassPermissions` is refused. |
-| `CLAUDE_CONTINUE` | `1` | Reopen the last conversation after a restart or reload (`claude --continue`, or `codex resume --last`); `0` = always fresh |
+| `CLAUDE_CONTINUE` | `1` | Reopen the last conversation after a restart or reload (`claude --continue`, or `codex resume --last`); `0` = always fresh. Either way a new player starts fresh with the first prompt |
 | `AGENT` | `claude` | The coding agent every seat runs: `claude` (Claude Code) or `codex` (OpenAI Codex CLI, section 2b) |
 | `SEAT_AGENT_1` … `SEAT_AGENT_8` | empty | Per-seat override of `AGENT`, e.g. `SEAT_AGENT_7=codex` |
 | `CODEX_SANDBOX` | `danger-full-access` | Codex seats: `--sandbox`. `workspace-write` only if `check` says the Codex sandbox works in the container |

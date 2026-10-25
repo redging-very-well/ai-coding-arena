@@ -44,6 +44,7 @@ describe('no strategy hints in player-facing text', () => {
   const texts: Array<[string, string]> = [
     ['CLAUDE.md.tmpl', kitFile('CLAUDE.md.tmpl')],
     ['PROMPTS.md', kitFile('PROMPTS.md')],
+    ['FIRST_PROMPT.md.tmpl', kitFile('FIRST_PROMPT.md.tmpl')],
     ...units.map((u, i): [string, string] => [`starter unit ${i}`, u]),
     ['unit guide', JSON.stringify(buildGuide(DEFAULT_CONFIG))],
     ['get_unit_contract', JSON.stringify(buildContract(DEFAULT_CONFIG))],

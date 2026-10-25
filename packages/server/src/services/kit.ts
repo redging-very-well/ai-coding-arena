@@ -42,6 +42,13 @@ export function kitFileAgent(rel: string): KitAgent | null {
   return null;
 }
 
+/**
+ * In packages/starter-kit but not a kit file: FIRST_PROMPT.md(.tmpl) is the
+ * message a seat's agent starts with when a new player sits down (sent by
+ * sessions/entrypoint.sh, plan §11.2 e). Neither the zips nor /kit get it.
+ */
+export const SEAT_ONLY_FILES: ReadonlySet<string> = new Set(['FIRST_PROMPT.md']);
+
 export interface KitOptions {
   /** host[:port] from the request's Host header. */
   host: string;
@@ -152,6 +159,7 @@ export function kitFiles(opts: KitOptions): Array<{ name: string; content: strin
       let content: string | Buffer = readFileSync(file);
       const isTemplate = rel.endsWith('.tmpl');
       if (isTemplate) rel = rel.slice(0, -'.tmpl'.length);
+      if (SEAT_ONLY_FILES.has(rel)) continue;
       const owner = kitFileAgent(rel);
       // CLAUDE.md is the instructions for both agents (renamed for Codex).
       if (rel === 'CLAUDE.md') rel = KIT_AGENTS[agent].instructions;

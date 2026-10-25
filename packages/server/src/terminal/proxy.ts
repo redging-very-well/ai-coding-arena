@@ -10,7 +10,9 @@
 //   anything else          → 404 here, never forwarded: libwebsockets percent-decodes
 //                            and collapses `//`, `/./`, `/../` before ttyd matches its
 //                            routes, so `/%74oken` or `//token` would reach ttyd's /token
-//   /terminal/<N>/ws       → WebSocket relay (relay.ts), one live terminal per seat
+//   /terminal/<N>/ws       → WebSocket relay (relay.ts), one live terminal per seat; the
+//                            browser's query is dropped, and ttyd's WS URL gets
+//                            `?arg=<player token>` for the seat's own player only (§11.2 e)
 //
 // Access (every request): the player whose `claudeSeat` is N (session cookie
 // `pc_session`), or the admin (`pc_admin`, any seat, for rescue). The proxy
@@ -46,6 +48,7 @@ import {
   type ResolveUpstream,
   type TerminalTimeouts,
   type Upstream,
+  upstreamWsPath,
 } from './upstream.js';
 
 export interface TerminalProxyOptions {
@@ -350,8 +353,11 @@ export class TerminalProxy implements TerminalControl {
     const paneParam = new URLSearchParams(target.search).get('pane');
     const pane = paneParam && PANE_RE.test(paneParam) ? paneParam : null;
     const { upstream: addr, secret } = cfg;
-    // The query (pane id) stays here: nothing in it is for ttyd.
-    const upstream = new WebSocket(`ws://${addr.host}:${addr.port}/terminal/${seat}/ws`, 'tty', {
+    // The browser's query (pane id) stays here. ttyd gets only the player
+    // token, and only for the seat's own player: an admin rescue has none, so
+    // it resumes the conversation instead of starting a new player's (§11.2 e).
+    const wsPath = upstreamWsPath(seat, a.by === 'player' ? a.player.id : null);
+    const upstream = new WebSocket(`ws://${addr.host}:${addr.port}${wsPath}`, 'tty', {
       headers: forwardRequestHeaders(req.headers, {
         upstream: addr,
         secret,
@@ -398,7 +404,9 @@ export class TerminalProxy implements TerminalControl {
       socket.off('close', browserGone);
       // Access may have changed while ttyd answered.
       const again = this.access(seat, req.headers.cookie);
-      if (!again.ok || this.stopped) {
+      // ttyd already started the agent for whoever the token named.
+      const samePlayer = again.ok && (again.by === 'player' ? a.by === 'player' && a.player.id === again.player.id : a.by === 'admin');
+      if (!again.ok || !samePlayer || this.stopped) {
         upstream.close(1000, 'access changed');
         return reject(again.ok ? 'CLAUDE_BOX_DOWN' : again.code, { seat });
       }
