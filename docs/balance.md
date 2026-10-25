@@ -1681,3 +1681,106 @@ With the option off nothing changes, so the watch list is the one in "Brittle fa
 The levers named in "Brittle factories" remain: `defend` minions staying by their
 factory when the circle closes (they now walk to its centre), or a factory's minions
 dying with it. **Watch item.**
+
+## Minions die with their factory (2026-10-25)
+
+Plan §5, §5.2, §6, §9.3 (step 9a), §14 "Minions die with their factory", §17. The user's
+chosen option for the factory camps (verbatim): "Try 'minions die with their factory'" —
+"When a factory is destroyed, its living minions crumble. Brittle factories (6 s for one
+soldier) then make camping risky: reach the factory and the whole swarm goes. Measure it
+with the fast balance tools; keep it off by default if it misbehaves, like the stop rule."
+
+### What was built
+
+`factory.minionsDieWithFactory` (config + `config/default.json`, /admin quick settings
+toggle under Walls & factories, next to "Factories stop at sudden death"). When on:
+- step 9a, right after step 9 removes the dead: for each factory removed in step 9
+  (instanceId order), every minion of it still alive crumbles in the same tick, in one
+  `crumble {ids, factoryId}` event (/screen: a small pooled grey pop per minion, 6
+  particles, 3 with reduced motion; the crumble sound once per event);
+- credit: the unit whose hit destroyed the factory (`killedBy`) gets +1 kill and the
+  minion's value (minionValue) as value destroyed for each crumbled minion, as if it had
+  hit each one down; no damage credit. Sudden death kills credit nobody;
+- stored minions are lost as before (`lost` event; the factory's value at death already
+  counts them);
+- minions of other factories are untouched; with no factory destroyed the battle is frame
+  for frame the same as with the option off.
+
+Every minion's `OtherView.factoryId` (on or off) is the id of the factory that made it.
+
+**It ships off by default** (judgement call, reversible in one click): the camp falls, but
+so does every attacking factory army, and 12 of the 249 rules fail.
+
+### Prices
+
+Unchanged, on or off: Basic $2,194, Swarm $2,371, Steady $1,486, Fortress $2,135,
+cheapest $996. A factory still makes E minions if it survives; losing them with it is a
+risk of the build, like losing the factory itself.
+
+### Factory camps (each against the 51 archetypes, both seeds, 816 battles; draws count half)
+
+| camp | off (today) | on | stop at sudden death | on + stop |
+|---|---|---|---|---|
+| `camp` | 62.9% | **42.1%** | 61.6% | 39.6% |
+| `camptowers` | 50.1% | 39.2% | 62.3% | 52.2% |
+| `campfive` | 44.7% | 26.2% | 56.3% | 37.3% |
+| `homeguard` | 57.5% | 36.8% | 56.0% | 36.4% |
+| `swarm` (camp army, attacking) | 31.8% | 31.1% | 25.3% | 25.3% |
+
+(The off column is the same count as "Brittle factories"; the 64.1% in "Factories stop at
+sudden death" counted the same battles differently.) On, the camp drops well under the
+~55% target: reaching a factory now wipes the swarm waiting beside it. Many of its losses
+are draws by mutual wipe-out (57 of 816).
+
+### Full matrix (51 archetypes, 800 battles each, seeds 11 and 4242)
+
+| archetype | off (today) | on | on + stop |
+|---|---|---|---|
+| splashline | 68.2% | **79.9%** | **80.4%** |
+| exploit | 67.8% | **76.8%** | **76.8%** |
+| guardedcatapults | 65.8% | **76.2%** | **77.0%** |
+| overload | 61.0% | **71.5%** | **72.5%** |
+| shieldwall | 58.8% | **70.9%** | **71.6%** |
+| mortars | 59.2% | 67.1% | **72.8%** |
+| icebreak | 60.9% | 68.9% | **72.1%** |
+| bricks | 72.4% | 72.4% | 70.5% |
+| homeguard | 58.4% | 36.8% | 33.0% |
+| brutes | 55.2% | 39.6% | 36.4% |
+| elemfactories | 50.6% | 25.6% | 26.6% |
+| stormrunners | 50.5% | 25.1% | 42.0% |
+| tmix | 49.4% | 30.0% | 24.0% |
+| factories5 | 45.6% | 20.4% | 33.8% |
+| raiders | 45.0% | 40.8% | 55.4% |
+| archers | 38.2% | **7.8%** | **7.8%** |
+| quad | 33.6% | 15.0% | 15.2% |
+| runners | 29.0% | 24.5% | 16.8% |
+
+Off: **PASS, 249 rules** (bit-identical to before). On: **FAIL, 12 rules**: splashline,
+exploit, guardedcatapults, overload and shieldwall over the 70% cap; "archers beat turtle /
+fortress / snipewall", "homeguard beats bunker", "archers beat someone",
+"factories5 > mortars" and "homeguard > mortars". On + stop: **FAIL, 15 rules** (the same
+plus mortars and icebreak over the cap and "brutes beat fortress ≥ 3 in 4", 0-16).
+
+Attacking factory armies collapse like with the stop rule, and worse: their factories sit
+at home while the minions are away, so any raider or splash shot that reaches a 360-HP
+factory deletes the whole wave (the archer nest's four archer factories behind 4 walls:
+38% → 8%). The splash and tower armies that the factory armies used to counter go over the
+cap.
+
+### Exploit search with the option on
+
+`npm run balance:exploit -- --config '{"factory":{"minionsDieWithFactory":true}}'` (seed 1,
+8 × 20, 126 armies, 28,764 battles, 555 s): five builds on the watch list at 75.9-76.6%,
+all one family: a splash-20 melee tank, two melee hitters, two range-160 lightning splash
+soldiers and a range-160-210 tower, `hold` + focus ($9,449-9,815). Beaten by exploit
+(2-0-14), healerball, brutes, splashline, bricks (0-0-16 for the 8-copy variant). With the
+option off nothing changes, so the watch list is the one in "Brittle factories" (top
+88.4%).
+
+### Where this leaves the camp
+
+Both measured rules for the camp are off by default. "Minions die with their factory" is
+the one that actually breaks camping (62.9% → 42.1%), but in the bot pool it costs every
+factory army that attacks. If it is wanted at the event, it needs a counterweight for
+attacking factories first (e.g. more factory HP when the option is on, or minions
+crumbling only within some distance of their factory). **Watch item.**
