@@ -41,6 +41,8 @@ export interface UnitCardProps {
   onEdit?: () => void;
   /** Starter templates: open the editor on a copy that becomes a new unit. */
   onCopy?: () => void;
+  /** Greyed and not pickable this match, with this note (e.g. "Walls are off this match", §9.1b). */
+  offNote?: string;
 }
 
 export function specKeyOf(u: Pick<UnitCardDTO, 'unitId' | 'version' | 'spriteHidden' | 'sprite'>): string {
@@ -69,7 +71,7 @@ export function UnitCard(props: UnitCardProps) {
 
   return (
     <article
-      class={cx('unit-card', `seat-${seat}`, props.selected && 'selected', invalid && 'invalid', props.onTap && 'tappable', props.shake && 'shake')}
+      class={cx('unit-card', `seat-${seat}`, props.selected && 'selected', invalid && 'invalid', props.onTap && !props.offNote && 'tappable', props.offNote && 'off', props.shake && 'shake')}
       onMouseEnter={() => {
         setHover(true);
         seen();
@@ -81,6 +83,7 @@ export function UnitCard(props: UnitCardProps) {
       }}
       role={props.onTap ? 'button' : undefined}
       aria-pressed={props.onTap ? !!props.selected : undefined}
+      aria-disabled={props.offNote ? true : undefined}
       tabIndex={props.onTap ? 0 : undefined}
       onKeyDown={(e) => {
         if (props.onTap && (e.key === 'Enter' || e.key === ' ')) {
@@ -90,6 +93,7 @@ export function UnitCard(props: UnitCardProps) {
       }}
     >
       {props.selected && <span class="pick-mark" aria-label="picked">✓</span>}
+      {props.offNote && <p class="off-note">🧱 {props.offNote}</p>}
       <div class="card-top">
         <div class="sprite-box">
           <SpriteView

@@ -289,7 +289,7 @@ function Header({ snap, ctrl, now }: { snap: ScreenSnapshot | null; ctrl: Screen
         <p>{expired ? "Time's up! Waiting for the host to press START…" : PHASE_TEXT[phase].hint}</p>
       </div>
       <div class="clock">
-        {state && (state.round > 0 || state.armory?.enabled) && (
+        {state && (state.round > 0 || state.armory?.enabled || (state.phase !== 'LOBBY' && state.match?.wallsAllowed === false)) && (
           <div class="clock-meta">
             {state.round > 0 && (
               <span class="round pixel">
@@ -297,6 +297,7 @@ function Header({ snap, ctrl, now }: { snap: ScreenSnapshot | null; ctrl: Screen
               </span>
             )}
             {state.armory?.enabled && <span class="armory-on">💡 Open Armory</span>}
+            {state.phase !== 'LOBBY' && state.match?.wallsAllowed === false && <span class="armory-on">🧱 No walls</span>}
           </div>
         )}
         {state?.match?.map && (

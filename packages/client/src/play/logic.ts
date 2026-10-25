@@ -418,7 +418,19 @@ export function pickCounts(selection: readonly string[], typeOf: TypeOf): Record
   return out;
 }
 
-export type GroupedToggleResult = { ok: true; selection: string[] } | { ok: false; reason: 'full'; group: UnitGroup; max: number } | { ok: false; reason: 'invalid' };
+export type GroupedToggleResult =
+  | { ok: true; selection: string[] }
+  | { ok: false; reason: 'full'; group: UnitGroup; max: number }
+  | { ok: false; reason: 'invalid' }
+  | { ok: false; reason: 'walls-off' };
+
+/** "Walls allowed" off (§9.1b): the note on greyed wall cards and the refusal text. */
+export const WALLS_OFF_NOTE = 'Walls are off this match';
+
+/** A card that can't be picked this match because walls are off (§9.1b). */
+export function isWallOff(unit: { stats: { type: UnitType } }, wallsAllowed: boolean): boolean {
+  return !wallsAllowed && unit.stats.type === 'wall';
+}
 
 /**
  * Tap a roster card (M8.5, §5.2): select/deselect with up to `limits.unit`
@@ -430,8 +442,10 @@ export function toggleGroupedSelection(
   unit: Pick<UnitCardDTO, 'unitId' | 'status'> & { stats: { type: UnitType } },
   typeOf: TypeOf,
   limits: Record<UnitGroup, number>,
+  wallsAllowed = true,
 ): GroupedToggleResult {
   if (selection.includes(unit.unitId)) return { ok: true, selection: selection.filter((id) => id !== unit.unitId) };
+  if (isWallOff(unit, wallsAllowed)) return { ok: false, reason: 'walls-off' };
   if (unit.status !== 'valid') return { ok: false, reason: 'invalid' };
   const group = groupOf(unit.stats.type);
   const counts = pickCounts(selection, typeOf);

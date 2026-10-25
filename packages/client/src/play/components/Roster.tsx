@@ -4,12 +4,23 @@
 // with "4 buildings max"). Outside PLAN the cards are read-only and the status
 // line explains when Claude can submit. With Open Armory on (§9.1) a second
 // tab "Armory" lists other players' units named "Ogre (Ninja Sam)", grouped
-// the same way and selectable in the same pools.
+// the same way and selectable in the same pools. With "Walls allowed" off
+// (§9.1b) wall cards are greyed with "Walls are off this match" and can't be picked.
 
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { groupOf, type Phase, type UnitCardDTO, type UnitGroup } from '@pixel-clash/shared';
 import { ApiError, api } from '../../common/api.js';
-import { GROUP_TITLES, groupFullText, overCapText, pickCounterText, pickCounts, toggleGroupedSelection, typeLookup } from '../logic.js';
+import {
+  GROUP_TITLES,
+  WALLS_OFF_NOTE,
+  groupFullText,
+  isWallOff,
+  overCapText,
+  pickCounterText,
+  pickCounts,
+  toggleGroupedSelection,
+  typeLookup,
+} from '../logic.js';
 import { getStore, useStore } from '../store.js';
 import { UnitCard } from './UnitCard.js';
 
@@ -83,6 +94,9 @@ export function Roster(props: { phase: Phase }) {
   const counts = pickCounts(selection, typeOf);
   const full = counts.unit >= limits.unit && counts.building >= limits.building;
   const overCap = planning ? overCapText(counts, limits) : null;
+  // "Walls allowed" (§9.1b): fixed from Start match; the LOBBY draft is not shown here.
+  const wallsAllowed = props.phase === 'LOBBY' || st.game?.match?.wallsAllowed !== false;
+  const offNote = (u: UnitCardDTO) => (isWallOff(u, wallsAllowed) ? WALLS_OFF_NOTE : undefined);
 
   // Server state wins once it catches up.
   useEffect(() => setPending(null), [priv?.selection.join(',')]);
@@ -96,13 +110,15 @@ export function Roster(props: { phase: Phase }) {
   };
 
   const tap = async (u: UnitCardDTO) => {
-    const r = toggleGroupedSelection(selection, u, typeOf, limits);
+    const r = toggleGroupedSelection(selection, u, typeOf, limits, wallsAllowed);
     if (!r.ok) {
       doShake(
         u.unitId,
         r.reason === 'full'
           ? groupFullText(r.group, r.max)
-          : 'armoryId' in u
+          : r.reason === 'walls-off'
+            ? `${WALLS_OFF_NOTE}, so ${u.name} can't be picked.`
+            : 'armoryId' in u
             ? `${u.name} doesn't fit the rules right now. Pick another one!`
             : `${u.name} needs fixing before you can pick it. Ask your AI helper!`,
       );
@@ -198,6 +214,7 @@ export function Roster(props: { phase: Phase }) {
                   onTap={planning ? () => void tap(u) : undefined}
                   shake={shake?.id === u.unitId}
                   borrowedRound={u.roundAdded}
+                  offNote={offNote(u)}
                 />
               ))}
             </RosterSection>
@@ -217,6 +234,7 @@ export function Roster(props: { phase: Phase }) {
                 onTap={planning ? () => void tap(u) : undefined}
                 shake={shake?.id === u.unitId}
                 isNew={isNew(u)}
+                offNote={offNote(u)}
                 onSeen={() => markSeen(u)}
                 onRetire={planning ? () => void retire(u) : undefined}
                 onEdit={() => store.openEditor({ mode: 'edit', unitId: u.unitId, name: u.name })}

@@ -66,6 +66,11 @@ export function Header() {
               {' · '}🏷️ Enemy names shown
             </span>
           )}
+          {g?.match?.wallsAllowed === false && g.phase !== 'LOBBY' && (
+            <span class="walls-chip" title="Walls are off this match: wall designs can't be picked or placed">
+              {' · '}🧱 No walls
+            </span>
+          )}
         </div>
       </div>
       <div class="clock-box">

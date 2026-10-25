@@ -1,5 +1,5 @@
 // Phase controls (plan §12.3): Start match (rounds 1-10, Open Armory, Show
-// enemy names to units (the draft's, saved as it is clicked), map
+// enemy names to units and Walls allowed (the draft's, saved as clicked), map
 // style and team mode with a map preview and team swaps), Next, Skip, START,
 // Force start, Pause/Resume (timer and battle), 1x/2x, timer ±1 min / set,
 // New match, and the projector remote (join poster, replay at 1x/2x). Buttons
@@ -40,6 +40,8 @@ export function PhaseControls() {
   const [armory, setArmory] = useState(false);
   // "Show enemy names to units" (§5) lives in the server's LOBBY draft, like the map and teams.
   const revealNames = overview?.setup?.revealNames === true;
+  // "Walls allowed" (§9.1b): on by default, also in the draft.
+  const wallsAllowed = overview?.setup?.wallsAllowed !== false;
   const [setMin, setSetMin] = useState('5');
   const [confirmForce, setConfirmForce] = useState(false);
   const [confirmNew, setConfirmNew] = useState(false);
@@ -70,6 +72,7 @@ export function PhaseControls() {
             {p === 'LOBBY' ? `${s.players.length} player(s) joined` : `Round ${s.round} of ${s.rounds}`}
             {p !== 'LOBBY' && s.armory?.enabled && ` · 💡 Open Armory on (${s.armory.entries} units)`}
             {p !== 'LOBBY' && s.match?.revealNames && ' · 🏷️ Enemy names shown to units'}
+            {p !== 'LOBBY' && s.match?.wallsAllowed === false && ' · 🧱 No walls'}
             {p !== 'LOBBY' && s.match?.map && ` · 🗺️ ${mapName(s.match.map)}`}
             {p !== 'LOBBY' && s.match && s.match.teamMode !== 'ffa' && ` · ${teamModeLabel(s.match.teamMode, s.match.map?.players ?? s.players.length)}`}
           </div>
@@ -124,11 +127,20 @@ export function PhaseControls() {
               />
               Show enemy names to units
             </label>
+            <label class="inline" title="Players can pick and place walls (the Basic Wall and their own). Untick for a match without walls; locked for the match">
+              <input
+                type="checkbox"
+                checked={wallsAllowed}
+                disabled={busy || !overview?.setup}
+                onChange={(e) => void act(() => api.admin.setMatchSetup({ wallsAllowed: e.currentTarget.checked }))}
+              />
+              Walls allowed
+            </label>
             <button
               class="btn primary"
               disabled={busy || s.players.length < 2 || !(rounds >= 1 && rounds <= 10)}
               title={s.players.length < 2 ? 'Needs at least 2 players' : ''}
-              onClick={() => act(() => api.admin.startMatch(Math.round(rounds), armory, { revealNames }), 'Match started!')}
+              onClick={() => act(() => api.admin.startMatch(Math.round(rounds), armory, { revealNames, wallsAllowed }), 'Match started!')}
             >
               Start match
             </button>

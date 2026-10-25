@@ -70,7 +70,7 @@ button.mini.bad { background: var(--bad); color: #1a0b0b; border-color: var(--ba
 .tag.warn { background: #3a3110; border-color: var(--warn); cursor: pointer; }
 .tag.armory { background: #10293a; border-color: #5ab0e0; }
 .roster .panel-head .tabs { margin-bottom: 0; flex: 1; max-width: 26rem; }
-.armory-chip, .names-chip { font-size: 0.8rem; white-space: nowrap; }
+.armory-chip, .names-chip, .walls-chip { font-size: 0.8rem; white-space: nowrap; }
 
 .bar {
   position: relative;
@@ -286,6 +286,8 @@ main.join {
 .unit-card.tappable:hover { border-color: var(--accent); border-left-color: var(--seat); }
 .unit-card.selected { border-color: var(--good); box-shadow: 0 0 0 2px var(--good) inset; }
 .unit-card.invalid { opacity: 0.85; border-color: var(--bad); }
+.unit-card.off { opacity: 0.5; filter: grayscale(1); cursor: not-allowed; }
+.unit-card .off-note { margin: 0 0 0.3rem; font-size: 0.8rem; font-weight: bold; }
 .pick-mark {
   position: absolute;
   top: -10px;
