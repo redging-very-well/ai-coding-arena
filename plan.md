@@ -2401,6 +2401,14 @@ Balance runs for retuning must take minutes, not hours (`docs/balance.md` "Fast 
 - **Bot brains** (`tests/helpers/brains.ts`, self-contained so the lean runner and both sandboxes play them the same): the CLAUDE.md templates (chase nearest, shoot nearest, the factory orders, medics and auras), M8.8 hold-by-the-tower, **focus fire** (`targeting: 'focus'`: healers, then support and ice/splash casters, then the weakest in reach) and the **backline divers** (per soldier design `dive`: hunt the healers, casters and ranged units anywhere on the map; `flank`: the same, swinging wide round the enemy front first; factory `dive`: every minion swarms that pick).
 - **`npm run balance:exploit`** is an evolutionary search over legal armies of soldiers and towers (shared `checkStats` bounds and `computeCost`, budget and caps; hold, focus, dive and flank brains) against the archetype pool. It reports the strongest builds and their counters. Builds above 70% form a **watch list**, printed with the archetypes that beat each one. It is a pre-event review item, not a failure (exit 0; `--strict` exits 1). Run it as a pre-event check after any retune.
 
+### Balance sweeps and the relevance-aware cache (`npm run balance:sweep`, 2026-10-25)
+
+The user asked whether the ~6.5 min per `--full` sweep point could be more efficient (`docs/balance.md` "Sweeps and the relevance-aware cache", §17). Tooling only:
+- **Relevance-aware cache key:** each battle's key hashes only the config leaves it can read (`CONFIG_LEAF_RULES`: global, unread, or conditional on factories, support, an element, any element, splash). A factory knob re-plays only the ~45% of duels with a factory. `tests/balance-fast.test.ts` fails on an unclassified leaf.
+- **`npm run balance:sweep -- --param <path>=v1,v2 [--with patch] [--extra camps] [--target key<=rate] [--confirm]`:** a `--fast` whole-pool run per value, one comparison table, the best value, and a `--full` confirmation (`--confirm`). `npm run balance -- --extra a,b` plays archetypes outside the pool (the camps) against it.
+- **Measured** (both seeds): a cold factory point 196-314 s with `--fast` (vs 421 s for a fresh `--full`), the `--full` confirmation after it 193 s, a value already played 2 s.
+- **Workflow:** explore with the sweep or `--fast` on the whole pool; confirm the chosen value once with `--full`. `--fast` alone is not a verdict (it missed 2 cap failures on the "Factories die at sudden death" default).
+
 ### Redesign balance and tests (the $10,000 game, 2026-10-24)
 
 Numbers and sweeps in `docs/balance.md` "The $10,000 redesign".
@@ -2421,7 +2429,12 @@ Numbers in `docs/balance.md` "Brittle factories". Factory HP is 120-1,200 (Basic
 
 ### Factories die at sudden death (2026-10-25)
 
-User (verbatim): "Okay, while running that, just add an option that makes factories die at sudden death. Enable it by default. Implement this and commit it; then after that you can do some measurements and let me know the outcomes. But given we're close to starting the event I want this done asap." Implemented as `factory.dieAtSuddenDeath`, **on by default** (§9.3 step 8b): committed first, measured after (results to be recorded in `docs/balance.md`). Older tests that check other factory rules pin it off.
+User (verbatim): "Okay, while running that, just add an option that makes factories die at sudden death. Enable it by default. Implement this and commit it; then after that you can do some measurements and let me know the outcomes. But given we're close to starting the event I want this done asap." Implemented as `factory.dieAtSuddenDeath`, **on by default** (§9.3 step 8b): committed first, measured after (numbers in `docs/balance.md` "Factories die at sudden death"). Older tests that check other factory rules pin it off.
+- **Measured with the default on** (full 51-archetype matrix, both seeds): **FAIL 4 of 249 rules** (off: PASS 249): splashline 75.6%, exploit 73.0% and guardedcatapults 71.8% over the 70% cap, and "brutes beat fortress ≥ 3 in 4" 0-0-16. The balance test pass fails 2 tests (the full matrix, and the M8.6 burst outcome: burst 9.6 vs trickle 6.0 minions lost per kill); both pass with it off. **The default was left on and no rule loosened: the user decides.**
+- **Who moves:** attacking factory armies collapse (brutes 55.3% → 15.9%, stormrunners 50.5% → 12.8%, runners 29.0% → 4.0%, tmix 49.4% → 29.6%, quad 33.6% → 17.1%, factories5 45.6% → 37.6%); static armies gain 5-9 points (mortars +8.4, turtle +9.0, homeguard 58.4% → 64.6%). The camps rise: `camp` 62.9% → 66.7%, `camptowers` 50.1% → 55.9%, `campfive` 44.7% → 45.5% (the camp wins with the minions already out, and its opponents' factories die too).
+- **With "minions die with their factory" (radius 120) too:** `camp` 16.8%, but archers 0% and 15 rules fail.
+- **Exploit watch list** (6 × 16): 87.3%, 81.7% (the known tanks-in-front, hitters-behind family) and 71.7% (an ice tank + towers); no factories, each with 0-0-16 counters.
+- **`--fast` missed two cap failures** on this config (splashline, guardedcatapults: `--verify` differs on 2 rules), so decisions are confirmed with `--full` ("Balance sweeps" below).
 
 ### Factories stop at sudden death (2026-10-25)
 
@@ -2821,6 +2834,19 @@ No strategy hints (2026-10-24):
 | When | Only for a **new** player on the seat (a different player from the last one it served, or after `new-player`): a fresh conversation with the prompt as its first message. Reloads, the same player coming back, agent restarts, admin rescue and direct `778N` tabs resume with no prompt (judgement call for direct tabs: adults' fallback). |
 | How | Judgement call: the proxy passes an opaque per-player token on ttyd's WebSocket URL (`-a`), only for the seat's own player; the entrypoint validates it strictly and compares it with the last one. |
 | Between players | Judgement call (security): a new player clears the previous player's `player.json` and the seat's chats (which hold their key and typed PIN); logins and `units/` stay. |
+
+### Resolved: factories die at sudden death (2026-10-25)
+
+| Topic | Decision |
+|---|---|
+| **Factories die at sudden death** | User (verbatim): "just add an option that makes factories die at sudden death. Enable it by default. Implement this and commit it; then after that you can do some measurements and let me know the outcomes." `factory.dieAtSuddenDeath` (§5.2, §9.3 step 8b), **on by default** as asked. |
+| Measured outcome | §14 "Factories die at sudden death": FAIL 4 of 249 rules (splashline 75.6%, exploit 73.0%, guardedcatapults 71.8% over the cap; brutes vs fortress 0-0-16) and 2 balance tests; camp 62.9% → 66.7%; attacking factory armies collapse. Default left on, rules unchanged: **open for the user's decision.** |
+
+### Resolved: more efficient balance sweeps (2026-10-25)
+
+| Topic | Decision |
+|---|---|
+| **"Is there a way to make this more efficient?"** (the user, on ~6.5 min per `--full` sweep point) | Yes, tooling only (§14 "Balance sweeps and the relevance-aware cache"): the cache keys each battle on only the config fields it can read (a factory knob re-plays only factory battles), and `npm run balance:sweep` runs `--fast` per value on the whole pool with one table and a best-value pick. Cold factory point 3-5 min, an already-played value seconds; the chosen value is confirmed once with `--full` (`--confirm`, ~3 min more), because `--fast` alone missed 2 cap failures once. |
 
 ### Open items
 1. **isolated-vm on the game server's host OS**: confirmed only by the M0 check. (It already works in the devcontainer on Node 24 / arm64 with isolated-vm 6.1.2.) Otherwise the process fallback is built and used, with its documented residual risk.

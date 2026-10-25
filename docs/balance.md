@@ -1159,6 +1159,60 @@ archetypes are in the run, and a custom `--archetypes` selection gets its own
 70% / structure rules. The twins, free-for-all, Lanes and turtle-vs-rush checks
 stay in the test.
 
+### Sweeps and the relevance-aware cache (2026-10-25)
+
+The user asked (verbatim): "Is there a way to make this more efficient?" about the
+~6.5 minutes each `--full` point of the radius sweep took. Two changes, tooling only:
+
+**1. The cache keys each battle on only the config fields it can read** (commit
+a443e88, `CONFIG_LEAF_RULES` in `tests/helpers/balanceCache.ts`; the key bullet above).
+A factory knob re-plays only the battles where an army has a factory (about 45% of the
+duels), a heal knob only those with support, an element knob only those with that
+element. Every config leaf has a rule; `tests/balance-fast.test.ts` fails on an
+unclassified leaf (it covers `factory.dieAtSuddenDeath` through the `factory` rule).
+
+**2. `npm run balance:sweep`** (`scripts/balance-sweep.ts`): one knob at several values.
+For each value it runs `npm run balance -- --fast` on the whole pool (refit to the patch,
+every rule checked), then prints one table: each archetype's rate per value (the extras
+and the archetypes the knob reaches first, then the biggest movers), rules
+pass/fail/open, battles played and cached, seconds, and every failing rule per value.
+It picks the best value (every rule passes and closest to `--target`, else the fewest
+failures) and prints the `--full` command to confirm it; `--confirm` runs it.
+
+```
+npm run balance:sweep -- --param factory.crumbleRadius=120,200 \
+  --with '{"factory":{"minionsDieWithFactory":true}}' --seeds 11,4242 \
+  --extra camp,camptowers,campfive --target camp<=60% --confirm
+npm run balance -- --fast --extra camp,camptowers    # the camps against the pool in one run
+```
+
+`--extra a,b` (also on `npm run balance`) plays archetypes outside the round robin (the
+camps) against the pool, every battle, draws half, reported only.
+
+**Measured** (default workers on a 10-core machine, seeds 11 and 4242, 51 archetypes + 3 camps):
+
+| run | battles played / cached | wall time |
+|---|---|---|
+| `--full`, fresh engine (the old way, every point) | 19,782 / 3,066 | 421 s |
+| `--full`, a factory knob changed (dieAtSuddenDeath off) | 11,600 / 11,248 | 401 s* |
+| sweep point `--fast`, new factory value (crumbleRadius 120) | 5,446 / 5,076 | 196 s |
+| sweep point `--fast`, new factory value (crumbleRadius 200) | 5,446 / 5,076 | 314 s |
+| `--confirm` `--full` after its `--fast` point | 6,154 / 16,694 | 193 s |
+| sweep, both points already played (dieAtSuddenDeath true,false) | 0 / 14,396 | 4 s |
+
+\* the cached duels were cheap ones; the factory battles are the long ones (minions,
+sudden death), so a factory knob saves battles more than time. So a cold factory point
+costs about 3-5 minutes with `--fast` instead of ~7 with `--full`, the confirmation of the
+chosen value about 3 minutes more, and any value already played costs seconds.
+
+**Workflow:** explore with `balance:sweep` (or `npm run balance -- --fast --config …`)
+on the whole pool, then **confirm the one chosen value once with `--full`** (or
+`--confirm`). Do not decide on `--fast` alone: on the "Factories die at sudden death"
+default, `--fast --verify` passed splashline and guardedcatapults ≤ 70% where the full
+matrix fails them (75.6%, 71.8%), the first `--verify` difference seen. The sweep's
+`--fast` estimates (wins / battles played) also differ from the full rates by several
+points, so compare verdicts and camp columns between points, and quote full numbers.
+
 ## Exploit search (`npm run balance:exploit`, 2026-10-24)
 
 `scripts/balance-exploit.ts` runs an evolutionary search over whole armies a
@@ -1980,3 +2034,13 @@ armies, 17,952 battles, 331 s): three builds on the watch list, no factories in 
 
 The tanks-in-front, hitters-behind family is the one known with the option off (88.4%
 top in "Brittle factories"); each build has 0-0-16 counters.
+
+### Together with "minions die with their factory"
+
+With the default on, `factory.minionsDieWithFactory` on and `crumbleRadius` 120 (the
+sweep's `--confirm`, full, both seeds): every factory's near minions crumble at sudden
+death, so the camps collapse (`camp` 16.8%, `camptowers` 41.5%, `campfive` 3.3%), but so
+do factory armies (archers 0%, elemfactories 10.6%, brutes 11.4%) and **15 rules fail**
+(8 archetypes over 70%, archers beat nobody, archers' 3 shape checks, homeguard vs
+bunker, brutes vs fortress, factories5 / homeguard > mortars). Radius 200 gives the same
+verdicts (`--fast`).
