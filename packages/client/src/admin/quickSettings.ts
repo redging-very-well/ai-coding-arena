@@ -166,7 +166,7 @@ export const QUICK_GROUPS: QuickGroup[] = [
       {
         path: 'cost.factory.minionDiscount',
         label: 'Minion price share',
-        help: 'A factory pays this share of a minion’s soldier price for each minion it can make (they arrive during the battle, so less than 100%).',
+        help: 'A factory pays this share of a minion’s soldier price for each minion it can make (before sudden death when factories stop there).',
         unit: '%',
         toDisplay: (v: number) => v * 100,
         fromDisplay: (v: number) => v / 100,
@@ -199,6 +199,13 @@ export const QUICK_GROUPS: QuickGroup[] = [
       { path: 'factory.minions.medic.speed', label: 'Medic speed', help: 'Pixels per tick (60 ticks = 1 s).', unit: 'px/tick', min: 0.1, step: 0.1 },
       { path: 'factory.minions.medic.heal', label: 'Medic heal', help: 'HP one medic heal restores (within the heal support bounds; the 5%-per-second heal room still caps it).', unit: 'HP', min: 1, step: 5 },
       { path: 'factory.minions.medic.reach', label: 'Medic reach', help: 'How far a medic heals, edge to edge (within the heal support bounds).', unit: 'px', min: 1, step: 5 },
+    ],
+    toggles: [
+      {
+        path: 'factory.stopAtSuddenDeath',
+        label: 'Factories stop at sudden death',
+        help: 'No new minions once the safe circle starts shrinking (minions already out keep fighting); factory prices count only the minions made before it. Off: factories build until the end of the battle.',
+      },
     ],
   },
   {

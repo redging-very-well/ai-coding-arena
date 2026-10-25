@@ -71,6 +71,7 @@ import {
   pricingOf,
   producesOf,
   runsCode,
+  productionEndTick,
   scaleSuddenDeath,
   sizeOf,
   splashOf,
@@ -965,10 +966,21 @@ export class BattleEngine {
       if (u.minion) add(u.minion.factory.id, u.playerId, 1);
       if (u.factory && u.factory.stored > 0) add(u.id, u.playerId, u.factory.stored);
     }
-    const ticksLeft = this.config.timers.battleTicks - t;
+    // factory.stopAtSuddenDeath (§9.3, 2026-10-25, off by default): a minion that
+    // would appear at or after sudden death is never built, the timers stop and
+    // the minions left unbuilt are gone; stored minions still leave. Off: the
+    // production window is the battle (the pre-2026-10-25 behaviour, unchanged).
+    const end = productionEndTick(this.config);
+    const ticksLeft = end - t;
+    const stopped = this.config.factory.stopAtSuddenDeath && ticksLeft <= 0;
     const buildings = { list: undefined as SimUnit[] | undefined };
     for (const fac of factories) {
       const f = fac.factory!;
+      if (stopped) {
+        f.minionsLeft = 0;
+        if (f.stored > 0) this.release(fac, f.stored, t, buildings);
+        continue;
+      }
       // M8.8: the timer gains the tempo (0.65 per tick while frozen), which slows bursts too.
       if (!f.holding) {
         const timer = f.timer + (tempos.get(fac) ?? tempoOf(fac, this.config));
@@ -1093,9 +1105,11 @@ export class BattleEngine {
     if (p.disabled || p.runner.disposed) return undefined;
     // Only units that run code act through the sandbox: not walls, not minions (§5.2).
     const cap = this.config.factory.maxAlivePerFactory;
+    // Production stops for sudden death (factory.stopAtSuddenDeath): this tick's step 9b builds only if its minion appears before it (§9.3).
+    const producing = !this.config.factory.stopAtSuddenDeath || tick + 1 < productionEndTick(this.config);
     const selves = living
       .filter((u) => u.playerId === p.setup.playerId && !u.disabled && u.type !== 'wall' && u.type !== 'minion')
-      .map((u) => toSelfView(u, u.factory ? factoryView(u, living, cap) : null, tick, this.config));
+      .map((u) => toSelfView(u, u.factory ? factoryView(u, living, cap, producing) : null, tick, this.config));
     if (selves.length === 0) return undefined;
     const corner = zoneCenterOf(p.setup.zone);
     const { x: cx, y: cy } = this.center;
@@ -1780,14 +1794,15 @@ function toSelfView(u: SimUnit, factory: FactoryView | null, tick: number, confi
 }
 
 /** A factory's `self.factory` (§5.2 FactoryView). */
-function factoryView(u: SimUnit, living: readonly SimUnit[], maxAlive: number): FactoryView {
+function factoryView(u: SimUnit, living: readonly SimUnit[], maxAlive: number, producing: boolean): FactoryView {
   const f = u.factory!;
   let alive = 0;
   for (const m of living) if (m.minion?.factory === u) alive++;
   return {
     productionInterval: f.productionInterval,
     nextMinionIn: Math.max(0, Math.ceil(f.productionInterval - f.timer - 1e-9)),
-    minionsLeft: f.minionsLeft,
+    producing,
+    minionsLeft: producing ? f.minionsLeft : 0,
     minionsAlive: alive,
     maxAlive,
     stored: f.stored,

@@ -97,7 +97,10 @@ describe('/screen PLAN ready', () => {
 
 describe('/admin quick toggle', () => {
   it('has the auto-advance checkbox under Timers, off by default', () => {
-    expect(QUICK_TOGGLES.map((t) => t.path)).toEqual(['timers.autoAdvanceWhenAllReady', 'sim.routeRoundBuildings']);
+    expect(QUICK_TOGGLES.map((t) => t.path)).toEqual(['timers.autoAdvanceWhenAllReady', 'factory.stopAtSuddenDeath', 'sim.routeRoundBuildings']);
+    // "Factories stop at sudden death" (2026-10-25) sits with the factories and is off by default.
+    expect(QUICK_GROUPS.find((g) => g.id === 'buildings')?.toggles?.[0]?.path).toBe('factory.stopAtSuddenDeath');
+    expect(toggleValue(DEFAULT_CONFIG, 'factory.stopAtSuddenDeath')).toBe(false);
     // The redesign's building-routing toggle sits in its own group and is on by default.
     expect(QUICK_GROUPS.find((g) => g.id === 'sim')?.toggles?.[0]?.path).toBe('sim.routeRoundBuildings');
     expect(toggleValue(DEFAULT_CONFIG, 'sim.routeRoundBuildings')).toBe(true);

@@ -67,7 +67,8 @@ export interface SupportView { kind: SupportKind; power: number; range: number }
 export interface FactoryView {
   productionInterval: number;
   nextMinionIn: number;  // ticks until the next minion (it waits while you hold, or while the factory is full)
-  minionsLeft: number;   // minions this factory can still make this battle
+  producing: boolean;    // true, unless the host turned on 'Factories stop at sudden death': then false once no new minion can appear before sudden death (tick 4500)
+  minionsLeft: number;   // minions this factory can still make this battle (0 once producing is false)
   minionsAlive: number; maxAlive: number; // minionsAlive = out on the field; maxAlive caps minionsAlive + stored
   stored: number;        // built minions waiting inside: safe from attacks, but LOST if the factory is destroyed
   burst: number;         // stored minions leave together when stored reaches burst (or on { action: 'release' })

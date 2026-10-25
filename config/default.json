@@ -181,6 +181,7 @@
   },
   "factory": {
     "maxMinionsPerFactory": 12,
+    "stopAtSuddenDeath": false,
     "maxAlivePerFactory": 4,
     "maxAlivePerPlayer": 12,
     "maxAlivePerBattle": 40,

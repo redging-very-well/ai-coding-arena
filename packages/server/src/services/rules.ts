@@ -166,7 +166,8 @@ export function unitTypeRules(config: GameConfig): Record<string, unknown> {
       'Sudden death hurts walls too (they crumble in about 14 s outside the circle).',
     ],
     factories: {
-      text: `A factory builds one minion every productionInterval ticks, at most ${f.maxAlivePerFactory} alive per factory and ${f.maxAlivePerPlayer} per player (fewer with 7-8 players), up to ${f.maxMinionsPerFactory} per battle. Destroying a factory stops it; its minions keep going.`,
+      text: `A factory builds one minion every productionInterval ticks, at most ${f.maxAlivePerFactory} alive per factory and ${f.maxAlivePerPlayer} per player (fewer with 7-8 players), up to ${f.maxMinionsPerFactory} per battle.${f.stopAtSuddenDeath ? ` Factories stop building at sudden death (${config.suddenDeath.startTick / config.timers.ticksPerSecond} s): no new minion appears from then on (self.factory.producing is false), minions already out keep fighting and stored ones still leave. minionsPerBattle counts the minions made before sudden death.` : ''} Destroying a factory stops it; its minions keep going.`,
+      stopAtSuddenDeath: f.stopAtSuddenDeath,
       minionsPerBattle: Object.fromEntries(examples.map((v) => [v, expectedMinions(v, pricing)])),
       minion: { ...f.minions.grunt, type: 'minion', name: MINION_KIND_NAMES.grunt, note: 'the grunt (the default kind). Built-in AI: chases enemies near it or near the rally point, otherwise walks to the rally point; you never write minion code' },
       minionCost,

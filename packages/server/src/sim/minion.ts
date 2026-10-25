@@ -89,13 +89,13 @@ export function minionStats(config: Pick<GameConfig, 'factory'>, color: string, 
 }
 
 /** minionValue (§6): what a factory pays per minion of that kind (and element), its timeout value and value destroyed. */
-export function minionValueOf(config: Pick<GameConfig, 'cost' | 'timers' | 'factory'>, kind: MinionKind = 'grunt', element: Element = 'normal'): number {
+export function minionValueOf(config: Pick<GameConfig, 'cost' | 'timers' | 'factory' | 'suddenDeath'>, kind: MinionKind = 'grunt', element: Element = 'normal'): number {
   return minionPrice(config.cost, pricingOf(config), kind, element).minionValue;
 }
 
 /** `battle:reveal`'s `minion` / `minions[kind]` (§9.3 Frames). */
 export function minionReveal(
-  config: Pick<GameConfig, 'cost' | 'timers' | 'factory'> = DEFAULT_CONFIG,
+  config: Pick<GameConfig, 'cost' | 'timers' | 'factory' | 'suddenDeath'> = DEFAULT_CONFIG,
   kind: MinionKind = 'grunt',
 ): { stats: StatsSnapshotLike; value: number } {
   return { stats: minionStats(config, '#C0A060', kind), value: minionValueOf(config, kind) };
@@ -104,7 +104,7 @@ export function minionReveal(
 /** `battle:reveal`'s `minions`: every kind built by one of these designs (none without factories). */
 export function minionsReveal(
   designs: ReadonlyArray<Pick<StatsSnapshotLike, 'type'> & { produces?: MinionKind }>,
-  config: Pick<GameConfig, 'cost' | 'timers' | 'factory'> = DEFAULT_CONFIG,
+  config: Pick<GameConfig, 'cost' | 'timers' | 'factory' | 'suddenDeath'> = DEFAULT_CONFIG,
 ): { minions?: Partial<Record<MinionKind, { stats: StatsSnapshotLike; value: number }>> } {
   const kinds = new Set<MinionKind>();
   for (const d of designs) if (d.type === 'factory') kinds.add(d.produces ?? 'grunt');

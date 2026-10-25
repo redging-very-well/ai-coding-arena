@@ -512,7 +512,8 @@ function statWarnings(stats: StatsSnapshot, config: GameConfig): ValidationWarni
   const out: ValidationWarning[] = [];
   if (stats.type === 'factory') {
     // M8.6 (§7 step 10): a burst bigger than the minions it makes never fills up.
-    const made = expectedMinions(stats.productionInterval ?? 0, pricingOf(config));
+    const pricing = pricingOf(config);
+    const made = expectedMinions(stats.productionInterval ?? 0, pricing);
     const burst = burstOf(stats);
     if (burst > 1 && burst > made) {
       out.push({
@@ -520,8 +521,8 @@ function statWarnings(stats: StatsSnapshot, config: GameConfig): ValidationWarni
         field: 'burst',
         value: burst,
         allowed: { max: made },
-        message: `This factory makes only ${made} minion${made === 1 ? '' : 's'} per battle, so a burst of ${burst} never fills up: they leave when it runs out.`,
-        fix: `Lower this.burst to ${Math.max(1, made)}, or make minions faster (a smaller this.productionInterval, e.g. 900 makes 7).`,
+        message: `This factory makes only ${made} minion${made === 1 ? '' : 's'} per battle${pricing.untilSuddenDeath === true ? ' (before sudden death)' : ''}, so a burst of ${burst} never fills up: they leave when it runs out.`,
+        fix: `Lower this.burst to ${Math.max(1, made)}, or make minions faster (a smaller this.productionInterval, e.g. 900 makes ${expectedMinions(900, pricing)}).`,
       });
     }
   }

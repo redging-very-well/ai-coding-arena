@@ -31,7 +31,11 @@
 //
 //   wall:     raw = BaseW + cW·HP·(1 + k·(HP/7500)²)
 //   factory:  cost = ceil(BaseF + cF·HP·(1 + k·(HP/5000)²)) + minionValue × E
-//             E = min(maxMinionsPerFactory, floor((battleTicks − 1) / productionInterval))
+//             E = min(maxMinionsPerFactory, floor((productionTicks − 1) / productionInterval))
+//             productionTicks = battleTicks, or min(battleTicks, suddenDeath.startTick)
+//             with `factory.stopAtSuddenDeath` (2026-10-25 "Factories stop at sudden
+//             death"): then factories build nothing once sudden death starts, so E
+//             counts the minions that can appear before it.
 //             minionValue = ceil(minionCost × minionDiscount), minionCost = the
 //             unit formula above on the minion kind's stats × its element factor.
 //
@@ -41,8 +45,8 @@
 // `minionElement` multiplies the minion price (medics ignore it, and their
 // heal is in their soldier formula). `burst` never changes the price.
 //
-// The factory price depends on more than `cost` (the minion stats, the battle
-// length), so `computeCost` takes an optional `PricingContext`; pass
+// The factory price depends on more than `cost` (the minion stats, the
+// production window), so `computeCost` takes an optional `PricingContext`; pass
 // `pricingOf(config)` whenever a full config is at hand.
 
 import { DEFAULT_CONFIG, type CostCoefficients, type FactoryConfig, type GameConfig, type StatBounds } from './config.js';
@@ -154,7 +158,7 @@ export interface CostProduction {
   expected: number;
   /** minionValue × expected. */
   total: number;
-  /** "Production: 5 minions × $148 (half of a $296 minion, because they arrive during the battle) = $740". */
+  /** "Production: 7 minions × $177 (half of a $353 minion, because they arrive during the battle) = $1,239" (with factories stopping at sudden death: "Production: 4 minions (what it can make before sudden death) × …"). */
   text: string;
 }
 
@@ -330,20 +334,32 @@ export function supportPart(support: SupportSpec | null, coeffs: CostCoefficient
 
 /** What a factory's price depends on besides `cost` (§6 Re-pricing). */
 export interface PricingContext {
-  battleTicks: number;
+  /** The production window (`productionEndTick`): minions appear only before this tick. */
+  productionTicks: number;
+  /** Production stops at sudden death (`factory.stopAtSuddenDeath`, and sudden death starts before the end). */
+  untilSuddenDeath?: boolean;
   factory: Pick<FactoryConfig, 'maxMinionsPerFactory' | 'minions'>;
 }
 
-/** The pricing context of the default config. */
-export const DEFAULT_PRICING: PricingContext = {
-  battleTicks: DEFAULT_CONFIG.timers.battleTicks,
-  factory: DEFAULT_CONFIG.factory,
-};
+/**
+ * The tick production stops at (§9.3): sudden death's start, or the end of the
+ * battle if that comes first. A minion that would appear at or after it is
+ * never built ("Factories stop at sudden death", 2026-10-25). With
+ * `factory.stopAtSuddenDeath` false it is the end of the battle.
+ */
+export function productionEndTick(config: Pick<GameConfig, 'timers' | 'suddenDeath'> & { factory?: Pick<FactoryConfig, 'stopAtSuddenDeath'> }): number {
+  const stop = config.factory?.stopAtSuddenDeath ?? true;
+  return stop ? Math.min(config.timers.battleTicks, config.suddenDeath.startTick) : config.timers.battleTicks;
+}
 
 /** The pricing context of a config. */
-export function pricingOf(config: Pick<GameConfig, 'timers' | 'factory'>): PricingContext {
-  return { battleTicks: config.timers.battleTicks, factory: config.factory };
+export function pricingOf(config: Pick<GameConfig, 'timers' | 'factory' | 'suddenDeath'>): PricingContext {
+  const productionTicks = productionEndTick(config);
+  return { productionTicks, untilSuddenDeath: productionTicks < config.timers.battleTicks, factory: config.factory };
 }
+
+/** The pricing context of the default config. */
+export const DEFAULT_PRICING: PricingContext = pricingOf(DEFAULT_CONFIG);
 
 /** HP curve maxima of the buildings (fixed to the default bounds, like CURVE_MAX). */
 export const BUILDING_HP_CURVE_MAX: Readonly<Record<'wall' | 'factory', number>> = {
@@ -357,10 +373,10 @@ export function curveMaxFor(type: UnitType, stat: PricedStat): number {
   return CURVE_MAX[stat];
 }
 
-/** E (§6): the minions a factory with this interval can make in one battle. */
+/** E (§6): the minions a factory with this interval can make before sudden death. */
 export function expectedMinions(productionInterval: number, pricing: PricingContext = DEFAULT_PRICING): number {
   if (!(productionInterval > 0)) return 0;
-  return Math.max(0, Math.min(pricing.factory.maxMinionsPerFactory, Math.floor((pricing.battleTicks - 1) / productionInterval)));
+  return Math.max(0, Math.min(pricing.factory.maxMinionsPerFactory, Math.floor((pricing.productionTicks - 1) / productionInterval)));
 }
 
 /**
@@ -453,8 +469,11 @@ function computeBuildingCost(stats: CostStats & { type: 'wall' | 'factory' }, co
     expected,
     total: prodTotal,
     text:
-      `Production: ${expected} ${minionKindWord(kind, expected, element)} × ${money(minionValue)} (${share} of a ${money(minionCost)} ${minionKindWord(kind, 1, element)}, ` +
-      `because they arrive during the battle) = ${money(prodTotal)}`,
+      pricing.untilSuddenDeath === true
+        ? `Production: ${expected} ${minionKindWord(kind, expected, element)} (what it can make before sudden death) × ${money(minionValue)} ` +
+          `(${share} of a ${money(minionCost)} ${minionKindWord(kind, 1, element)}) = ${money(prodTotal)}`
+        : `Production: ${expected} ${minionKindWord(kind, expected, element)} × ${money(minionValue)} (${share} of a ${money(minionCost)} ${minionKindWord(kind, 1, element)}, ` +
+          `because they arrive during the battle) = ${money(prodTotal)}`,
   };
   const raw = sum + prodTotal;
   const cost = body + prodTotal;

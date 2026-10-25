@@ -33,6 +33,7 @@ import {
   placePointsTable,
   powerFactor,
   pricingOf,
+  productionEndTick,
   scaledBonusMax,
   splashFactor,
   type Action,
@@ -347,7 +348,8 @@ const SUPPORT_VIEW_FIELDS: Record<keyof SupportView, string> = {
 const FACTORY_FIELDS: Record<keyof FactoryView, string> = {
   productionInterval: 'ticks between two minions',
   nextMinionIn: 'ticks until the next minion (it waits while you hold, or while the factory is full)',
-  minionsLeft: 'minions it can still make this battle',
+  producing: "true, unless the host turned on 'Factories stop at sudden death': then false once no new minion can appear before sudden death (stored ones still leave)",
+  minionsLeft: 'minions it can still make this battle (0 once producing is false)',
   minionsAlive: 'its minions out on the field',
   maxAlive: 'cap on minionsAlive + stored',
   stored: 'minions waiting inside (safe, but LOST if the factory is destroyed)',
@@ -853,7 +855,9 @@ function factoriesSection(c: GameConfig): GuideSectionDTO {
       },
       {
         kind: 'table',
-        caption: 'Minions per battle (`productionInterval`)',
+        caption: f.stopAtSuddenDeath
+          ? `Minions per battle (\`productionInterval\`): the minions it can make before sudden death (${secs(productionEndTick(c), c)})`
+          : 'Minions per battle (`productionInterval`)',
         head: ['productionInterval', 'One minion every', 'Minions per battle'],
         rows: intervals.map((v) => [`${num(v)} ticks`, secs(v, c), String(expectedMinions(v, pricing))]),
       },
@@ -864,6 +868,9 @@ function factoriesSection(c: GameConfig): GuideSectionDTO {
           `**Burst** (\`this.burst\`, ${span(c.stats.bounds.burst)}): the first minions wait INSIDE (safe from attacks) and leave together with the last one. If the factory is destroyed, the stored minions are LOST. \`{ action: 'release' }\` sends them out early. Burst is free.`,
           `At most **${f.maxAlivePerFactory}** minions alive (plus stored) per factory, **${f.maxAlivePerPlayer}** per player (fewer with 7-8 players), and **${f.maxMinionsPerFactory}** per factory per battle.`,
           `Brutes hit walls ×${f.minions.brute.wallDamageMultiplier} as hard.`,
+          ...(f.stopAtSuddenDeath
+            ? [`Factories stop building at sudden death (${secs(c.suddenDeath.startTick, c)}): no new minion appears from then on and \`self.factory.producing\` is false. Minions already out keep fighting, and stored minions still leave.`]
+            : []),
           'Destroying a factory stops it; its minions keep going.',
         ],
       },
@@ -926,7 +933,7 @@ function costSection(c: GameConfig, examples: GuideExampleDTO[]): GuideSectionDT
           `**4. Multiply:** fast attacks (cooldown ${half} = ${x(cooldownFactor(half, cc))}), tough AND strong (up to ${x(powerFactor({ maxHealth: b.maxHealth.max, damage: b.damage.max }, cc))}), splash (up to ${x(splashFactor(b.splashRadius.max, cc))}), an element (${x(cc.element.fire)}).`,
           `**5. Auras** (haste ${money(cc.aura.haste)}, might ${money(cc.aura.might)}, shield ${money(cc.aura.shield)} per %) are added at the end.`,
           `**6. Round up** to whole dollars. One unit may cost at most **${money(c.caps.unitCost)}**.`,
-          `**Walls** cost ${money(cc.wall.base)} + ${money(cc.wall.hp)} per HP. **Factories** cost ${money(cc.factory.base)} + ${money(cc.factory.hp)} per HP, plus their minions: each minion they can make in a battle costs ${fmt(cc.factory.minionDiscount * 100)}% of its price (they arrive during the battle).`,
+          `**Walls** cost ${money(cc.wall.base)} + ${money(cc.wall.hp)} per HP. **Factories** cost ${money(cc.factory.base)} + ${money(cc.factory.hp)} per HP, plus their minions: each minion they can make ${c.factory.stopAtSuddenDeath ? 'before sudden death' : 'in a battle'} costs ${fmt(cc.factory.minionDiscount * 100)}% of its price${c.factory.stopAtSuddenDeath ? '' : ' (they arrive during the battle)'}.`,
         ],
       },
       { kind: 'table', caption: 'Live example prices', head: ['Example', 'Type', 'Stats', 'Price', 'What it is'], rows: exampleRows },

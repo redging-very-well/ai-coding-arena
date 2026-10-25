@@ -390,6 +390,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
             ? {
                 productionInterval: stats.productionInterval ?? 900,
                 nextMinionIn: stats.productionInterval ?? 900,
+                producing: true,
                 minionsLeft: 5,
                 minionsAlive: 0,
                 maxAlive: ctx.config.factory.maxAlivePerFactory,

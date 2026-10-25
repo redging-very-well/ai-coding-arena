@@ -142,6 +142,12 @@ export type MinionKindsConfig = z.infer<typeof MinionKindsSchema>;
 export const FactorySchema = z.object({
   /** Most minions one factory makes in a battle (E's cap, §6). */
   maxMinionsPerFactory: posInt(),
+  /**
+   * Factories build no minion that would appear at or after suddenDeath.startTick
+   * (§9.3, 2026-10-25 "Factories stop at sudden death"); E is priced over that
+   * window. false: they build until the end of the battle (the pre-2026-10-25 rule).
+   */
+  stopAtSuddenDeath: z.boolean(),
   maxAlivePerFactory: posInt(),
   /** Alive minions per player: min(this, floor(maxAlivePerBattle / players)). */
   maxAlivePerPlayer: posInt(),
@@ -479,6 +485,9 @@ export const DEFAULT_CONFIG: GameConfig = {
   },
   factory: {
     maxMinionsPerFactory: 12,
+    // Off by default: on, it nerfed attacking factory armies and broke the 70% cap
+    // without moving the factory camp (§14 "Factories stop at sudden death").
+    stopAtSuddenDeath: false,
     maxAlivePerFactory: 4,
     maxAlivePerPlayer: 12,
     maxAlivePerBattle: 40,
