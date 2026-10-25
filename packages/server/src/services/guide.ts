@@ -869,6 +869,9 @@ function factoriesSection(c: GameConfig): GuideSectionDTO {
           `**Burst** (\`this.burst\`, ${span(c.stats.bounds.burst)}): the first minions wait INSIDE (safe from attacks) and leave together with the last one. If the factory is destroyed, the stored minions are LOST. \`{ action: 'release' }\` sends them out early. Burst is free.`,
           `At most **${f.maxAlivePerFactory}** minions alive (plus stored) per factory, **${f.maxAlivePerPlayer}** per player (fewer with 7-8 players), and **${f.maxMinionsPerFactory}** per factory per battle.`,
           `Brutes hit walls ×${f.minions.brute.wallDamageMultiplier} as hard.`,
+          ...(f.dieAtSuddenDeath
+            ? [`Every factory still standing is destroyed when sudden death starts (${secs(c.suddenDeath.startTick, c)}). Nobody gets the credit, and its stored minions are lost.`]
+            : []),
           ...(f.stopAtSuddenDeath
             ? [`Factories stop building at sudden death (${secs(c.suddenDeath.startTick, c)}): no new minion appears from then on and \`self.factory.producing\` is false. Minions already out keep fighting, and stored minions still leave.`]
             : []),

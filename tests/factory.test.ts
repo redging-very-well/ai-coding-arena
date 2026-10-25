@@ -22,7 +22,9 @@ import { SOLDIER, design, fakePlayers, idleBrain, scripted, stats, type FakePlay
 const FACTORY = (interval = 600, over: object = {}) => stats({ type: 'factory', productionInterval: interval, ...over });
 const WALL = stats({ type: 'wall' });
 const at = (col: number, row: number, unitId: string): PlacementDTO => ({ unitId, col, row });
-const cfg = (patch: unknown = {}, ticks = 5400): GameConfig => deepMerge(DEFAULT_CONFIG, { ...(patch as object), timers: { battleTicks: ticks } });
+// Factories dying at sudden death (default on) is its own rule (tests/factory-die-at-sudden-death.test.ts).
+const NO_DIE: GameConfig = deepMerge(DEFAULT_CONFIG, { factory: { dieAtSuddenDeath: false } });
+const cfg = (patch: unknown = {}, ticks = 5400): GameConfig => deepMerge(NO_DIE, { ...(patch as object), timers: { battleTicks: ticks } });
 const noSD = { suddenDeath: { damagePctPerSecond: 0 } };
 
 function run(specs: FakePlayerSpec[], config: GameConfig, seed = 3) {

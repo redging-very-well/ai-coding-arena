@@ -20,7 +20,8 @@ const cfg = (patch: object = {}): GameConfig =>
   deepMerge(DEFAULT_CONFIG, {
     timers: { battleTicks: 2400 },
     suddenDeath: { startTick: SD, endTick: 2400, damagePctPerSecond: 0 },
-    factory: { maxAlivePerFactory: 8, maxAlivePerPlayer: 8, stopAtSuddenDeath: true },
+    // Factories dying at sudden death (default on) is its own rule; keep it out of these.
+    factory: { maxAlivePerFactory: 8, maxAlivePerPlayer: 8, stopAtSuddenDeath: true, dieAtSuddenDeath: false },
     ...patch,
   });
 
@@ -143,7 +144,7 @@ describe('factories stop at sudden death (§9.3)', () => {
   });
 
   it('off (the default): production runs to the end of the battle and producing stays true', async () => {
-    const config = cfg({ factory: { maxAlivePerFactory: 8, maxAlivePerPlayer: 8, stopAtSuddenDeath: false } });
+    const config = cfg({ factory: { maxAlivePerFactory: 8, maxAlivePerPlayer: 8, stopAtSuddenDeath: false, dieAtSuddenDeath: false } });
     const seen: boolean[] = [];
     const brain = scripted((self) => {
       seen.push(self.factory!.producing);
@@ -156,17 +157,19 @@ describe('factories stop at sudden death (§9.3)', () => {
   });
 
   it('get_rules and the guide state the option and its facts only when it is on', () => {
-    const off = unitTypeRules(DEFAULT_CONFIG).factories as { text: string; stopAtSuddenDeath: boolean; minionsPerBattle: Record<string, number> };
+    // (With "Factories die at sudden death" off: that rule mentions sudden death too.)
+    const offCfg = deepMerge(DEFAULT_CONFIG, { factory: { dieAtSuddenDeath: false } });
+    const off = unitTypeRules(offCfg).factories as { text: string; stopAtSuddenDeath: boolean; minionsPerBattle: Record<string, number> };
     expect(off.stopAtSuddenDeath).toBe(false);
     expect(off.text).not.toMatch(/sudden death/);
-    const onCfg = deepMerge(DEFAULT_CONFIG, { factory: { stopAtSuddenDeath: true } });
+    const onCfg = deepMerge(DEFAULT_CONFIG, { factory: { stopAtSuddenDeath: true, dieAtSuddenDeath: false } });
     const on = unitTypeRules(onCfg).factories as typeof off;
     expect(on.stopAtSuddenDeath).toBe(true);
     expect(on.text).toContain('Factories stop building at sudden death (75 s)');
     expect(on.minionsPerBattle['1200']).toBe(3);
     const text = (g: unknown) => JSON.stringify(g);
     expect(text(buildGuide(onCfg))).toContain('Factories stop building at sudden death (75 s)');
-    expect(text(buildGuide(DEFAULT_CONFIG))).not.toContain('Factories stop building at sudden death');
+    expect(text(buildGuide(offCfg))).not.toContain('Factories stop building at sudden death');
   });
 
   it('is deterministic', async () => {

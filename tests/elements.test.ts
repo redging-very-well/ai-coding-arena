@@ -461,7 +461,7 @@ describe('elements in battle: frames, events, credit and determinism', () => {
     // ×1 stats and minions, explicit prices: recorded with the M8.7 engine (commit f1959f9) and this exact setup.
     const X1 = { grunt: { maxHealth: 40, damage: 5 }, archer: { maxHealth: 24, damage: 5 }, runner: { maxHealth: 28, damage: 4 }, brute: { maxHealth: 100, damage: 8 } };
     // Redesign: the building router and accuracy are switched off (their own knobs), so the M8.7 frames still come out.
-    const config = deepMerge(C, { factory: { minions: X1 }, timers: { battleTicks: 3600 }, suddenDeath: { startTick: 2400, endTick: 3600, damagePctPerSecond: 7 }, sim: { routeRoundBuildings: false }, accuracy: { missMaxPct: 0 } });
+    const config = deepMerge(C, { factory: { minions: X1, dieAtSuddenDeath: false }, timers: { battleTicks: 3600 }, suddenDeath: { startTick: 2400, endTick: 3600, damagePctPerSecond: 7 }, sim: { routeRoundBuildings: false }, accuracy: { missMaxPct: 0 } });
     const S = stats({ type: 'soldier', name: 'S', maxHealth: 120, damage: 10, range: 40, speed: 1.5, attackCooldown: 60, size: 10 });
     const T = stats({ type: 'tower', name: 'T', maxHealth: 150, damage: 15, range: 180, speed: 0, attackCooldown: 45, size: 14 });
     const W = stats({ type: 'wall', name: 'W', maxHealth: 400 });

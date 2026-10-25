@@ -97,12 +97,15 @@ describe('/screen PLAN ready', () => {
 
 describe('/admin quick toggle', () => {
   it('has the auto-advance checkbox under Timers, off by default', () => {
-    expect(QUICK_TOGGLES.map((t) => t.path)).toEqual(['timers.autoAdvanceWhenAllReady', 'factory.stopAtSuddenDeath', 'factory.minionsDieWithFactory', 'sim.routeRoundBuildings']);
+    expect(QUICK_TOGGLES.map((t) => t.path)).toEqual(['timers.autoAdvanceWhenAllReady', 'factory.dieAtSuddenDeath', 'factory.stopAtSuddenDeath', 'factory.minionsDieWithFactory', 'sim.routeRoundBuildings']);
     // "Factories stop at sudden death" (2026-10-25) sits with the factories and is off by default.
-    expect(QUICK_GROUPS.find((g) => g.id === 'buildings')?.toggles?.[0]?.path).toBe('factory.stopAtSuddenDeath');
+    expect(QUICK_GROUPS.find((g) => g.id === 'buildings')?.toggles?.[1]?.path).toBe('factory.stopAtSuddenDeath');
+    // "Factories die at sudden death" (2026-10-25) is first and on by default.
+    expect(QUICK_GROUPS.find((g) => g.id === 'buildings')?.toggles?.[0]?.path).toBe('factory.dieAtSuddenDeath');
+    expect(toggleValue(DEFAULT_CONFIG, 'factory.dieAtSuddenDeath')).toBe(true);
     expect(toggleValue(DEFAULT_CONFIG, 'factory.stopAtSuddenDeath')).toBe(false);
     // "Minions die with their factory" (2026-10-25) sits next to it.
-    expect(QUICK_GROUPS.find((g) => g.id === 'buildings')?.toggles?.[1]?.path).toBe('factory.minionsDieWithFactory');
+    expect(QUICK_GROUPS.find((g) => g.id === 'buildings')?.toggles?.[2]?.path).toBe('factory.minionsDieWithFactory');
     expect(toggleValue(DEFAULT_CONFIG, 'factory.minionsDieWithFactory')).toBe(false);
     // The redesign's building-routing toggle sits in its own group and is on by default.
     expect(QUICK_GROUPS.find((g) => g.id === 'sim')?.toggles?.[0]?.path).toBe('sim.routeRoundBuildings');

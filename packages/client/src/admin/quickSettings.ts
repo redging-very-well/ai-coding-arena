@@ -203,6 +203,11 @@ export const QUICK_GROUPS: QuickGroup[] = [
     ],
     toggles: [
       {
+        path: 'factory.dieAtSuddenDeath',
+        label: 'Factories die at sudden death',
+        help: 'Every factory still standing is destroyed when the safe circle starts shrinking (nobody gets the credit; stored minions are lost; minions already out keep fighting unless "Minions die with their factory" is on). Off: factories live on into sudden death.',
+      },
+      {
         path: 'factory.stopAtSuddenDeath',
         label: 'Factories stop at sudden death',
         help: 'No new minions once the safe circle starts shrinking (minions already out keep fighting); factory prices count only the minions made before it. Off: factories build until the end of the battle.',

@@ -182,6 +182,7 @@
   "factory": {
     "maxMinionsPerFactory": 12,
     "stopAtSuddenDeath": false,
+    "dieAtSuddenDeath": true,
     "minionsDieWithFactory": false,
     "crumbleRadius": 120,
     "maxAlivePerFactory": 4,

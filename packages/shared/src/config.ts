@@ -149,6 +149,13 @@ export const FactorySchema = z.object({
    */
   stopAtSuddenDeath: z.boolean(),
   /**
+   * Every factory still standing is destroyed on the first tick of sudden death
+   * (suddenDeath.startTick), credited to nobody; stored minions are lost with it
+   * as with any destroyed factory (§9.3, 2026-10-25 "factories die at sudden
+   * death", on by default). false: factories live on into sudden death.
+   */
+  dieAtSuddenDeath: z.boolean(),
+  /**
    * When a factory is destroyed, its living minions crumble with it in the same
    * tick (§9.3, 2026-10-25 "Minions die with their factory"), credited to the
    * factory's killer. false: they keep fighting (the pre-2026-10-25 rule).
@@ -501,6 +508,10 @@ export const DEFAULT_CONFIG: GameConfig = {
     // Off by default: on, it nerfed attacking factory armies and broke the 70% cap
     // without moving the factory camp (§14 "Factories stop at sudden death").
     stopAtSuddenDeath: false,
+    // On by default (user, 2026-10-25: "add an option that makes factories die at
+    // sudden death. Enable it by default"): every factory is destroyed when sudden
+    // death starts, so factory camps can't sit out a standoff.
+    dieAtSuddenDeath: true,
     // Off by default: on, the camp fell (62.9% -> 42.1%) but attacking factory armies
     // collapsed and 12 rules failed (§14 "Minions die with their factory").
     minionsDieWithFactory: false,

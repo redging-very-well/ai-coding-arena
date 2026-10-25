@@ -28,7 +28,8 @@ const cfg = (on = true, patch: object = {}, radius = 0): GameConfig =>
   deepMerge(DEFAULT_CONFIG, {
     timers: { battleTicks: 2400 },
     suddenDeath: { startTick: 2300, endTick: 2400, damagePctPerSecond: 0 },
-    factory: { minionsDieWithFactory: on, crumbleRadius: radius },
+    // Factories dying at sudden death (default on) is its own rule; keep it out of these.
+    factory: { minionsDieWithFactory: on, crumbleRadius: radius, dieAtSuddenDeath: false },
     ...patch,
   });
 
@@ -181,7 +182,7 @@ describe('minions die with their factory (§9.3)', () => {
     const off = unitTypeRules(DEFAULT_CONFIG).factories as { text: string; minionsDieWithFactory: boolean };
     expect(off.minionsDieWithFactory).toBe(false);
     expect(off.text).toContain('its minions keep going');
-    const onCfg = deepMerge(DEFAULT_CONFIG, { factory: { minionsDieWithFactory: true, crumbleRadius: 0 } });
+    const onCfg = deepMerge(DEFAULT_CONFIG, { factory: { minionsDieWithFactory: true, crumbleRadius: 0, dieAtSuddenDeath: false } });
     const on = unitTypeRules(onCfg).factories as typeof off;
     expect(on.minionsDieWithFactory).toBe(true);
     expect(on.text).toContain('crumble with it in the same tick');
@@ -271,9 +272,9 @@ describe('only minions near the factory crumble (factory.crumbleRadius)', () => 
 
   it('get_rules and the guide state the radius only when the option is on', () => {
     type F = { text: string; minionsDieWithFactory: boolean; crumbleRadius?: number };
-    const on = deepMerge(DEFAULT_CONFIG, { factory: { minionsDieWithFactory: true, crumbleRadius: 170 } });
-    const off = deepMerge(DEFAULT_CONFIG, { factory: { minionsDieWithFactory: false, crumbleRadius: 170 } });
-    const all = deepMerge(DEFAULT_CONFIG, { factory: { minionsDieWithFactory: true, crumbleRadius: 0 } });
+    const on = deepMerge(DEFAULT_CONFIG, { factory: { minionsDieWithFactory: true, crumbleRadius: 170, dieAtSuddenDeath: false } });
+    const off = deepMerge(DEFAULT_CONFIG, { factory: { minionsDieWithFactory: false, crumbleRadius: 170, dieAtSuddenDeath: false } });
+    const all = deepMerge(DEFAULT_CONFIG, { factory: { minionsDieWithFactory: true, crumbleRadius: 0, dieAtSuddenDeath: false } });
     const rOn = unitTypeRules(on).factories as F;
     expect(rOn.crumbleRadius).toBe(170);
     expect(rOn.text).toContain('its minions within 170 px of it (centre to centre) crumble with it in the same tick');

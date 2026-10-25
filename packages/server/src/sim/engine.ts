@@ -17,7 +17,8 @@
 //   7) advance projectiles (including the ones just fired), then land this
 //      tick's melee hits and projectile impacts together in seat, then
 //      instanceId order (§9 Value destroyed);
-//   8) apply sudden-death damage;
+//   8) apply sudden-death damage; 8b) with factory.dieAtSuddenDeath every
+//      factory is destroyed on the first sudden-death tick;
 //   9) remove the dead (hp ≤ 0); 9a) with factory.minionsDieWithFactory, the
 //      living minions of each factory removed in 9 that are within
 //      factory.crumbleRadius of it crumble (credited to its killer);
@@ -885,6 +886,12 @@ export class BattleEngine {
 
     // 8) Sudden death on every body, buildings included (credits nobody).
     applySuddenDeath(living, tick, cfg, this.center);
+    // 8b) factory.dieAtSuddenDeath (§9.3, 2026-10-25, on by default): on the first
+    // tick of sudden death every factory still standing is destroyed (credits
+    // nobody; step 9 removes it and its stored minions are lost as usual).
+    if (cfg.factory.dieAtSuddenDeath && tick === cfg.suddenDeath.startTick) {
+      for (const u of living) if (u.alive && u.type === 'factory' && u.hp > 0) u.hp = 0;
+    }
 
     // 9) Remove the dead.
     let deadFactories: SimUnit[] | undefined;
