@@ -62,7 +62,7 @@ import { frontCells } from '../../packages/server/src/sim/autoPlace.js';
 import { mulberry32 } from '../../packages/server/src/sim/prng.js';
 
 
-import { BattleCache, cacheEnabled, configKey, engineHash, sha } from './balanceCache.js';
+import { BattleCache, cacheEnabled, configKey, engineHash, featuresOf, fullConfigKey, sha, type BattleFeature } from './balanceCache.js';
 import { BalancePool } from './balancePool.js';
 import { sandboxRunner, type BalanceRunnerKind } from './brainUnits.js';
 import { actFor, type BrainOptions, type FactoryBrain, type Rng, type SoldierBrain, type Targeting } from './brains.js';
@@ -727,8 +727,8 @@ export async function balanceBattle(
   runner: BalanceRunnerKind = 'lean',
 ): Promise<BalanceBattle> {
   if (hashFrames || runner !== 'lean' || !cacheEnabled()) return playBalanceBattle(style, players, entrants, seed, config, hashFrames, runner);
-  const ck = configKey(config);
-  const sides = entrants.map((e) => `${entrantDigest(e.archetype, style, players, e.zone, config, ck)}/${e.teamId ?? '-'}/${e.reversePlacements === true}`);
+  const ck = configKey(config, battleFeatures(entrants.map((e) => e.archetype)));
+  const sides = entrants.map((e) => `${entrantDigest(e.archetype, style, players, e.zone, config)}/${e.teamId ?? '-'}/${e.reversePlacements === true}`);
   const key = sha(`battle ${engineHash()} ${ck} ${style} ${players} ${seed} ${sides.join(' ')}`);
   const cache = battleCache(config);
   const hit = cache.get(key);
@@ -1073,9 +1073,9 @@ export function pairResult(a: string, b: string, records: BattleRecord[]): PairR
 const entrantDigests = new Map<string, string>();
 
 /** Everything a battle sees of one army in one zone: priced designs (with the cost breakdown), placements, brains. */
-function entrantDigest(a: Archetype, style: MapStyle, players: number, zone: number, config: GameConfig, cfgKey: string): string {
-  // The config key leaves the prices out (they are hashed through the priced designs), so the memo needs them.
-  const memo = `${cfgKey} ${JSON.stringify(config.cost)} ${style} ${players} ${zone} ${JSON.stringify(a)}`;
+function entrantDigest(a: Archetype, style: MapStyle, players: number, zone: number, config: GameConfig): string {
+  // Prices depend on the whole config (cost, and the pricing context: timers, sudden death, factory), so the memo keys on all of it.
+  const memo = `${fullConfigKey(config)} ${style} ${players} ${zone} ${JSON.stringify(a)}`;
   let d = entrantDigests.get(memo);
   if (!d) {
     const { units, placements } = deploy(a, mapFor(style, players).zones[zone]!, config);
@@ -1086,11 +1086,22 @@ function entrantDigest(a: Archetype, style: MapStyle, players: number, zone: num
   return d;
 }
 
-/** The cache key of a duel (helpers/balanceCache.ts): engine, config, both armies as deployed, map, zones, seed, runner. */
+/**
+ * The features the armies bring to a battle (helpers/balanceCache.ts
+ * `featuresOf`): factories, support, elements, splash. The battle's config
+ * key covers only the fields those make readable.
+ */
+export function battleFeatures(armies: Archetype[]): BattleFeature[] {
+  const fs = new Set<BattleFeature>();
+  for (const a of armies) for (const [k] of a.army) featuresOf(statsOf(a, k), fs);
+  return [...fs].sort();
+}
+
+/** The cache key of a duel (helpers/balanceCache.ts): engine, the config fields it can read, both armies as deployed, map, zones, seed, runner. */
 export function jobKey(job: BattleJob, config: GameConfig, runner: BalanceRunnerKind = 'lean'): string {
-  const ck = configKey(config);
-  const da = entrantDigest(job.a, job.style, job.players, job.zones[0], config, ck);
-  const db = entrantDigest(job.b, job.style, job.players, job.zones[1], config, ck);
+  const ck = configKey(config, battleFeatures([job.a, job.b]));
+  const da = entrantDigest(job.a, job.style, job.players, job.zones[0], config);
+  const db = entrantDigest(job.b, job.style, job.players, job.zones[1], config);
   return sha(`${engineHash()} ${ck} ${job.style} ${job.players} ${job.zones.join(',')} ${job.seed} ${runner} ${da} ${db}`);
 }
 

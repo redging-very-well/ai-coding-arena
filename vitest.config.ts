@@ -8,7 +8,7 @@ const TIMING_FILES = ['tests/integration.test.ts', 'tests/sandbox.test.ts', 'tes
 // processes (helpers/balance.ts playPairs); inside the parallel main pass they
 // oversubscribe the CPU and push timed tests elsewhere past their limits. The
 // runner parity check plays isolated-vm battles, so it runs there too.
-const BALANCE_FILES = ['tests/balance.test.ts', 'tests/balance-parity.test.ts'];
+const BALANCE_FILES = ['tests/balance.test.ts', 'tests/balance-parity.test.ts', 'tests/balance-cache.test.ts'];
 
 export default defineConfig({
   resolve: {

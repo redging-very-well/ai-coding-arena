@@ -7,8 +7,8 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '@pixel-clash/shared';
 import { mulberry32 } from '../packages/server/src/sim/prng.js';
-import { ALL_ARCHETYPES, allPairs, archetypeByKey, balanceConfig, jobKey, pairJobs } from './helpers/balance.js';
-import { configKey, engineHash } from './helpers/balanceCache.js';
+import { ALL_ARCHETYPES, allPairs, archetypeByKey, balanceConfig, battleFeatures, jobKey, pairJobs, type BattleJob } from './helpers/balance.js';
+import { BATTLE_FEATURES, CONFIG_LEAF_RULES, configKey, configLeaves, engineHash, featuresOf, leafRule, shardKey, type BattleFeature } from './helpers/balanceCache.js';
 import { cellProbability, exactCell, sequential, spreadOrder, type Cell, type Outcome } from './helpers/balanceFast.js';
 import { FULL_DOMINANCE_EXCEPTIONS, STATED, WATCH_ITEMS, testRules, type MatrixDef, type Rule } from './helpers/balanceRules.js';
 
@@ -126,7 +126,9 @@ describe('result cache keys (helpers/balanceCache.ts)', () => {
     expect(jobKey(job, balanceConfig({ timers: { planLaterRoundsSec: 99 } }))).toBe(base);
     expect(configKey(balanceConfig({ rateLimits: { loginPerMinute: 99 } }))).toBe(configKey(DEFAULT_CONFIG));
     // Rules of the fight.
-    expect(jobKey(job, balanceConfig({ elements: { splashPct: 60 } }))).not.toBe(base);
+    expect(jobKey(job, balanceConfig({ accuracy: { missMaxPct: 10 } }))).not.toBe(base);
+    // Conditional fields: this duel has no splash, factories or support, so their knobs leave it alone.
+    expect(jobKey(job, balanceConfig({ elements: { splashPct: 60 } }))).toBe(base);
     expect(jobKey(job, balanceConfig({ suddenDeath: { damagePctPerSecond: 5 } }))).not.toBe(base);
     expect(jobKey(job, balanceConfig({ timers: { battleTicks: 6000 } }))).not.toBe(base);
     // Prices reach a battle through the armies' costs: a price both armies pay changes the key.
@@ -145,5 +147,79 @@ describe('result cache keys (helpers/balanceCache.ts)', () => {
     const withFactories = pairJobs(archetypeByKey('swarm'), archetypeByKey('turtle'), [11])[0]!;
     expect(jobKey(plain, balanceConfig(patch))).toBe(jobKey(plain, DEFAULT_CONFIG));
     expect(jobKey(withFactories, balanceConfig(patch))).not.toBe(jobKey(withFactories, DEFAULT_CONFIG));
+  });
+
+  it('a price only the factories pay changes only battles with factories (and never the shard)', () => {
+    const patch = { cost: { factory: { ...DEFAULT_CONFIG.cost.factory, base: DEFAULT_CONFIG.cost.factory.base + 50 } } };
+    expect(shardKey(balanceConfig(patch))).toBe(shardKey(DEFAULT_CONFIG));
+  });
+});
+
+describe('relevance-aware cache keys (helpers/balanceCache.ts CONFIG_LEAF_RULES)', () => {
+  it('every config leaf is classified (global, unread or conditional), and every rule still matches a leaf', () => {
+    const leaves = configLeaves(DEFAULT_CONFIG).map(([path]) => path);
+    expect(leaves.length).toBeGreaterThan(100);
+    // A new config field must get a rule in CONFIG_LEAF_RULES (when unsure: 'global').
+    expect(leaves.filter((p) => leafRule(p) === undefined)).toEqual([]);
+    expect(CONFIG_LEAF_RULES.filter(([prefix]) => !leaves.some((p) => p === prefix || p.startsWith(`${prefix}.`))).map(([p]) => p)).toEqual([]);
+    // Conditional classes are only the known battle features.
+    for (const [, cls] of CONFIG_LEAF_RULES) expect(['global', 'unread', ...BATTLE_FEATURES]).toContain(cls);
+  });
+
+  it('the features of a design: factories bring their minions (element, medics = support)', () => {
+    const f = (s: Parameters<typeof featuresOf>[0]) => [...featuresOf(s)].sort();
+    expect(f({ type: 'soldier', element: 'normal', splashRadius: 0, support: null })).toEqual([]);
+    expect(f({ type: 'tower', element: 'ice', splashRadius: 40, support: null })).toEqual(['element', 'ice', 'splash']);
+    expect(f({ type: 'soldier', element: 'normal', support: { kind: 'haste', power: 10, range: 60 } })).toEqual(['support']);
+    expect(f({ type: 'wall', element: 'normal' })).toEqual([]);
+    expect(f({ type: 'factory', element: 'normal', minionElement: 'fire' })).toEqual(['element', 'factory', 'fire']);
+    expect(f({ type: 'factory', element: 'normal', produces: 'medic', minionElement: 'fire' })).toEqual(['factory', 'support']);
+    // An element the table doesn't know: every conditional field counts.
+    expect(f({ type: 'soldier', element: 'poison' })).toEqual([...BATTLE_FEATURES].sort());
+  });
+
+  // Every duel of the whole pool (seed 11): a patch to one feature's fields re-uses exactly the battles without it.
+  const pool = ALL_ARCHETYPES.map((a) => a.key);
+  const jobs: BattleJob[] = allPairs(pool).flatMap(([a, b]) => pairJobs(archetypeByKey(a), archetypeByKey(b), [11]));
+  const base = jobs.map((j) => jobKey(j, DEFAULT_CONFIG));
+  const reuse = (patch: unknown, feature: BattleFeature) => {
+    const cfg = balanceConfig(patch);
+    let kept = 0;
+    let replayed = 0;
+    jobs.forEach((j, i) => {
+      const has = battleFeatures([j.a, j.b]).includes(feature);
+      const same = jobKey(j, cfg) === base[i];
+      expect(same, `${j.a.key} vs ${j.b.key}: ${feature} ${has ? 'present, key must change' : 'absent, key must stay'}`).toBe(!has);
+      if (same) kept++;
+      else replayed++;
+    });
+    expect(shardKey(cfg)).toBe(shardKey(DEFAULT_CONFIG));
+    return { kept, replayed };
+  };
+
+  it('a factory-only change re-uses every battle without a factory and re-plays every battle with one', () => {
+    const r = reuse({ factory: { minionsDieWithFactory: true, crumbleRadius: 200 } }, 'factory');
+    expect(r.kept).toBeGreaterThan(0);
+    expect(r.replayed).toBeGreaterThan(0);
+    expect(r.kept + r.replayed).toBe(jobs.length);
+  });
+
+  it('a support-only change re-uses every battle without support and re-plays every battle with it', () => {
+    const r = reuse({ support: { healRoomPctPerSecond: 10 } }, 'support');
+    expect(r.kept).toBeGreaterThan(0);
+    expect(r.replayed).toBeGreaterThan(0);
+  });
+
+  it('an element-only change re-uses every battle without that element', () => {
+    expect(reuse({ elements: { fire: { burnPct: 60 } } }, 'fire').replayed).toBeGreaterThan(0);
+    expect(reuse({ elements: { splashPct: 60 } }, 'splash').replayed).toBeGreaterThan(0);
+  });
+
+  it('a global change re-plays every battle', () => {
+    const cfg = balanceConfig({ sim: { projectileSpeed: 12 } });
+    expect(jobs.every((j, i) => jobKey(j, cfg) !== base[i])).toBe(true);
+    expect(shardKey(cfg)).not.toBe(shardKey(DEFAULT_CONFIG));
+    // The all-features key (the default) still covers every field a battle could read.
+    expect(configKey(balanceConfig({ factory: { crumbleRadius: 200 } }))).not.toBe(configKey(DEFAULT_CONFIG));
   });
 });
