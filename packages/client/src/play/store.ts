@@ -29,7 +29,7 @@ import { ApiError, api, request } from '../common/api.js';
 import { SoundEngine } from '../common/audio.js';
 import { ArenaRenderer } from '../common/render/arena.js';
 import { minionFactoryId } from '../common/render/buildings.js';
-import { DEFAULT_PLAY_CAPS, capsFromRules, type PlayCaps } from './logic.js';
+import { DEFAULT_PLAY_CAPS, capsFromRules, capsWithLiveCopyCaps, type PlayCaps } from './logic.js';
 import { MUTE_KEY_PLAY, countdownCue, revealCue } from '../common/sfx.js';
 import { GameSocket, type WsStatus } from '../common/ws.js';
 import { REVEAL_STEPS, REVEAL_STEP_MS } from '../screen/model.js';
@@ -498,6 +498,12 @@ export class PlayStore {
     s.on('state', (m) => {
       const prev = this.state.game;
       this.set({ game: m.state });
+      // The host can change the caps (and the rest of the rules) in /admin at any
+      // time: take the live copy caps from every state, and fetch /rules again
+      // when they moved or the phase changed, so the page never enforces stale limits.
+      const live = capsWithLiveCopyCaps(this.state.caps, m.state.me?.copyCaps);
+      if (live.changed) this.set({ caps: live.caps });
+      if (live.changed || (prev && prev.phase !== m.state.phase)) void this.loadRules();
       if (prev && prev.phase !== m.state.phase) {
         this.onPhaseChange(prev.phase, m.state.phase);
         this.badge({ type: 'phase', phase: m.state.phase });

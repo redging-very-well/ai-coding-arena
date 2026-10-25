@@ -84,6 +84,22 @@ export function capsFromRules(caps: Partial<Record<string, number>>, budget: num
   };
 }
 
+/**
+ * The live copy caps the server pushes in every state (`me.copyCaps`) win over
+ * the ones read from GET /rules when the page opened: the host can change them
+ * in /admin mid-game. `changed` says the host's config moved (so the rest of
+ * /rules, e.g. the budget, should be fetched again).
+ */
+export function capsWithLiveCopyCaps(
+  caps: PlayCaps,
+  live: { fighters: number; factories: number; walls: number } | undefined,
+): { caps: PlayCaps; changed: boolean } {
+  if (!live) return { caps, changed: false };
+  const changed = live.fighters !== caps.maxCopies || live.factories !== caps.maxFactoryCopies || live.walls !== caps.maxWallCopies;
+  if (!changed) return { caps, changed };
+  return { caps: { ...caps, maxCopies: live.fighters, maxFactoryCopies: live.factories, maxWallCopies: live.walls }, changed };
+}
+
 export const DEFAULT_PLAY_CAPS: PlayCaps = {
   budget: DEFAULT_CONFIG.caps.budget,
   maxUnitTypes: DEFAULT_CONFIG.caps.maxUnitTypes,
