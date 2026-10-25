@@ -189,6 +189,11 @@ Plan §5.2 / §6: walls (40×40 blocks, 50-1500 HP, no attack, no code) and fact
 (radius 18, 100-1000 HP, built-in 40 HP / 5 damage minions every 600-1800 ticks).
 Same harness, same default config, same sites and seeds as the round robin above.
 
+**Walls allowed (2026-10-25, plan §9.1b).** The host can switch walls off for a match.
+The balance tooling is unchanged: it runs with walls (the default). A
+`wallsAllowed: false` match simply excludes the archetypes that field walls; the
+battles between the others are the same battles.
+
 ### Building archetypes ($1,000 budget each)
 
 | key | army | cost |
