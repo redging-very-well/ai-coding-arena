@@ -107,6 +107,8 @@ export const SERVICE_ERROR_CODES = [
   'UNIT_INVALID',
   'ARMORY_OFF',
   'ARMORY_OWN_UNIT',
+  // The match setting "Walls allowed" is off (§9.1b): wall designs can't be picked, placed or borrowed.
+  'WALLS_OFF',
   'NOT_ALL_READY',
   'NOTHING_SELECTED',
   // M8.5: only walls selected / placed (§5.2 Fighters).
@@ -243,6 +245,7 @@ export function httpStatusFor(code: ErrorCode): number {
     case 'NOT_ALL_READY':
     case 'NOTHING_SELECTED':
     case 'NO_FIGHTERS':
+    case 'WALLS_OFF':
     case 'NOT_ENOUGH_PLAYERS':
     case 'NO_TEAMS':
     case 'SAME_TEAM':

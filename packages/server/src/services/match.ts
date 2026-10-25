@@ -347,9 +347,18 @@ export class MatchService {
    * default for the player count) and `teamModeIn` (undefined = the draft's)
    * are checked against the players now (§9.2); team mode fixes the teams and
    * the map for the whole match. `revealNamesIn` ("Show enemy names to units",
-   * §5; undefined = the draft's) is fixed for the match too.
+   * §5; undefined = the draft's) and `wallsAllowedIn` ("Walls allowed",
+   * §9.1b; undefined = the draft's) are fixed for the match too. With walls
+   * off, walls carried over in a selection are dropped (with a toast).
    */
-  startMatch(roundsIn?: unknown, armoryIn?: unknown, mapStyleIn?: unknown, teamModeIn?: unknown, revealNamesIn?: unknown): Result<true> {
+  startMatch(
+    roundsIn?: unknown,
+    armoryIn?: unknown,
+    mapStyleIn?: unknown,
+    teamModeIn?: unknown,
+    revealNamesIn?: unknown,
+    wallsAllowedIn?: unknown,
+  ): Result<true> {
     if (this.m.phase !== 'LOBBY') return fail('PHASE_CLOSED', 'A match is already running.', { details: { phase: this.m.phase } });
     const rounds = roundsIn === undefined || roundsIn === null ? this.game.config.timers.defaultRounds : roundsIn;
     if (typeof rounds !== 'number' || !Number.isInteger(rounds) || rounds < 1 || rounds > 10) {
@@ -362,7 +371,7 @@ export class MatchService {
     if (players.length < 2) {
       return fail('NOT_ENOUGH_PLAYERS', 'A match needs at least 2 players.', { details: { players: players.length } });
     }
-    const setup = this.game.teams.resolveStart(mapStyleIn, teamModeIn, revealNamesIn);
+    const setup = this.game.teams.resolveStart(mapStyleIn, teamModeIn, revealNamesIn, wallsAllowedIn);
     if (!setup.ok) return setup;
     for (const p of players) p.activeFromRound = 1;
     this.game.teams.applyStart(setup.data);
@@ -375,8 +384,9 @@ export class MatchService {
     this.m.stats = {};
     this.m.awards = null;
     this.game.armory.reset(armoryIn === true);
+    if (!setup.data.wallsAllowed) for (const p of players) this.game.round.dropWalls(p.id);
     const teamsText = setup.data.teams ? `, ${setup.data.teamMode} on ${setup.data.style}` : `, free-for-all (${setup.data.mapStyle ?? 'default'} map)`;
-    log.info(`match started: ${rounds} rounds, ${players.length} players${teamsText}${armoryIn === true ? ', Open Armory on' : ''}${setup.data.revealNames ? ', enemy names shown to units' : ''}`);
+    log.info(`match started: ${rounds} rounds, ${players.length} players${teamsText}${armoryIn === true ? ', Open Armory on' : ''}${setup.data.revealNames ? ', enemy names shown to units' : ''}${setup.data.wallsAllowed ? '' : ', no walls'}`);
     this.enterPlan();
     return ok(true);
   }

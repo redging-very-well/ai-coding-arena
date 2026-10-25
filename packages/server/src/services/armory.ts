@@ -33,6 +33,14 @@ import type { Game } from './game.js';
 import type { ArmoryEntryRecord, ArmoryState } from './store.js';
 import { SCALE_VERSION, UnitsService } from './units.js';
 
+/** WALLS_OFF (§9.1b): the match setting "Walls allowed" is off. */
+export function wallsOffError(name: string, unitId: string): Result<never> {
+  return fail('WALLS_OFF', `Walls are switched off for this match, so ${name} can't be used.`, {
+    hint: 'Walls are switched off for this match. Pick a soldier, tower or factory instead.',
+    details: { unitId },
+  });
+}
+
 /** One own design version fielded in a battle (snapshotted at START). */
 export interface FieldedDesign {
   playerId: string;
@@ -184,6 +192,7 @@ export class ArmoryService {
         details: { unitId, ownUnitId: e.sourceUnitId },
       });
     }
+    if (e.stats.type === 'wall' && !this.game.teams.wallsAllowed) return wallsOffError(ArmoryService.displayName(e), unitId);
     if (e.status !== 'valid') {
       return fail('UNIT_INVALID', `${ArmoryService.displayName(e)} is not valid under the current rules, so it can't be picked.`, {
         details: { unitId },

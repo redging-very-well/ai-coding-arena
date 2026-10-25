@@ -31,7 +31,7 @@ import {
 } from '@pixel-clash/shared';
 import { autoPlace } from '../sim/autoPlace.js';
 import { RateLimiter } from '../util/ratelimit.js';
-import { ArmoryService } from './armory.js';
+import { ArmoryService, wallsOffError } from './armory.js';
 import type { Game } from './game.js';
 import { newRoundState, type LockedUnit, type PlayerRoundState } from './store.js';
 import { UnitsService } from './units.js';
@@ -118,7 +118,12 @@ export class RoundService {
     for (const id of ids) {
       if (isArmoryUnitId(id)) {
         const e = this.game.armory.checkSelectable(playerId, id);
-        if (!e.ok) return e;
+        // A wall entry already picked (before walls were off) can still be un-picked.
+        if (!e.ok && !(e.error.code === 'WALLS_OFF' && this.stateOf(playerId).selection.includes(id))) return e;
+        if (!e.ok) {
+          types.push('wall');
+          continue;
+        }
         types.push(e.data.stats.type);
         continue;
       }
@@ -129,7 +134,12 @@ export class RoundService {
           hint: 'Ask your AI helper to fix it first (list_my_units shows the error).',
         });
       }
-      types.push(UnitsService.latestValid(d)!.stats.type);
+      const type = UnitsService.latestValid(d)!.stats.type;
+      // §9.1b: with "Walls allowed" off a wall can't be picked (un-picking is always fine).
+      if (type === 'wall' && !this.game.teams.wallsAllowed && !this.stateOf(playerId).selection.includes(id)) {
+        return wallsOffError(UnitsService.latest(d).stats.name, id);
+      }
+      types.push(type);
     }
     // §5.2: ≤ maxUnitTypes soldiers and ≤ maxBuildingTypes buildings (towers, walls, factories).
     // Un-picking is always allowed, even from a selection that a revised
@@ -164,12 +174,15 @@ export class RoundService {
    * resolves to its latest valid version; invalid ones are dropped. Empty →
    * the previous round's selection if all still valid → the 3 most recently
    * submitted valid units → the templates. A walls-only result gets a
-   * starter fighter added (§5.2 Fighters).
+   * starter fighter added (§5.2 Fighters). With "Walls allowed" off (§9.1b)
+   * walls are never locked: a picked one is dropped with a toast.
    */
   lockSelections(): void {
     const caps = this.game.config.caps;
+    const wallsOff = !this.game.teams.wallsAllowed;
     for (const p of this.game.players.active()) {
       const rs = this.stateOf(p.id);
+      if (wallsOff) this.dropWalls(p.id);
       const resolve = (ids: readonly string[]): LockedUnit[] => {
         const out: LockedUnit[] = [];
         const count = { unit: 0, building: 0 };
@@ -188,7 +201,7 @@ export class RoundService {
           }
           const d = this.game.units.design(p.id, id);
           const v = d ? UnitsService.latestValid(d) : undefined;
-          if (v) take({ unitId: id, version: v.version }, v.stats.type);
+          if (v && !(wallsOff && v.stats.type === 'wall')) take({ unitId: id, version: v.version }, v.stats.type);
         }
         return out;
       };
@@ -308,6 +321,9 @@ export class RoundService {
       }
       cells.add(key);
       const d = designs.get(p.unitId);
+      if (d === undefined && !this.game.teams.wallsAllowed && this.selectedType(playerId, p.unitId) === 'wall') {
+        return wallsOffError(this.displayName(playerId, p.unitId), p.unitId);
+      }
       if (d === undefined) {
         return fail('NOT_SELECTED', `"${p.unitId}" is not one of your units for this round.`, { details: { unitId: p.unitId } });
       }
@@ -426,6 +442,28 @@ export class RoundService {
     this.game.notifier.privateChanged(playerId);
     this.game.notifier.stateChanged();
     return ok({ ready });
+  }
+
+  /**
+   * "Walls allowed" off (§9.1b): take wall designs out of the player's
+   * selection, previous selection and last layout, with a toast naming the
+   * walls left out of the selection. Callers save and push state.
+   */
+  dropWalls(playerId: string): void {
+    const rs = this.stateOf(playerId);
+    const isWall = (id: string) => this.selectedType(playerId, id) === 'wall';
+    const walls = rs.selection.filter(isWall);
+    if (walls.length > 0) {
+      rs.selection = rs.selection.filter((id) => !isWall(id));
+      const names = walls.map((id) => this.displayName(playerId, id));
+      this.game.notifier.toast(
+        { playerId },
+        'warn',
+        `Walls are switched off for this match: ${names.join(', ')} ${names.length === 1 ? 'was' : 'were'} taken out of your picks.`,
+      );
+    }
+    if (rs.prevSelection) rs.prevSelection = rs.prevSelection.filter((id) => !isWall(id));
+    if (rs.lastLayout) rs.lastLayout = rs.lastLayout.filter((pl) => !isWall(pl.unitId));
   }
 
   /** The type of a selectable id (own design's latest valid version or an Armory entry), if known. */

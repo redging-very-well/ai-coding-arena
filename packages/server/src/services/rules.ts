@@ -74,6 +74,21 @@ export function revealNamesRules(enabled: boolean): Record<string, unknown> {
   };
 }
 
+/** The "Walls allowed" paragraph of the rules (§9.1b, a match setting). */
+export function wallsAllowedRules(allowed: boolean): Record<string, unknown> {
+  return {
+    allowed,
+    setting: 'Walls allowed',
+    text: allowed
+      ? 'Walls allowed is on this match: wall designs can be picked and placed as usual.'
+      : "Walls are switched off for this match: wall designs (the Basic Wall and your own) can't be picked, placed or borrowed from the Armory, so battles have no walls. validate_unit and submit_unit still work for walls (they can be used in a later match).",
+    rules: [
+      'The host can switch walls off for a match at Start match (walls are allowed by default); it stays the same for the whole match.',
+      'Picking or placing a wall while walls are off is refused with WALLS_OFF.',
+    ],
+  };
+}
+
 /** Map styles, arena sizes and zone rules (§9.2). */
 export function mapRules(): Record<string, unknown> {
   const counts = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, i) => i + MIN_PLAYERS);
@@ -290,6 +305,7 @@ export function buildRules(config: GameConfig, armoryEnabled = false, match?: Ma
     submissions: 'submit_unit works only in the PLAN phase; validate_unit works any time.',
     armory: armoryRules(armoryEnabled),
     revealNames: revealNamesRules(match?.revealNames === true),
+    wallsAllowed: wallsAllowedRules(match?.wallsAllowed !== false),
     maps: mapRules(),
     teams: teamRules(),
     ...(match
@@ -298,6 +314,7 @@ export function buildRules(config: GameConfig, armoryEnabled = false, match?: Ma
             mapStyle: match.mapStyle,
             teamMode: match.teamMode,
             revealNames: match.revealNames,
+            wallsAllowed: match.wallsAllowed,
             arena,
             teams: match.teams?.map((tm) => ({ teamId: tm.teamId, name: tm.name, members: tm.members.length })) ?? null,
           },

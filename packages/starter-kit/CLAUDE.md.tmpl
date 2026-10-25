@@ -692,6 +692,10 @@ Call `get_battle_report`. Its `score` shows how the player's points were made (p
 
 `get_rules` and `get_game_state` say whether this match setting is on (`revealNames`). When it is on, in battle every body in `enemies` and `allies` also has `ownerName` (its player's name; a minion's is its factory's player, a borrowed Armory unit's is the player who fielded it) and, in team mode, `teamName`, and `world.players` lists every player in the battle as `{ id, name, teamId, teamName }`. When it is off these fields are missing, so code that reads them must also work without them. Player names are the ones on the scoreboard.
 
+### Walls switched off (only when the host switched them off)
+
+The host can switch walls off for a match (`get_rules` → `thisMatch.wallsAllowed`, `get_game_state` → `wallsAllowed`; walls are allowed by default). Then wall designs (the Basic Wall and the player's own) can't be picked, placed or borrowed from the Armory that match (`WALLS_OFF`), so battles have no walls. `validate_unit` and `submit_unit` still work for walls; they can be used in a later match with walls.
+
 ## 8. Don'ts
 
 - No `import`/`require`, network, timers, `async`, or `Math.random()` in the constructor or `sprite()` (the stats and the picture must be the same every time).

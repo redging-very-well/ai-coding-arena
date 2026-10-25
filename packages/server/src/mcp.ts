@@ -40,6 +40,7 @@ export const MCP_INSTRUCTIONS = [
   'Explain results to the player in short, simple, cheerful words (cost, what the unit does).',
   'Selecting and placing units happens on the player\'s Pixel Clash web page, not here.',
   'With Open Armory on, list_armory shows other players\' units the player can borrow (they can\'t be changed).',
+  "The host can switch walls off for a match (get_game_state wallsAllowed, get_rules thisMatch.wallsAllowed): then wall designs can't be picked, placed or borrowed that match, but validate_unit and submit_unit still work for them.",
   "With the match setting 'Show enemy names to units' on (get_game_state revealNames), every body in a unit's view also has ownerName (and teamName in team mode) and world.players lists the players; otherwise those fields are missing.",
   'Players discover tactics themselves: build what the player asks for and explain rules and numbers when asked, but never volunteer strategy advice (what to build, what beats what, army mixes, counters).',
 ].join('\n');
@@ -118,7 +119,7 @@ export function spriteSummary(sprite: SpriteSpec | null): Record<string, unknown
   return { hasSprite: true, grid: sprite.grid, frames };
 }
 
-function validationResult(r: Result<ValidationResult>, verb: 'Valid' | 'Submitted'): CallToolResult {
+function validationResult(r: Result<ValidationResult>, verb: 'Valid' | 'Submitted', wallsAllowed = true): CallToolResult {
   if (!r.ok) return serviceError(r.error);
   const v = r.data;
   if (v.ok) {
@@ -131,7 +132,9 @@ function validationResult(r: Result<ValidationResult>, verb: 'Valid' | 'Submitte
         ? `new design: submit WITHOUT unitId; it will get unitId "${unit.unitId}"`
         : `unitId "${unit.unitId}", version ${unit.version}`;
     const s = `${verb}: ${unit.stats.name} (${id}) costs ${money(unit.cost)}.` +
-      (v.warnings.length ? ` Warnings: ${v.warnings.map((w) => w.code).join(', ')}.` : '');
+      (v.warnings.length ? ` Warnings: ${v.warnings.map((w) => w.code).join(', ')}.` : '') +
+      // "Walls allowed" off (§9.1b): a wall can be stored, not picked this match.
+      (unit.stats.type === 'wall' && !wallsAllowed ? " Walls are switched off for this match, so it can't be picked until a match with walls." : '');
     return toolResult(structured as unknown as Record<string, unknown>, s);
   }
   const s = `Not valid: ${v.errors.map((e) => `${e.code}${e.field ? ` (${e.field})` : ''}`).join(', ')}. Apply each "fix" and validate again.`;
@@ -181,7 +184,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Game rules',
       description:
-        'Phases, timers, budget ($5,000) and caps (max $2,500 per unit, 4 unit + 4 building types, fighter / factory / wall copies), the cost formula and coefficients for soldier, tower, wall and factory (incl. the power, splash and element factors, heal and aura prices), stat bounds per type (incl. splashRadius and the support bounds per kind), elements (fire, ice, lightning, the shatter and overload combos, splash) and support (heal, haste, might, shield) with one rule each, the factory minion kinds (stats and prices per minionElement, the medic), squad orders and burst, scoring (place points + damage bonus + value-destroyed bonus, badges, match standings), map styles and arena sizes by player count, team modes and team rules, and sudden death.',
+        'Phases, timers, budget ($5,000) and caps (max $2,500 per unit, 4 unit + 4 building types, fighter / factory / wall copies), the cost formula and coefficients for soldier, tower, wall and factory (incl. the power, splash and element factors, heal and aura prices), stat bounds per type (incl. splashRadius and the support bounds per kind), elements (fire, ice, lightning, the shatter and overload combos, splash) and support (heal, haste, might, shield) with one rule each, the factory minion kinds (stats and prices per minionElement, the medic), squad orders and burst, scoring (place points + damage bonus + value-destroyed bonus, badges, match standings), map styles and arena sizes by player count, team modes and team rules, sudden death, and this match\'s settings (thisMatch: map, teams, revealNames, wallsAllowed).',
       inputSchema: {},
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },
@@ -218,7 +221,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
       annotations: { readOnlyHint: true },
     },
     async ({ source, unitId, baseVersion, apiKey }) =>
-      withPlayer(apiKey, async (p) => validationResult(await game.units.validate(p, source, unitId, { baseVersion }), 'Valid')),
+      withPlayer(apiKey, async (p) => validationResult(await game.units.validate(p, source, unitId, { baseVersion }), 'Valid', game.teams.wallsAllowed)),
   );
 
   server.registerTool(
@@ -236,7 +239,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
       outputSchema: OUTPUT,
     },
     async ({ source, unitId, baseVersion, apiKey }) =>
-      withPlayer(apiKey, async (p) => validationResult(await game.units.submit(p, source, unitId, { baseVersion }), 'Submitted')),
+      withPlayer(apiKey, async (p) => validationResult(await game.units.submit(p, source, unitId, { baseVersion }), 'Submitted', game.teams.wallsAllowed)),
   );
 
   server.registerTool(
@@ -283,7 +286,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Game state',
       description:
-        "Phase, round, time left, whether submissions are open, my selection and budget, the scoreboard (per player: total points, total damage, place and badges won), the map style and arena size, the team mode, whether units see enemy names (revealNames), my team and my teammates' picked unit types (team mode), the team table, and after the last round the match awards (matchAwards, myAwards) to congratulate the player.",
+        "Phase, round, time left, whether submissions are open, my selection and budget, the scoreboard (per player: total points, total damage, place and badges won), the map style and arena size, the team mode, whether units see enemy names (revealNames), whether walls are allowed this match (wallsAllowed), my team and my teammates' picked unit types (team mode), the team table, and after the last round the match awards (matchAwards, myAwards) to congratulate the player.",
       inputSchema: { apiKey: API_KEY },
       outputSchema: OUTPUT,
       annotations: { readOnlyHint: true },
@@ -314,6 +317,8 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
           teamMode: s.match?.teamMode ?? 'ffa',
           // "Show enemy names to units" (§5): bodies carry ownerName/teamName, world.players lists the players.
           revealNames: s.match?.revealNames === true,
+          // "Walls allowed" (§9.1b): false = wall designs can't be picked, placed or borrowed this match.
+          wallsAllowed: s.match?.wallsAllowed !== false,
           myTeam: team ? { teamId: team.teamId, name: team.name, members: team.members.map((m) => m.name) } : null,
           teammates: team
             ? team.members
@@ -345,6 +350,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
           `Phase ${s.phase} (round ${s.round} of ${s.rounds}${time}). Submissions are ${data.submissionsOpen ? 'OPEN' : 'closed'}.` +
             (s.armory.enabled ? ` Open Armory is ON (${s.armory.entries} units; see list_armory).` : '') +
             (data.revealNames ? " Show enemy names to units is ON: in battle every body has ownerName (and teamName in team mode), and world.players lists the players." : '') +
+            (data.wallsAllowed ? '' : " Walls are switched off for this match: wall designs can't be picked, placed or borrowed (they can still be validated and submitted).") +
             (data.arena ? ` Map: ${data.mapStyle}, arena ${data.arena.width}x${data.arena.height}.` : '') +
             (team ? ` Team mode: you are on ${team.name} with ${data.myTeam!.members.filter((n) => n !== p.name).join(', ') || 'nobody else'}.` : '') +
             (s.matchAwards

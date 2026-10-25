@@ -255,7 +255,7 @@ const TYPE_INFO: Record<UnitType, { icon: string; title: string; text: string; s
   wall: {
     icon: '🧱',
     title: 'Wall',
-    text: `A solid ${WALL_HALF * 2}×${WALL_HALF * 2} px block that stops EVERYONE (your units too). No \`update()\`, never attacks. Enemies can break it.`,
+    text: `A solid ${WALL_HALF * 2}×${WALL_HALF * 2} px block that stops EVERYONE (your units too). No \`update()\`, never attacks. Enemies can break it. The host can switch walls off for a match (\`get_rules\` → \`thisMatch.wallsAllowed\`): then walls can't be picked or placed that match.`,
     snippet: () => ["this.name = 'Stone Wall';", "this.type = 'wall';", 'this.maxHealth = 2000;', "this.color = '#8A8F98';"].join('\n'),
   },
   factory: {

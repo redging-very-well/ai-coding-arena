@@ -200,7 +200,8 @@ export interface MatchState {
    * Match setup (§9.2). In LOBBY it is the host's draft (`PUT
    * /admin/match/setup`); from Start match on it is the match's own.
    * `mapStyle` null = the default for the player count. `revealNames` =
-   * "Show enemy names to units" (§5); absent = off.
+   * "Show enemy names to units" (§5); absent = off. `wallsAllowed` =
+   * "Walls allowed" (§9.1b); absent = on.
    */
   setup: MatchSetupState;
   /**
@@ -238,6 +239,8 @@ export interface MatchSetupState {
   teamMode: TeamMode;
   /** "Show enemy names to units" (§5); stored only when on, so older state files stay the same. */
   revealNames?: true;
+  /** "Walls allowed" (§9.1b, default on); stored only when off. */
+  wallsAllowed?: false;
 }
 
 /** MatchState as written to state.json (Armory code lives in data/armory). */
@@ -418,6 +421,7 @@ export class Store {
         mapStyle: isMapStyle(setup.mapStyle) ? setup.mapStyle : null,
         teamMode: isTeamMode(setup.teamMode) ? setup.teamMode : 'ffa',
         ...(setup.revealNames === true ? { revealNames: true } : {}),
+        ...(setup.wallsAllowed === false ? { wallsAllowed: false } : {}),
       };
       this.match.teams ??= null;
       this.match.map ??= null;

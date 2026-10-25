@@ -49,13 +49,14 @@
 //   POST /admin/login {password}      -> {ok:true}
 //   POST /admin/logout                -> {ok:true}
 //   GET  /admin/session               -> {admin: boolean}
-//   POST /admin/match {rounds?, armory?, mapStyle?, teamMode?, revealNames?} -> GameStateDTO (LOBBY -> PLAN, needs 2-8 players;
+//   POST /admin/match {rounds?, armory?, mapStyle?, teamMode?, revealNames?, wallsAllowed?} -> GameStateDTO (LOBBY -> PLAN, needs 2-8 players;
 //                                        armory = Open Armory, §9.1; mapStyle null = default for the player count,
 //                                        omitted = the draft's; teamMode omitted = the draft's ('ffa' by default), §9.2;
 //                                        revealNames = "Show enemy names to units" (omitted = the draft's, off by default);
+//                                        wallsAllowed = "Walls allowed" (omitted = the draft's, on by default), §9.1b;
 //                                        BAD_MAP_STYLE / BAD_TEAM_MODE with details {players, valid})
 //   GET  /admin/match/setup           -> MatchSetupDTO (the LOBBY draft, or the running match's setup)
-//   PUT  /admin/match/setup {mapStyle?, teamMode?, revealNames?} -> MatchSetupDTO (LOBBY only; re-balances the draft teams)
+//   PUT  /admin/match/setup {mapStyle?, teamMode?, revealNames?, wallsAllowed?} -> MatchSetupDTO (LOBBY only; re-balances the draft teams)
 //   POST /admin/teams/swap {playerA, playerB} -> {teams: TeamDTO[]} (LOBBY, team-mode draft only; SAME_TEAM, NO_TEAMS)
 //   POST /admin/match/new             -> GameStateDTO (MATCH_RESULTS -> LOBBY)
 //   POST /admin/phase/next            -> GameStateDTO
@@ -435,6 +436,8 @@ export interface MatchSetupDTO {
   teamMode: TeamMode;
   /** "Show enemy names to units" (§5): views carry ownerName/teamName and world.players. Locked at Start match. */
   revealNames: boolean;
+  /** "Walls allowed" (§9.1b, default true): false = wall designs can't be picked or placed this match. Locked at Start match. */
+  wallsAllowed: boolean;
   map: MapDTO;
   teams: TeamDTO[] | null;
   validStyles: MapStyle[];
@@ -451,6 +454,13 @@ export interface MatchInfoDTO {
    * `world.players` lists the players. LOBBY: the draft; fixed from Start match.
    */
   revealNames: boolean;
+  /**
+   * The match setting "Walls allowed" (§9.1b, default true). False: wall
+   * designs (the Basic Wall and players' own) can't be picked, placed or
+   * borrowed this match, so battles have no walls. LOBBY: the draft; fixed
+   * from Start match.
+   */
+  wallsAllowed: boolean;
   /** The current map; no zone owners before START. */
   map: MapDTO | null;
   teams: TeamDTO[] | null;
