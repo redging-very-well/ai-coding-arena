@@ -239,11 +239,11 @@ const FLANK = diveBrain(true);
  * tower left they chase like the template.
  */
 const HOLD_RADIUS = 160;
-const holdNearTower = (chase: BrainFn): BrainFn => (self, enemies, world, rng, allies) => {
+const holdNearTower = (chase: BrainFn, anchorType: 'tower' | 'factory' = 'tower'): BrainFn => (self, enemies, world, rng, allies) => {
   let anchor: OtherView | null = null;
   let best = Infinity;
   for (const a of allies) {
-    if (a.type !== 'tower') continue;
+    if (a.type !== anchorType) continue;
     const d = Math.hypot(a.x - self.x, a.y - self.y);
     if (d < best) {
       best = d;
@@ -259,6 +259,12 @@ const holdNearTower = (chase: BrainFn): BrainFn => (self, enemies, world, rng, a
 
 const HOLD_NEAREST = holdNearTower(chaseNearest);
 const HOLD_FOCUS = holdNearTower(chaseFocus);
+/**
+ * Brittle factories (2026-10-25) "camp": the same, but by the nearest own
+ * factory (a factory camp: soldiers wait by their factories while the minions
+ * come out). With no factory left they chase like the template.
+ */
+const CAMP_NEAREST = holdNearTower(chaseNearest, 'factory');
 
 /** A body a heal can land on (§5.5: never walls or factories). */
 const healable = (a: OtherView): boolean => a.type !== 'wall' && a.type !== 'factory';
@@ -449,7 +455,7 @@ const defendHome: BrainFn = () => ({ action: 'command', order: 'defend' });
  * ranged units anywhere on the map) or flank (the same, swinging wide round
  * the enemy front first).
  */
-export type SoldierBrain = 'chase' | 'hold' | 'dive' | 'flank';
+export type SoldierBrain = 'chase' | 'hold' | 'dive' | 'flank' | 'camp';
 
 /** Who an army's fighters shoot: the nearest (the templates) or the focus pick. */
 export type Targeting = 'nearest' | 'focus';
@@ -491,7 +497,7 @@ export function actFor(self: SelfView, enemies: OtherView[], allies: OtherView[]
   const focus = opts.targeting === 'focus';
   const sbs = opts.soldierBrain ?? 'chase';
   const sb: SoldierBrain = typeof sbs === 'string' ? sbs : (sbs[self.unitId] ?? 'chase');
-  const soldier = sb === 'hold' ? (focus ? HOLD_FOCUS : HOLD_NEAREST) : sb === 'dive' ? DIVE : sb === 'flank' ? FLANK : focus ? chaseFocus : chaseNearest;
+  const soldier = sb === 'camp' ? CAMP_NEAREST : sb === 'hold' ? (focus ? HOLD_FOCUS : HOLD_NEAREST) : sb === 'dive' ? DIVE : sb === 'flank' ? FLANK : focus ? chaseFocus : chaseNearest;
   const brain = self.type === 'tower' ? (focus ? shootFocus : shootNearest) : self.type === 'factory' ? factory : self.support ? supportSoldier : soldier;
   return brain(self, enemies, world, rng, allies);
 }

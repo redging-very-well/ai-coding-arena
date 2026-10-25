@@ -303,7 +303,7 @@ export interface Archetype {
   holdFactories?: boolean;
   /** M8.6: its factories' squad-order brain (default 'rally', the template); M8.8: or one per factory design. */
   factoryBrain?: FactoryBrain | Partial<Record<UnitKey, FactoryBrain>>;
-  /** M8.8: its fighting soldiers' brain (default 'chase', the template); 2026-10-24: or one per soldier design ('dive', 'flank'). */
+  /** M8.8: its fighting soldiers' brain (default 'chase', the template); 2026-10-24: or one per soldier design ('dive', 'flank'); 2026-10-25: 'camp' (wait by the nearest own factory). */
   soldierBrain?: SoldierBrain | Partial<Record<UnitKey, SoldierBrain>>;
   /** Who its fighting soldiers and towers shoot (default 'nearest', the templates; 'focus': healers, support, ice/splash casters, then the weakest). */
   targeting?: Targeting;
@@ -501,7 +501,7 @@ export const BUILDING_ARCHETYPES: Archetype[] = [
   arch('wallrush', 'walls + rush', [['wall', 8], ['soldier', 'fill']]),
   arch('mixed', 'mixed', [['soldier', 'fill'], ['wall', 12], ['tower', 4]]),
   arch('quad', 'all four templates', [['soldier', 'fill'], ['wall', 8], ['tower', 2], ['factory', 2]]),
-  arch('bunker', 'all-building bunker', [['tower', 'fill'], ['swarmFactory', 4]]),
+  arch('bunker', 'all-building bunker', [['tower', 'fill'], ['swarmFactory', 3]]),
 ];
 
 /** The plan §14 open fortress: 10 Basic Walls in a U (front row + both outer columns of rows 1-2), towers on rows 3-4. */
@@ -512,7 +512,7 @@ export const KIND_ARCHETYPES: Archetype[] = [
   arch('archers', 'archer nest', [['wall', 4], ['tower', 'fill'], ['archerNest', 4]], { factoryBrain: 'guard' }),
   arch('runners', 'runner swarm', [['soldier', 'fill'], ['runnerRush', 3]], { factoryBrain: 'swarm' }),
   arch('brutes', 'brute breakers', [['soldier', 'fill'], ['bruteForge', 3]], { factoryBrain: 'breach' }),
-  arch('homeguard', 'grunt home guard', [['tower', 'fill'], ['swarmFactory', 4]], { factoryBrain: 'defend' }),
+  arch('homeguard', 'grunt home guard', [['tower', 'fill'], ['swarmFactory', 3]], { factoryBrain: 'defend' }),
 ];
 
 /** Specialist archetypes: one stat pushed to the max, and the padded full-12 mono armies ("12 fighters, make them count"). */
@@ -590,6 +590,17 @@ export const NORMAL_TWINS: Record<string, Archetype> = {
 
 /** The dormant-factory turtle (not in the round robin): walls in front of Fortress Factories that never build. */
 export const DORMANT: Archetype = arch('dormant', 'dormant factories', [['wall', 10], ['fortressFactory', 5]], { holdFactories: true });
+
+/**
+ * Brittle factories (2026-10-25, not in the round robin): factory camps, armies that
+ * build factories and sit by them waiting for the minions. `camp` soldiers stay
+ * within 160 px of their nearest factory (brains.ts), the minions defend.
+ */
+export const CAMP_ARCHETYPES: Archetype[] = [
+  arch('camp', 'factory camp (soldiers wait by swarm factories, minions defend)', [['swarmFactory', 3], ['soldier', 'fill']], { soldierBrain: 'camp', factoryBrain: 'defend' }),
+  arch('camptowers', 'tower camp (towers round basic factories, minions defend)', [['tower', 'fill'], ['factory', 3]], { factoryBrain: 'defend' }),
+  arch('campfive', 'five-factory camp (soldiers wait by five steady factories)', [['steadyFactory', 3], ['steadyArchers', 1], ['steadyMedics', 1], ['soldier', 'fill']], { soldierBrain: 'camp', factoryBrain: 'defend' }),
+];
 
 /** A side of damage-0 units only (pure support: not fighters), for the elimination check. */
 export const SUPPORT_ONLY: Archetype = arch('supportonly', 'pure support', [['medic', 2], ['drummer', 2], ['banner', 2]]);
@@ -905,7 +916,7 @@ export function matrixMarkdown(m: Map<string, Map<string, MatchupCell>>, archety
 
 /** Every archetype a duel can name, by key: the round robin, the twins and the extra checks. */
 export function archetypeByKey(key: string): Archetype {
-  const pool = [...ALL_ARCHETYPES, ...Object.values(NORMAL_TWINS), RUSH, TEMPLATE_MIX, OPEN_FORTRESS, DORMANT, RUNNER_TRICKLE, SUPPORT_ONLY];
+  const pool = [...ALL_ARCHETYPES, ...Object.values(NORMAL_TWINS), RUSH, TEMPLATE_MIX, OPEN_FORTRESS, DORMANT, RUNNER_TRICKLE, SUPPORT_ONLY, ...CAMP_ARCHETYPES];
   const a = pool.find((x) => x.key === key);
   if (!a) throw new Error(`no archetype ${key}`);
   return a;

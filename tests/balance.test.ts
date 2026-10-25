@@ -33,6 +33,7 @@ import {
   BALANCE_CONFIG,
   ARCHETYPES,
   BUILDING_ARCHETYPES,
+  CAMP_ARCHETYPES,
   DORMANT,
   ELEMENT_ARCHETYPES,
   KIND_ARCHETYPES,
@@ -762,5 +763,51 @@ describe('Ring 8 free-for-all with element and support armies (M8.8)', () => {
       expect(wins.size).toBeGreaterThan(1);
     },
     T,
+  );
+});
+
+describe('brittle factories: a factory falls fast once reached, and camping by one does not hold off an attack (2026-10-25)', () => {
+  /** Seconds from the first hit on a lone holding factory of `hp` HP to its death, against n Basic Soldiers. */
+  async function timeToKill(hp: number, n: number): Promise<number> {
+    const target: Archetype = { key: `lonefactory${hp}`, label: 'one holding factory', army: [['factory', 1]], holdFactories: true, designs: { factory: { ...UNITS.factory, maxHealth: hp } } };
+    const attackers: Archetype = { key: `soldiers${n}`, label: `${n} Basic Soldiers`, army: [['soldier', n]] };
+    const { battle } = await duel('duel', 2, attackers, target, [0, 1], 11);
+    const died = battle.result.units.find((u) => u.playerId === 'p1' && u.type === 'factory')!.diedAtTick;
+    expect(died).not.toBeNull();
+    return (died! - battle.firstContactTick!) / BALANCE_CONFIG.timers.ticksPerSecond;
+  }
+
+  it('the Basic Factory dies in about 6 s to one Basic Soldier and 3 s to two; a maxed factory in under 6 s to four', async () => {
+    const B = BALANCE_CONFIG.stats.bounds.factoryHealth;
+    expect(UNITS.factory.maxHealth).toBe(360);
+    expect(await timeToKill(UNITS.factory.maxHealth, 1)).toBeLessThanOrEqual(6.5);
+    expect(await timeToKill(UNITS.factory.maxHealth, 2)).toBeLessThanOrEqual(3.5);
+    expect(await timeToKill(B.max, 4)).toBeLessThanOrEqual(6);
+    expect(await timeToKill(B.min, 1)).toBeLessThanOrEqual(2.5);
+  }, T);
+
+  it(
+    'factory camps (soldiers or towers waiting by their factories) lose to the template rush, the bricks and the cavalry, and their factories fall early',
+    async () => {
+      for (const camp of CAMP_ARCHETYPES)
+        for (const foe of ['rush', 'bricks', 'cavalry']) {
+          let wins = 0;
+          let battles = 0;
+          for (const site of DUEL_SITES)
+            for (const [z1, z2] of site.pairs)
+              for (const zones of [[z1, z2], [z2, z1]] as Array<[number, number]>)
+                for (const seed of MATRIX_SEEDS) {
+                  const { outcome, battle } = await duel(site.style, site.players, camp, byKey(foe), zones, seed);
+                  battles++;
+                  if (outcome === 1) wins++;
+                  // Every factory of the camp is destroyed before sudden death starts.
+                  const factories = battle.result.units.filter((u) => u.playerId === 'p0' && u.type === 'factory');
+                  for (const f of factories) expect(f.diedAtTick, `${camp.key} vs ${foe} on ${site.name} zones ${zones.join(',')}`).not.toBeNull();
+                  expect(Math.max(...factories.map((f) => f.diedAtTick!)), `${camp.key} vs ${foe}`).toBeLessThan(BALANCE_CONFIG.suddenDeath.startTick);
+                }
+          expect(wins * 4, `${camp.key} vs ${foe}: ${wins} of ${battles}`).toBeLessThanOrEqual(battles);
+        }
+    },
+    5 * T,
   );
 });
