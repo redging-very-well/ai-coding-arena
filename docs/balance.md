@@ -1783,4 +1783,105 @@ Both measured rules for the camp are off by default. "Minions die with their fac
 the one that actually breaks camping (62.9% → 42.1%), but in the bot pool it costs every
 factory army that attacks. If it is wanted at the event, it needs a counterweight for
 attacking factories first (e.g. more factory HP when the option is on, or minions
-crumbling only within some distance of their factory). **Watch item.**
+crumbling only within some distance of their factory). **Watch item.** (The distance was
+measured next: "Only minions near the factory crumble" below.)
+
+## Only minions near the factory crumble (2026-10-25)
+
+Plan §5.2, §9.3 (step 9a), §14 "Only minions near the factory crumble", §17. The user's
+chosen option (verbatim): "Only minions NEAR the factory crumble" — "When a factory dies,
+only its minions within ~200 px of it crumble (the camp's defenders); minions out
+attacking keep fighting. Targets camping specifically. Measure on vs off; default on only
+if every rule passes."
+
+### What was built
+
+`factory.crumbleRadius` (px; config + `config/default.json`; /admin quick settings
+"Crumble distance" under Walls & factories, next to the "Minions die with their factory"
+toggle). With `factory.minionsDieWithFactory` on, step 9a crumbles only the factory's
+minions whose **centre is within `crumbleRadius` px of the factory's centre** (distance ≤
+radius, positions after the tick's movement; `withinCrumbleRadius` in `sim/minion.ts`).
+Its minions further away keep fighting. **0 = every minion, wherever it is** (the full
+crumble of "Minions die with their factory"). Credit is unchanged: the factory's killer
+gets a kill and minionValue per crumbled minion; sudden-death factory deaths credit
+nobody. Off (the default), battles are bit-identical whatever the radius. get_rules
+(`factories.crumbleRadius`, only when on), the guide and the kit state the radius as a
+fact of the option.
+
+**Default: the option stays off; the radius is 120 px** (used when a host turns it on).
+No radius met the targets: the only radius that keeps every rule (120) barely moves the
+camp (62.9% → 60.4%), and the camp gets to ≤ ~55% only at 320+ px, where rules fail.
+
+### Radius sweep
+
+Camps: each camp against the 51 archetypes, both seeds, 816 battles, draws half (exact).
+The other columns: the archetype's row in `npm run balance -- --full --all --seeds
+11,4242` (wins / battles), except the rows marked *fast* (`--fast`, the same verdicts at
+about a quarter of the battles; their win rates are estimates over the battles played
+and run higher or lower than the full ones, so compare only the verdicts and the camp
+columns). Full crumble (radius 0) is the "Minions die with their factory" run.
+
+| radius | camp | camptowers | campfive | homeguard | swarm | archers | factories5 | quad | elemfactories | stormrunners | tmix | brutes | runners | raiders | rules |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| off | 62.9% | 50.1% | 44.7% | 58.4% | 32.0% | 38.3% | 45.6% | 33.6% | 50.6% | 50.5% | 49.4% | 55.3% | 29.0% | 45.0% | **PASS 249** |
+| **120** | 60.4% | 49.1% | 44.4% | 56.8% | 31.4% | 38.1% | 44.8% | 31.0% | 50.2% | 49.1% | 46.1% | 54.8% | 30.8% | 42.9% | **PASS 249** |
+| 160 | 60.4% | 50.8% | 44.4% | 57.9% | 31.4% | 38.1% | 42.5% | 24.0% | 48.0% | 49.1% | 46.1% | 50.9% | 30.8% | 42.6% | FAIL 1: splashline 70.4% |
+| 200 | 60.1% | 50.9% | 44.1% | 58.5% | 31.4% | 38.0% | 42.0% | 20.9% | 46.5% | 49.1% | 46.0% | 51.2% | 30.9% | 41.5% | FAIL 1: splashline 70.5% |
+| 260 | 59.8% | 53.1% | 43.1% | 60.4% | 31.4% | 36.6% | 41.6% | 21.0% | 37.0% | 49.3% | 46.0% | 50.4% | 30.5% | 41.1% | FAIL 2: splashline 71.4%, exploit 70.8% |
+| 320 *fast* | 55.3% | 46.3% | 38.1% | 44.5% | 24.4% | 30.7% | 30.1% | 25.0% | 33.3% | 21.5% | 25.3% | 45.5% | 24.4% | 33.3% | FAIL 3: exploit (74.0% est.), factories5 > mortars, homeguard > mortars |
+| 400 *fast* | 48.4% | 44.7% | 30.9% | 38.1% | 24.7% | 20.7% | 25.0% | 23.2% | 31.1% | 21.8% | 23.7% | 40.1% | 22.1% | 35.2% | FAIL 6: exploit, archers' 3 shape checks, factories5 / homeguard > mortars |
+| 0 (all) | 42.1% | 39.2% | 26.2% | 36.8% | 31.1% | 7.8% | 20.4% | 15.0% | 25.6% | 25.1% | 30.0% | 39.6% | 24.5% | 40.8% | FAIL 12 |
+
+With "Factories stop at sudden death" too (*fast*; camps exact):
+
+| radius + stop | camp | camptowers | campfive | rules |
+|---|---|---|---|---|
+| stop alone | 61.6% | 62.3% | 56.3% | FAIL 4 (§ "Factories stop at sudden death") |
+| 120 + stop | 59.6% | 60.6% | 55.5% | FAIL 2: exploit (72.9% est.), brutes beat fortress (0-0-4) |
+| 200 + stop | 58.6% | 62.2% | 54.5% | FAIL 2: the same |
+| 260 + stop | 57.3% | 64.2% | 54.7% | FAIL 2: the same |
+| 0 + stop | 39.6% | 52.2% | 37.3% | FAIL 15 |
+
+The stop rule's own failures (brutes vs fortress, the tower builds over the cap) stay at
+every radius, so no stop combination passes.
+
+### Why near-only crumbling misses the camp
+
+The camp's defenders are where the user expected them before sudden death (minions
+waiting within ~120 px of their factory: radius 120 already crumbles them when a unit
+breaks in), but that is not where the camp wins. A diagnostic of the full-crumble run
+(camp vs the 51 archetypes, a quarter of the battles, every camp-factory crumble
+classified): 140 of 208 camp factory deaths came **after sudden death started, 138 of
+them to the sudden-death damage itself** (no hit on the factory in its death frame), and
+those crumbled 549 of the 663 minions, 513 of them 200-400 px from their factory (the minions had walked into the shrinking circle while the
+factories burned at the zone's edge). Before sudden death, 114 minions crumbled, 112 of
+them within 120 px. So the full crumble's camp drop (62.9% → 42.1%) came almost entirely
+from sudden-death factory deaths taking far-away minions with them, and a radius small
+enough to spare attacking minions (≤ 200 px) spares those too. Only 320+ px catches them,
+and by then attacking factory armies are back to the full-crumble collapse.
+
+### Exploit search (radius 120, option on)
+
+`npm run balance:exploit -- --config '{"factory":{"minionsDieWithFactory":true,"crumbleRadius":120}}'`
+(seed 1, 8 × 20, 127 armies, 28,968 battles, 355 s). Five builds on the watch list, all
+soldier families already known with the option off (top 86.0% vs 88.4% off):
+
+| win rate | army | cost | beaten by |
+|---|---|---|---|
+| 86.0% | 3 ranged hitters (880 HP, 164 dmg, range 120) + 4 splash-40 melee (880 HP, 56 dmg) + 1 diver, focus | $9,808 | icemortars 0-0-16, firenest, splashline, guardedcatapults 2-0-14, healerball |
+| 84.7% | 6 splash-40 melee + 1 range-160 fire splash-40 soldier | $9,662 | snipewall, longbow, bombard, guardedcatapults 0-0-16, exploit 2-0-14 |
+| 83.0% | an ice flank tank + 4 ranged hitters (164 dmg, range 120), focus | $9,472 | bricks, cavalry 0-0-16, healerball, buffedrush, shieldwall 2-0-14 |
+| 82.8% | 2 splash-20 flank tanks + 4 ranged hitters, focus | $9,324 | healerball 0-0-16, buffedrush 2-0-14, firesquad, firenest |
+| 82.0% | 6 splash-40 melee + 1 range-160 splash-40 soldier | $9,106 | snipewall, longbow, bombard, icebreak, exploit 0-0-16 |
+
+Nothing factory-related, every build has 0-0-16 counters: no new exception.
+
+### Where this leaves the camp
+
+Off by default, as the user asked ("default on only if every rule passes" and the camp
+target). Radius 120 is the closest: every rule passes and attacking factory armies stay
+within ~3 points of off (quad 33.6% → 31.0%), but the camp only goes 62.9% → 60.4%. The
+lever the measurements point at (not built, not chosen): what happens to minions when
+their factory dies **to sudden death** (e.g. those deaths crumble every minion of the
+factory, or factories outside the circle stop counting), since that is where the camp's
+standoff wins come from. **Watch item.**
