@@ -1460,3 +1460,126 @@ The CLAUDE.md template (shared by the Claude and Codex kits, §4d point 2), the 
 guide's tips (`STRATEGY_TIPS`, so also `get_rules`) and PROMPTS.md now say how to beat a
 protected back line: focus their casters first and send fast units round the side
 to hunt their fragile shooters. No numbers changed.
+
+## Brittle factories (2026-10-25)
+
+Plan §5.2, §6, §14 "Brittle factories", §17. User request: "Let's scale the factories
+to be much more brittle; it should be really easy to destroy them to prevent players
+from just building a factory and camping by it, waiting for it to produce units", and
+"Factories should still cost about the same as they do now".
+
+### What changed
+
+| | before | now |
+|---|---|---|
+| `stats.bounds.factoryHealth` | 800-8,000 | **120-1,200** (×3/20) |
+| Basic Factory | 2,400 HP | **360 HP** |
+| `cost.factory.hp` | 0.075 (curve max 8,000) | **0.5** (curve max 1,200) |
+| Factory prices | | **unchanged**: body(HP × 3/20) is the old body(HP), e.g. Basic Factory $2,194, Swarm Factory $2,371, Fortress (max HP, slowest) $2,135 |
+
+No damage-taken factor was needed: lower HP alone makes a reached factory fall in
+seconds. A sweep at ×1/5 (160-1,600, template 480) gave the same matrix to within
+a battle or two per row, so the bound was set by time-to-kill.
+
+### Time to kill (a lone factory that holds, Duel map, seed 11)
+
+| factory | 1 Basic Soldier | 2 | 3 | 4 | 6 |
+|---|---|---|---|---|---|
+| 120 HP (min) | 2.0 s | 1.0 s | | | |
+| **360 HP (Basic Factory)** | **6.0 s** | **3.0 s** | 2.0 s | 1.4 s | 1.0 s |
+| 1,200 HP (max) | 21.0 s | 10.5 s | 7.0 s | **5.4 s** | 3.6 s |
+| before: 2,400 HP | 42.0 s | 21.0 s | 14.0 s | 10.4 s | 7.0 s |
+| before: 8,000 HP | (sudden death) | 71.0 s | 47.4 s | 35.4 s | 24.0 s |
+
+Asserted in `tests/balance.test.ts` (≤ 6.5 s / ≤ 3.5 s for the Basic Factory, ≤ 6 s
+for a 1,200-HP one against four soldiers, ≤ 2.5 s for the minimum).
+
+### Bot fixes (test bots, no game number)
+
+With brittle factories the two pure factory armies collapsed: `homeguard` (4 Swarm
+Factories on `defend`) 54.4% → 45.1% and `bunker` (the same on `rally`) 33.9% → 27.4%.
+That pushed `exploit` to 70.9% (it went 16-0 against both) and made the shape check
+"homeguard beats bunker" 8-8. Both bots were labelled as towers + factories, but at
+$2,371 a Swarm Factory the redesign's 4 factories had left no money for towers. They
+are now **2 Basic Towers (padded) + 3 Swarm Factories**, as the labels say.
+
+### Full matrix (51 archetypes, 800 battles each, seeds 11 and 4242)
+
+`npm run balance -- --full --all --seeds 11,4242`: **PASS, 249 rules**, 45/45 stated
+outcomes and shape checks, no new exception; `npm run balance` (the test's seed) PASS.
+
+| archetype | before | now |
+|---|---|---|
+| bricks | 71.4% | 72.4% (cap 72.6%, unchanged) |
+| soldiersFilled | 69.3% | 70.4% (watch cap 71.8%, unchanged) |
+| exploit | 65.9% | 67.8% |
+| homeguard (now with towers) | 54.4% | 58.4% |
+| brutes | 59.5% | 55.3% |
+| elemfactories | 54.8% | 50.6% |
+| stormrunners | 54.3% | 50.5% |
+| tmix | 50.6% | 49.4% |
+| factories5 | 50.0% | 45.6% |
+| raiders | 51.9% | 45.0% |
+| bunker (now with towers) | 33.9% | 42.1% |
+| archers | 42.6% | 38.3% |
+| quad | 36.5% | 33.6% |
+| medictent | 35.0% | 32.6% |
+| swarm | 32.6% | 32.0% |
+| runners | 34.1% | 29.0% |
+
+Factory armies lose 1-7 points each and stay spread over 29-58%: still a real
+choice. The bricks gain most (raiders 7-9 → 15-1), close to their recorded cap.
+
+### Factory camps (`CAMP_ARCHETYPES`, not in the round robin)
+
+A `camp` soldier brain waits within 160 px of the nearest own factory (the `hold`
+brain, anchored on a factory) and fights only what comes near; the minions are on
+`defend`. Each camp against the 51 archetypes (both seeds, 816 battles), with the
+same armies at the old factory HP for comparison:
+
+| camp | army | now | old HP |
+|---|---|---|---|
+| `camp` | 3 Swarm Factories + 3 padded Basic Soldiers waiting by them | 62.7% | 55.0% |
+| `camptowers` | 2 padded Basic Towers round 3 Basic Factories | 49.9% | 50.6% |
+| `campfive` | 3 Steady Factories + Steady Archers + Steady Medics + 2 soldiers waiting | 44.7% | 48.4% |
+| `homeguard` | 2 towers + 3 Swarm Factories, minions defend | 56.9% | 52.8% |
+| `swarm` (same army as `camp`, attacking) | 3 Swarm Factories + 3 soldiers, rally | 32.4% | 20.8% |
+
+(The old-HP column re-prices the 2,400-HP factories at $247 a body under the new curve
+max, so it's approximate.)
+
+**What brittle factories do:** once an attacker reaches a camp, its factories go
+first. Against the rush, the bricks and the cavalry every camp loses at least 3 in 4,
+and all of its factories die before sudden death (asserted; against the template
+rush the camp's three Swarm Factories fall 17-28 s into the battle).
+
+**What they don't do:** most camp wins are standoffs. The camp beats the turtle, the
+sniper nests, the walled armies and every `hold` army (soldiers waiting by their
+towers) without contact until sudden death. Then the minions walk into the safe circle
+(their rally point moves to its centre) while the static towers and the waiting
+soldiers burn. Factory HP doesn't enter those battles, so no HP bound changes them.
+The `camp` brain also gains from the pool's chase-nearest bots walking into its
+soldiers and minions one by one. If camping still pays in real games, the levers are
+the standoff rules, not factory HP: for example `defend` minions staying by their
+factory when the circle closes (they now walk to its centre), or a factory's minions
+dying with it. **Watch item.**
+
+### Exploit search
+
+`npm run balance:exploit` (default: seed 1, 8 generations × 20 armies, a fresh start
+rather than the 10 × 24 run from the focus builds above; 126 armies, 28,764 battles,
+322 s). The search still designs soldiers and towers only (no factories). All five
+builds are on the **watch list**:
+
+| win rate | army | cost | beaten by |
+|---|---|---|---|
+| **88.4%** | 3 fast splash-20 tanks (1,920 HP, 20 dmg, range 70, speed 2.6, **flank**) + 3 ranged hitters (1,280 HP, 164 dmg, range 120, speed 2.4) | $9,846 | guardedcatapults 0-0-16, firenest 4-0-12, firesquad 6-0-10, buffedrush 7-0-9 |
+| 83.2% | the same family, 2 tanks + 4 lighter hitters (880 HP) | $9,500 | guardedcatapults 0-0-16, bombard 2-0-14, firenest 4-0-12, splashline 5-0-11, buffedrush, icemortars, firesquad |
+| 77.0% | 4 range-160 splash-20 soldiers (960 HP, 164 dmg, speed 1.3) | $8,446 | bricks, snipers, longbow, healerball, guardedcatapults 0-0-16; shatter, cavalry, tanks |
+| 75.9% | the same at size 9 | $8,375 | bricks, snipers, longbow, healerball, guardedcatapults 0-0-16; cavalry, bombard, tanks |
+| 70.6% | 5 towers (three range 260-270 splash-40 snipers, two range-120 hitters) | $9,755 | homeguard 0-0-16, cavalry 0-0-16, factories5 1-0-15, brutes, elemfactories, archers, stormrunners, runners |
+
+The same "tanks in front, hitters behind" family as before, at lower rates than the
+94% builds of the longer run; nothing here is about factories. The tower build is beaten
+outright by the factory armies (homeguard 16-0, factories5 15-1), so factories still
+answer a turtle.
