@@ -1583,3 +1583,101 @@ The same "tanks in front, hitters behind" family as before, at lower rates than 
 94% builds of the longer run; nothing here is about factories. The tower build is beaten
 outright by the factory armies (homeguard 16-0, factories5 15-1), so factories still
 answer a turtle.
+
+## Factories stop at sudden death (2026-10-25)
+
+Plan §5.2, §6, §9.3, §14 "Factories stop at sudden death", §17. The user's chosen option
+for the factory camps (verbatim): "Factories stop at sudden death" — "No new minions
+once the safe circle starts shrinking, so camps can't out-produce a standoff."
+
+### What was built
+
+`factory.stopAtSuddenDeath` (config + `config/default.json`, /admin quick settings toggle
+under Walls & factories). When on:
+- no minion appears at or after `suddenDeath.startTick` (4,500); the timers stop and the
+  unbuilt minions are gone (`minionsLeft` = `canMake` = 0, the full grey "done" ring on
+  /screen); minions already out keep fighting;
+- stored burst minions already exist, so they still leave: the store empties itself as
+  soon as it can't fill before sudden death, at the latest at sudden death;
+- `self.factory.producing` is false once no new minion can appear (always true when off);
+- E is priced over the production window: min(12, floor((startTick − 1) / interval)).
+
+**It ships off by default** (judgement call, reversible in one click): the numbers below
+show it neither brings the camp down nor keeps the rules passing.
+
+### Prices (with the option on)
+
+| factory | today (off) | on, discount 0.5, cap 12 (honest E) | on, discount 0.79, cap 8 (prices kept) |
+|---|---|---|---|
+| Basic (360 HP, 600) | $2,194 | $1,486 (E 7) | $2,200 (+0.3%) |
+| Swarm (360, 300) | $2,371 | $2,371 (E 12) | $2,479 (+4.6%, E 8) |
+| Steady (360, 900) | $1,486 | $955 (E 4) | $1,363 (−8.3%) |
+| Fortress (1,200, 1,200) | $2,135 | $1,781 (E 3) | $2,087 (−2.2%) |
+| cheapest (120, 1,200) | $996 | $642 (E 3) | $948 (−4.8%) |
+
+With the cap at 12, no single discount keeps both the Swarm Factory (still 12 minions in
+75 s) and the slower ones (about 5/8 of their minions) at today's prices: 0.79 keeps the
+Basic Factory but makes the Swarm Factory $3,595 (over the $3,000 cap) and the Archer Nest $4,351. Cap 8 plus
+0.79 keeps all five within 8%.
+
+### Factory camps (each against the 51 archetypes, both seeds, 816 battles)
+
+| camp | off (today) | on, 0.5 / 12 | on, 0.79 / 8 |
+|---|---|---|---|
+| `camp` (3 Swarm Factories + soldiers waiting) | 64.1% | 62.3% | 60.5% |
+| `camptowers` | 50.6% | 62.9% | 54.5% |
+| `campfive` | 45.1% | 55.9% | 46.6% |
+| `homeguard` (in the matrix) | 58.4% | 56.5% | 59.2% |
+
+(64.1% counts draws as half against the 51 archetypes; the 62.7% in "Brittle factories"
+is the same army under the earlier count.) The camp wins its standoffs with the minions
+it already has when the circle starts; new minions after that hardly mattered.
+
+### Full matrix (51 archetypes, 800 battles each, seeds 11 and 4242)
+
+| archetype | off (today) | on, 0.5 / 12 | on, 0.79 / 8 |
+|---|---|---|---|
+| splashline | 68.2% | 73.9% | 75.4% |
+| exploit | 67.8% | 71.4% | 75.1% |
+| guardedcatapults | 65.8% | 71.8% | 71.2% |
+| bricks | 72.4% | 70.5% | 72.4% |
+| soldiersFilled | 70.4% | 69.0% | 70.5% |
+| cavalry | 68.4% | 66.8% | 68.5% |
+| mortars | 59.2% | 67.2% | 67.1% |
+| homeguard | 58.4% | 56.5% | 59.2% |
+| factories5 | 45.6% | 60.8% | 44.1% |
+| elemfactories | 50.6% | 58.8% | 48.8% |
+| stormrunners | 50.5% | 41.9% | 21.6% |
+| brutes | 55.2% | 37.0% | 11.1% |
+| bunker | 42.1% | 40.2% | 38.5% |
+| archers | 38.2% | 37.5% | 37.9% |
+| medictent | 32.6% | 23.4% | 33.4% |
+| raiders | 45.0% | 53.6% | 41.9% |
+| swarm | 32.0% | 25.5% | 24.0% |
+| tmix | 49.4% | 23.5% | 29.6% |
+| quad | 33.6% | 16.8% | 16.5% |
+| runners | 29.0% | 16.5% | 4.6% |
+
+Off: **PASS, 249 rules** (unchanged; `npm run balance` PASS). On, 0.5 / 12: splashline,
+exploit and guardedcatapults over the 70% cap and "brutes beat fortress ≥ 3 in 4" fails
+(0-16). On, 0.79 / 8: the same three over the cap and the same shape check fails.
+Attacking factory armies lose their late waves (brutes, runners, storm runners, the
+template mixes); the cheaper slow-factory armies gain (factories5, elemfactories).
+
+### Exploit search with the option on
+
+`npm run balance:exploit -- --config '{"factory":{"stopAtSuddenDeath":true}}'` (seed 1,
+8 × 20, 129 armies, 29,376 battles, 485 s): two tower builds on the watch list.
+
+| win rate | army | cost | beaten by |
+|---|---|---|---|
+| 72.3% | 2 range-260 splash-20 snipers (1,120 HP, 180 dmg) + 2 lightning splash-20 towers (1,280 HP, 80 dmg), focus | $9,424 | homeguard 0-0-16, elemfactories 1-0-15, bricks, archers, shatter, healerball 2-0-14 |
+| 70.2% | 2 soldiers (splash tank, ice) + 2 splash-20 towers + 2 lightning towers, hold, focus | $9,442 | archers, homeguard, elemfactories, factories5 0-0-16 |
+
+With the option off nothing changes, so the watch list is the one in "Brittle factories".
+
+### If camping still pays
+
+The levers named in "Brittle factories" remain: `defend` minions staying by their
+factory when the circle closes (they now walk to its centre), or a factory's minions
+dying with it. **Watch item.**
