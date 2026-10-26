@@ -107,7 +107,7 @@ How it all fits together (components, game flow, sandbox, sim, API): [docs/archi
 | `config/default.json` | All game tunables (costs, caps, budget, timers, points); also editable live in /admin |
 | `scripts/` | Dev/start launchers, bots, balance tools |
 | `tests/` | Vitest suites, fixtures, load test |
-| `docs/` | [architecture.md](docs/architecture.md) and the README screenshots |
+| `docs/` | [architecture.md](docs/architecture.md), [decisions.md](docs/decisions.md) and the README screenshots |
 | `data/` | Runtime state (gitignored): players, units, replays |
 
 ## Prerequisites
@@ -240,6 +240,7 @@ How the test passes and the balance tools work:
 - [docs/architecture.md](docs/architecture.md): how the game is built (machines,
   repo layout, game flow, auth, unit contract, economy, validation, sandbox,
   simulation, API and MCP, AI seats, config, testing, conventions).
+- [docs/decisions.md](docs/decisions.md): the design decisions and why.
 - [sessions/README.md](sessions/README.md): the AI session host in depth.
 - [packages/starter-kit/](packages/starter-kit/): what the AI helpers read
   (`CLAUDE.md.tmpl`) and the prompt ideas for players (`PROMPTS.md`).

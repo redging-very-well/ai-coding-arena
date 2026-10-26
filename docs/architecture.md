@@ -2,7 +2,8 @@
 
 How the game is put together, for anyone (person or coding agent) changing it.
 [README.md](../README.md) covers what the game is and how to run it;
-[sessions/README.md](../sessions/README.md) covers the AI session host in depth.
+[sessions/README.md](../sessions/README.md) covers the AI session host in depth;
+[decisions.md](decisions.md) lists the design decisions and why they were made.
 Where this file and the code disagree, the code wins.
 
 ## 1. Machines and components
