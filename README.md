@@ -79,7 +79,7 @@ After the last round comes an awards ceremony on the projector.
                  │ terminal traffic (ttyd, :778N)    │ MCP tools (submit_unit, ...)
                  ▼                                   │
   ┌─────────────────────────────────────────────────────────────────┐
-  │ AI session host (Docker): one container per seat 1-8                 │
+  │ AI session host (Docker): one container per seat 1-8            │
   │ ttyd -> Claude Code or Codex in that seat's kit folder /kit     │
   └──────────────┬──────────────────────────────────────────────────┘
                  ▼ internet
@@ -93,7 +93,7 @@ After the last round comes an awards ceremony on the projector.
 - The server, the AI session host and the player laptops are usually separate
   machines on a router you bring. For a try-out everything can run on one.
 
-The full design is in [plan.md](plan.md) (§2 architecture, §3 game flow).
+How it all fits together (components, game flow, sandbox, sim, API): [docs/architecture.md](docs/architecture.md).
 
 ## Repo layout
 
@@ -107,7 +107,7 @@ The full design is in [plan.md](plan.md) (§2 architecture, §3 game flow).
 | `config/default.json` | All game tunables (costs, caps, budget, timers, points); also editable live in /admin |
 | `scripts/` | Dev/start launchers, bots, balance tools |
 | `tests/` | Vitest suites, fixtures, load test |
-| `docs/` | Balance, load, visual QA and dry-run notes |
+| `docs/` | [architecture.md](docs/architecture.md) and the README screenshots |
 | `data/` | Runtime state (gitignored): players, units, replays |
 
 ## Prerequisites
@@ -149,7 +149,7 @@ server (hot reload).
 ## Event-day setup (two machines)
 
 Full details, sizing, firewall rules and troubleshooting:
-[sessions/README.md](sessions/README.md) and [plan.md §15](plan.md).
+[sessions/README.md](sessions/README.md).
 
 **Game server laptop:**
 
@@ -218,7 +218,7 @@ key): any seat could read its own login.
 - **Config editor** for costs, caps, budget, timers and points (units are
   re-priced on save), server info with LAN URLs and QR codes, and Wipe.
 
-See [plan.md §12.3](plan.md) for the full list.
+More in [docs/architecture.md](docs/architecture.md) (client pages).
 
 ## Testing and balance tooling
 
@@ -232,15 +232,14 @@ See [plan.md §12.3](plan.md) for the full list.
 | `npm run loadtest` | Drive a full 8-player match against a running server |
 | `make bots PLAYERS=n` | Fake players for rehearsals |
 
-Notes and results: [docs/balance.md](docs/balance.md),
-[docs/load.md](docs/load.md), [docs/visual-qa.md](docs/visual-qa.md),
-[docs/dryrun-report.md](docs/dryrun-report.md), and [plan.md §14](plan.md)
-(tests and the dress-rehearsal checklist).
+How the test passes and the balance tools work:
+[docs/architecture.md](docs/architecture.md) (testing and balance tooling).
 
 ## More reading
 
-- [plan.md](plan.md): the full spec (unit contract §5, economy §6, sandbox §8,
-  simulation §9, API and MCP §10, starter kit and AI session host §11, UI §12,
-  ops and event day §15, decisions log §17).
+- [docs/architecture.md](docs/architecture.md): how the game is built (machines,
+  repo layout, game flow, auth, unit contract, economy, validation, sandbox,
+  simulation, API and MCP, AI seats, config, testing, conventions).
 - [sessions/README.md](sessions/README.md): the AI session host in depth.
-- [docs/](docs/): balance, load and QA reports.
+- [packages/starter-kit/](packages/starter-kit/): what the AI helpers read
+  (`CLAUDE.md.tmpl`) and the prompt ideas for players (`PROMPTS.md`).

@@ -1,11 +1,11 @@
 // packages/shared/src/contract.ts
 //
-// The unit contract (plan §5). The block between the BEGIN/END markers is the
-// verbatim contract served by `get_unit_contract` and copied into the kit's
-// CLAUDE.md: keep it identical to the plan. Engine-side additions follow below
-// the END marker.
+// The unit contract. The block between the BEGIN/END markers is the verbatim
+// contract served by `get_unit_contract` and copied into the kit's CLAUDE.md
+// (packages/starter-kit/CLAUDE.md.tmpl): keep the two identical. Engine-side
+// additions follow below the END marker.
 
-// --- BEGIN CONTRACT (plan §5, verbatim) ---
+// --- BEGIN CONTRACT (verbatim) ---
 export type UnitType = 'soldier' | 'tower' | 'wall' | 'factory';   // §5.2
 export type BodyType = UnitType | 'minion'; // minions are made by factories: you see them, you never submit one
 export type MinionKind = 'grunt' | 'archer' | 'runner' | 'brute' | 'medic'; // what a factory builds (§5.3, medic §5.5)

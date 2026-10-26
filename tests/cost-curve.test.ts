@@ -7,8 +7,8 @@
 // supportPower and supportRange), on a deterministic grid plus seeded random
 // sampling: monotonic, convex, exact at max / half max, concentration penalty
 // (one doubled unit never beats two normal ones once a stat reaches 65% of its
-// max), archetype guards (incl. the plan §6 reference table, parsed from
-// plan.md) and config guards.
+// max), archetype guards (incl. the reference table in
+// tests/fixtures/economy-reference.md) and config guards.
 
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -350,10 +350,10 @@ describe('cost curve: archetype guards', () => {
     expect(cost(sniper)).toBeLessThanOrEqual(cap);
   });
 
-  it('every plan §6 reference row matches computeCost exactly', () => {
-    const plan = readFileSync(new URL('../plan.md', import.meta.url), 'utf8');
+  it('every reference row matches computeCost exactly', () => {
+    const ref = readFileSync(new URL('./fixtures/economy-reference.md', import.meta.url), 'utf8');
     // "Reference units (curve k = 1)" (cost.test.ts checks every column; here the plain stat rows).
-    const section = plan.split('### Reference units (curve k = 1)')[1]!.split('\n### ')[0]!;
+    const section = ref.split('### Reference units (curve k = 1)')[1]!.split('\n### ')[0]!;
     const rows = section.split('\n').filter((l) => l.startsWith('| ') && !l.startsWith('| Unit') && !l.startsWith('|---'));
     expect(rows.length).toBeGreaterThanOrEqual(40);
     let plain = 0;

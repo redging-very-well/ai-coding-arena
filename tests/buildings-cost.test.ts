@@ -40,10 +40,10 @@ const factory = (hp: number, interval: number): CostStats => ({
 const cost = (s: CostStats, cfg: GameConfig = C) => computeCost(s, cfg.cost, pricingOf(cfg)).cost;
 const cfg = (patch: unknown): GameConfig => deepMerge(C, patch);
 
-const PLAN = readFileSync(new URL('../plan.md', import.meta.url), 'utf8');
-/** The rows of the plan table that follows `marker` inside "Reference walls, minions and factories (curve k = 1)". */
-function planTable(marker: string): string[][] {
-  const section = PLAN.slice(PLAN.indexOf('### Reference walls, minions and factories (curve k = 1)'));
+const REF = readFileSync(new URL('./fixtures/economy-reference.md', import.meta.url), 'utf8');
+/** The rows of the reference table that follows `marker` inside "Reference walls, minions and factories (curve k = 1)". */
+function refTable(marker: string): string[][] {
+  const section = REF.slice(REF.indexOf('### Reference walls, minions and factories (curve k = 1)'));
   const at = section.indexOf(marker);
   expect(at, marker).toBeGreaterThan(-1);
   const lines = section.slice(at).split('\n');
@@ -59,8 +59,8 @@ const dollars = (cell: string) => Number(/\$([\d,]+)/.exec(cell)![1]!.replace(/,
 const f2 = (n: number) => Math.round(n * 100) / 100;
 
 describe('§6 reference walls, minions and factories (curve k = 1)', () => {
-  it('every wall row of the plan table: linear, curve, raw and cost', () => {
-    const rows = planTable('Walls, `raw =');
+  it('every wall row of the reference table: linear, curve, raw and cost', () => {
+    const rows = refTable('Walls, `raw =');
     expect(rows.length).toBe(8);
     for (const [hp, linear, curve, raw, price] of rows as Array<[string, string, string, string, string]>) {
       const r = computeCost(wall(Number(hp)), C.cost);
@@ -72,7 +72,7 @@ describe('§6 reference walls, minions and factories (curve k = 1)', () => {
   });
 
   it('every minion kind × element: raw → minionCost → minionValue; the medic ignores its element', () => {
-    const rows = planTable('Minions are priced with the soldier formula');
+    const rows = refTable('Minions are priced with the soldier formula');
     expect(rows.map((r) => r[0])).toEqual(['grunt', 'archer', 'runner', 'brute', 'medic']);
     const P = pricingOf(C);
     for (const row of rows) {
@@ -88,7 +88,7 @@ describe('§6 reference walls, minions and factories (curve k = 1)', () => {
   });
 
   it('every factory row: body raw, body, production and cost (the three over $3,000 are rejected)', () => {
-    const rows = planTable('Factories:');
+    const rows = refTable('Factories:');
     expect(rows.length).toBe(19);
     expect(rows.filter((r) => /rejected/.test(r[9]!)).length).toBe(3);
     for (const [name, kind, element, hp, interval, e, bodyRaw, body, production, price] of rows as Array<

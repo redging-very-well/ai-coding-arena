@@ -88,13 +88,10 @@ describe('$10,000 redesign config keys (§6 coefficients, bounds and config keys
   });
 });
 
-describe('unit contract (§5)', () => {
-  it('the verbatim block in shared/contract.ts matches plan §5 exactly', () => {
-    const plan = readFileSync(new URL('../plan.md', import.meta.url), 'utf8');
+describe('unit contract', () => {
+  it('shared/contract.ts carries the verbatim contract block', () => {
     const contract = readFileSync(new URL('../packages/shared/src/contract.ts', import.meta.url), 'utf8');
-    const planBlock = plan.split('// packages/shared/src/contract.ts\n')[1]!.split('\n```')[0]!;
-    const codeBlock = contract.split('// --- BEGIN CONTRACT (plan §5, verbatim) ---\n')[1]!.split('// --- END CONTRACT ---')[0]!;
-    expect(codeBlock.trimEnd()).toBe(planBlock.trimEnd());
+    const codeBlock = contract.split('// --- BEGIN CONTRACT (verbatim) ---\n')[1]!.split('// --- END CONTRACT ---')[0]!;
     expect(codeBlock).toContain('size?: number;');
     expect(codeBlock).toContain('sprite?(): SpriteSpec;');
   });

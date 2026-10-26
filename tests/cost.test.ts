@@ -1,5 +1,5 @@
-// The $10,000 redesign cost formula (plan §6 "Economy: formula"): every row
-// of "Reference units (curve k = 1)" parsed from plan.md and checked column
+// The $10,000 redesign cost formula: every row of "Reference units (curve
+// k = 1)" parsed from tests/fixtures/economy-reference.md and checked column
 // by column (cost, raw, linear, curve, heal, every factor, the aura and the
 // "$5,000 game" price of the same unit in M8.8), the factor tables (copy ramp
 // included), the breakdown texts, the levers of UNIT_TOO_EXPENSIVE and the
@@ -24,9 +24,9 @@ import {
 
 const coeffs = DEFAULT_CONFIG.cost;
 const cap = DEFAULT_CONFIG.caps.unitCost;
-const PLAN = readFileSync(new URL('../plan.md', import.meta.url), 'utf8');
+const REF = readFileSync(new URL('./fixtures/economy-reference.md', import.meta.url), 'utf8');
 
-/** Rounded like the plan tables (tables.mjs f2): 2 decimals, no trailing zeros. */
+/** Rounded like the reference tables: 2 decimals, no trailing zeros. */
 const f2 = (n: number) => Math.round(n * 100) / 100;
 const num = (cell: string) => Number(cell.replace(/[×+$,*]/g, '').trim());
 
@@ -48,11 +48,11 @@ interface Row {
   old: string;
 }
 
-/** The plan table under `heading`: its data rows as cell arrays. */
+/** The reference table under `heading`: its data rows as cell arrays. */
 function tableRows(heading: string): string[][] {
-  const at = PLAN.indexOf(`### ${heading}\n`);
+  const at = REF.indexOf(`### ${heading}\n`);
   expect(at, heading).toBeGreaterThan(-1);
-  const body = PLAN.slice(at).split('\n').slice(1);
+  const body = REF.slice(at).split('\n').slice(1);
   const start = body.findIndex((l) => l.startsWith('|'));
   const rows: string[][] = [];
   for (const line of body.slice(start + 2)) {
@@ -118,7 +118,7 @@ const M88 = {
 };
 
 describe('computeCost: §6 "Reference units (curve k = 1)", every column', () => {
-  it('parses every row of the plan table', () => {
+  it('parses every row of the reference table', () => {
     expect(UNITS.length).toBeGreaterThanOrEqual(40);
     expect(UNITS.map((u) => u.name)).toContain('Basic Soldier (template)');
     expect(UNITS.map((u) => u.name)).toContain('Max healer');
@@ -173,7 +173,7 @@ describe('computeCost: §6 "Reference units (curve k = 1)", every column', () =>
 });
 
 describe('the factor tables (§6 Factor tables, tables.mjs)', () => {
-  const block = PLAN.slice(PLAN.indexOf('### Factor tables'));
+  const block = REF.slice(REF.indexOf('### Factor tables'));
   const line = (prefix: string) => block.split('\n').find((l) => l.startsWith(prefix))!;
   const pairs = (l: string) => [...l.matchAll(/(\d+(?:\/\d+)?):×([\d.]+)/g)].map((m) => [m[1]!, Number(m[2])] as const);
 

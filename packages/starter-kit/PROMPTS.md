@@ -4,6 +4,8 @@ You don't write any code. Just tell your AI helper (Claude or Codex) what you wa
 
 ## First time
 
+Your AI helper already knows who you are when you join on the game page. If it asks:
+
 - "Hi! My player name is **___** and my PIN is **____**."
 - "Are you connected to Pixel Clash?"
 
@@ -25,6 +27,7 @@ You don't write any code. Just tell your AI helper (Claude or Codex) what you wa
 - "Make a runner factory that saves up 4 and then rushes the weakest enemy."
 - "Make brutes that smash through walls."
 - "My soldiers keep getting stuck behind walls. Make them smash through."
+- "Give my factory its own minion code: its archers stay next to the factory."
 
 ## Fire, ice, lightning and helpers
 
