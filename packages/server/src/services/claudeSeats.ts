@@ -9,13 +9,15 @@
 // seats off (`setEnabled`): never assigned or pickable; turning off a held
 // seat moves its player to the lowest free seat that is on. `seatLogin` hands
 // the seat's agent-loop the player's login (§11.2 e), so the AI helper starts
-// logged in.
+// logged in, and the shared agent login pasted in /admin (§11.2 f:
+// `setAgentCredentials`, write-only), so no seat needs its own /login.
 //
 // The live side (who holds a seat's terminal, the seat probe) belongs to the
 // terminal proxy (src/terminal), which attaches itself as `TerminalControl`.
 // Without it (service-only tests) statuses are `unknown` and nothing is live.
 
 import {
+  type AgentCredentialKind,
   CLAUDE_SEATS,
   type ClaudeSeatAssignDTO,
   fail,
@@ -26,6 +28,8 @@ import {
   type ClaudeSeatsDTO,
   type PlayerClaudeSeatStatus,
   type Result,
+  type SeatCredentialDTO,
+  type SeatCredentialEnv,
   type SeatLoginDTO,
   type TerminalDTO,
   type TerminalLiveDTO,
@@ -33,7 +37,7 @@ import {
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { RateLimiter } from '../util/ratelimit.js';
 import type { Game } from './game.js';
-import type { PlayerRecord } from './store.js';
+import { AGENT_CREDENTIAL_RE, type PlayerRecord } from './store.js';
 
 /** ttyd host port of Claude seat 1 (seat N → 7780 + N, §11.1). */
 export const CLAUDE_SEAT_BASE_PORT = 7780;
@@ -121,12 +125,50 @@ export function basicAuthMatches(header: unknown, secret: string | null): boolea
 /** A seat-login token: exactly 32 lowercase hex digits. */
 const SEAT_TOKEN_RE = /^[a-f0-9]{32}$/;
 
+const CREDENTIAL_KINDS: readonly AgentCredentialKind[] = ['claudeToken', 'anthropicApiKey', 'openaiApiKey'];
+
+const CREDENTIAL_TEXT: Readonly<Record<AgentCredentialKind, { name: string; hint: string }>> = {
+  claudeToken: {
+    name: 'The Claude Code token',
+    hint: 'Run `claude setup-token` on any machine logged in to the event account and paste the sk-ant-oat01-… line it prints.',
+  },
+  anthropicApiKey: {
+    name: 'The Anthropic API key',
+    hint: 'Paste an sk-ant-api03-… key from console.anthropic.com → API keys.',
+  },
+  openaiApiKey: {
+    name: 'The OpenAI API key',
+    hint: 'Paste an sk-… key from platform.openai.com → API keys.',
+  },
+};
+
+/** "…" + the last 4 characters: all an admin page ever sees of a stored agent login. */
+export function credentialHint(v: string | null): string | null {
+  return v ? `…${v.slice(-4)}` : null;
+}
+
+/**
+ * The shared login for a seat's agent (§11.2 f): Claude seats prefer the
+ * Claude Code token (the subscription) over an Anthropic API key; Codex seats
+ * get the OpenAI key. Null when nothing fitting is set.
+ */
+export function credentialForAgent(creds: Record<AgentCredentialKind, string | null>, agent: 'claude' | 'codex'): SeatCredentialDTO | null {
+  if (agent === 'codex') return creds.openaiApiKey ? { env: 'OPENAI_API_KEY', value: creds.openaiApiKey } : null;
+  if (creds.claudeToken) return { env: 'CLAUDE_CODE_OAUTH_TOKEN', value: creds.claudeToken };
+  if (creds.anthropicApiKey) return { env: 'ANTHROPIC_API_KEY', value: creds.anthropicApiKey };
+  return null;
+}
+
 export class ClaudeSeatsService {
   private terminals: TerminalControl | undefined;
   /** Player seat changes: 1 per second (§10.3). */
   private readonly changeLimiter = new RateLimiter(1, 1000);
   /** Failed seat logins per client address: 20 per minute. */
   private readonly seatLoginFails = new RateLimiter(20, 60_000);
+  /** Every seat login per client address (one per terminal open; 8 seats share the box's address): 120 per minute. */
+  private readonly seatLoginCalls = new RateLimiter(120, 60_000);
+  /** Which shared login each seat last fetched (§11.2 f; memory only, for /admin). */
+  private readonly sharedLogins = new Map<number, { env: SeatCredentialEnv; at: number }>();
 
   constructor(private readonly game: Game) {}
 
@@ -290,14 +332,20 @@ export class ClaudeSeatsService {
   }
 
   /**
-   * POST /api/seat-login (§11.2 e): a seat's agent-loop trades its player
+   * POST /api/seat-login (§11.2 e, f): a seat's agent-loop trades its player
    * token for that player's login, so the AI helper starts logged in. Only
-   * the Claude box can ask (Basic auth with the seat password), and only for
-   * the seat's current player.
+   * the Claude box can ask (Basic auth with the seat password, constant
+   * time), and only for the seat's current player.
+   *
+   * With `agent` ('claude' | 'codex', sent by entrypoints that know about
+   * shared logins) the answer also carries `credential`, the shared agent
+   * login from /admin (or null), and a missing or stale token is not an error:
+   * the agent still needs its login on an admin rescue or after a seat change.
+   * Without `agent` (an older seat image) the answer is `{name, apiKey}` as before.
    */
-  seatLogin(authHeader: unknown, seatIn: unknown, tokenIn: unknown, client = '?'): Result<SeatLoginDTO> {
-    const wait = this.seatLoginFails.check(client);
-    if (wait > 0) return fail('RATE_LIMITED', 'Too many failed seat logins. Wait and try again.', { details: { retryAfterMs: wait } });
+  seatLogin(authHeader: unknown, seatIn: unknown, tokenIn: unknown, client = '?', agentIn?: unknown): Result<SeatLoginDTO> {
+    const wait = Math.max(this.seatLoginFails.check(client), this.seatLoginCalls.hit(client));
+    if (wait > 0) return fail('RATE_LIMITED', 'Too many seat logins. Wait and try again.', { details: { retryAfterMs: wait } });
     const refuse = (r: Result<never>) => {
       this.seatLoginFails.hit(client);
       return r;
@@ -306,12 +354,53 @@ export class ClaudeSeatsService {
       return refuse(fail('BAD_LOGIN', 'Wrong seat password.', { hint: 'Send Basic auth player:<SEAT_SECRET>, the same value as in /admin.' }));
     }
     const seat = parseClaudeSeat(seatIn);
+    if (seat === null) return refuse(fail('BAD_CLAUDE_SEAT', `There is no AI seat ${String(seatIn)}. AI seats are 1-${CLAUDE_SEATS}.`));
+    const agent = agentIn === 'claude' || agentIn === 'codex' ? agentIn : null;
+    if (agentIn !== undefined && agent === null) return refuse(fail('BAD_REQUEST', 'agent must be "claude" or "codex".'));
     const token = typeof tokenIn === 'string' ? tokenIn : '';
-    const holder = seat === null ? undefined : this.holder(seat);
-    if (seat === null || !SEAT_TOKEN_RE.test(token) || !holder || seatPlayerToken(seat, holder.id) !== token) {
-      return refuse(fail('NOT_FOUND', "That token isn't this seat's player."));
+    const holder = this.holder(seat);
+    const player = holder && SEAT_TOKEN_RE.test(token) && seatPlayerToken(seat, holder.id) === token ? holder : undefined;
+    if (agent === null) {
+      if (!player) return refuse(fail('NOT_FOUND', "That token isn't this seat's player."));
+      return ok({ name: player.name, apiKey: player.apiKey });
     }
-    return ok({ name: holder.name, apiKey: holder.apiKey });
+    const credential = credentialForAgent(this.game.store.setup.agentCredentials, agent);
+    if (credential) this.sharedLogins.set(seat, { env: credential.env, at: Date.now() });
+    else this.sharedLogins.delete(seat);
+    this.game.notifier.terminalsChanged?.();
+    return ok(player ? { name: player.name, apiKey: player.apiKey, credential } : { credential });
+  }
+
+  /**
+   * PUT /admin/agent-credentials (§11.2 f): set or clear the shared agent
+   * logins. `undefined` leaves a field, `null` or "" clears it. Whitespace is
+   * removed (a long token often wraps when copied from a terminal). Each seat
+   * picks the change up the next time its terminal opens.
+   */
+  setAgentCredentials(patch: Partial<Record<AgentCredentialKind, unknown>>): Result<AdminClaudeSeatsDTO> {
+    const next = { ...this.game.store.setup.agentCredentials };
+    for (const kind of CREDENTIAL_KINDS) {
+      const v = patch[kind];
+      if (v === undefined) continue;
+      if (v === null || v === '') {
+        next[kind] = null;
+        continue;
+      }
+      const s = typeof v === 'string' ? v.replace(/\s+/g, '') : '';
+      if (!AGENT_CREDENTIAL_RE[kind].test(s)) {
+        const other = CREDENTIAL_KINDS.find((k) => k !== kind && AGENT_CREDENTIAL_RE[k].test(s));
+        const { name, hint } = CREDENTIAL_TEXT[kind];
+        return fail('BAD_AGENT_CREDENTIAL', `${name} doesn't look right.`, {
+          hint: other ? `That looks like ${CREDENTIAL_TEXT[other].name.replace(/^The /, 'the ')}: paste it in that field instead.` : hint,
+          details: { field: kind },
+        });
+      }
+      next[kind] = s;
+    }
+    this.game.store.setup = { ...this.game.store.setup, agentCredentials: next };
+    this.game.store.save();
+    this.game.notifier.terminalsChanged?.();
+    return ok(this.adminDTO(false));
   }
 
   /** Kick: the seat is free again (the record keeps nothing). */
@@ -340,7 +429,8 @@ export class ClaudeSeatsService {
   }
 
   // -------------------------------------------------------------------------
-  // DTOs (none of them carries the seat password, except adminDTO(true))
+  // DTOs (none of them carries the seat password, except adminDTO(true), or
+  // a shared agent login: only seatLogin hands those out)
   // -------------------------------------------------------------------------
 
   playerDTO(player: PlayerRecord): ClaudeSeatsDTO {
@@ -383,12 +473,19 @@ export class ClaudeSeatsService {
         status,
         checkedAt: probe?.checkedAt ?? null,
         live: this.live(seat),
+        sharedLogin: this.sharedLogins.get(seat) ?? null,
       };
       if (status === 'down' && probe?.reason) row.reason = probe.reason;
       if (details && claudeBoxHost) row.directUrl = directSeatUrl(claudeBoxHost, seat);
       return row;
     });
-    const out: AdminClaudeSeatsDTO = { boxHost: claudeBoxHost, seatSecretSet: !!seatSecret, seats };
+    const creds = this.game.store.setup.agentCredentials;
+    const agentCredentials = {
+      claudeToken: credentialHint(creds.claudeToken),
+      anthropicApiKey: credentialHint(creds.anthropicApiKey),
+      openaiApiKey: credentialHint(creds.openaiApiKey),
+    };
+    const out: AdminClaudeSeatsDTO = { boxHost: claudeBoxHost, seatSecretSet: !!seatSecret, agentCredentials, seats };
     if (details) out.seatSecret = seatSecret;
     return out;
   }

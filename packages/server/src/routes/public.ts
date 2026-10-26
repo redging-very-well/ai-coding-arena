@@ -84,9 +84,11 @@ export function publicRoutes(game: Game): Router {
   // The Claude box's agent-loop (§11.2 e): the seat's player token -> that
   // player's login, so the AI helper starts logged in. Basic auth with the
   // seat password; never reachable with a player's or admin's cookie alone.
+  // With `agent`, also the shared agent login from /admin (§11.2 f).
   r.post('/seat-login', (req, res) => {
     const b = body(req);
-    send(res, game.claudeSeats.seatLogin(req.headers.authorization, b.seat, b.token, req.ip ?? req.socket.remoteAddress ?? '?'));
+    res.setHeader('Cache-Control', 'no-store');
+    send(res, game.claudeSeats.seatLogin(req.headers.authorization, b.seat, b.token, req.ip ?? req.socket.remoteAddress ?? '?', b.agent));
   });
 
   r.post('/logout', (req, res) => {

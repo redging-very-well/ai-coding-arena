@@ -4,10 +4,12 @@
 // pickable; turning off a held seat moves its player to another free seat),
 // live status, assigned player (reassign / Unassign), who holds the live
 // terminal, and "Open terminal" (rescue: the seat's terminal through the
-// proxy, in its own tab).
+// proxy, in its own tab). "Agent login" (§11.2 f): the shared Claude Code
+// token / API keys every seat's agent starts with, write-only (only "…last 4"
+// ever comes back), and per seat which shared login its last start fetched.
 
 import { useEffect, useState } from 'preact/hooks';
-import type { AdminClaudeSeatDTO, AdminClaudeSeatsDTO, ClaudeSeatStatus } from '@pixel-clash/shared';
+import type { AdminClaudeSeatDTO, AdminClaudeSeatsDTO, AgentCredentialKind, ClaudeSeatStatus, SeatCredentialEnv } from '@pixel-clash/shared';
 import { api } from '../common/api.js';
 import { copyText, cx } from '../common/ui.js';
 import { adminTerminalTabName, terminalPath } from '../play/claudePane.js';
@@ -34,6 +36,19 @@ function ago(ms: number | null, now: number): string {
   const m = Math.round(s / 60);
   return m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`;
 }
+
+/** Same shapes as the server (§11.2 f). Whitespace is removed before the check (wrapped pastes). */
+export const AGENT_CREDENTIAL_RE: Readonly<Record<AgentCredentialKind, RegExp>> = {
+  claudeToken: /^sk-ant-oat\d{2}-[A-Za-z0-9_-]{20,500}$/,
+  anthropicApiKey: /^sk-ant-api\d{2}-[A-Za-z0-9_-]{20,500}$/,
+  openaiApiKey: /^(?!sk-ant-)sk-[A-Za-z0-9_-]{20,500}$/,
+};
+
+const SHARED_LOGIN_TEXT: Readonly<Record<SeatCredentialEnv, string>> = {
+  CLAUDE_CODE_OAUTH_TOKEN: 'shared Claude token',
+  ANTHROPIC_API_KEY: 'shared Anthropic key',
+  OPENAI_API_KEY: 'shared OpenAI key',
+};
 
 function liveText(live: AdminClaudeSeatDTO['live'], now: number): string {
   if (!live) return '–';
@@ -134,6 +149,8 @@ export function ClaudeSeats() {
 
       <SeatPassword set={seats?.seatSecretSet ?? false} value={details?.seatSecret ?? null} show={showDetails} onSave={saveSetup} />
 
+      <AgentLogin hints={seats?.agentCredentials ?? null} />
+
       <h3>Seats</h3>
       <div class="table-wrap">
         <table class="seat-table">
@@ -144,6 +161,7 @@ export function ClaudeSeats() {
               <th>Status</th>
               <th>Player</th>
               <th>Live terminal</th>
+              <th title="Which shared agent login the seat's last terminal start fetched">Agent login</th>
               <th />
               {showDetails && <th>Direct URL</th>}
             </tr>
@@ -209,6 +227,9 @@ export function ClaudeSeats() {
                   )}
                 </td>
                 <td>{liveText(r.live, now)}</td>
+                <td title={r.sharedLogin ? `fetched ${ago(r.sharedLogin.at, now)}` : 'No shared login fetched since the server started: the seat uses its own stored login, if any'}>
+                  {r.sharedLogin ? SHARED_LOGIN_TEXT[r.sharedLogin.env] : <span class="dim">–</span>}
+                </td>
                 <td>
                   <OpenTerminal row={r} />
                 </td>
@@ -330,6 +351,112 @@ function SeatPassword(props: { set: boolean; value: string | null; show: boolean
           {text && !valid && <span class="warn-text small">12-64 characters: letters, digits, . _ ~ - (no spaces or :)</span>}
         </form>
       )}
+    </div>
+  );
+}
+
+const AGENT_FIELDS: ReadonlyArray<{ kind: AgentCredentialKind; label: string; placeholder: string; help: string }> = [
+  {
+    kind: 'claudeToken',
+    label: 'Claude Code token',
+    placeholder: 'sk-ant-oat01-…',
+    help: 'Claude seats. Run `claude setup-token` on any machine logged in to the event account and paste the token it prints.',
+  },
+  {
+    kind: 'anthropicApiKey',
+    label: 'Anthropic API key (optional)',
+    placeholder: 'sk-ant-api03-…',
+    help: 'Claude seats, instead of the token (the token wins when both are set). From console.anthropic.com → API keys.',
+  },
+  {
+    kind: 'openaiApiKey',
+    label: 'OpenAI API key',
+    placeholder: 'sk-…',
+    help: 'Codex seats. From platform.openai.com → API keys.',
+  },
+];
+
+/**
+ * The shared agent logins (§11.2 f). Write-only: once saved, the page only
+ * ever gets "…last 4" back, so it is safe on the projector.
+ */
+function AgentLogin({ hints }: { hints: AdminClaudeSeatsDTO['agentCredentials'] | null }) {
+  const { act, busy, setSeats } = useAdmin();
+  const [editing, setEditing] = useState<AgentCredentialKind | null>(null);
+  const [text, setText] = useState('');
+  const value = text.replace(/\s+/g, '');
+  const save = async (kind: AgentCredentialKind, v: string | null, okText: string) => {
+    const r = await act(() => api.admin.setAgentCredentials({ [kind]: v }), okText);
+    if (r) {
+      setSeats(r);
+      setEditing(null);
+      setText('');
+    }
+  };
+  return (
+    <div class="agent-login">
+      <h3>Agent login</h3>
+      <p class="dim small">
+        Paste one login here and every seat's agent starts with it (the next time its terminal opens), so no seat needs its own /login.
+        Without one, each seat uses the login stored in it. Any seat's agent can read this login, so use a dedicated event account and
+        revoke the token or keys after the event.
+      </p>
+      {AGENT_FIELDS.map((f) => {
+        const hint = hints?.[f.kind] ?? null;
+        const valid = AGENT_CREDENTIAL_RE[f.kind].test(value);
+        return (
+          <div key={f.kind} class="agent-cred">
+            {editing !== f.kind ? (
+              <div class="btn-row">
+                <span>
+                  {f.label}: {hint ? <b class="yes">set ({hint})</b> : <span class="dim">not set</span>}
+                </span>
+                <button
+                  class="btn small"
+                  disabled={busy}
+                  onClick={() => {
+                    setText('');
+                    setEditing(f.kind);
+                  }}
+                >
+                  {hint ? 'Replace' : 'Set'}
+                </button>
+                {hint && (
+                  <button class="btn small" disabled={busy} onClick={() => void save(f.kind, null, `${f.label.replace(/ \(optional\)$/, '')} cleared`)}>
+                    Clear
+                  </button>
+                )}
+              </div>
+            ) : (
+              <form
+                class="btn-row"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (valid) void save(f.kind, value, `${f.label.replace(/ \(optional\)$/, '')} saved`);
+                }}
+              >
+                <input
+                  type="password"
+                  autoComplete="off"
+                  spellcheck={false}
+                  aria-label={f.label}
+                  placeholder={f.placeholder}
+                  value={text}
+                  onInput={(e) => setText(e.currentTarget.value)}
+                />
+                <button class="btn primary" disabled={busy || !valid}>
+                  Save
+                </button>
+                <button type="button" class="btn" onClick={() => setEditing(null)}>
+                  Cancel
+                </button>
+                {text && !valid && <span class="warn-text small">Should look like {f.placeholder}</span>}
+              </form>
+            )}
+            <p class="dim small">{f.help}</p>
+          </div>
+        );
+      })}
     </div>
   );
 }

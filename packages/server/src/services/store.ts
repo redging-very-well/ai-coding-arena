@@ -11,6 +11,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
+  AgentCredentialKind,
   BadgeId,
   BattleReportDTO,
   BattleEndDTO,
@@ -262,6 +263,39 @@ export interface SetupRecord extends SetupSettingsDTO {
    * box address, so it survives a wipe. Empty (the default) = every seat on.
    */
   disabledClaudeSeats: number[];
+  /**
+   * The shared agent logins pasted in /admin (§11.2 f): venue state like the
+   * seat password, so they survive a wipe and restarts. Write-only: never in
+   * any payload (admins see only the last 4 characters); handed only to the
+   * Claude box by POST /api/seat-login.
+   */
+  agentCredentials: AgentCredentials;
+}
+
+export type AgentCredentials = Record<AgentCredentialKind, string | null>;
+
+export const noAgentCredentials = (): AgentCredentials => ({ claudeToken: null, anthropicApiKey: null, openaiApiKey: null });
+
+/**
+ * The shape of each shared agent login (§11.2 f; sessions/entrypoint.sh
+ * checks the same). Claude Code's `claude setup-token` prints sk-ant-oat01-…,
+ * an Anthropic API key is sk-ant-api03-…, an OpenAI key sk-… or sk-proj-….
+ */
+export const AGENT_CREDENTIAL_RE: Readonly<Record<AgentCredentialKind, RegExp>> = {
+  claudeToken: /^sk-ant-oat\d{2}-[A-Za-z0-9_-]{20,500}$/,
+  anthropicApiKey: /^sk-ant-api\d{2}-[A-Za-z0-9_-]{20,500}$/,
+  openaiApiKey: /^(?!sk-ant-)sk-[A-Za-z0-9_-]{20,500}$/,
+};
+
+/** Stored agent logins from an (edited) state file: anything of the wrong shape is dropped. */
+export function normalizeAgentCredentials(v: unknown): AgentCredentials {
+  const out = noAgentCredentials();
+  if (!v || typeof v !== 'object') return out;
+  for (const kind of Object.keys(out) as AgentCredentialKind[]) {
+    const x = (v as Record<string, unknown>)[kind];
+    if (typeof x === 'string' && AGENT_CREDENTIAL_RE[kind].test(x)) out[kind] = x;
+  }
+  return out;
 }
 
 export interface PersistedState {
@@ -329,7 +363,7 @@ export class Store {
   adminPassword: string | undefined;
   configPatch: DeepPartial<GameConfig> = {};
   /** /setup settings; kept across a wipe (they describe the venue, not the game). */
-  setup: SetupRecord = { claudeBoxHost: null, preferredUrl: null, seatSecret: null, disabledClaudeSeats: [] };
+  setup: SetupRecord = { claudeBoxHost: null, preferredUrl: null, seatSecret: null, disabledClaudeSeats: [], agentCredentials: noAgentCredentials() };
   /** Monotonic counter for join order. */
   private joinSeq = 0;
 
@@ -461,6 +495,7 @@ export class Store {
         preferredUrl: data.setup.preferredUrl ?? null,
         seatSecret: typeof data.setup.seatSecret === 'string' ? data.setup.seatSecret : null,
         disabledClaudeSeats: normalizeSeatList(data.setup.disabledClaudeSeats),
+        agentCredentials: normalizeAgentCredentials(data.setup.agentCredentials),
       };
     }
     // Claude seats are unique (§11.2 c): drop duplicates and junk from an edited file, and seats that are off.
@@ -522,7 +557,8 @@ export class Store {
     try {
       mkdirSync(this.dataDir, { recursive: true });
       const tmp = `${this.statePath}.${process.pid}.tmp`;
-      writeFileSync(tmp, JSON.stringify(data));
+      // Owner-only: it holds the seat password and the shared agent logins (§11.2 a, f).
+      writeFileSync(tmp, JSON.stringify(data), { mode: 0o600 });
       renameSync(tmp, this.statePath);
     } catch (err) {
       this.dirty = true;

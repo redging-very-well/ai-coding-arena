@@ -21,7 +21,9 @@
 //   POST   /login        {name,pin,claudeSeat?} -> LoginResponse (+ cookie)   BAD_LOGIN RATE_LIMITED
 //                                        claudeSeat: 'auto' | 1-8 (this laptop's seat, preferred) = also
 //                                        auto-assign an AI seat (§11.2 c); the answer then has `claudeSeat`
-//   POST   /seat-login   {seat,token} + Basic player:<seat password> -> SeatLoginDTO (the Claude box only, §11.2 e)
+//   POST   /seat-login   {seat,token?,agent?} + Basic player:<seat password> -> SeatLoginDTO (the Claude box only, §11.2 e).
+//                        With `agent` ('claude'|'codex'): also `credential`, the shared agent login from /admin
+//                        (§11.2 f), and a missing or stale token is not an error (credential only).
 //   POST   /logout                    -> {ok:true}
 //   GET    /me                        -> MeResponse
 //   GET    /rules                     -> RulesDTO
@@ -90,6 +92,9 @@
 //   PUT  /admin/claude-seats/:seat/enabled {enabled: boolean} -> AdminClaudeSeatsDTO (turn a seat on/off; off releases
 //                                        its player, who is moved to the lowest free seat that is on, if any)
 //   POST /admin/claude-seats/check    -> AdminClaudeSeatsDTO (probes every seat now)
+//   PUT  /admin/agent-credentials {claudeToken?, anthropicApiKey?, openaiApiKey?} (null/"" clears)
+//                                     -> AdminClaudeSeatsDTO (write-only: only the last 4 characters come back;
+//                                        BAD_AGENT_CREDENTIAL for a value of the wrong shape, §11.2 f)
 //
 // Seat terminal proxy (§11.2, same origin, not under /api; cookie auth: the
 // player assigned to Claude seat N, or the admin):
@@ -199,11 +204,28 @@ export interface ClaudeSeatAssignDTO {
   how: ClaudeSeatAssignHow;
 }
 
-/** POST /seat-login (the Claude box's agent-loop, §11.2 e): written as is to /kit/.pixel-clash/player.json. */
+/**
+ * POST /seat-login (the Claude box's agent-loop, §11.2 e): `name` + `apiKey`
+ * go to /kit/.pixel-clash/player.json. Without a valid token (an admin
+ * rescue, a stale token) and with `agent` sent, only `credential`. Key order
+ * is fixed (the entrypoint matches it strictly): name, apiKey, credential.
+ */
 export interface SeatLoginDTO {
-  name: string;
-  apiKey: string;
+  name?: string;
+  apiKey?: string;
+  /** Only when the request names `agent`: the shared agent login for it, or null (§11.2 f). */
+  credential?: SeatCredentialDTO | null;
 }
+
+/** The env var a seat's agent gets (only the agent process, never argv or logs). */
+export type SeatCredentialEnv = 'CLAUDE_CODE_OAUTH_TOKEN' | 'ANTHROPIC_API_KEY' | 'OPENAI_API_KEY';
+export interface SeatCredentialDTO {
+  env: SeatCredentialEnv;
+  value: string;
+}
+
+/** The shared agent logins pasted in /admin (§11.2 f). */
+export type AgentCredentialKind = 'claudeToken' | 'anthropicApiKey' | 'openaiApiKey';
 
 /** GET /me */
 export interface MeResponse {
@@ -1328,6 +1350,11 @@ export interface AdminClaudeSeatDTO {
   live: (TerminalLiveDTO & { playerName?: string }) | null;
   /** `http://<box>:778N/terminal/N/` (details=1 only). */
   directUrl?: string;
+  /**
+   * The shared agent login this seat's last terminal start fetched (§11.2 f),
+   * or null (none fetched since the server started, or nothing was set).
+   */
+  sharedLogin: { env: SeatCredentialEnv; at: number } | null;
 }
 
 /** GET /admin/claude-seats, and WS 'terminals' (without the details fields). */
@@ -1336,5 +1363,11 @@ export interface AdminClaudeSeatsDTO {
   seatSecretSet: boolean;
   /** The shared seat password (`?details=1` only). */
   seatSecret?: string | null;
+  /**
+   * The shared agent logins (§11.2 f): "…" + the last 4 characters when set,
+   * else null. Write-only: the value itself never leaves the server, not even
+   * with `?details=1`.
+   */
+  agentCredentials: Record<AgentCredentialKind, string | null>;
   seats: AdminClaudeSeatDTO[];
 }

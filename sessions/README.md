@@ -99,9 +99,27 @@ The units in `/kit/units/` stay between players on a seat (their designs are on 
 
 **Edit the prompt:** change `packages/starter-kit/FIRST_PROMPT.md.tmpl` (plain text, sent as is; `{{AGENT_NAME}}` becomes Claude or Codex). Keep it facts and steps only (no tactics: `tests/no-strategy-hints.test.ts` checks it). It is baked into the image, so **rebuild**: `docker compose build && docker compose up -d`. The same rebuild is needed once to get this feature (new entrypoint, ttyd `-a`); the game server needs its update too (it sends the token).
 
-## 2. Log in each seat (adults, before the event)
+## 2. Log in the seats (adults, before the event)
 
-Do this for **each** seat you'll use, N = 1..8:
+### Recommended: one shared login in /admin
+
+Paste **one** agent login into the game server's **/admin → AI seats → Agent login**, and every seat's agent starts with it: no `/login` per seat, no theme, login or folder-trust screens.
+
+- **Claude Code token** (Claude seats): on **any** machine where Claude Code is logged in to the **event account**, run `claude setup-token` and paste the `sk-ant-oat01-…` token it prints (a long-lived token for that subscription). Line breaks from a wrapped terminal are removed on save.
+- **Anthropic API key** (optional, Claude seats instead of the token; the token wins when both are set): an `sk-ant-api03-…` key from console.anthropic.com.
+- **OpenAI API key** (Codex seats, section 2b): an `sk-…` / `sk-proj-…` key from platform.openai.com.
+
+How it works: the values are stored on the game server next to the seat password (`data/state.json`, owner-only; they survive restarts and a wipe) and are **write-only** in /admin: after saving, the page only shows "set (…last 4)" with Replace and Clear. Every time a seat's terminal opens (a player through /play, or an admin rescue), the entrypoint fetches the login from `POST /api/seat-login` (Basic auth `player:$SEAT_SECRET`, on curl's stdin) and passes it to the agent process only, in its environment (`CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`; never in argv or a log). It also marks Claude Code's first-run screens done in the seat's `.claude.json` (`hasCompletedOnboarding`, trust for `/kit`, and approval of the API key by its last 20 characters). The environment wins over any `/login` stored in the seat. Codex reads its login from `auth.json`, so a Codex seat runs `codex login --with-api-key` with the shared key (on stdin) unless that key is already its login; a seat logged in with a **ChatGPT** account keeps that. Nothing set, or the game server unreachable: the seat uses its own stored login, as below. The /admin seats table shows which shared login each seat's last start fetched ("Agent login"); `docker compose exec seatN pixel-clash-seat check` prints it too.
+
+Changing or clearing it takes effect the next time each seat's terminal opens (a page reload in /play is enough; `docker compose restart` does every seat).
+
+**Security: any seat can read this login.** The agent (and the `!` prefix) can print its own environment, so a player who tries can see the token or key, exactly as they could read a stored `/login` today. Use a **dedicated event account** (and API keys with a spending limit), and **revoke** after the event: revoke the `claude setup-token` token in the event account's claude.ai settings and sign the account out of all sessions; delete the API keys in their consoles (section 5). Clear the fields in /admin too.
+
+Then check each seat (section 3).
+
+### Alternative: log in each seat by hand
+
+Do this for **each** seat you'll use, N = 1..8 (not needed with a shared login above):
 
 ```sh
 docker compose run --rm seatN claude
@@ -129,7 +147,7 @@ SEAT_AGENT_7=codex     # seat 7 only
 
 then `docker compose up -d`. The seat re-renders `/kit` for Codex (AGENTS.md + `.codex/config.toml`; the Claude files are removed) and its ttyd title becomes "Pixel Clash · Codex · seat N". /play, the seat proxy and /admin work the same.
 
-**Log in each Codex seat** (once; it is kept in `codexN`). Pick one:
+**Log in the Codex seats.** Easiest: paste an OpenAI API key once in /admin → AI seats → Agent login (section 2); every Codex seat logs itself in with it when its terminal opens. Or log in each seat (once; it is kept in `codexN`). Pick one:
 
 - **ChatGPT account** (Plus/Pro/Business/Edu/Enterprise), with the device code flow (the browser callback can't reach a container):
   ```sh

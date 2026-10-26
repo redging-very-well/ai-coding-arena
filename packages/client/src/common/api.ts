@@ -4,6 +4,7 @@
 
 import type {
   AdminClaudeSeatsDTO,
+  AgentCredentialKind,
   AdminConfigResponse,
   AdminOverviewDTO,
   ApiErrorBody,
@@ -233,6 +234,9 @@ export const api = {
     checkClaudeSeats: () => request<AdminClaudeSeatsDTO>('POST', '/admin/claude-seats/check'),
     /** Turn an AI seat on or off (§11.2 c); off moves its player to another free seat. */
     setClaudeSeatEnabled: (seat: number, enabled: boolean) => request<AdminClaudeSeatsDTO>('PUT', `/admin/claude-seats/${seat}/enabled`, { enabled }),
+    /** The shared agent logins (§11.2 f): write-only; null clears one. The answer has only "…last 4". */
+    setAgentCredentials: (patch: Partial<Record<AgentCredentialKind, string | null>>) =>
+      request<AdminClaudeSeatsDTO>('PUT', '/admin/agent-credentials', patch),
   },
 } as const;
 

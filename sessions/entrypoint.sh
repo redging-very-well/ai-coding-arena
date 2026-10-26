@@ -24,7 +24,11 @@
 #                     boundary, see README) or workspace-write (needs user namespaces)
 #   CODEX_APPROVAL    codex only: never (default) | on-request | untrusted
 #   OPENAI_API_KEY    codex only, optional: log this seat's Codex in with an API key
-#                     on start (if it isn't logged in yet); never passed to codex
+#                     on start (if it isn't logged in yet); never passed to codex.
+#                     Simpler: paste the key once in /admin -> AI seats -> Agent login
+#                     (§11.2 f), which every seat fetches on each terminal open, like
+#                     the Claude Code token (CLAUDE_CODE_OAUTH_TOKEN) or an Anthropic
+#                     API key for Claude seats
 #   CLAUDE_PERMISSION_MODE  optional: default | acceptEdits | plan (M0 spike decides)
 #   CLAUDE_CONTINUE   1 (default) = reopen the seat's last conversation after a
 #                     restart or page reload; 0 = always start fresh. A NEW player
@@ -252,47 +256,173 @@ first_prompt() {
   sed -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" "$src"
 }
 
-# Log the seat's player in for their agent (plan §11.2 e): trade the token
-# for {name, apiKey} at the game server's POST /api/seat-login (Basic auth with
-# the seat password, passed to curl on stdin, never in argv) and write it to
-# .pixel-clash/player.json, so the agent never has to ask for a name and PIN.
-# Best effort: any problem leaves things as they were (the agent then asks).
-# Only a well-formed answer is written.
-seat_login() { # <validated token>
-  local token="$1" host out file tmp
+# The shared agent login pasted in /admin (plan §11.2 f), set by seat_login:
+# AUTH_ENV names the variable (CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY for
+# claude, OPENAI_API_KEY for codex), AUTH_VALUE is the value. Plain shell
+# variables, never exported: only the agent process gets the value, in its
+# environment (with_auth), never in argv or a log. Empty = the seat's own
+# stored login (/login or codex login), as before.
+AUTH_ENV=''
+AUTH_VALUE=''
+
+# Same shapes as AGENT_CREDENTIAL_RE in packages/server/src/services/store.ts.
+CLAUDE_TOKEN_RE='^sk-ant-oat[0-9]{2}-[A-Za-z0-9_-]{20,500}$'
+ANTHROPIC_KEY_RE='^sk-ant-api[0-9]{2}-[A-Za-z0-9_-]{20,500}$'
+OPENAI_KEY_RE='^sk-[A-Za-z0-9_-]{20,500}$'
+
+# Is $1=$2 a well-formed shared login for this seat's agent?
+auth_ok() { # <env> <value>
+  case "$AGENT:$1" in
+    claude:CLAUDE_CODE_OAUTH_TOKEN) [[ "$2" =~ $CLAUDE_TOKEN_RE ]] ;;
+    claude:ANTHROPIC_API_KEY) [[ "$2" =~ $ANTHROPIC_KEY_RE ]] ;;
+    codex:OPENAI_API_KEY) [[ "$2" =~ $OPENAI_KEY_RE ]] && [[ "$2" != sk-ant-* ]] ;;
+    *) return 1 ;;
+  esac
+}
+
+# Log the seat in at the game server's POST /api/seat-login (plan §11.2 e, f),
+# with Basic auth with the seat password (passed to curl on stdin, never in
+# argv), on every terminal open:
+#  - with the seat's player token: the player's {name, apiKey}, written to
+#    .pixel-clash/player.json, so the agent never has to ask for a name and PIN;
+#  - always (an admin rescue too): the shared agent login from /admin, kept in
+#    AUTH_ENV / AUTH_VALUE for the agent process.
+# Best effort: any problem leaves things as they were (the agent then asks for
+# the name and PIN, and uses the seat's stored login). The answer must match
+# one of three exact shapes; nothing else is used.
+seat_login() { # [validated token]
+  local token="${1:-}" host out file tmp body name='' key='' cred=''
   [ -n "${TTYD_PASS:-}" ] || return 0
   [[ "$SEAT" =~ ^[1-8]$ ]] || return 0
   host="$(kit_host 2>/dev/null)" || return 0
   file="$KIT_DIR/.pixel-clash/player.json"
+  if [ -n "$token" ]; then
+    body="{\"seat\":${SEAT},\"token\":\"${token}\",\"agent\":\"${AGENT}\"}"
+  else
+    body="{\"seat\":${SEAT},\"agent\":\"${AGENT}\"}"
+  fi
   if ! out="$(printf 'user = "player:%s"\n' "$TTYD_PASS" | curl -fsS --max-time 5 --retry 2 --retry-delay 1 -K - \
       -H 'Content-Type: application/json' \
-      --data "{\"seat\":${SEAT},\"token\":\"${token}\"}" \
+      --data "$body" \
       "http://${host}/api/seat-login" 2>/dev/null)"; then
-    log "could not log the player in automatically (the agent will ask for their name and PIN)"
+    if [ -n "$token" ]; then
+      log "could not log in at the game server (the agent will ask for the player's name and PIN, and uses the seat's own login)"
+    else
+      log "could not fetch the shared agent login (the agent uses the seat's own login)"
+    fi
     return 0
   fi
-  if ! [[ "$out" =~ ^\{\"name\":\"[^\"\\]{1,64}\",\"apiKey\":\"[A-Za-z0-9_-]{8,128}\"\}$ ]]; then
-    log "unexpected answer from seat-login; the agent will ask for the player's name and PIN"
+  local p='"name":"([^"\\]{1,64})","apiKey":"([A-Za-z0-9_-]{8,128})"'
+  local c='"credential":(null|\{"env":"([A-Z_]{1,32})","value":"([A-Za-z0-9_-]{20,520})"\})'
+  if [[ "$out" =~ ^\{${p}\}$ ]]; then # a server from before shared logins
+    name="${BASH_REMATCH[1]}" key="${BASH_REMATCH[2]}"
+  elif [[ "$out" =~ ^\{${p},${c}\}$ ]]; then
+    name="${BASH_REMATCH[1]}" key="${BASH_REMATCH[2]}" cred="${BASH_REMATCH[3]}"
+    AUTH_ENV="${BASH_REMATCH[4]}" AUTH_VALUE="${BASH_REMATCH[5]}"
+  elif [[ "$out" =~ ^\{${c}\}$ ]]; then
+    cred="${BASH_REMATCH[1]}" AUTH_ENV="${BASH_REMATCH[2]}" AUTH_VALUE="${BASH_REMATCH[3]}"
+  else
+    log "unexpected answer from seat-login (ignored: the agent asks for the player's name and PIN, and uses the seat's own login)"
     return 0
   fi
-  mkdir -p "$(dirname "$file")"
-  tmp="$(mktemp "${file}.XXXXXX")"
-  printf '%s\n' "$out" >"$tmp"
-  chmod 0600 "$tmp"
-  mv -f "$tmp" "$file"
-  log "player logged in automatically (.pixel-clash/player.json)"
+  if [ -n "$AUTH_ENV" ] && ! auth_ok "$AUTH_ENV" "$AUTH_VALUE"; then
+    log "ignoring a shared agent login of the wrong kind or shape for $AGENT_NAME"
+    AUTH_ENV='' AUTH_VALUE=''
+  fi
+  if [ -n "$AUTH_ENV" ]; then
+    log "$AGENT_NAME uses the shared login from /admin ($AUTH_ENV)"
+  elif [ "$cred" = null ]; then
+    log "no shared agent login set in /admin: $AGENT_NAME uses the seat's own login"
+  fi
+  if [ -n "$key" ] && [ -n "$token" ]; then
+    mkdir -p "$(dirname "$file")"
+    tmp="$(mktemp "${file}.XXXXXX")"
+    printf '{"name":"%s","apiKey":"%s"}\n' "$name" "$key" >"$tmp"
+    chmod 0600 "$tmp"
+    mv -f "$tmp" "$file"
+    log "player logged in automatically (.pixel-clash/player.json)"
+  fi
+}
+
+# Run a command (the agent) with the shared login in its environment only.
+with_auth() { # <cmd> [args...]
+  case "$AUTH_ENV" in
+    CLAUDE_CODE_OAUTH_TOKEN) CLAUDE_CODE_OAUTH_TOKEN="$AUTH_VALUE" "$@" ;;
+    ANTHROPIC_API_KEY) ANTHROPIC_API_KEY="$AUTH_VALUE" "$@" ;;
+    *) "$@" ;;
+  esac
+}
+
+# Claude Code with a token or key from the environment must not stop at its
+# first-run screens (theme, login, folder trust, "use this API key?"): mark
+# them done in $CLAUDE_CONFIG_DIR/.claude.json (merged, other keys kept;
+# written by node, values passed in the environment). An API key is approved
+# by its last 20 characters, which is how Claude Code records the answer.
+seed_claude_config() {
+  [ "$AGENT" = claude ] && [ -n "$AUTH_ENV" ] || return 0
+  local tail=''
+  [ "$AUTH_ENV" = ANTHROPIC_API_KEY ] && tail="${AUTH_VALUE: -20}"
+  mkdir -p "$CONFIG_DIR"
+  # shellcheck disable=SC2016
+  if ! PC_CLAUDE_JSON="$CONFIG_DIR/.claude.json" PC_KIT="$KIT_DIR" PC_KEY_TAIL="$tail" node -e '
+    const fs = require("fs");
+    const file = process.env.PC_CLAUDE_JSON, kit = process.env.PC_KIT, tail = process.env.PC_KEY_TAIL;
+    let c = {};
+    try { c = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { if (e.code !== "ENOENT") process.exit(3); }
+    if (!c || typeof c !== "object" || Array.isArray(c)) process.exit(3);
+    c.hasCompletedOnboarding = true;
+    if (typeof c.theme !== "string") c.theme = "dark";
+    if (!c.projects || typeof c.projects !== "object") c.projects = {};
+    const p = (c.projects[kit] && typeof c.projects[kit] === "object") ? c.projects[kit] : (c.projects[kit] = {});
+    p.hasTrustDialogAccepted = true;
+    p.hasCompletedProjectOnboarding = true;
+    if (tail) {
+      const r = (c.customApiKeyResponses && typeof c.customApiKeyResponses === "object") ? c.customApiKeyResponses : {};
+      const approved = Array.isArray(r.approved) ? r.approved.filter((x) => x !== tail) : [];
+      const rejected = Array.isArray(r.rejected) ? r.rejected.filter((x) => x !== tail) : [];
+      c.customApiKeyResponses = { ...r, approved: [...approved, tail], rejected };
+    }
+    const tmp = file + ".pc-" + process.pid;
+    fs.writeFileSync(tmp, JSON.stringify(c, null, 2) + "\n", { mode: 0o600 });
+    fs.renameSync(tmp, file);
+  ' 2>/dev/null; then
+    log "warning: could not update $CONFIG_DIR/.claude.json (Claude may show its first-run screens)"
+  fi
+}
+
+# Codex reads its login from $CODEX_HOME/auth.json, not the environment: log
+# in with the shared OpenAI key (on stdin, like codex_api_key_login), unless
+# that key is already the login or the seat has a ChatGPT login (kept).
+codex_shared_login() {
+  [ "$AGENT" = codex ] && [ "$AUTH_ENV" = OPENAI_API_KEY ] || return 0
+  local auth="$CODEX_DIR/auth.json" status
+  if [ -f "$auth" ] && [[ "$(<"$auth")" == *"\"$AUTH_VALUE\""* ]]; then return 0; fi
+  if status="$(codex login status 2>&1)" && [[ "$status" == *ChatGPT* ]]; then
+    log "codex keeps its ChatGPT login (the shared OpenAI key is not used)"
+    return 0
+  fi
+  if printf '%s' "$AUTH_VALUE" | codex login --with-api-key >/dev/null 2>&1; then
+    log "codex logged in with the shared OpenAI key from /admin"
+  else
+    log "warning: codex login --with-api-key failed with the shared OpenAI key (check it in /admin)"
+  fi
 }
 
 # Start mode for this connection, after acting on a new player. Sets MODE and PROMPT.
 begin_agent() { # [token]
-  MODE="$(seat_start_mode "${1:-}")"
+  local token="${1:-}"
+  MODE="$(seat_start_mode "$token")"
   PROMPT=''
-  if [ "$MODE" = new-player ]; then switch_player "$1"; fi
+  if [ "$MODE" = new-player ]; then switch_player "$token"; fi
   # A valid token = the seat's player through /play: refresh their login (a
   # PIN reset gives them a new key). seat_start_mode dropped a malformed one.
-  if [ -n "${1:-}" ] && [[ "$1" =~ $PLAYER_TOKEN_RE ]]; then seat_login "$1"; fi
+  # Every open (an admin rescue too) also fetches the shared agent login.
+  [[ "$token" =~ $PLAYER_TOKEN_RE ]] || token=''
+  seat_login "$token"
   # The seat password stays with ttyd: the agent and its commands never see it.
   unset TTYD_PASS
+  seed_claude_config
+  codex_shared_login
   if [ "$MODE" = new-player ] || [ "$MODE" = prompt ]; then
     PROMPT="$(first_prompt)"
     [ -n "$PROMPT" ] || MODE=fresh
@@ -348,10 +478,10 @@ claude_loop() { # [token]
     case "$MODE" in
       # The prompt is one argv entry: `claude [options] [prompt]` starts an
       # interactive session with it as the first message.
-      new-player | prompt) claude "${args[@]}" "$PROMPT" || true ;;
+      new-player | prompt) with_auth claude "${args[@]}" "$PROMPT" || true ;;
       # Reopen the last conversation (page reload, ttyd reconnect, restart).
-      resume) claude --continue "${args[@]}" || claude "${args[@]}" || true ;;
-      *) claude "${args[@]}" || true ;;
+      resume) with_auth claude --continue "${args[@]}" || with_auth claude "${args[@]}" || true ;;
+      *) with_auth claude "${args[@]}" || true ;;
     esac
     printf '\r\nClaude stopped. Starting it again...\r\n'
     sleep 1
@@ -380,6 +510,12 @@ check() {
   else
     echo "player:          none yet (logged in automatically when they open the seat from /play)"
   fi
+  seat_login ''
+  if [ -n "$AUTH_ENV" ]; then
+    echo "shared login:    $AUTH_ENV from /admin (…${AUTH_VALUE: -4}), used at every terminal open"
+  else
+    echo "shared login:    none from /admin (or the game server is unreachable): the seat's own login is used"
+  fi
   if [ "$AGENT" = codex ]; then
     check_codex
   else
@@ -394,6 +530,7 @@ check() {
 
 check_codex() {
   local status
+  [ -n "$AUTH_ENV" ] && echo "codex login:     the shared OpenAI key above is used at the next terminal open (a ChatGPT login is kept)"
   if status="$(codex login status 2>&1)"; then
     echo "codex login:     $status"
   else
@@ -418,7 +555,9 @@ check_codex() {
 }
 
 check_claude() {
-  if [ -f "$CONFIG_DIR/.credentials.json" ] || grep -qs '"oauthAccount"' "$CONFIG_DIR/.claude.json"; then
+  if [ -n "$AUTH_ENV" ]; then
+    echo "claude login:    the shared login above (no /login needed; onboarding and /kit trust are pre-set at start)"
+  elif [ -f "$CONFIG_DIR/.credentials.json" ] || grep -qs '"oauthAccount"' "$CONFIG_DIR/.claude.json"; then
     echo "claude login:    looks logged in"
   else
     echo "claude login:    NOT logged in (docker compose run --rm seat$SEAT claude, then /login)"

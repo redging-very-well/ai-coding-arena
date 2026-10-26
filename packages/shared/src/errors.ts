@@ -130,6 +130,8 @@ export const SERVICE_ERROR_CODES = [
   // The admin turned that AI seat off (§11.2 c): never assigned or pickable.
   'CLAUDE_SEAT_OFF',
   'BAD_SEAT_SECRET',
+  // A shared agent login pasted in /admin has the wrong shape (§11.2 f).
+  'BAD_AGENT_CREDENTIAL',
   'TERMINAL_LOGIN_REQUIRED',
   'CLAUDE_SEAT_NOT_YOURS',
   'TERMINAL_BAD_ORIGIN',

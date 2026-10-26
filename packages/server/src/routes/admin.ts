@@ -242,6 +242,12 @@ export function adminRoutes(game: Game): Router {
     }),
   );
 
+  // The shared agent logins (§11.2 f): write-only, the answer has only "…last 4".
+  r.put('/agent-credentials', (req, res) => {
+    const b = body(req);
+    send(res, game.claudeSeats.setAgentCredentials({ claudeToken: b.claudeToken, anthropicApiKey: b.anthropicApiKey, openaiApiKey: b.openaiApiKey }));
+  });
+
   // Turn a seat on or off (§11.2 c). Registered before '/claude-seats/:seat'.
   r.put('/claude-seats/:seat/enabled', (req, res) => {
     send(res, game.claudeSeats.setEnabled(String(req.params.seat), body(req).enabled));
