@@ -74,13 +74,13 @@ export function revealNamesRules(enabled: boolean): Record<string, unknown> {
   };
 }
 
-/** The "Walls allowed" paragraph of the rules (§9.1b, a match setting). */
+/** The walls paragraph of the rules (§9.1b, a match setting: "Disable walls" in /admin). */
 export function wallsAllowedRules(allowed: boolean): Record<string, unknown> {
   return {
     allowed,
-    setting: 'Walls allowed',
+    setting: 'Walls switched off',
     text: allowed
-      ? 'Walls allowed is on this match: wall designs can be picked and placed as usual.'
+      ? 'Walls are not switched off this match: wall designs can be picked and placed as usual.'
       : "Walls are switched off for this match: wall designs (the Basic Wall and your own) can't be picked, placed or borrowed from the Armory, so battles have no walls. validate_unit and submit_unit still work for walls (they can be used in a later match).",
     rules: [
       'The host can switch walls off for a match at Start match (walls are allowed by default); it stays the same for the whole match.',

@@ -160,7 +160,7 @@ describe('Walls allowed: off', () => {
 
   it('shows in /rules, get_rules, get_game_state, the guide and the MCP instructions', async () => {
     const rules = (await bob.client.get('/rules')).body as { wallsAllowed: { allowed: boolean; setting: string; text: string }; thisMatch: { wallsAllowed: boolean } };
-    expect(rules.wallsAllowed).toMatchObject({ allowed: false, setting: 'Walls allowed' });
+    expect(rules.wallsAllowed).toMatchObject({ allowed: false, setting: 'Walls switched off' });
     expect(rules.wallsAllowed.text).toContain('Walls are switched off for this match');
     expect(rules.thisMatch.wallsAllowed).toBe(false);
     expect((await call(mcp, 'get_rules')).s.thisMatch.wallsAllowed).toBe(false);

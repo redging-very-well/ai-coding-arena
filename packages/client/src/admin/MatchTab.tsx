@@ -1,7 +1,7 @@
 // The Match tab (plan §12.3): in LOBBY a step-by-step "configure this match"
 // flow, 1 Players & teams, 2 Map, 3 Rounds & time, 4 Armory & rules, then
-// Start match. The map, teams, team budgets, enemy names and walls are the
-// server's LOBBY draft (saved as clicked); rounds and Open Armory go with
+// Start match. The map, teams, team budgets, enemy names and Disable walls
+// (the server's `wallsAllowed`, inverted) are the server's LOBBY draft (saved as clicked); rounds and Open Armory go with
 // Start match; the budget and the timers are live config settings (saved as
 // typed, Settings.tsx). After the start, a read-only summary of this match.
 
@@ -97,9 +97,10 @@ export function MatchTab({ onRules }: { onRules: () => void }) {
               </span>
             </label>
             <label class="inline">
-              <input type="checkbox" checked={wallsAllowed} disabled={busy || !overview?.setup} onChange={(e) => void act(() => api.admin.setMatchSetup({ wallsAllowed: e.currentTarget.checked }))} />
+              {/* "Disable walls" is the server's wallsAllowed inverted (unticked = walls allowed, the default). */}
+              <input type="checkbox" checked={!wallsAllowed} disabled={busy || !overview?.setup} onChange={(e) => void act(() => api.admin.setMatchSetup({ wallsAllowed: !e.currentTarget.checked }))} />
               <span>
-                <b>Walls allowed</b> <span class="dim small">players can pick and place walls</span>
+                <b>Disable walls</b> <span class="dim small">players can't pick or place walls this match</span>
               </span>
             </label>
             <label class="inline">
@@ -125,7 +126,7 @@ export function MatchTab({ onRules }: { onRules: () => void }) {
             <p class="small">
               {players} players · {mode === 'ffa' ? 'free-for-all' : teamModeLabel(mode, players)} · {roundsOk ? rounds : '?'} round{rounds === 1 ? '' : 's'}
               {armory ? ' · Open Armory' : ''}
-              {wallsAllowed ? '' : ' · no walls'}
+              {wallsAllowed ? '' : ' · walls disabled'}
               {revealNames ? ' · enemy names shown' : ''}
             </p>
             {players < 2 && <p class="warn-text small">Needs at least 2 players.</p>}
@@ -152,7 +153,7 @@ function MatchSummary({ s }: { s: GameStateDTO }) {
     ['Map', m?.map ? mapName(m.map) : '–'],
     ['Teams', m && m.teamMode !== 'ffa' ? teamModeLabel(m.teamMode, m.map?.players ?? s.players.length) : 'Free-for-all'],
     ['Open Armory', s.armory?.enabled ? `On (${s.armory.entries} units)` : 'Off'],
-    ['Walls', m?.wallsAllowed === false ? 'Not allowed' : 'Allowed'],
+    ['Walls', m?.wallsAllowed === false ? 'Disabled' : 'Allowed'],
     ['Enemy names to units', m?.revealNames ? 'Shown' : 'Hidden'],
   ];
   return (
