@@ -80,6 +80,7 @@ import {
   splashOf,
   supportOf,
   zoneCenterOf,
+  type Action,
   type DamageSplitDTO,
   type FactoryView,
   type BattleReportDTO,
@@ -112,7 +113,7 @@ import { resolveAction, type ResolvedAction } from './actions.js';
 import { BodyIndex, HitPipeline, emptySplit, noAura, statusOf, tempoOf } from './effects.js';
 import { alivePerPlayerCap, canMakeOf, spawnSpots, zoneFacingDir } from './factory.js';
 import { FrameRecorder, frameAt } from './frames.js';
-import { hitDamage, kindConfig, minionAction, minionStats, minionValueOf, withinCrumbleRadius } from './minion.js';
+import { hitDamage, kindConfig, kindOf, minionAction, minionStats, minionValueOf, withinCrumbleRadius } from './minion.js';
 import { isFixedBody, separate } from './movement.js';
 import { Pathfinder } from './pathing.js';
 import { aliveInFrame, canFight, factoryLeftIn, isFighter, killValueOf, livingValueAt, livingValueOf } from './value.js';
@@ -652,6 +653,8 @@ export class BattleEngine {
           }
           if (res.ok) {
             u.spawned = true;
+            // §5.3: a factory with updateMinion() decides for its minions.
+            if (res.hasMinion && u.type === 'factory') u.minionCode = { off: false, strikes: 0, timeouts: 0 };
           } else {
             this.recordUnitError(u, 0, res.error.message, res.error.line);
           }
@@ -696,13 +699,11 @@ export class BattleEngine {
     for (const u of this.units) if (u.factory) this.checkOrder(u);
     const others = living.map((u) => toOtherView(u, tick, cfg, this.ownerNames));
     const safeRadius = safeRadiusAt(tick, cfg);
-    // enemies/allies are built once per side and shared by its players, so
-    // the sandbox serialises them once per side (§9.2 Performance).
-    const sideViews = new Map<number, { enemies: OtherView[]; allies: OtherView[] }>();
-    const inputs = this.players.map((p) => this.buildInput(p, tick, living, others, safeRadius, sideViews));
 
     // 2) Minions decide from the same snapshot (engine AI, no isolate), then
-    //    all runners in parallel; results applied in seat order below.
+    //    all runners in parallel; results applied in seat order below. The
+    //    built-in action is also each minion's `self.minion.builtIn` for a
+    //    factory's updateMinion() (§5.3), so it is worked out first.
     const minionRaw = new Map<string, unknown>();
     const minionWorld = {
       living,
@@ -715,6 +716,10 @@ export class BattleEngine {
     for (const u of living) {
       if (u.type === 'minion') minionRaw.set(u.id, minionAction(u, minionWorld, cfg));
     }
+    // enemies/allies are built once per side and shared by its players, so
+    // the sandbox serialises them once per side (§9.2 Performance).
+    const sideViews = new Map<number, { enemies: OtherView[]; allies: OtherView[] }>();
+    const inputs = this.players.map((p) => this.buildInput(p, tick, living, others, safeRadius, sideViews, minionRaw));
     const waitStart = performance.now();
     const results = await Promise.all(
       this.players.map((p, i) => {
@@ -729,12 +734,15 @@ export class BattleEngine {
     this.players.forEach((p, i) => {
       const input = inputs[i];
       const res = results[i];
-      const raw = input && res ? this.applyTickResult(p, input, res, tick) : new Map<string, unknown>();
-      // The player's code-run units and its minions, in instanceId order.
+      const minionActs = new Map<string, unknown>();
+      const raw = input && res ? this.applyTickResult(p, input, res, tick, minionActs) : new Map<string, unknown>();
+      // The player's code-run units and its minions, in instanceId order. A
+      // minion takes its factory's updateMinion() action when it gave one
+      // (§5.3), else the built-in one.
       const acting: Array<[SimUnit, unknown]> = [];
       for (const u of p.units) {
         if (!u.alive) continue;
-        if (u.type === 'minion') acting.push([u, minionRaw.get(u.id)]);
+        if (u.type === 'minion') acting.push([u, minionActs.has(u.id) ? minionActs.get(u.id) : minionRaw.get(u.id)]);
         else if (raw.has(u.id)) acting.push([u, raw.get(u.id)]);
       }
       for (const [unit, r] of acting) {
@@ -1142,6 +1150,7 @@ export class BattleEngine {
     others: readonly OtherView[],
     safeRadius: number,
     sideViews: Map<number, { enemies: OtherView[]; allies: OtherView[] }>,
+    minionRaw: ReadonlyMap<string, unknown>,
   ): TickInput | undefined {
     if (p.disabled || p.runner.disposed) return undefined;
     // Only units that run code act through the sandbox: not walls, not minions (§5.2).
@@ -1152,6 +1161,23 @@ export class BattleEngine {
       .filter((u) => u.playerId === p.setup.playerId && !u.disabled && u.type !== 'wall' && u.type !== 'minion')
       .map((u) => toSelfView(u, u.factory ? factoryView(u, living, cap, producing) : null, tick, this.config));
     if (selves.length === 0) return undefined;
+    // §5.3: the minions of the acting factories that run updateMinion().
+    let minions: SelfView[] | undefined;
+    for (const u of living) {
+      const fac = u.minion?.factory;
+      if (!fac || fac.playerId !== p.setup.playerId || !fac.alive || fac.disabled || !fac.minionCode || fac.minionCode.off) continue;
+      const f = fac.factory!;
+      const view = toSelfView(u, null, tick, this.config);
+      view.minion = {
+        kind: kindOf(u),
+        factoryId: fac.id,
+        order: f.order,
+        orderTargetId: f.orderTargetId,
+        rally: { x: f.rally.x, y: f.rally.y },
+        builtIn: (minionRaw.get(u.id) as Action | undefined) ?? { action: 'idle' },
+      };
+      (minions ??= []).push(view);
+    }
     const corner = zoneCenterOf(p.setup.zone);
     const { x: cx, y: cy } = this.center;
     const world: WorldView = {
@@ -1179,6 +1205,7 @@ export class BattleEngine {
       enemies: views.enemies,
       allies: views.allies,
       world,
+      ...(minions ? { minions } : {}),
     };
   }
 
@@ -1190,7 +1217,7 @@ export class BattleEngine {
    * Record what the runner reported and return the raw actions to validate
    * (instanceId → action). Units with an error or no entry idle.
    */
-  private applyTickResult(p: PlayerState, input: TickInput, res: TickResult, tick: number): Map<string, unknown> {
+  private applyTickResult(p: PlayerState, input: TickInput, res: TickResult, tick: number, minionActs: Map<string, unknown>): Map<string, unknown> {
     const limits = this.config.sandbox.battle;
     const actions = new Map<string, unknown>();
 
@@ -1217,7 +1244,31 @@ export class BattleEngine {
     if (res.status === 'timeout') {
       p.timeouts += 1;
       const culprit = res.culprit !== undefined ? this.byId.get(res.culprit) : undefined;
-      if (culprit && culprit.playerId === p.setup.playerId && !culprit.disabled && culprit.alive) {
+      const minionFactory = culprit?.minion?.factory;
+      if (culprit && minionFactory?.minionCode && !minionFactory.minionCode.off && minionFactory.playerId === p.setup.playerId) {
+        // §5.3: the factory's updateMinion() was running (for this minion).
+        // Like a unit's update(): the first timeout only idles this tick (the
+        // minions use their built-in logic), a repeat switches the minion
+        // code off; the factory itself keeps running. Neither counts toward
+        // the player limits.
+        const mc = minionFactory.minionCode;
+        mc.timeouts += 1 + (culprit.id === suspect ? 1 : 0);
+        if (mc.timeouts >= limits.timeoutsToDisable) {
+          this.minionCodeOff(
+            minionFactory,
+            tick,
+            `${minionFactory.stats.name}'s updateMinion() took too long again (over ${limits.hardTimeoutMs} ms, endless loop?), so its minions use their built-in logic for the rest of the battle`,
+          );
+        } else {
+          this.recordUnitError(
+            minionFactory,
+            tick,
+            `${minionFactory.stats.name}'s updateMinion() took too long once (for ${culprit.id}): it was stopped and all units idled this tick.`,
+          );
+        }
+        return actions;
+      }
+      if (culprit && culprit.type !== 'minion' && culprit.playerId === p.setup.playerId && !culprit.disabled && culprit.alive) {
         // One stall can be the host (GC, scheduler), not the player's code: the
         // first timeout only idles this tick and is reported; a repeat naps.
         // A culprit's own timeouts (forgiven or disabling) don't count toward
@@ -1285,8 +1336,41 @@ export class BattleEngine {
       }
     }
 
+    // §5.3: the factories' updateMinion() actions. Nothing (undefined/null) =
+    // the built-in logic. An error: that minion uses the built-in logic this
+    // tick, and its factory's minion code gets one strike per tick (at the
+    // unit strike limit it is switched off; the factory keeps running).
+    if (res.minions && input.minions) {
+      const listed = new Set(input.minions.map((m) => m.id));
+      const struck = new Set<SimUnit>();
+      for (const out of res.minions) {
+        const m = listed.has(out.instanceId) ? this.byId.get(out.instanceId) : undefined;
+        const fac = m?.minion?.factory;
+        if (!m || !fac || fac.id !== out.factoryId || !fac.minionCode || fac.minionCode.off || minionActs.has(m.id)) continue;
+        if ('error' in out) {
+          if (struck.has(fac)) continue;
+          struck.add(fac);
+          fac.minionCode.strikes += 1;
+          this.recordUnitError(fac, tick, `updateMinion() threw for ${m.id}: ${out.error.message}`, out.error.line);
+          if (fac.minionCode.strikes >= limits.unitStrikeLimit) {
+            this.minionCodeOff(fac, tick, `${fac.stats.name}'s updateMinion() got confused too many times, so its minions use their built-in logic for the rest of the battle`);
+          }
+        } else if (out.action !== undefined && out.action !== null) {
+          minionActs.set(m.id, out.action);
+        }
+      }
+    }
+
     if (res.slow) this.slowStrike(p, res, tick, acting);
     return actions;
+  }
+
+  /** §5.3: switch a factory's updateMinion() off for the rest of the battle (its minions use the built-in logic). */
+  private minionCodeOff(fac: SimUnit, tick: number, message: string): void {
+    if (!fac.minionCode || fac.minionCode.off) return;
+    fac.minionCode.off = true;
+    // Once per battle, so always reported (even past the per-unit error cap).
+    fac.errors.push({ tick, message });
   }
 
   private slowStrike(p: PlayerState, res: TickResult, tick: number, acting: ReadonlySet<string>): void {
@@ -1296,7 +1380,12 @@ export class BattleEngine {
     const slowest = res.slowestInstanceId !== undefined && acting.has(res.slowestInstanceId)
       ? this.byId.get(res.slowestInstanceId)
       : undefined;
-    if (!p.slowUnitDisabled && slowest && !slowest.disabled) {
+    if (!p.slowUnitDisabled && slowest && !slowest.disabled && res.slowestIsMinionCode && slowest.minionCode && !slowest.minionCode.off) {
+      // §5.3: the slowest code was the factory's updateMinion(): switch that off, not the factory.
+      this.minionCodeOff(slowest, tick, `${slowest.stats.name}'s updateMinion() was too slow (over ${limits.softTimeoutMs} ms) too many times, so its minions use their built-in logic for the rest of the battle`);
+      p.slowUnitDisabled = true;
+      p.slowStrikes = 0;
+    } else if (!p.slowUnitDisabled && slowest && !slowest.disabled) {
       // First time: nap the slowest unit and give the player a fresh count.
       this.recordUnitError(slowest, tick, `update() was too slow (over ${limits.softTimeoutMs} ms) too many times.`);
       this.disableUnit(slowest, 'slow');
@@ -1812,7 +1901,7 @@ function toSelfView(u: SimUnit, factory: FactoryView | null, tick: number, confi
     unitId: u.unitId,
     ownerId: u.playerId,
     teamId: u.teamId, // free-for-all: the seat; team mode: the team (§5, §9.2)
-    type: u.type as SelfView['type'], // never a minion: minions run no player code
+    type: u.type, // a minion only in its factory's updateMinion() (§5.3)
     name: u.stats.name,
     x: u.x,
     y: u.y,

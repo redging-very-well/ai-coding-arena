@@ -128,10 +128,16 @@ export interface FactoryView {
   orderTargetId: string | null; // swarm: the enemy, guard: the ally, else null
   rally: { x: number; y: number }; // where 'attack' minions go; starts at world.center
 }
+export interface MinionView {     // self.minion, only inside a factory's updateMinion() (§5.3)
+  kind: MinionKind;      // what this minion is
+  factoryId: string;     // the id of its factory (the one running this updateMinion)
+  order: MinionOrder; orderTargetId: string | null; rally: { x: number; y: number }; // its factory's order, orderTargetId and rally right now
+  builtIn: Action;       // the action the built-in minion logic picks for it this tick
+}
 export interface SelfView {
   id: string;            // instanceId of this copy, e.g. "2-0-3"
   unitId: string;        // the design this copy was made from
-  ownerId: string; teamId: number; type: UnitType; name: string;
+  ownerId: string; teamId: number; type: BodyType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number;
   damage: number; range: number; speed: number; // the BASE stats: might, haste and a freeze change them in battle (status)
   attackCooldown: number; cooldownRemaining: number; // 0 = can attack (or heal) this tick
@@ -141,6 +147,7 @@ export interface SelfView {
   blockedTicks: number;     // ticks in a row a wall has stopped me (no progress; 0 = free)
   pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls and buildings by a route the game found, or walled off (it walks to the best wall to break and waits there)
   factory: FactoryView | null; // factories only
+  minion?: MinionView;   // only in updateMinion(): self is then the minion (type 'minion', name its kind, unitId its factory's design, factory null)
 }
 export interface OtherView {
   id: string; ownerId: string; teamId: number; type: BodyType; name: string;
@@ -175,9 +182,9 @@ export interface WorldView {
 
 export type Action =
   | { action: 'idle' }
-  | { action: 'move'; destination: { x: number; y: number } }   // soldiers
-  | { action: 'attack'; targetId: string }                     // soldiers and towers
-  | { action: 'heal'; targetId: string }                       // support 'heal' only: heal one ally in supportRange (uses the attack cooldown)
+  | { action: 'move'; destination: { x: number; y: number } }   // soldiers and minions
+  | { action: 'attack'; targetId: string }                     // soldiers, towers and minions
+  | { action: 'heal'; targetId: string }                       // support 'heal' only (and medic minions): heal one ally in supportRange (uses the attack cooldown)
   | { action: 'rally'; destination: { x: number; y: number } }  // factories: order 'attack' and send my minions here
   | { action: 'command'; order: MinionOrder; targetId?: string; destination?: { x: number; y: number } } // factories: squad order; swarm/guard need targetId
   | { action: 'release' }                                       // factories: send the stored minions out now
@@ -185,6 +192,7 @@ export type Action =
 
 export interface Unit extends UnitStats {
   update?(self: SelfView, enemies: OtherView[], allies: OtherView[], world: WorldView): Action | undefined; // soldier, tower, factory: required. wall: none
+  updateMinion?(self: SelfView, enemies: OtherView[], allies: OtherView[], world: WorldView): Action | undefined; // factory only, optional: once per tick for each of its minions on the field; undefined/null = the built-in logic (§5.3)
   sprite?(): SpriteSpec; // called ONCE at validation, never in battle (§5.1)
 }
 ```
@@ -218,7 +226,7 @@ For soldiers and towers (walls and factories: see **4c**):
    - `{ action: 'attack', targetId }`: the target must be a living enemy (a different `teamId`), in range (`Math.hypot(dx, dy) - self.radius - target.radius <= self.range`, edge to edge), and `self.cooldownRemaining` must be 0. Otherwise the unit idles. Attacking never moves the unit. Bodies that touch are always in range.
    - Cooldown: `cooldownRemaining` is 0 at the start, so a unit can fire on its first tick. Firing (or healing) sets it to `attackCooldown`, and it drops by 1 each tick (0.65 while frozen, more while hasted).
    - `{ action: 'heal', targetId }`: units with `support: 'heal'` only (**4d**). The target must be a living ally (not yourself, a wall or a factory) within `supportRange` (edge to edge) that is hurt, burning or frozen, and `self.cooldownRemaining` must be 0. Otherwise the unit idles and keeps its cooldown.
-   - `{ action: 'move', destination: { x, y } }`: soldiers only. The unit walks at most `speed` px per tick toward the destination (clamped to the arena). Walls, towers and factories in the way are walked round (it squeezes between two buildings only if it fits). Towers ignore moves.
+   - `{ action: 'move', destination: { x, y } }`: soldiers only (and minions, from a factory's `updateMinion()`). The unit walks at most `speed` px per tick toward the destination (clamped to the arena). Walls, towers and factories in the way are walked round (it squeezes between two buildings only if it fits). Towers ignore moves.
    - `{ action: 'rally', destination: { x, y } }` and `{ action: 'hold' }`: factories only (4c). Any other type that returns them just waits, and a factory that returns `move` or `attack` just keeps building.
    - `{ action: 'idle' }`, `undefined`, anything malformed, or a thrown error all mean idle. **Errors also count strikes; too many and the unit is switched off** for the rest of the battle.
    - Range ≤ 50 is melee (instant hit, never misses); longer range fires a homing shot. **A shot at a moving enemy can miss** (up to 20% for a full-speed enemy; `enemy.moving`, `enemy.currentSpeed`): a missed shot lands where the enemy was, and its splash still hits there.
@@ -239,7 +247,7 @@ For soldiers and towers (walls and factories: see **4c**):
 | `id` | this copy's id, e.g. `"2-0-3"` (the same all battle) |
 | `unitId` | the design this copy was made from |
 | `ownerId`, `teamId` | its player and its team (same `teamId` = friend) |
-| `type`, `name` | `'soldier'`, `'tower'` or `'factory'`; its name |
+| `type`, `name` | `'soldier'`, `'tower'` or `'factory'` (`'minion'` in a factory's `updateMinion()`); its name |
 | `x`, `y` | the centre of its body, in px |
 | `radius` | body radius in px (its `size`) |
 | `hp`, `maxHp` | health now, and when full |
@@ -253,6 +261,7 @@ For soldiers and towers (walls and factories: see **4c**):
 | `blockedTicks` | ticks in a row a wall has stopped it (0 = free) |
 | `pathing` | its last move: `'direct'` (straight there), `'detour'` (round walls and buildings) or `'no-route'` (walled off: it walks to the best wall to break and waits there) |
 | `factory` | factories only: the factory view (table below), else `null` |
+| `minion` | only in a factory's `updateMinion()` (section 4c): this minion's view (table below); missing everywhere else |
 
 **Each body in `enemies` and `allies`.** `enemies` holds every living enemy body on the map (soldiers, towers, walls, factories and minions), not just the closest; `allies` holds every other living friendly body, teammates' too. Minions stored inside a factory are hidden.
 
@@ -307,6 +316,16 @@ For soldiers and towers (walls and factories: see **4c**):
 | `order` | the squad order now: `'attack'`, `'defend'`, `'swarm'` or `'guard'` |
 | `orderTargetId` | swarm: the enemy, guard: the ally, else `null` |
 | `rally` | where `'attack'` minions go `{ x, y }` (starts at `world.center`) |
+
+**`self.minion`** (only in a factory's `updateMinion()`, where `self` is one of its minions):
+
+| Field | Meaning |
+|---|---|
+| `kind` | the minion's kind: `'grunt'`, `'archer'`, `'runner'`, `'brute'` or `'medic'` |
+| `factoryId` | the `id` of its factory (the one whose `updateMinion()` is running) |
+| `order`, `orderTargetId` | its factory's squad order and order target now (as in `self.factory`) |
+| `rally` | its factory's rally point `{ x, y }` |
+| `builtIn` | the action the built-in minion logic picks for it this tick |
 
 **`world`**:
 
@@ -415,7 +434,7 @@ export default class Knight {
 | **factory** | building | stays put and builds **minions**; can't attack | name, type, maxHealth (**120-1200**), **productionInterval** (whole ticks between minions, **300-1200**), color; optional **produces** (minion kind), **minionElement** and **burst** (1-4). Leave out damage, range, speed, attackCooldown, size | required: gives the minions their orders |
 
 - **Walls** fill their whole 40 × 40 px cell (for range they count as a circle of radius 20). They block **every** body: enemies, your own units and your teammates' units. A wall's `color` is its block colour, and its `sprite()` textures the block's sides (see `units/basic_wall.js`).
-- **Factories** are a circle of radius 18. Every `productionInterval` ticks a factory builds one **Minion** (a grunt: 360 HP, 20 damage, melee, speed 1.5, size 8), up to 12 a battle, at most 4 alive per factory. Minions have built-in brains (you never write their code): they chase enemies near them or near the rally point, otherwise they walk to the rally point. An enemy wall that blocks them for 2 s gets smashed, so minions can break into a walled-in enemy. The factory's `update()` returns `{ action: 'rally', destination: { x, y } }` to move the rally point (it starts at `world.center` and stays until changed) or `{ action: 'hold' }` to pause building for a tick. `self.factory` shows `nextMinionIn`, `minionsLeft`, `minionsAlive`, `maxAlive` and `rally`. The factory's `color` is also its minions' colour. See `units/basic_factory.js`. Destroying a factory stops it; its minions keep going (unless the host option 'Minions die with their factory' below is on). A factory that holds too long (or is walled in so no minion can get out) stops counting as a fighter once it no longer has time to build one.
+- **Factories** are a circle of radius 18. Every `productionInterval` ticks a factory builds one **Minion** (a grunt: 360 HP, 20 damage, melee, speed 1.5, size 8), up to 12 a battle, at most 4 alive per factory. Minions have built-in brains, unless the factory has an `updateMinion()` method (see **Factories: minion code** below): they chase enemies near them or near the rally point, otherwise they walk to the rally point. An enemy wall that blocks them for 2 s gets smashed, so minions can break into a walled-in enemy. The factory's `update()` returns `{ action: 'rally', destination: { x, y } }` to move the rally point (it starts at `world.center` and stays until changed) or `{ action: 'hold' }` to pause building for a tick. `self.factory` shows `nextMinionIn`, `minionsLeft`, `minionsAlive`, `maxAlive` and `rally`. The factory's `color` is also its minions' colour. See `units/basic_factory.js`. Destroying a factory stops it; its minions keep going (unless the host option 'Minions die with their factory' below is on). A factory that holds too long (or is walled in so no minion can get out) stops counting as a fighter once it no longer has time to build one.
 - **A factory's `productionInterval` sets how many minions it buys:** 300-599 = 12 minions, 600 = 11, 720 = 9, 900 = 7, 1200 = 5 per battle, and the price follows (section 5). Up to **5 factories** per army.
 - `enemies` and `allies` can now hold `type: 'wall'`, `'factory'` and `'minion'` bodies. Walls and factories have `range` 0.
 - **Getting past walls and buildings:** just `move` to where you want to go. When walls, towers or factories are in the way, the game walks your soldier (and minions) **round them by the shortest open way** (between two buildings only if it fits), through gaps one cell wide (two cells for size 19-20). `self.pathing` says how the last move went: `'direct'` (straight there), `'detour'` (going round walls) or `'no-route'` (walls close the way off completely: the unit walks to the best wall to break and waits there). `self.blockedBy` is the id of the wall that stopped it (or `null`) and `self.blockedTicks` counts the ticks it has been stopped; a unit that is just walking round a wall is not stopped.
@@ -510,6 +529,29 @@ update(self, enemies, allies, world) {
   }
   if (wall) return { action: 'command', order: 'swarm', targetId: wall.id };
   return { action: 'command', order: 'attack' };
+}
+```
+
+### Factories: minion code `updateMinion()` (optional)
+
+A factory may also have an **`updateMinion(self, enemies, allies, world)`** method. Without it, its minions use the built-in logic above (orders, rally point, chasing, smashing blocking walls).
+
+- **When it runs:** every tick, right after the factory's `update()`, once for **each of the factory's minions on the field** (stored minions don't count), in id order.
+- **What it gets:** `self` is that minion: `type` is `'minion'`, `name` its kind (`'Grunt'`, …), `unitId` the factory's design, `factory` is `null`, and `self.minion` has `kind`, `factoryId`, the factory's `order`, `orderTargetId` and `rally`, and `builtIn` (the action the built-in logic picks for that minion this tick). `enemies`, `allies` and `world` are the same as for `update()` (`allies` without the minion itself, with the factory in it). `this` is the factory object, so fields on `this` are shared with `update()` and between the minions.
+- **What it returns:** the same actions as a soldier: `{ action: 'move', destination: { x, y } }`, `{ action: 'attack', targetId }`, `{ action: 'heal', targetId }` (medics only) or `{ action: 'idle' }`. The engine checks them the same way (range, cooldown, enemies only, walking round walls and buildings). Factory actions (`rally`, `command`, `release`, `hold`) from it are an idle.
+- **Return nothing (`undefined`) or `null`** and the built-in logic decides for that minion this tick. `return self.minion.builtIn;` does the same.
+- **Errors:** if it throws, that minion uses the built-in logic this tick and the battle report names the error. 30 ticks with errors, 2 timeouts (an endless loop), or being the slowest code when the army keeps running slow switch the factory's minion code off for the rest of the battle; the factory itself keeps building and giving orders.
+- **When the factory is destroyed** (or switched off), its minions use the built-in logic.
+- **Time:** it runs in the same time budget as this player's other units (12 ms per tick for the whole army): keep it to a loop or two over the lists.
+- **Price:** it doesn't change the factory's price (the minions' stats are the same).
+
+```js
+// The shape of updateMinion() (inside the factory class, next to update()).
+updateMinion(self, enemies, allies, world) {
+  // self is the minion; self.minion.builtIn is what the built-in logic would do now.
+  const near = enemies.find((e) => e.type !== 'wall' && Math.hypot(e.x - self.x, e.y - self.y) - self.radius - e.radius <= self.range);
+  if (near && self.cooldownRemaining === 0) return { action: 'attack', targetId: near.id };
+  return self.minion.builtIn;
 }
 ```
 

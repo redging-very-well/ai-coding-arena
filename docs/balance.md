@@ -2049,3 +2049,11 @@ do factory armies (archers 0%, elemfactories 10.6%, brutes 11.4%) and **15 rules
 (8 archetypes over 70%, archers beat nobody, archers' 3 shape checks, homeguard vs
 bunker, brutes vs fortress, factories5 / homeguard > mortars). Radius 200 gives the same
 verdicts (`--fast`).
+
+## Minion code: `updateMinion()` (2026-10-26)
+
+Players may now steer their factories' minions with an optional `updateMinion()` (plan §5.3 point 4). **No balance change:** the price is unchanged (control only; the minions' stats, count and value are the same), no bot or archetype uses the method, and a factory without it plays bit for bit as before (`tests/minion-code.test.ts` replays a starter-unit + kind-factory battle against a hash recorded before the change). The balance pass (`balance.test.ts`, `balance-parity.test.ts`, `balance-cache.test.ts`: 114 tests) passes unchanged.
+
+Timing (isolated-vm, this dev container under some load):
+- One player's tick call, 10 soldiers + 2 factories, 40 enemies: 0.27 ms avg (p99 0.44) without minion code, 0.48 ms avg (p99 1.43) with 12 minions running an `updateMinion()` that loops over all enemies: about 18 µs per minion call, still one sandbox call per player per tick.
+- `buildings-perf` "minion code" (8 players on Ring 8, 2 Brain Factories each, every minion steered by player code, 21,378 `updateMinion()` calls in 1,900 ticks): tick p50 3.35 ms, p99 6.57 ms (engine 0.70 ms), against the M8.5 worst case without minion code in the same run at p50 3.08 ms, p99 7.23 ms. Target unchanged: p99 < 8 ms.

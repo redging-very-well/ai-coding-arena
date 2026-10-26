@@ -16,10 +16,16 @@
 // string targetId), which only units with heal support can do.
 // update() must not throw or time out, and each return must be a valid Action
 // or undefined. The results also feed the non-fatal warnings.
+// §5.3 (2026-10-26): a factory with updateMinion() also gets two practice
+// minions of its kind (one next to world B's enemy, one at the factory),
+// listed in `allies`; updateMinion() runs for each of them every practice
+// tick and must not throw, time out or return something that isn't an action
+// (undefined and null are fine: the built-in logic decides).
 
 import {
   ARENA,
   CENTER,
+  MINION_KIND_NAMES,
   MINION_ORDERS,
   UNIT_RADIUS,
   burstOf,
@@ -31,6 +37,7 @@ import {
   splashOf,
   supportOf,
   zoneCenter,
+  type Action,
   type BodyType,
   type StatusView,
   type MinionOrder,
@@ -252,24 +259,28 @@ function commandFix(order: unknown): string {
 }
 
 /** A method definition `update(` (optionally async), or a property `update =` / `update:`. */
-const UPDATE_DEF_RE = /^\s*(?:(?:public|async|static)\s+)*update\s*(?:\(|=|:)/;
+const defRe = (method: string) => new RegExp(`^\\s*(?:(?:public|async|static)\\s+)*${method}\\s*(?:\\(|=|:)`);
+const UPDATE_DEF_RE = defRe('update');
+const MINION_DEF_RE = defRe('updateMinion');
 
 /**
- * The line where update() is DEFINED (not merely mentioned, e.g. in a
- * comment), to point BAD_ACTION and location-less errors somewhere useful.
+ * The line where update() (or updateMinion(), §5.3) is DEFINED (not merely
+ * mentioned, e.g. in a comment), to point BAD_ACTION and location-less
+ * errors somewhere useful.
  */
-export function updateLine(source: string): number | undefined {
+export function updateLine(source: string, method: 'update' | 'updateMinion' = 'update'): number | undefined {
+  const re = method === 'update' ? UPDATE_DEF_RE : MINION_DEF_RE;
   const idx = source.split('\n').findIndex((l) => {
     const t = l.trim();
     if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return false;
-    return UPDATE_DEF_RE.test(l);
+    return re.test(l);
   });
   return idx >= 0 ? idx + 1 : undefined;
 }
 
-/** line/column/excerpt of the update() definition (or nothing if not found). */
-function updateLocation(source: string): { line?: number; column?: number; excerpt?: string } {
-  const line = updateLine(source);
+/** line/column/excerpt of the update() (or updateMinion()) definition (or nothing if not found). */
+function updateLocation(source: string, method: 'update' | 'updateMinion' = 'update'): { line?: number; column?: number; excerpt?: string } {
+  const line = updateLine(source, method);
   if (line === undefined) return {};
   const text = source.split('\n')[line - 1] ?? '';
   return { line, column: text.search(/\S/) + 1, excerpt: excerptAround(source, line) };
@@ -300,7 +311,140 @@ function preview(v: unknown): unknown {
   }
 }
 
-export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasUpdate: boolean, ctx: Ctx): Promise<DryRunResult> {
+/** The two practice minions of a factory with updateMinion() (§5.3), for one practice world. */
+function practiceMinions(stats: StatsSnapshot, factoryId: string, factory: { x: number; y: number }, world: World, config: Ctx['config']): { views: SelfView[]; others: OtherView[] } {
+  const kind = producesOf(stats);
+  const k = config.factory.minions[kind];
+  const medic = kind === 'medic';
+  const support = medic ? { kind: 'heal' as const, power: k.heal ?? 0, range: k.reach ?? 0 } : null;
+  const element = medic ? 'normal' : minionElementOf(stats);
+  // One next to the first enemy (in range of it), one just outside the factory.
+  const e0 = world.enemies.find((e) => e.type !== 'wall');
+  const spots = [
+    e0 ? { x: e0.x - e0.radius - k.size - Math.min(10, k.range / 2), y: e0.y } : { x: factory.x + 60, y: factory.y + 20 },
+    { x: factory.x + UNIT_RADIUS.factory + k.size + 2, y: factory.y },
+  ];
+  const views: SelfView[] = [];
+  const others: OtherView[] = [];
+  spots.forEach((p, i) => {
+    const id = `${factoryId}-m${i + 1}`;
+    // The built-in logic's pick, roughly: hit an enemy in reach, else walk to the rally point.
+    const reach = (medic ? (k.reach ?? 0) : k.range) + 0.5;
+    const near = medic ? undefined : world.enemies.find((e) => e.type !== 'wall' && Math.hypot(e.x - p.x, e.y - p.y) - e.radius - k.size <= reach);
+    const builtIn: Action = near ? { action: 'attack', targetId: near.id } : { action: 'move', destination: { x: CENTER.x, y: CENTER.y } };
+    const status = noStatus(k.maxHealth * 0.05);
+    views.push({
+      id,
+      unitId: 'unit',
+      ownerId: ME,
+      teamId: 0,
+      type: 'minion',
+      name: MINION_KIND_NAMES[kind],
+      x: p.x,
+      y: p.y,
+      radius: k.size,
+      hp: k.maxHealth,
+      maxHp: k.maxHealth,
+      damage: k.damage,
+      range: k.range,
+      speed: k.speed,
+      attackCooldown: k.attackCooldown,
+      cooldownRemaining: 0,
+      element,
+      splashRadius: 0,
+      support,
+      status,
+      blockedBy: null,
+      blockedTicks: 0,
+      pathing: 'direct',
+      factory: null,
+      minion: { kind, factoryId, order: 'attack', orderTargetId: null, rally: { x: CENTER.x, y: CENTER.y }, builtIn },
+    });
+    others.push({
+      id,
+      ownerId: ME,
+      teamId: 0,
+      type: 'minion',
+      name: MINION_KIND_NAMES[kind],
+      x: p.x,
+      y: p.y,
+      radius: k.size,
+      hp: k.maxHealth,
+      maxHp: k.maxHealth,
+      range: k.range,
+      element,
+      splashRadius: 0,
+      support,
+      status,
+      moving: false,
+      currentSpeed: 0,
+      factoryId,
+    });
+  });
+  return { views, others };
+}
+
+/** The first updateMinion() problem in one practice tick (§5.3), or undefined. */
+function checkMinionResults(parsed: ReturnType<typeof parseTickOutput>, views: readonly SelfView[], label: string, ctx: Ctx): ValidationError | undefined {
+  for (const v of views) {
+    const out = parsed.minions.find((m) => m.instanceId === v.id);
+    if (!out) {
+      return {
+        code: 'UPDATE_THREW',
+        field: 'updateMinion',
+        ...updateLocation(ctx.source, 'updateMinion'),
+        errorMessage: 'updateMinion() produced no result',
+        message: `updateMinion() produced no result for a practice minion (${label}).`,
+        fix: 'Return an action (or nothing) from updateMinion().',
+      };
+    }
+    if ('error' in out) {
+      const stack = parsed.stacks.get(v.id);
+      const located = locate(asHarnessError({ message: out.error.message, ...(stack ? { stack } : {}) }), ctx);
+      const loc = located.line !== undefined ? located : { ...updateLocation(ctx.source, 'updateMinion'), ...located };
+      return {
+        code: 'UPDATE_THREW',
+        field: 'updateMinion',
+        ...loc,
+        message: `updateMinion() threw an error${loc.line !== undefined ? ` on line ${loc.line}` : ''} for a practice minion (${label}): ${out.error.message}`,
+        fix: `Fix updateMinion()${loc.line !== undefined ? ` around line ${loc.line}` : ''}. Remember enemies can be an empty array, and self is the MINION (self.factory is null; self.minion has kind, factoryId, order, orderTargetId, rally and builtIn).`,
+      };
+    }
+    if (parsed.minionPromises.has(v.id)) {
+      return {
+        code: 'BAD_ACTION',
+        field: 'updateMinion',
+        ...updateLocation(ctx.source, 'updateMinion'),
+        value: 'Promise',
+        errorMessage: 'updateMinion() returned a Promise',
+        message: 'updateMinion() returned a Promise. It must not be async: the game never waits for it.',
+        fix: 'Remove "async" (and any await) from updateMinion() and return the action directly.',
+      };
+    }
+    const reason = badMinionReason(out.action);
+    if (reason) {
+      return {
+        code: 'BAD_ACTION',
+        field: 'updateMinion',
+        ...updateLocation(ctx.source, 'updateMinion'),
+        value: preview(out.action),
+        allowed: { oneOf: ["{ action: 'idle' }", "{ action: 'move', destination: { x, y } }", "{ action: 'attack', targetId }", "{ action: 'heal', targetId } (medics)", 'undefined or null (the built-in logic)'] },
+        errorMessage: reason,
+        message: `updateMinion() returned something that is not a valid action for a practice minion (${label}): ${reason}.`,
+        fix: "Return { action: 'move', destination: { x: number, y: number } }, { action: 'attack', targetId: enemy.id }, { action: 'idle' }, or nothing (undefined) to let the built-in minion logic decide.",
+      };
+    }
+  }
+  return undefined;
+}
+
+/** Why a value returned by updateMinion() is not usable (§5.3), or undefined when it is (undefined/null included). */
+function badMinionReason(a: unknown): string | undefined {
+  if (a === null) return undefined;
+  return badActionReason(a);
+}
+
+export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasUpdate: boolean, ctx: Ctx, hasMinion = false): Promise<DryRunResult> {
   const errors: ValidationError[] = [];
   const warnings: ValidationWarning[] = [];
   if (!hasUpdate) {
@@ -338,6 +482,9 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
   // each practice world counts its MEDIAN call and the warning uses the
   // slowest world: a genuinely slow update() is slow on every call.
   let slowestMs = 0;
+  // §5.3: updateMinion() runs on the practice minions (factories only).
+  const minionCode = hasMinion && stats.type === 'factory';
+  let minionWrongTypeWarned = false;
 
   for (const [w, world] of worlds(stats, { ...corner, radius }).entries()) {
     const instanceId = `dry-${w}`;
@@ -416,10 +563,12 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
         center: { x: CENTER.x, y: CENTER.y },
         safeZone: { x: CENTER.x, y: CENTER.y, radius: ctx.config.suddenDeath.startRadius },
       };
+      const practice = minionCode ? practiceMinions(stats, instanceId, corner, world, ctx.config) : undefined;
       const input: TickInput = {
         tick: t,
         nowMs: (t * 1000) / ctx.config.timers.ticksPerSecond,
         selves: [self],
+        ...(practice ? { minions: practice.views } : {}),
         enemies: world.enemies,
         allies: [
           {
@@ -442,10 +591,25 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
             currentSpeed: 0,
           },
           ...world.allies,
+          ...(practice ? practice.others : []),
         ],
         world: worldView,
       };
-      const out = await session.call('tick', [encodeTickInput(ctx.names ? withNames(input, ctx.names) : input)], callMs, { deadlineMs: callMs + DEFAULT_DEADLINE_SLACK_MS });
+      const out = await session.call('tick', [encodeTickInput(ctx.names ? withNames(input, ctx.names) : input)], callMs, {
+        deadlineMs: callMs + DEFAULT_DEADLINE_SLACK_MS,
+        ...(practice ? { probeCulpritMs: ctx.config.sandbox.battle.culpritProbeTimeoutMs } : {}),
+      });
+      if (out.kind === 'timeout' && practice && out.culprit !== undefined && practice.views.some((m) => m.id === out.culprit)) {
+        errors.push({
+          code: 'UPDATE_TIMEOUT',
+          field: 'updateMinion',
+          allowed: { maxMs: callMs },
+          ...updateLocation(ctx.source, 'updateMinion'),
+          message: `updateMinion() took longer than ${callMs} ms in a practice battle (${world.label}). In a real battle each player's whole army (minion code included) gets ${ctx.config.sandbox.battle.hardTimeoutMs} ms per tick.`,
+          fix: 'Make updateMinion() fast: it runs once for EVERY minion each tick. No endless loops (while (true)), no huge loops over big arrays.',
+        });
+        return { errors, warnings };
+      }
       if (out.kind === 'timeout') {
         errors.push({
           code: 'UPDATE_TIMEOUT',
@@ -469,7 +633,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
         });
         return { errors, warnings };
       }
-      const parsed = parseTickOutput(out.value, [self]);
+      const parsed = parseTickOutput(out.value, [self], practice?.views ?? []);
       const entry = parsed.outputs[0];
       if (!parsed.ok || !entry) {
         const errorMessage = capMessage(parsed.detail ?? 'update() produced no result');
@@ -483,7 +647,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
         });
         return { errors, warnings };
       }
-      worldCallMs.push(entry.ms ?? 0);
+      worldCallMs.push((entry.ms ?? 0) + (entry.mms ?? 0));
       if ('error' in entry) {
         const stack = parsed.stacks.get(instanceId);
         const located = locate(asHarnessError({ message: entry.error.message, ...(stack ? { stack } : {}) }), ctx);
@@ -551,6 +715,30 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
                 : "Return exactly one of { action: 'idle' }, { action: 'move', destination: { x: number, y: number } } or { action: 'attack', targetId: enemy.id }.",
         });
         return { errors, warnings };
+      }
+      if (practice) {
+        const minionError = checkMinionResults(parsed, practice.views, world.label, ctx);
+        if (minionError) {
+          errors.push(minionError);
+          return { errors, warnings };
+        }
+        for (const m of parsed.minions) {
+          if ('error' in m || minionWrongTypeWarned) continue;
+          const mk = (m.action as { action?: unknown } | null | undefined)?.action;
+          const medic = producesOf(stats) === 'medic';
+          if (mk === 'rally' || mk === 'command' || mk === 'release' || mk === 'hold' || (mk === 'heal' && !medic) || (mk === 'attack' && medic)) {
+            minionWrongTypeWarned = true;
+            warnings.push({
+              code: 'W_ACTION_NOT_FOR_TYPE',
+              field: 'updateMinion',
+              value: mk,
+              message: `updateMinion() returned { action: '${String(mk)}' }, which a ${medic ? 'medic' : MINION_KIND_NAMES[producesOf(stats)].toLowerCase()} minion can't do, so it waits instead.`,
+              fix: medic
+                ? "A medic minion can return { action: 'move', destination }, { action: 'heal', targetId } or { action: 'idle' } (or nothing, for the built-in logic)."
+                : "A minion can return { action: 'move', destination }, { action: 'attack', targetId } or { action: 'idle' } (or nothing, for the built-in logic). Squad orders (rally, command, release, hold) belong in update().",
+            });
+          }
+        }
       }
       const action = entry.action as { action?: string } | undefined;
       // §5.2: rally/hold are factory actions; move/attack are not (the engine idles, no strike).

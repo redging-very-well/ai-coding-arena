@@ -176,6 +176,14 @@ export interface TickInput {
   allies: OtherView[];
   /** The world view; `myCorner` is this player's zone centre this round. */
   world: WorldView;
+  /**
+   * §5.3 updateMinion(): the views of the living minions whose factory is in
+   * `selves` and has an updateMinion() method (SpawnResult.hasMinion), sorted
+   * by instanceId. Each carries `minion` (MinionView, with its factoryId). The
+   * harness runs the factory's updateMinion() once for each, in the same call
+   * as the factory's update(). Absent or empty: no minion code runs.
+   */
+  minions?: SelfView[];
 }
 
 // ---------------------------------------------------------------------------
@@ -218,7 +226,20 @@ export interface UnitErrorOutput {
   ms?: number;
 }
 
-export type UnitOutput = UnitActionOutput | UnitErrorOutput;
+export type UnitOutput = (UnitActionOutput | UnitErrorOutput) & {
+  /** §5.3: factories with updateMinion() only: the time its updateMinion() calls took this tick, in ms (harness-measured). */
+  mms?: number;
+};
+
+/**
+ * §5.3: what a factory's updateMinion() returned for one of its minions
+ * (`factoryId`). An action of undefined (returned nothing, null, or a
+ * Promise) means "use the built-in minion logic"; an error is reported on
+ * the factory and the minion also uses the built-in logic this tick.
+ */
+export type MinionOutput =
+  | { instanceId: string; factoryId: string; action: RawAction }
+  | { instanceId: string; factoryId: string; error: { message: string; line?: number } };
 
 export function isUnitError(o: UnitOutput): o is UnitErrorOutput {
   return 'error' in o;
@@ -289,6 +310,18 @@ export interface TickResult {
   forged: number;
   /** Diagnostic text for 'bad-output' / 'crashed' (e.g. "Array buffer allocation failed"). */
   detail?: string;
+  /**
+   * status 'ok' only (§5.3): what the factories' updateMinion() returned, at
+   * most one entry per minion listed in `TickInput.minions`, sorted by
+   * instanceId. Absent when no minion code ran.
+   */
+  minions?: MinionOutput[];
+  /**
+   * With `slow`: the slowest code this tick was `slowestInstanceId`'s
+   * updateMinion() calls, not its update() (the sim then switches off that
+   * factory's minion code instead of napping the factory).
+   */
+  slowestIsMinionCode?: true;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,7 +329,8 @@ export interface TickResult {
 // ---------------------------------------------------------------------------
 
 export type SpawnResult =
-  | { ok: true }
+  /** hasMinion (§5.3): the copy has an updateMinion() method (absent = none). */
+  | { ok: true; hasMinion?: true }
   | {
       ok: false;
       /** Constructor threw / timed out, design failed to load, or unknown unitId. */

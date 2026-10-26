@@ -11,6 +11,7 @@
 import type { SelfView } from '@pixel-clash/shared';
 import { MAX_ACTION_JSON, MAX_ERROR_MESSAGE, unitFilename } from './harness.js';
 import type {
+  MinionOutput,
   PlayerRunner,
   RunnerLimits,
   RunnerPlayer,
@@ -123,7 +124,7 @@ export function asHarnessError(v: unknown): HarnessError {
  * ever JSON.parse()s them and never re-serializes an object outside a unit's
  * try/catch (a player-planted Object.prototype.toJSON can't run there).
  */
-export function encodeTickInput(input: Pick<TickInput, 'nowMs' | 'selves' | 'enemies' | 'allies' | 'world'>): string {
+export function encodeTickInput(input: Pick<TickInput, 'nowMs' | 'selves' | 'enemies' | 'allies' | 'world' | 'minions'>): string {
   return JSON.stringify({
     nowMs: input.nowMs,
     selves: input.selves,
@@ -131,6 +132,8 @@ export function encodeTickInput(input: Pick<TickInput, 'nowMs' | 'selves' | 'ene
     worldJson: worldJsonOf(input.world),
     allyIds: input.allies.map((a) => a.id),
     alliesJson: alliesJsonOf(input.allies),
+    // §5.3: only when some factory runs updateMinion() this tick.
+    ...(input.minions && input.minions.length > 0 ? { minions: input.minions } : {}),
   });
 }
 
@@ -199,8 +202,12 @@ export interface ParsedTick {
   forged: number;
   /** Entries per instance with their raw extra flags (dry-run uses `promise`). */
   promises: Set<string>;
-  /** Raw error stacks by instanceId, for line mapping. */
+  /** Raw error stacks by instanceId, for line mapping (minions' updateMinion() errors too). */
   stacks: Map<string, string>;
+  /** §5.3: the factories' updateMinion() results, sorted by instanceId (empty when none ran). */
+  minions: MinionOutput[];
+  /** Minions whose updateMinion() returned a Promise (the dry run reports it). */
+  minionPromises: Set<string>;
   detail?: string;
 }
 
@@ -210,13 +217,19 @@ export interface ParsedTick {
  * is accepted, and only for ids in `selves`; everything else is dropped and
  * counted in `forged`. Outputs are sorted by instanceId.
  */
-export function parseTickOutput(raw: string, selves: readonly Pick<SelfView, 'id'>[]): ParsedTick {
+export function parseTickOutput(
+  raw: string,
+  selves: readonly Pick<SelfView, 'id'>[],
+  minionViews: readonly Pick<SelfView, 'id' | 'minion'>[] = [],
+): ParsedTick {
   const empty = (detail: string): ParsedTick => ({
     ok: false,
     outputs: [],
     forged: 0,
     promises: new Set(),
     stacks: new Map(),
+    minions: [],
+    minionPromises: new Set(),
     detail,
   });
   let data: unknown;
@@ -232,6 +245,12 @@ export function parseTickOutput(raw: string, selves: readonly Pick<SelfView, 'id
   const outputs: UnitOutput[] = [];
   const promises = new Set<string>();
   const stacks = new Map<string, string>();
+  // §5.3: minion id → its factory id, for the minions listed in the input.
+  const minionFactory = new Map<string, string>();
+  for (const m of minionViews) if (m.minion) minionFactory.set(m.id, m.minion.factoryId);
+  const minionSeen = new Set<string>();
+  const minions: MinionOutput[] = [];
+  const minionPromises = new Set<string>();
   let forged = 0;
   for (const entry of data as unknown[]) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
@@ -246,7 +265,30 @@ export function parseTickOutput(raw: string, selves: readonly Pick<SelfView, 'id
     }
     seen.add(id);
     const ms = typeof e.ms === 'number' && Number.isFinite(e.ms) && e.ms >= 0 ? e.ms : undefined;
-    const msPart = ms === undefined ? {} : { ms };
+    const mms = typeof e.mms === 'number' && Number.isFinite(e.mms) && e.mms >= 0 ? e.mms : undefined;
+    const msPart = { ...(ms === undefined ? {} : { ms }), ...(mms === undefined ? {} : { mms }) };
+    if (Array.isArray(e.minions)) {
+      for (const me of e.minions as unknown[]) {
+        const m = me && typeof me === 'object' && !Array.isArray(me) ? (me as Record<string, unknown>) : undefined;
+        const mid = m?.instanceId;
+        // Only a minion of THIS factory that is in the input, once.
+        if (!m || typeof mid !== 'string' || minionFactory.get(mid) !== id || minionSeen.has(mid)) {
+          forged++;
+          continue;
+        }
+        minionSeen.add(mid);
+        if ('error' in m) {
+          const err = asHarnessError(m.error);
+          if (err.stack) stacks.set(mid, err.stack);
+          minions.push({ instanceId: mid, factoryId: id, error: { message: err.message } });
+        } else {
+          if (m.promise === true) minionPromises.add(mid);
+          // A Promise or an oversized value: the built-in logic (undefined).
+          const action = m.promise === true || m.action === 'too-big' ? undefined : m.action;
+          minions.push({ instanceId: mid, factoryId: id, action });
+        }
+      }
+    }
     if ('error' in e) {
       const err = asHarnessError(e.error);
       if (err.stack) stacks.set(id, err.stack);
@@ -258,15 +300,38 @@ export function parseTickOutput(raw: string, selves: readonly Pick<SelfView, 'id
       outputs.push({ instanceId: id, action, ...msPart });
     }
   }
-  outputs.sort((a, b) => (a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0));
-  return { ok: true, outputs, forged, promises, stacks };
+  const byId = (a: { instanceId: string }, b: { instanceId: string }) => (a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0);
+  outputs.sort(byId);
+  minions.sort(byId);
+  return { ok: true, outputs, forged, promises, stacks, minions, minionPromises };
 }
 
-/** Sum of the per-unit times the harness measured inside the isolate. */
+/** Sum of the per-unit times the harness measured inside the isolate (updateMinion() calls included). */
 export function unitMsTotal(outputs: readonly UnitOutput[]): number {
   let total = 0;
-  for (const o of outputs) total += o.ms ?? 0;
+  for (const o of outputs) total += (o.ms ?? 0) + (o.mms ?? 0);
   return total;
+}
+
+/**
+ * The slowest code in a slow tick: the instance with the largest update()
+ * time, or (§5.3) a factory whose updateMinion() calls took longer still
+ * (`minionCode`). Undefined when no timings are available.
+ */
+export function slowestCode(outputs: readonly UnitOutput[]): { instanceId: string; minionCode: boolean } | undefined {
+  let best = 0;
+  let out: { instanceId: string; minionCode: boolean } | undefined;
+  for (const o of outputs) {
+    if ((o.ms ?? 0) > best) {
+      best = o.ms ?? 0;
+      out = { instanceId: o.instanceId, minionCode: false };
+    }
+    if ((o.mms ?? 0) > best) {
+      best = o.mms ?? 0;
+      out = { instanceId: o.instanceId, minionCode: true };
+    }
+  }
+  return out;
 }
 
 // Exported for tests / the validator.
@@ -394,7 +459,7 @@ export class SessionPlayerRunner implements PlayerRunner {
         return { ok: false, error: { message: `sandbox crashed: ${capMessage(out.detail)}` } };
       case 'ok': {
         const r = parseObject(out.value);
-        if (r?.ok === true) return { ok: true };
+        if (r?.ok === true) return r.hasMinion === true ? { ok: true, hasMinion: true } : { ok: true };
         if (r?.kind === 'threw') return { ok: false, error: this.errorWithLine(asHarnessError(r.error)) };
         return { ok: false, error: { message: `could not spawn "${unitId}" (${String(r?.kind ?? 'bad reply')})` } };
       }
@@ -429,7 +494,8 @@ export class SessionPlayerRunner implements PlayerRunner {
         this.markCrashed(out.detail);
         return crashed(out.detail);
       case 'timeout': {
-        const selfIds = new Set(input.selves.map((s) => s.id));
+        // A minion's id names its factory's updateMinion() (§5.3).
+        const selfIds = new Set([...input.selves.map((s) => s.id), ...(input.minions ?? []).map((m) => m.id)]);
         // The sandbox process was frozen for at least half the budget, and
         // without the freeze the tick would have finished in time: the host's
         // fault. A real endless loop on a healthy host runs its whole budget
@@ -452,7 +518,7 @@ export class SessionPlayerRunner implements PlayerRunner {
       case 'error':
         return { status: 'bad-output', outputs: [], elapsedMs: out.elapsedMs, slow: false, forged: 0, detail: capMessage(out.message) };
       case 'ok': {
-        const parsed = parseTickOutput(out.value, input.selves);
+        const parsed = parseTickOutput(out.value, input.selves, input.minions);
         // A slow strike needs the player code ITSELF to be slow: the wall time
         // around the async call (thread hops, IPC, a busy host) AND the time
         // the harness measured around the update() calls inside the isolate
@@ -476,23 +542,21 @@ export class SessionPlayerRunner implements PlayerRunner {
           const mapped = this.errorWithLine({ message: o.error.message, ...(stack ? { stack } : {}) });
           return { ...o, error: mapped };
         });
-        let slowestInstanceId: string | undefined;
-        if (slow) {
-          let best = 0;
-          for (const o of outputs) {
-            if ((o.ms ?? 0) > best) {
-              best = o.ms ?? 0;
-              slowestInstanceId = o.instanceId;
-            }
-          }
-        }
+        const minions = parsed.minions.map((m): MinionOutput => {
+          if (!('error' in m)) return m;
+          const stack = parsed.stacks.get(m.instanceId);
+          return { ...m, error: this.errorWithLine({ message: m.error.message, ...(stack ? { stack } : {}) }) };
+        });
+        const slowest = slow ? slowestCode(outputs) : undefined;
         return {
           status: 'ok',
           outputs,
           elapsedMs: out.elapsedMs,
           slow,
-          ...(slowestInstanceId ? { slowestInstanceId } : {}),
+          ...(slowest ? { slowestInstanceId: slowest.instanceId } : {}),
+          ...(slowest?.minionCode ? { slowestIsMinionCode: true as const } : {}),
           forged: parsed.forged,
+          ...(minions.length > 0 ? { minions } : {}),
         };
       }
     }

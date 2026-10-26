@@ -264,6 +264,13 @@ export interface SimUnit {
   factory?: FactoryState;
   /** Minions: the factory that made it (alive or not), its number there and its kind (§5.3). */
   minion?: { factory: SimUnit; n: number; kind?: MinionKind };
+  /**
+   * Factories (§5.3 updateMinion, 2026-10-26): the design has player-written
+   * minion code. Its state: `off` once it was switched off (too many errors,
+   * timeouts or slow ticks; its minions use the built-in logic from then on),
+   * and the strike / timeout counts that switch it off. Absent: no minion code.
+   */
+  minionCode?: { off: boolean; strikes: number; timeouts: number };
   /** Walls: hp as last listed in a frame (walls are only listed when it changed, §9.3 Frames). */
   frameHp?: number;
   // M8.8 (§9.4). Optional so plain test fixtures stay valid; the engine always sets them.

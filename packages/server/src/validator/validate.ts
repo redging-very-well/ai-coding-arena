@@ -152,13 +152,18 @@ async function runSandboxSteps(
   // 5. Construct twice and read the stats.
   const reads: StatRead[] = [];
   let hasUpdate = false;
+  let hasMinion = false;
   const checkIds = ['check-1', 'check-2'] as const;
   for (const instanceId of checkIds) {
     const t = validation.constructTimeoutMs;
     const spawned = await session.call('spawn', [instanceId, DESIGN_ID], t, { deadlineMs: t + DEFAULT_DEADLINE_SLACK_MS });
     const spawnErr = constructError(spawned, ctx);
     if (spawnErr) return failure([spawnErr]);
-    if (spawned.kind === 'ok') hasUpdate = parseObject(spawned.value)?.hasUpdate === true;
+    if (spawned.kind === 'ok') {
+      const r = parseObject(spawned.value);
+      hasUpdate = r?.hasUpdate === true;
+      hasMinion = r?.hasMinion === true;
+    }
     const st = await session.call('stats', [instanceId], t, { deadlineMs: t + DEFAULT_DEADLINE_SLACK_MS });
     const read = decodeStats(st, ctx);
     if ('error' in read) return failure([read.error]);
@@ -225,8 +230,18 @@ async function runSandboxSteps(
         fix: 'Remove update() from the wall (a wall only needs name, type, maxHealth, color and a sprite).',
       });
     }
-  } else if (opts.dryRun !== false && !session.disposed) {
-    const dr = await dryRun(session, stats, hasUpdate, ctx);
+  }
+  // §5.3: only a factory's updateMinion() ever runs.
+  if (hasMinion && stats.type !== 'factory') {
+    warnings.push({
+      code: 'W_MINION_IGNORED',
+      field: 'updateMinion',
+      message: `Only factories have minions: this ${stats.type}'s updateMinion() is never called.`,
+      fix: "Remove updateMinion(), or make the unit a factory (this.type = 'factory') whose updateMinion() decides for its minions.",
+    });
+  }
+  if (stats.type !== 'wall' && opts.dryRun !== false && !session.disposed) {
+    const dr = await dryRun(session, stats, hasUpdate, ctx, hasMinion);
     errors.push(...dr.errors);
     warnings.push(...dr.warnings);
     if (stats.type === 'factory') orders = dr.orders;

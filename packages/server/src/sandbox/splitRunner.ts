@@ -15,7 +15,9 @@
 // borrower's and creator's player ids are swapped in every `ownerId` (and in
 // `world.players` ids when names are shown).
 
+import { slowestCode } from './session.js';
 import type {
+  MinionOutput,
   PlayerRunner,
   RunnerFactory,
   RunnerLimits,
@@ -118,7 +120,9 @@ class SplitRunner implements PlayerRunner {
     for (const part of this.parts) {
       const selves = input.selves.filter((s) => this.partOf.get(s.id) === part);
       if (selves.length === 0) continue;
-      calls.push(part.runner.tick(partInput(part, input, selves)));
+      // §5.3: a factory's minions go to the part that runs the factory.
+      const minions = input.minions?.filter((m) => m.minion !== undefined && this.partOf.get(m.minion.factoryId) === part);
+      calls.push(part.runner.tick(partInput(part, input, selves, minions)));
     }
     const results = await Promise.all(calls);
     const elapsedMs = Math.max(0, ...results.map((r) => r.elapsedMs));
@@ -144,27 +148,26 @@ class SplitRunner implements PlayerRunner {
     const bad = results.find((r) => r.status === 'bad-output');
     if (bad) return { status: 'bad-output', outputs: [], elapsedMs, slow: bad.slow, forged: 0, ...(bad.detail ? { detail: bad.detail } : {}) };
 
+    const byId = (a: { instanceId: string }, b: { instanceId: string }) => (a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0);
     const outputs: UnitOutput[] = results.flatMap((r) => r.outputs);
-    outputs.sort((a, b) => (a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0));
+    outputs.sort(byId);
+    const minions: MinionOutput[] = results.flatMap((r) => r.minions ?? []);
+    minions.sort(byId);
     const slow = results.some((r) => r.slow);
-    let slowestInstanceId: string | undefined;
-    if (slow) {
-      let best = 0;
-      for (const o of outputs) {
-        if ((o.ms ?? 0) > best) {
-          best = o.ms ?? 0;
-          slowestInstanceId = o.instanceId;
-        }
-      }
-      slowestInstanceId ??= results.find((r) => r.slowestInstanceId)?.slowestInstanceId;
+    let slowest = slow ? slowestCode(outputs) : undefined;
+    if (slow && !slowest) {
+      const r = results.find((x) => x.slowestInstanceId);
+      if (r) slowest = { instanceId: r.slowestInstanceId!, minionCode: r.slowestIsMinionCode === true };
     }
     return {
       status: 'ok',
       outputs,
       elapsedMs,
       slow,
-      ...(slowestInstanceId ? { slowestInstanceId } : {}),
+      ...(slowest ? { slowestInstanceId: slowest.instanceId } : {}),
+      ...(slowest?.minionCode ? { slowestIsMinionCode: true as const } : {}),
       forged: results.reduce((n, r) => n + r.forged, 0),
+      ...(minions.length > 0 ? { minions } : {}),
     };
   }
 
@@ -175,13 +178,16 @@ class SplitRunner implements PlayerRunner {
 }
 
 /** The part's view of the tick: its own selves, with ids as its code expects. */
-function partInput(part: Part, input: TickInput, selves: TickInput['selves']): TickInput {
+function partInput(part: Part, input: TickInput, selves: TickInput['selves'], minions: TickInput['minions']): TickInput {
   const swap = part.swap;
-  if (!swap) return { ...input, selves };
+  const { minions: _all, ...rest } = input;
+  if (!swap) return { ...rest, selves, ...(minions && minions.length > 0 ? { minions } : {}) };
   const owner = (id: string) => (id === swap.borrowerId ? swap.creatorId : id === swap.creatorId ? swap.borrowerId : id);
+  const self = (s: TickInput['selves'][number]) => ({ ...s, unitId: part.inner.get(s.unitId) ?? s.unitId, ownerId: owner(s.ownerId) });
   return {
-    ...input,
-    selves: selves.map((s) => ({ ...s, unitId: part.inner.get(s.unitId) ?? s.unitId, ownerId: owner(s.ownerId) })),
+    ...rest,
+    selves: selves.map(self),
+    ...(minions && minions.length > 0 ? { minions: minions.map(self) } : {}),
     enemies: input.enemies.map((o) => ({ ...o, ownerId: owner(o.ownerId) })),
     allies: input.allies.map((o) => ({ ...o, ownerId: owner(o.ownerId) })),
     // "Show enemy names to units": the same id swap, so every id still matches

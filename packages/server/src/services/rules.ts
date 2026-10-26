@@ -188,7 +188,8 @@ export function unitTypeRules(config: GameConfig): Record<string, unknown> {
       minionsDieWithFactory: f.minionsDieWithFactory,
       ...(f.minionsDieWithFactory ? { crumbleRadius: f.crumbleRadius } : {}),
       minionsPerBattle: Object.fromEntries(examples.map((v) => [v, expectedMinions(v, pricing)])),
-      minion: { ...f.minions.grunt, type: 'minion', name: MINION_KIND_NAMES.grunt, note: 'the grunt (the default kind). Built-in AI: chases enemies near it or near the rally point, otherwise walks to the rally point; you never write minion code' },
+      minion: { ...f.minions.grunt, type: 'minion', name: MINION_KIND_NAMES.grunt, note: "the grunt (the default kind). Built-in AI: chases enemies near it or near the rally point, otherwise walks to the rally point; a factory's optional updateMinion() can decide for its minions instead (see minionCode)" },
+      minionCode: MINION_CODE_FACTS(config).map(plainFact),
       minionCost,
       minionValue,
       // M8.6 (§5.3): the four kinds a factory can build (this.produces).
@@ -374,13 +375,28 @@ export function contractTypescript(): string {
   return contractText;
 }
 
+/** The facts of a factory's optional updateMinion() (§5.3), for the guide and get_rules. */
+export function MINION_CODE_FACTS(c: Pick<GameConfig, 'sandbox'>): string[] {
+  const b = c.sandbox.battle;
+  return [
+    "**Minion code** (optional): a factory can have an `updateMinion(self, enemies, allies, world)` method. Each tick, right after the factory's `update()`, it is called once for each of the factory's minions on the field, with `self` = that minion (its `type` is `'minion'`, `self.minion` has its `kind`, `factoryId`, the factory's `order`, `orderTargetId`, `rally`, and `builtIn`: the action the built-in minion logic picks for it this tick). `this` is the factory object, so fields on `this` are shared with `update()`.",
+    "It can return `{ action: 'move', destination }`, `{ action: 'attack', targetId }`, `{ action: 'heal', targetId }` (medics) or `{ action: 'idle' }`; the engine checks them like a soldier's (range, cooldown, enemies only). Returning nothing (`undefined`) or `null` lets the built-in minion logic decide for that minion this tick. Factory actions (rally, command, release, hold) from it are an idle.",
+    `Without \`updateMinion()\`, or while the factory is destroyed or switched off, its minions use the built-in logic. If it throws, that minion uses the built-in logic that tick; ${b.unitStrikeLimit} ticks with errors, ${b.timeoutsToDisable} timeouts (an endless loop), or being the slowest code when the army keeps running slow switch the factory's minion code off for the battle (the factory itself keeps building and giving orders). It runs in the same time budget as the player's other units (${b.hardTimeoutMs} ms per tick for the whole army). It does not change the price.`,
+  ];
+}
+
+/** A guide fact as plain text (get_rules is JSON for the AI helper: no markdown bold). */
+function plainFact(t: string): string {
+  return t.replaceAll('**', '');
+}
+
 export const ENGINE_RULES = [
   '1. Stats are snapshotted at validation. Changing this.damage inside update() has no effect.',
   '2. Extra fields on `this` persist between ticks for that copy. Module-level variables are shared by all your copies of the same type.',
   '3. update() is called once per tick (60 ticks = 1 s) with fresh plain copies. Mutating the inputs does nothing.',
   "4. The returned action is a request: attack needs a living enemy within range (EDGE to edge, +0.5 px) and cooldownRemaining = 0, else the unit idles. move: soldiers only, at most `speed` px per tick, clamped to the arena; walls, towers and factories in the way are walked round (between two buildings only if the body fits). rally {destination}, command {order, targetId?}, release and hold: factories only (rally = order 'attack' + where its minions go; command gives the squad order attack/defend/swarm/guard, kept until changed; release sends the stored minions out; hold pauses building for the tick). heal {targetId} (M8.8): units with support 'heal' only; a living ally (not itself, a wall or a factory) within supportRange (edge to edge) that is hurt, burning or frozen, cooldownRemaining = 0; it shares the attack cooldown, and a refused heal keeps the cooldown. An action the type can't do is an idle. Anything else (or a throw) means idle; throws count strikes and 30 strikes disable the unit for the battle.",
   '5. No import, require, network, timers or async. They do not exist in the sandbox.',
-  '6. Four types: soldier (moves, fights), tower (stays, shoots), wall (a 40x40 block with no update() that blocks everyone; enemies can break it), factory (stays and builds minions: grunts, archers, runners, brutes or medics; its update() gives them orders). Minions are engine-made (type "minion" in enemies/allies, named after their kind): you never write their code.',
+  '6. Four types: soldier (moves, fights), tower (stays, shoots), wall (a 40x40 block with no update() that blocks everyone; enemies can break it), factory (stays and builds minions: grunts, archers, runners, brutes or medics; its update() gives them orders). Minions are engine-made (type "minion" in enemies/allies, named after their kind) and use built-in logic, unless their factory has the optional updateMinion(self, enemies, allies, world): called each tick, right after update(), once per minion on the field, with self = that minion (self.type \'minion\', self.minion = { kind, factoryId, order, orderTargetId, rally, builtIn }) and this = the factory object. It returns a soldier action (move, attack, heal for medics, idle) checked like a soldier\'s; undefined/null, a throw, or a timed-out tick = the built-in logic (self.minion.builtIn) for that minion. Errors count on the factory\'s minion code (30 ticks with errors or 2 timeouts switch it off for the battle; the factory keeps working). It does not change the price.',
   '7. Elements, splash and support (M8.8): one element per unit (fire burns, ice freezes, lightning zaps; fire and lightning x1.3, ice x1.75 price), optional splashRadius 0-80 (others near the target take half), and one support (heal action, or a haste/might/shield aura). self/enemy/ally views carry element, splashRadius, support and status (burning, burnLeft, frozen, haste, might, shield, healRoom); others also carry moving and currentSpeed. A side with only damage-0 units left is out.',
   '8. Redesign: burning enemies take extra damage from non-fire hits (kindle) and frozen ones from non-ice, non-fire hits (brittle); ranged shots at moving enemies can miss (melee never misses); soldiers reach 160 px at most, towers 300.',
 ];

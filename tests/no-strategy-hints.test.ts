@@ -33,7 +33,7 @@ function fieldsOf(name: string): string[] {
   return [...body.matchAll(/(?:^|[;\n{])\s*(\w+)\??\s*:/g)].map((x) => x[1]!);
 }
 
-const VIEWS = ['SelfView', 'OtherView', 'StatusView', 'SupportView', 'FactoryView', 'WorldView'];
+const VIEWS = ['SelfView', 'OtherView', 'StatusView', 'SupportView', 'FactoryView', 'MinionView', 'WorldView'];
 
 /** Advice phrases that used to be in player-facing text. */
 const ADVICE =

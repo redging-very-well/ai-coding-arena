@@ -40,6 +40,7 @@ import {
   type CostStats,
   type Element,
   type FactoryView,
+  type MinionView,
   type GameConfig,
   type GuideBlockDTO,
   type GuideCardDTO,
@@ -58,7 +59,7 @@ import {
   type UnitType,
   type WorldView,
 } from '@pixel-clash/shared';
-import { PRICE_PARAGRAPH, buildRules, contractTypescript } from './rules.js';
+import { MINION_CODE_FACTS, PRICE_PARAGRAPH, buildRules, contractTypescript } from './rules.js';
 
 /** A starter template as the guide prices it: its name and frozen stats. */
 export interface GuideTemplate {
@@ -285,7 +286,7 @@ const SELF_FIELDS: Record<keyof SelfView, string> = {
   unitId: 'the design this copy was made from',
   ownerId: 'the player who owns it',
   teamId: 'its team: same teamId = friend',
-  type: "`'soldier'`, `'tower'` or `'factory'` (walls have no update)",
+  type: "`'soldier'`, `'tower'` or `'factory'` (walls have no update); `'minion'` in a factory's `updateMinion()`",
   name: 'its name',
   x: 'position (px)',
   y: 'position (px)',
@@ -305,6 +306,7 @@ const SELF_FIELDS: Record<keyof SelfView, string> = {
   blockedTicks: 'ticks in a row a wall has stopped it',
   pathing: "`'direct'` (straight there), `'detour'` (going round walls) or `'no-route'` (walled off: it walks to the best wall to break and waits there)",
   factory: 'factories only: the factory details (see Factory view), else null',
+  minion: "only in a factory's `updateMinion()`: this minion's details (see Minion view); missing everywhere else",
 };
 
 const OTHER_FIELDS: Record<keyof OtherView, string> = {
@@ -362,6 +364,15 @@ const FACTORY_FIELDS: Record<keyof FactoryView, string> = {
   rally: "where `'attack'` minions go (starts at `world.center`)",
 };
 
+const MINION_FIELDS: Record<keyof MinionView, string> = {
+  kind: "the minion's kind: `'grunt'`, `'archer'`, `'runner'`, `'brute'` or `'medic'`",
+  factoryId: 'the `id` of its factory (the one whose `updateMinion()` is running)',
+  order: "its factory's squad order now (as in `self.factory.order`)",
+  orderTargetId: "its factory's order target (swarm: the enemy, guard: the ally), else null",
+  rally: "its factory's rally point `{ x, y }`",
+  builtIn: 'the action the built-in minion logic picks for it this tick',
+};
+
 const WORLD_FIELDS: Record<keyof WorldView, (c: GameConfig) => string> = {
   width: () => 'arena width: 800 (2-4 players), 1040 (5-6) or 1200 (7-8). Never assume 800!',
   height: () => 'arena height',
@@ -382,14 +393,14 @@ type ActionName = Action['action'];
 
 const ACTIONS: Record<ActionName, { who: string; what: string; example: string }> = {
   idle: { who: 'everyone', what: 'Do nothing this tick.', example: "{ action: 'idle' }" },
-  move: { who: 'soldiers', what: 'Walk toward a point (at most `speed` px per tick). It walks round walls by itself.', example: "{ action: 'move', destination: { x: 400, y: 400 } }" },
+  move: { who: 'soldiers, minions', what: 'Walk toward a point (at most `speed` px per tick). It walks round walls by itself.', example: "{ action: 'move', destination: { x: 400, y: 400 } }" },
   attack: {
-    who: 'soldiers, towers',
+    who: 'soldiers, towers, minions',
     what: 'Hit a living enemy that is in range, when `cooldownRemaining` is 0.',
     example: "{ action: 'attack', targetId: enemy.id }",
   },
   heal: {
-    who: "support `'heal'` only",
+    who: "support `'heal'` only (and medic minions)",
     what: 'Heal a hurt, burning or frozen ally in `supportRange`. Uses the attack cooldown.',
     example: "{ action: 'heal', targetId: ally.id }",
   },
@@ -778,6 +789,7 @@ function viewSection(c: GameConfig): GuideSectionDTO {
       { kind: 'table', caption: 'status (StatusView): on self and every enemy / ally', head: ['Field', 'Meaning'], rows: rows(status) },
       { kind: 'table', caption: 'support (SupportView)', head: ['Field', 'Meaning'], rows: rows(SUPPORT_VIEW_FIELDS) },
       { kind: 'table', caption: 'self.factory (FactoryView): factories only', head: ['Field', 'Meaning'], rows: rows(FACTORY_FIELDS) },
+      { kind: 'table', caption: "self.minion (MinionView): only in a factory's updateMinion()", head: ['Field', 'Meaning'], rows: rows(MINION_FIELDS) },
       { kind: 'table', caption: 'world (WorldView)', head: ['Field', 'Meaning'], rows: rows(world) },
       {
         kind: 'list',
@@ -786,6 +798,7 @@ function viewSection(c: GameConfig): GuideSectionDTO {
           'Range is EDGE to edge: `inRange(self, other)` is `Math.hypot(other.x - self.x, other.y - self.y) - self.radius - other.radius <= self.range`.',
           "Free-for-all: every player is their own team. Team mode: teammates' units are in `allies`.",
           'Stored minions (inside a factory) are invisible.',
+          "A factory's optional `updateMinion(self, enemies, allies, world)` gets the same lists, with `self` = the minion (see Factories & minions).",
           "Show enemy names to units (a match setting the host picks at Start match; off by default): when it is on, every body also has `ownerName` (and `teamName` in team mode) and `world.players` lists the players. When it is off these fields are missing.",
         ],
       },
@@ -869,6 +882,7 @@ function factoriesSection(c: GameConfig): GuideSectionDTO {
           `**Burst** (\`this.burst\`, ${span(c.stats.bounds.burst)}): the first minions wait INSIDE (safe from attacks) and leave together with the last one. If the factory is destroyed, the stored minions are LOST. \`{ action: 'release' }\` sends them out early. Burst is free.`,
           `At most **${f.maxAlivePerFactory}** minions alive (plus stored) per factory, **${f.maxAlivePerPlayer}** per player (fewer with 7-8 players), and **${f.maxMinionsPerFactory}** per factory per battle.`,
           `Brutes hit walls ×${f.minions.brute.wallDamageMultiplier} as hard.`,
+          ...MINION_CODE_FACTS(c),
           ...(f.dieAtSuddenDeath
             ? [`Every factory still standing is destroyed when sudden death starts (${secs(c.suddenDeath.startTick, c)}). Nobody gets the credit, and its stored minions are lost.`]
             : []),
@@ -893,9 +907,23 @@ function factoriesSection(c: GameConfig): GuideSectionDTO {
           '}',
         ].join('\n'),
       },
+      {
+        kind: 'code',
+        title: 'For your AI helper / code: the shape of an optional updateMinion()',
+        code: [
+          '// Inside the factory class, next to update(). Runs once per tick for each of its minions.',
+          'updateMinion(self, enemies, allies, world) {',
+          "  // self is the minion (self.type === 'minion'); this is the factory object.",
+          "  const near = enemies.find((e) => e.type !== 'wall' && inRange(self, e));",
+          "  if (near && self.cooldownRemaining === 0) return { action: 'attack', targetId: near.id };",
+          '  return self.minion.builtIn; // or return nothing: the built-in minion logic decides',
+          '}',
+        ].join('\n'),
+      },
     ],
   };
 }
+
 
 function costSection(c: GameConfig, examples: GuideExampleDTO[]): GuideSectionDTO {
   const cc = c.cost;

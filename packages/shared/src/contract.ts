@@ -78,10 +78,16 @@ export interface FactoryView {
   orderTargetId: string | null; // swarm: the enemy, guard: the ally, else null
   rally: { x: number; y: number }; // where 'attack' minions go; starts at world.center
 }
+export interface MinionView {     // self.minion, only inside a factory's updateMinion() (§5.3)
+  kind: MinionKind;      // what this minion is
+  factoryId: string;     // the id of its factory (the one running this updateMinion)
+  order: MinionOrder; orderTargetId: string | null; rally: { x: number; y: number }; // its factory's order, orderTargetId and rally right now
+  builtIn: Action;       // the action the built-in minion logic picks for it this tick
+}
 export interface SelfView {
   id: string;            // instanceId of this copy, e.g. "2-0-3"
   unitId: string;        // the design this copy was made from
-  ownerId: string; teamId: number; type: UnitType; name: string;
+  ownerId: string; teamId: number; type: BodyType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number;
   damage: number; range: number; speed: number; // the BASE stats: might, haste and a freeze change them in battle (status)
   attackCooldown: number; cooldownRemaining: number; // 0 = can attack (or heal) this tick
@@ -91,6 +97,7 @@ export interface SelfView {
   blockedTicks: number;     // ticks in a row a wall has stopped me (no progress; 0 = free)
   pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls and buildings by a route the game found, or walled off (it walks to the best wall to break and waits there)
   factory: FactoryView | null; // factories only
+  minion?: MinionView;   // only in updateMinion(): self is then the minion (type 'minion', name its kind, unitId its factory's design, factory null)
 }
 export interface OtherView {
   id: string; ownerId: string; teamId: number; type: BodyType; name: string;
@@ -125,9 +132,9 @@ export interface WorldView {
 
 export type Action =
   | { action: 'idle' }
-  | { action: 'move'; destination: { x: number; y: number } }   // soldiers
-  | { action: 'attack'; targetId: string }                     // soldiers and towers
-  | { action: 'heal'; targetId: string }                       // support 'heal' only: heal one ally in supportRange (uses the attack cooldown)
+  | { action: 'move'; destination: { x: number; y: number } }   // soldiers and minions
+  | { action: 'attack'; targetId: string }                     // soldiers, towers and minions
+  | { action: 'heal'; targetId: string }                       // support 'heal' only (and medic minions): heal one ally in supportRange (uses the attack cooldown)
   | { action: 'rally'; destination: { x: number; y: number } }  // factories: order 'attack' and send my minions here
   | { action: 'command'; order: MinionOrder; targetId?: string; destination?: { x: number; y: number } } // factories: squad order; swarm/guard need targetId
   | { action: 'release' }                                       // factories: send the stored minions out now
@@ -135,6 +142,7 @@ export type Action =
 
 export interface Unit extends UnitStats {
   update?(self: SelfView, enemies: OtherView[], allies: OtherView[], world: WorldView): Action | undefined; // soldier, tower, factory: required. wall: none
+  updateMinion?(self: SelfView, enemies: OtherView[], allies: OtherView[], world: WorldView): Action | undefined; // factory only, optional: once per tick for each of its minions on the field; undefined/null = the built-in logic (§5.3)
   sprite?(): SpriteSpec; // called ONCE at validation, never in battle (§5.1)
 }
 // --- END CONTRACT ---

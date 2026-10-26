@@ -249,10 +249,16 @@ export interface FactoryView {
   orderTargetId: string | null; // swarm: the enemy, guard: the ally, else null
   rally: { x: number; y: number }; // where 'attack' minions go; starts at world.center
 }
+export interface MinionView {     // self.minion, only inside a factory's updateMinion() (§5.3)
+  kind: MinionKind;      // what this minion is
+  factoryId: string;     // the id of its factory (the one running this updateMinion)
+  order: MinionOrder; orderTargetId: string | null; rally: { x: number; y: number }; // its factory's order, orderTargetId and rally right now
+  builtIn: Action;       // the action the built-in minion logic picks for it this tick
+}
 export interface SelfView {
   id: string;            // instanceId of this copy, e.g. "2-0-3"
   unitId: string;        // the design this copy was made from
-  ownerId: string; teamId: number; type: UnitType; name: string;
+  ownerId: string; teamId: number; type: BodyType; name: string;
   x: number; y: number; radius: number; hp: number; maxHp: number;
   damage: number; range: number; speed: number; // the BASE stats: might, haste and a freeze change them in battle (status)
   attackCooldown: number; cooldownRemaining: number; // 0 = can attack (or heal) this tick
@@ -262,6 +268,7 @@ export interface SelfView {
   blockedTicks: number;     // ticks in a row a wall has stopped me (no progress; 0 = free)
   pathing: 'direct' | 'detour' | 'no-route'; // my last move: straight there, round walls and buildings by a route the game found, or walled off (it walks to the best wall to break and waits there)
   factory: FactoryView | null; // factories only
+  minion?: MinionView;   // only in updateMinion(): self is then the minion (type 'minion', name its kind, unitId its factory's design, factory null)
 }
 export interface OtherView {
   id: string; ownerId: string; teamId: number; type: BodyType; name: string;
@@ -296,9 +303,9 @@ export interface WorldView {
 
 export type Action =
   | { action: 'idle' }
-  | { action: 'move'; destination: { x: number; y: number } }   // soldiers
-  | { action: 'attack'; targetId: string }                     // soldiers and towers
-  | { action: 'heal'; targetId: string }                       // support 'heal' only: heal one ally in supportRange (uses the attack cooldown)
+  | { action: 'move'; destination: { x: number; y: number } }   // soldiers and minions
+  | { action: 'attack'; targetId: string }                     // soldiers, towers and minions
+  | { action: 'heal'; targetId: string }                       // support 'heal' only (and medic minions): heal one ally in supportRange (uses the attack cooldown)
   | { action: 'rally'; destination: { x: number; y: number } }  // factories: order 'attack' and send my minions here
   | { action: 'command'; order: MinionOrder; targetId?: string; destination?: { x: number; y: number } } // factories: squad order; swarm/guard need targetId
   | { action: 'release' }                                       // factories: send the stored minions out now
@@ -306,6 +313,7 @@ export type Action =
 
 export interface Unit extends UnitStats {
   update?(self: SelfView, enemies: OtherView[], allies: OtherView[], world: WorldView): Action | undefined; // soldier, tower, factory: required. wall: none
+  updateMinion?(self: SelfView, enemies: OtherView[], allies: OtherView[], world: WorldView): Action | undefined; // factory only, optional: once per tick for each of its minions on the field; undefined/null = the built-in logic (§5.3)
   sprite?(): SpriteSpec; // called ONCE at validation, never in battle (§5.1)
 }
 ```
@@ -350,6 +358,8 @@ Rule 4 for `heal` (M8.8; engine-validated and written into CLAUDE.md):
 
 **The $10,000 redesign (2026-10-24).** The block above is the redesign's contract (the same three copies, kept identical by the same tests). It adds `OtherView.moving` and `OtherView.currentSpeed` (how far the body moved last tick; ranged shots at a moving body can miss, §9.4 Accuracy), the soldier/tower range split (soldiers 20-160 px, towers 20-300 px: towers out-range soldiers), the redesign's bounds (HP 80-4,000, damage 0-240, walls 400-12,000, factories 800-8,000 (120-1,200 since the brittle-factories change, 2026-10-25), interval 300-1,200, heal 15-400), the new element prices in the `element` comment, sudden death from tick 4500, and `pathing` routes round walls **and buildings** (§9.3). Rule 4 `move`: walls, towers and factories in the way are walked round (a gap between two buildings only when the body fits); a body boxed in by buildings still heads for its destination (buildings are never "the wall to break"). Rule 4 `attack`: a ranged shot at a moving body may miss (§9.4); melee never misses.
 
+**Minion code (2026-10-26).** The block also carries the factory's optional `updateMinion()` (§5.3 point 4, §17): `Unit.updateMinion`, `MinionView` (`self.minion`, only inside `updateMinion()`), `SelfView.type` widened to `BodyType` (a minion's `self` says `'minion'`) and the `move`/`attack`/`heal` comments naming minions. Nothing changes for code without the method (the views of every other call are unchanged; `tests/minion-code.test.ts` replays an older battle bit for bit).
+
 **Minions name their factory (2026-10-25).** `OtherView.factoryId` (in all three copies of the block): on a minion, the instanceId of the factory that made it (also when that factory is already destroyed); missing on every other body. A fact for unit code; it comes with the host option "Minions die with their factory" (§9.3) but is there whether the option is on or off.
 
 ### Stat bounds (config: `stats.bounds`)
@@ -392,7 +402,7 @@ Units draw themselves with pixel art. The renderer never runs player code: `spri
 
 ### 5.2 Unit types: soldier, tower, wall, factory (M8.5)
 
-Two building types join soldiers and towers. **Walls** are solid blocks with lots of HP that block movement and never fight. **Factories** make small built-in **minions** during the battle; the factory's code only picks where the minions go (the rally point) and when to pause production. Minions are engine-made and run built-in logic, never player code.
+Two building types join soldiers and towers. **Walls** are solid blocks with lots of HP that block movement and never fight. **Factories** make small built-in **minions** during the battle; the factory's code only picks where the minions go (the rally point) and when to pause production. Minions are engine-made and run built-in logic, never player code. **2026-10-26:** unless the factory has the optional `updateMinion()` (§5.3 point 4): then the factory's code decides for each of its minions.
 
 | Type | Group | Moves | Attacks | Code that runs in battle | Body | Job |
 |---|---|---|---|---|---|---|
@@ -400,7 +410,7 @@ Two building types join soldiers and towers. **Walls** are solid blocks with lot
 | tower | **building** | no | yes | `update()` every tick | circle, `size` 6-20 | shoot from home |
 | wall | **building** | no | no | **none** (no `update()`) | 40×40 square filling its cell | block paths, soak hits |
 | factory | **building** | no | no | `update()` every tick: `rally` / `hold` / idle | circle, radius 18 | make minions |
-| minion (engine-made) | none | yes | yes (melee) | built-in AI (`sim/minion.ts`) | circle, radius 8 | swarm |
+| minion (engine-made) | none | yes | yes (melee) | built-in AI (`sim/minion.ts`), or its factory's optional `updateMinion()` (§5.3) | circle, radius 8 | swarm |
 
 - **Groups and selection.** Per round a player fields **≤ 4 unit types (soldiers) and ≤ 4 building types (towers, walls, factories)** (`caps.maxUnitTypes: 4`, `caps.maxBuildingTypes: 4`, replacing `caps.maxTypes: 3`). Over the limit: `TOO_MANY_TYPES` with `details: {group: 'units' | 'buildings', max: 4, count}`. Open Armory types count in the group of their type. A picked design that is later revised into the other group (e.g. a soldier resubmitted as a tower) can leave the stored selection over a cap: the submit toasts the owner ("You picked 5 buildings; 4 max. Tap one to un-pick it."), the /play roster flags the group, PLAN Ready is refused with that `TOO_MANY_TYPES` until one is un-picked (un-picking is always allowed), and if the lock comes first the later picks of the full group are left out with a toast naming them.
 - **Fighters.** Soldiers, towers, factories that can still make a minion before time runs out (`canMake` > 0, §9.3), and minions are **fighters**. Walls never are. PLAN Ready and PLACEMENT Ready need at least one fighter type selected / one fighter placed (`NO_FIGHTERS`: "Walls can't win on their own. Pick a soldier, tower or factory too."). A side with no fighters left is eliminated (§9). **M8.8:** a soldier or tower with **damage 0** (a pure support unit: a medic, a banner or a healing shrine) and a factory that makes only medics are **not** fighters. They still count against `maxCopies`, because they run code. `NO_FIGHTERS` then needs a soldier or tower with damage > 0, or a factory that doesn't produce medics. Its message becomes "Medics and banners can't win on their own. Pick a unit that attacks." (§5.5, §9.4).
@@ -512,7 +522,7 @@ export interface Unit extends UnitStats {
   4. If `blockedTicks ≥ 120` (`factory.minion.impatientTicks`, 2 s) and the blocking wall is an enemy's → attack it (move to it if out of range). This applies with or without a target out of range, so minions break into a walled-in enemy.
   5. Target out of range → move toward it. No target: if more than 24 px from R → move to R; else idle (guard the rally point).
 - Every minion move goes round towers and factories: a minion touching one (of any side) whose centre lies within 15% of their radii of its straight line ahead steps 90° sideways instead (away from the building, or +90° from its heading when exactly in line), so separation can slide it round rather than pushing it straight back (`sidestep` in `sim/minion.ts`).
-- Minions are fighters, use the same wall steering and separation as soldiers, are hit by sudden death, never get strikes and cost no isolate time.
+- Minions are fighters, use the same wall steering and separation as soldiers, are hit by sudden death, never get strikes and cost no isolate time (2026-10-26: unless their factory has the optional `updateMinion()`, which runs in the owner's isolate and whose strikes count on the factory's minion code, §5.3 point 4).
 - **Value:** `minionCost` = the soldier price formula (§6) applied to the minion stats with the current soldier coefficients = **$55** (raw 54.05). `minionValue = ceil(minionCost × cost.factory.minionDiscount)` = ceil(55 × 0.5) = **$28**. It is used for factory prices, timeout value and value destroyed.
 - **M8.6:** this built-in minion is now the **grunt**, one of four minion kinds a factory can pick (§5.3). Everything above stays true for grunts (the default), so existing factories play and cost exactly as before.
 
@@ -564,6 +574,20 @@ Factories felt limited: every factory made the same minion and could only move a
 **FactoryView (§5 block):** `stored`, `burst`, `produces`, `order`, `orderTargetId` join the M8.5 fields. `minionsAlive` counts only minions out on the field; `maxAlive` caps `minionsAlive + stored`.
 
 **Choosing a kind:** player-facing text gives each kind's numbers and rules only, never which kind suits what (§17 "No strategy hints"). Players find out themselves.
+
+**4. Minion code: `updateMinion(self, enemies, allies, world)` (2026-10-26, §17).** Requested: "players should be allowed to change the behaviour of factory generated units." A factory class may define this optional method next to `update()`; without it nothing changes (bit for bit).
+- **When:** every tick, inside the player's ONE sandbox call (`__tick`), right after the factory's `update()`, once for each of that factory's living minions on the field (not stored ones), in instanceId order. Only while the factory is alive and not disabled, and while its minion code is on. A destroyed factory's minions use the built-in logic (the method belongs to the factory's copy, whose code no longer runs).
+- **Inputs:** `self` is the minion's `SelfView` (`type: 'minion'`, `name` its kind, `unitId` the factory's design, `factory: null`, its own hp, stats, cooldown, status, blockedBy/blockedTicks/pathing) plus `self.minion: MinionView` = `{ kind, factoryId, order, orderTargetId, rally, builtIn }`, where `builtIn` is the action the built-in AI (`minionAction`) picks for it this tick (the engine now computes the built-in actions before building the tick inputs; same snapshot, same result). `enemies`, `allies` (without the minion, with the factory and the other minions) and `world` are the player's lists, a fresh copy per call (§5 rule 3). `this` is the factory's object: state on `this` is shared with `update()`.
+- **Output:** a soldier-style action, validated by `resolveAction` exactly like the built-in minion's (move: clamped and routed round walls and buildings; attack: living enemy in range, cooldown 0, brute ×3 on walls; heal: medics only, the §5 rule 4 heal checks). Factory actions (rally/command/release/hold) and malformed values are an idle (the dry run warns). **`undefined` or `null` = the built-in logic for that minion this tick** (so does `return self.minion.builtIn`). A returned Promise or an action over 4 KB also falls back to the built-in logic.
+- **Fallbacks (a bad method never disables the factory):**
+  - throws: that minion uses the built-in logic this tick; the factory's error list gets "updateMinion() threw for <minion id>: …" (with its line), and its **minion code** gets one strike per tick with errors (not per minion). At `sandbox.battle.unitStrikeLimit` (30) the minion code is switched off for the battle; the factory's `update()`, production and orders go on.
+  - endless loop: the harness sets `__current` to the minion's id while its call runs, so the tick timeout names it; the runner accepts minion ids as culprits. Like a unit: the first timeout idles the whole player for that tick (minions: built-in logic), the second (`timeoutsToDisable`) switches the factory's minion code off. Neither counts toward the player timeout limits; host stalls follow the existing stall-suspect rule.
+  - slow: the harness reports the minion calls' time per factory (`mms`, added to the unit time for the slow check). When the slowest code of a slow-limit tick is a factory's minion code, that minion code is switched off instead of napping the factory (then the usual player rule).
+  - a tick that times out, crashes or returns bad output: every minion uses the built-in logic (minions never idle for their factory's code).
+- **Performance:** no extra sandbox call. The runner sends the minion views only for factories whose copy has the method (spawn reports `hasMinion`), the harness parses the shared lists once per tick as before and copies them per call. Measured (isolated-vm, one player, 10 soldiers + 2 factories, 40 enemies): 0.27 ms per tick call without minion code, 0.48 ms with 12 minions running an `updateMinion()` that loops over all enemies (≈ 18 µs per minion). The §9.3 worst case with every minion steered by player code (`tests/buildings-perf.test.ts`, 8 players, Ring 8) stays under the 8 ms p99 target.
+- **Price and balance:** unchanged. The minion's stats, E and minionValue are the same; only control changes, like `update()` on any unit. The balance bots don't use it, so the balance tables are unchanged.
+- **Validation (§7 step 9):** a factory with the method gets two practice minions of its kind in every practice world (one next to the first enemy, one at the factory, listed in `allies`); `updateMinion()` runs for both on every practice tick. A throw is `UPDATE_THREW` with `field: 'updateMinion'` and the line, an endless loop `UPDATE_TIMEOUT` (`field: 'updateMinion'`, found with the culprit probe), a Promise or a non-action `BAD_ACTION` (`undefined`/`null` are fine), a factory action or a heal from a non-medic `W_ACTION_NOT_FOR_TYPE` (`field: 'updateMinion'`). `updateMinion()` on a soldier, tower or wall warns `W_MINION_IGNORED`.
+- **Player-facing text** (contract, CLAUDE.md "Factories: minion code", `get_rules` `factories.minionCode`, the /guide factories and view sections, the Basic Factory notes) states these facts and lists `MinionView`; no tactics (§17 "No strategy hints"). The Basic Factory template has no `updateMinion()`, so it plays and costs as before.
 
 ### 5.4 Elements and splash (M8.8)
 
@@ -1039,7 +1063,7 @@ A stored unit is `{ unitId, ownerId, version, status: "valid"|"invalid", source,
 
 ### Layout
 - **Validation**: a fresh isolate per validate/submit call, disposed afterwards.
-- **Battle**: **one isolate per player per battle**, created at START. Each of that player's ≤3 unit types (M8.5: up to 4 + 4) is evaluated with the same CJS wrapper as validation. **Walls are never loaded** (no code runs for them, §5.2); factories are spawned and ticked like any unit, and minions run in the engine, not in an isolate. The harness (`sandbox/harness.ts` exports its source as a string constant, so the build needs no stray `.js` asset) exposes:
+- **Battle**: **one isolate per player per battle**, created at START. Each of that player's ≤3 unit types (M8.5: up to 4 + 4) is evaluated with the same CJS wrapper as validation. **Walls are never loaded** (no code runs for them, §5.2); factories are spawned and ticked like any unit, and minions run in the engine, not in an isolate (2026-10-26: except a factory's optional `updateMinion()`, which the harness runs for each of its minions inside the same `__tick` call, §5.3 point 4). The harness (`sandbox/harness.ts` exports its source as a string constant, so the build needs no stray `.js` asset) exposes:
   - `__spawn(instanceId, unitId)` constructs an instance of design `unitId` and keeps it in a Map inside the isolate.
   - `__tick(inputJson) → outputJson` loops over that player's living instances. Before each `update()` call it writes the instance id to the isolate global `__current`. It calls `update` in a per-unit `try/catch`, then returns `[{instanceId, action} | {instanceId, error: {message, line}}]`.
 - **Identifiers:** `unitId` always means a **design** (§7, selection, placement, MCP). `instanceId` means one placed **copy** in a battle (= `SelfView.id`), defined as `${seat}-${row}-${col}` and assigned at lock time from the zone-local cell (§9).
@@ -2507,6 +2531,10 @@ Numbers in `docs/balance.md` "Only minions near the factory crumble". The user's
 - **Exploit search** (radius 120 on, seed 1, 8 × 20): five builds at 82.0-86.0% (off: top 88.4%), the known tanks + hitters and splash-melee families, each with 0-0-16 counters; nothing factory-related, no new exception.
 - **Tests:** `tests/factory-minion-crumble.test.ts` (only minions within the radius crumble, the ones outside survive, the boundary ± 0.05 px and exactly on the radius, 0 and a huge radius = all, credit only for the crumbled ones, get_rules/guide state the radius only when on, determinism, off identical whatever the radius).
 
+### Minion code (2026-10-26)
+
+`tests/minion-code.test.ts`: the golden replay (factories without `updateMinion()` replay a pre-change battle bit for bit); what `updateMinion()` sees (`self` = the minion, `self.minion` facts, one result per listed minion) and that its moves are applied; `undefined`, `null` and `self.minion.builtIn` play exactly like no method; factory actions from it are an idle; a medic heals from it (and not when it doesn't say so); a throw = built-in for the tick, one strike per tick, minion code off at 30, factory not disabled; an endless loop = one idle tick, then minion code off (player and factory not disabled); a destroyed factory's minions get no more views; one `tick` sandbox call per player per tick with 8 minions on code; determinism (same seed equal, other seed different; isolated-vm = node:vm); a borrowed Armory factory's minion code runs in its own part; `parseTickOutput` drops forged minion entries; validation (`UPDATE_THREW` / `BAD_ACTION` / `UPDATE_TIMEOUT` on `field: 'updateMinion'`, `undefined`/`null` fine, `W_ACTION_NOT_FOR_TYPE`, `W_MINION_IGNORED` on a soldier). `tests/buildings-perf.test.ts` "minion code": the M8.5 worst case with every minion steered by player code stays under the 8 ms p99 target. `tests/no-strategy-hints.test.ts` now also requires every `MinionView` field in CLAUDE.md and the guide. Numbers: `docs/balance.md` "Minion code".
+
 ### Dress-rehearsal checklist (on the event hardware, ≥ 1 day before)
 - [ ] Host OS: `npm ci && npm run build && npm start` works offline. isolated-vm loads (banner says `sandbox: isolated-vm`).
 - [ ] Router up. Both the game server and the AI session host have reserved IPs. Firewalls allow inbound TCP 8080 (game server) and 7781-7788 (AI session host, at least from the game server). Player laptops reach `/play`; /admin shows every seat **up**. Containers on the AI session host reach the game server's `/mcp` **and** Anthropic.
@@ -2944,6 +2972,18 @@ No strategy hints (2026-10-24):
 | Topic | Decision |
 |---|---|
 | **Name of the seat machine** | User (verbatim): "Rename \"Claude box\" to AI session host". All human-readable text (UI, server messages, docs, comments, Makefile help, `sessions/` comments, `<ai-session-host>` placeholders) now says "AI session host"; this supersedes the "machine keeps its name" wording row above. Follow-up (user: "Let's change the claudeBoxHost -> aiSessionHost. Don't need to worry about config migration."): `claudeBoxHost` → `aiSessionHost`, `normalizeClaudeBoxHost` → `normalizeAiSessionHost`, `CLAUDE_BOX_NOT_SET` / `CLAUDE_BOX_DOWN` → `AI_SESSION_HOST_NOT_SET` / `AI_SESSION_HOST_DOWN`, no migration (re-enter the host address once in /admin). `boxHost`, `no-box` and CSS/checklist ids keep their names. |
+
+### Resolved: player-controlled minion behaviour (2026-10-26)
+
+| Topic | Decision |
+|---|---|
+| **Minion code** | User (verbatim): "A new thing I'd like to allow - players should be allowed to change the behaviour of factory generated units." A factory may define an optional `updateMinion(self, enemies, allies, world)` (§5.3 point 4): called each tick, right after its `update()`, once per living minion of that factory, with `self` = the minion's view (+ `self.minion`: kind, factoryId, the factory's order / orderTargetId / rally, and `builtIn`, the built-in AI's action) and `this` = the factory object. It returns a soldier-style action, checked like the built-in minion's. |
+| Name and shape | `updateMinion` (one call per minion, the same four arguments as `update()`) rather than one batched `minions(list)` call: it reads like `update()` for players and their AI helper, and the batching that matters (one sandbox call per player per tick) happens in the harness anyway. `self.minion.builtIn` is exposed as a runtime attribute (what the minion would do on its own), not a hint. |
+| Fallback | `undefined`/`null` = the built-in logic for that minion this tick; a throw = built-in for that minion + one minion-code strike per tick for the factory; a timed-out or broken tick = built-in for every minion. 30 error ticks, the 2nd timeout named on a minion, or a slow-limit tick whose slowest code is the minion code switch only the **minion code** off for the battle: the factory itself is never disabled for it (consistent with "a bad update() naps that unit", the unit here being the minion code). Destroyed or disabled factory: built-in logic. |
+| Performance | No extra sandbox call: the minion calls run inside the player's existing `__tick`; minion views are sent only for factories whose copy has the method. ≈ 18 µs per minion call (isolated-vm, a loop over 40 enemies); the §9.3 worst case with every minion on player code stays under 8 ms p99 (§14 Minion code). |
+| Price / balance | Unchanged: control only, the minions' stats and count are the same (like `update()` costing nothing). No bot or archetype change; balance tables unchanged (§14 Minion code). |
+| Docs | Facts and runtime attributes only (§17 "No strategy hints"): the contract block (`MinionView`, `Unit.updateMinion`), CLAUDE.md "Factories: minion code" + the `self.minion` table, `get_rules` `factories.minionCode`, the /guide (view + factories sections), MCP instructions, and a note at the bottom of `basic_factory.js`. The Basic Factory template itself has no `updateMinion()` (unchanged behaviour and price). |
+| Backward compatibility | Factories without the method play bit for bit as before (golden replay hash recorded on the previous commit in `tests/minion-code.test.ts`); their validation is unchanged. |
 
 ### Open items
 1. **isolated-vm on the game server's host OS**: confirmed only by the M0 check. (It already works in the devcontainer on Node 24 / arm64 with isolated-vm 6.1.2.) Otherwise the process fallback is built and used, with its documented residual risk.

@@ -91,6 +91,16 @@ export default class BasicFactory {
 //   { action: 'release' }                                    send stored minions out now
 //   { action: 'hold' }                                       pause building for a tick
 //
+// Optional minion code (this template has none, so its minions use the built-in logic):
+//   updateMinion(self, enemies, allies, world)  a method next to update(). Every tick it is
+//       called once for EACH of this factory's minions on the field, with self = that minion
+//       (self.type 'minion', self.minion = { kind, factoryId, order, orderTargetId, rally,
+//       builtIn }; builtIn is the action the built-in logic picks for it this tick). `this` is
+//       the factory. It returns a minion action: { action: 'move', destination: { x, y } },
+//       { action: 'attack', targetId }, { action: 'heal', targetId } (medics) or
+//       { action: 'idle' }. Returning nothing (or null), or throwing, = the built-in logic.
+//       It doesn't change the price.
+//
 // Cost = body + production
 //   body       = 50 + maxHealth*0.5 * (1 + (maxHealth/1200)^2) = 50 + 196.2 = 246.2  ->  $247
 //   production = 11 minions (one every 10 s in a 120 s battle) x $177 (half price: they arrive late) = $1,947

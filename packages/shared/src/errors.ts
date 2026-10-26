@@ -73,6 +73,8 @@ export const WARNING_CODES = [
   'W_STAT_IGNORED',
   'W_UPDATE_IGNORED',
   'W_ACTION_NOT_FOR_TYPE',
+  // §5.3 minion code (2026-10-26)
+  'W_MINION_IGNORED',
   'W_TRAPPED',
   // M8.6 (§5.3, §7)
   'W_ORDER_TARGET',
@@ -355,6 +357,7 @@ const PLAYER_HINTS: Record<ValidationErrorCode | WarningCode, string> = {
   W_STAT_IGNORED: "Heads up: this kind of unit doesn't use its {field}, so the game ignores it.",
   W_UPDATE_IGNORED: "Heads up: walls don't think, so the game never runs this wall's update().",
   W_ACTION_NOT_FOR_TYPE: "Heads up: your unit sometimes gives an order its type can't do, so it waits instead.",
+  W_MINION_IGNORED: "Heads up: only factories have minions, so the game never runs this unit's minion code.",
   W_TRAPPED: 'Walled in! Leave a gap so your unit can get out.',
   W_ORDER_TARGET: 'Heads up: your factory sometimes points its minions at the wrong side (swarm an enemy, guard a friend).',
   W_BURST_NEVER_FULL: "Heads up: this factory never makes enough minions to fill its burst, so they leave when it runs out.",

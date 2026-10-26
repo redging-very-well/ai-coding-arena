@@ -449,3 +449,95 @@ describe('elements and support worst case (M8.8 timing)', () => {
     expect(p99, `tick p99, runs ${runs.map((r) => r.toFixed(2)).join(', ')}`).toBeLessThan(TARGET_P99_MS);
   }, 180_000);
 });
+
+/**
+ * §5.3 minion code (2026-10-26, §14 test:perf): the M8.5 worst case with
+ * factories that steer every minion themselves. Each player's 2 factories
+ * have an updateMinion() that loops over all enemies for the nearest
+ * non-wall one (attack it in range, else walk at it), so up to 40 minions
+ * (the battle cap) run player code every tick, inside each player's one
+ * sandbox call. Target unchanged: sim p99 < 8 ms/tick, and nobody gets
+ * switched off.
+ */
+const MINION_CODE_FACTORY_SRC = FACTORY_SRC.replace("this.name = 'Swarm Factory';", "this.name = 'Brain Factory';").replace(
+  /\n}$/,
+  `
+  updateMinion(self, enemies, allies, world) {
+    let target = null;
+    let best = Infinity;
+    for (const e of enemies) {
+      if (e.type === 'wall') continue;
+      const gap = Math.hypot(e.x - self.x, e.y - self.y) - self.radius - e.radius;
+      if (gap < best) { best = gap; target = e; }
+    }
+    let friends = 0;
+    for (const a of allies) if (a.type === 'minion' && Math.hypot(a.x - self.x, a.y - self.y) < 60) friends++;
+    if (target && best <= self.range && self.cooldownRemaining === 0) return { action: 'attack', targetId: target.id };
+    // Stay home (so the minions live and the battle reaches the 40-minion cap), spread a little by how crowded it is.
+    const home = world.myCorner;
+    if (Math.hypot(home.x - self.x, home.y - self.y) < 40 + friends * 8) return { action: 'idle' };
+    return { action: 'move', destination: { x: home.x, y: home.y } };
+  }
+}`,
+);
+
+describe('buildings worst case with minion code (§5.3 timing)', () => {
+  it('8p × (10 soldiers + 2 Brain Factories + 12 walls) on Ring 8, every minion steered by updateMinion(): sim p99 < 8 ms/tick', async () => {
+    const config: GameConfig = deepMerge(DEFAULT_CONFIG, { timers: { battleTicks: TICKS } });
+    expect(MINION_CODE_FACTORY_SRC).toContain('updateMinion(');
+    const [soldier, factory, wall] = await Promise.all([
+      submit(SOLDIER_SRC, config, 's'),
+      submit(MINION_CODE_FACTORY_SRC, config, 'f'),
+      submit(WALL_SRC, config, 'w'),
+    ]);
+    const { layout, specs } = worstCaseSpecs();
+    const designs = [soldier!, factory!, wall!];
+    let minionCalls = 0;
+    const { engine, result, wallMs, p50, p99, engineP99, runs } = await bestRun(async () => {
+      const runners = await createBattleRunners(
+        ivm,
+        specs.map((s) => ({ playerId: s.playerId, seat: s.seat, units: designs.map((d) => d.runner) })),
+        config,
+        42,
+      );
+      for (const r of runners.values()) expect([...r.loadErrors]).toEqual([]);
+      minionCalls = 0;
+      const engine = new BattleEngine({
+        players: specs.map((s) => {
+          const r = runners.get(s.playerId)!;
+          // Count the minion decisions made by player code (one sandbox call per player per tick either way).
+          const counted = {
+            get player() { return r.player; },
+            get loadErrors() { return r.loadErrors; },
+            get disposed() { return r.disposed; },
+            spawn: (i: string, u: string) => r.spawn(i, u),
+            tick: async (input: Parameters<typeof r.tick>[0]) => {
+              const res = await r.tick(input);
+              minionCalls += res.minions?.length ?? 0;
+              return res;
+            },
+            dispose: () => r.dispose(),
+          };
+          return { playerId: s.playerId, seat: s.seat, zone: s.zone, units: designs.map((d) => d.battle), placements: worstCasePlacements(), runner: counted };
+        }),
+        config,
+        seed: 42,
+        map: { style: layout.style, width: layout.width },
+      });
+      const t0 = performance.now();
+      const result = await engine.run();
+      return { engine, result, wallMs: performance.now() - t0 };
+    });
+    const tickMs = engine.tickMs;
+    const minions = Math.max(...engine.frames.map((f) => f.units.filter((u) => u[0].includes('-m')).length));
+    console.log(
+      `[buildings-perf minion code] ${result.units.length} bodies (${minions} minions max at once, ${minionCalls} updateMinion() calls), ${result.endTick} ticks (${result.endReason}) in ${wallMs.toFixed(0)} ms; ` +
+        `tick p50 ${p50.toFixed(3)} ms, p99 ${p99.toFixed(3)} ms (engine ${engineP99.toFixed(3)} ms; runs ${runs.map((r) => r.toFixed(2)).join('/')}), max ${Math.max(...tickMs).toFixed(2)} ms`,
+    );
+    expect(minionCalls).toBeGreaterThan(1000);
+    for (const p of result.players) expect(p.disabled, `${p.playerId} ${p.disabledReason}`).toBe(false);
+    for (const u of result.units.filter((x) => x.type === 'factory')) expect(u.errors, u.instanceId).toEqual([]);
+    expect(engineP99, `engine p99 (tick minus the sandbox wait), runs ${runs.map((r) => r.toFixed(2)).join(', ')}`).toBeLessThan(ENGINE_P99_MS);
+    expect(p99, `tick p99, runs ${runs.map((r) => r.toFixed(2)).join(', ')}`).toBeLessThan(TARGET_P99_MS);
+  }, 180_000);
+});

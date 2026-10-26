@@ -296,19 +296,22 @@ export const HARNESS_SOURCE = String.raw`(function setup(seed) {
     if (Ctor === undefined) return '{"ok":false,"kind":"unknown-design"}';
     var obj;
     var upd;
+    var umin;
     current = instanceId;
     try {
       obj = construct(Ctor, []);
       upd = obj.update;
+      umin = obj.updateMinion;
     } catch (e) {
       current = '';
       return '{"ok":false,"kind":"threw","error":' + describe(e) + '}';
     }
     current = '';
     var hasUpdate = typeof upd === 'function';
-    // update() is captured now; reassigning this.update later changes nothing.
-    mset(instances, instanceId, { obj: obj, update: hasUpdate ? upd : undefined });
-    return '{"ok":true,"hasUpdate":' + (hasUpdate ? 'true' : 'false') + '}';
+    var hasMinion = typeof umin === 'function';
+    // update() and updateMinion() are captured now; reassigning them later changes nothing.
+    mset(instances, instanceId, { obj: obj, update: hasUpdate ? upd : undefined, minion: hasMinion ? umin : undefined });
+    return '{"ok":true,"hasUpdate":' + (hasUpdate ? 'true' : 'false') + (hasMinion ? ',"hasMinion":true' : '') + '}';
   }
 
   // ---- stats: own data properties only (validation step 5) ---------------
@@ -373,7 +376,13 @@ export const HARNESS_SOURCE = String.raw`(function setup(seed) {
 
   // ---- tick: one update() per self ---------------------------------------
   // Input (built by the host, see encodeTickInput):
-  //   { nowMs, selves: [SelfView], enemiesJson, worldJson, allyIds: [id], alliesJson: [json] }
+  //   { nowMs, selves: [SelfView], enemiesJson, worldJson, allyIds: [id], alliesJson: [json], minions?: [SelfView] }
+  // 'minions' (§5.3 updateMinion): the views of the minions whose factory is
+  // in 'selves' and has updateMinion(); each carries 'minion.factoryId'.
+  // Right after a factory's update(), its updateMinion() runs once for each
+  // of them (with '__current' = the minion's id, so a timeout names it), and
+  // the factory's entry gets '"minions":[{instanceId, action|error|promise}]'
+  // plus '"mms"', the time those calls took.
   // The enemies and allies are parsed ONCE per tick; every update() gets its
   // own fresh copy (M8.8: the views carry status/support objects, and a
   // JSON.parse per call doubled the tick time). The copies are made without
@@ -420,6 +429,8 @@ export const HARNESS_SOURCE = String.raw`(function setup(seed) {
     var aj = '[';
     for (var a = 0; a < nA; a++) aj += (a ? ',' : '') + str(alliesJson[a], 'null');
     var alliesAll = parse(aj + ']');
+    var minions = input.minions;
+    var nM = minions !== null && typeof minions === 'object' && typeof minions.length === 'number' ? minions.length : 0;
     var out = '';
     for (var k = 0; k < selves.length; k++) {
       var self = selves[k];
@@ -447,9 +458,46 @@ export const HARNESS_SOURCE = String.raw`(function setup(seed) {
         body = ',"error":' + describe(e);
       }
       current = '';
-      out += head + body + ',"ms":' + (clock() - t0) + '}';
+      var ms = clock() - t0;
+      if (inst.minion !== undefined && nM > 0) body += minionCalls(inst, id, minions, nM, enemiesAll, alliesAll, worldJson);
+      out += head + body + ',"ms":' + ms + '}';
     }
     return '[' + out + ']';
+  }
+  // updateMinion() for each minion of factory 'fid' (§5.3): ',"minions":[…],"mms":n' or ''.
+  function minionCalls(inst, fid, minions, nM, enemiesAll, alliesAll, worldJson) {
+    var list = '';
+    var n = 0;
+    var t0 = clock();
+    for (var j = 0; j < nM; j++) {
+      var m = minions[j];
+      if (m === null || typeof m !== 'object') continue;
+      var mv = m.minion;
+      if (mv === null || typeof mv !== 'object' || mv.factoryId !== fid) continue;
+      var mid = m.id;
+      if (typeof mid !== 'string') continue;
+      var entry = '{"instanceId":' + stringify(mid);
+      current = mid;
+      try {
+        var act = apply(inst.minion, inst.obj, [m, cloneList(enemiesAll, undefined), cloneList(alliesAll, mid), parse(worldJson)]);
+        if (act !== null && typeof act === 'object' && typeof act.then === 'function') {
+          lastPromiseOwner = mid;
+          entry += ',"promise":true';
+        } else {
+          var actJson = stringify(act);
+          if (actJson === undefined) entry += '';
+          else if (actJson.length > MAX_ACTION_JSON) entry += ',"action":"too-big"';
+          else entry += ',"action":' + actJson;
+        }
+      } catch (e) {
+        entry += ',"error":' + describe(e);
+      }
+      current = '';
+      list += (n ? ',' : '') + entry + '}';
+      n++;
+    }
+    if (n === 0) return '';
+    return ',"minions":[' + list + '],"mms":' + (clock() - t0);
   }
 
   // ---- The API (returned, never published) --------------------------------
