@@ -3,7 +3,8 @@
 // LOBBY, a summary after the start), Players (the table, details behind a
 // toggle), Game rules (settings that save as they change), AI seats (§11.2)
 // and Server. The chosen tab is remembered in this browser; starting a match
-// goes from Match to Players, New match back.
+// goes from Match to Players, New match back. Until the AI seats work, a
+// "Set up AI seats" banner on top opens the setup wizard (SeatSetupWizard.tsx).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api } from '../common/api.js';
@@ -15,6 +16,7 @@ import { Details } from './Details.js';
 import { MatchTab } from './MatchTab.js';
 import { PhaseControls } from './PhaseControls.js';
 import { PlayersTable } from './PlayersTable.js';
+import { SeatWizardHost } from './SeatSetupWizard.js';
 import { ServerInfo } from './ServerInfo.js';
 import { GameRules, loadPref, savePref } from './Settings.js';
 import { errorText, useAdminData } from './useAdmin.js';
@@ -79,6 +81,8 @@ function Console({ onLoggedOut }: { onLoggedOut: () => void }) {
   const data = useAdminData();
   const [busy, setBusy] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [seatWizard, setSeatWizard] = useState(false);
+  const openSeatWizard = useCallback(() => setSeatWizard(true), []);
   const { notify, refresh } = data;
   const [tab, setTabState] = useState<TabId>(() => {
     const saved = loadPref('tab', 'match');
@@ -121,7 +125,10 @@ function Console({ onLoggedOut }: { onLoggedOut: () => void }) {
     if (data.lostSession) onLoggedOut();
   }, [data.lostSession, onLoggedOut]);
 
-  const ctx: AdminCtx = useMemo(() => ({ ...data, act, busy, showDetails, setShowDetails }), [data, act, busy, showDetails]);
+  const ctx: AdminCtx = useMemo(
+    () => ({ ...data, act, busy, showDetails, setShowDetails, openSeatWizard }),
+    [data, act, busy, showDetails, openSeatWizard],
+  );
   const sandbox = data.state?.sandboxMode ?? data.setup?.sandboxMode;
 
   const logout = async () => {
@@ -152,6 +159,7 @@ function Console({ onLoggedOut }: { onLoggedOut: () => void }) {
           {sandbox === 'inproc-unsafe' ? ' (UNSAFE: development only, never at the event)' : ''}.
         </div>
       )}
+      <SeatWizardHost open={seatWizard} setOpen={setSeatWizard} />
       <div class="notices" aria-live="polite">
         {data.notices.map((n) => (
           <div key={n.id} class={cx('notice', `notice-${n.level}`)} onClick={() => data.dismiss(n.id)}>

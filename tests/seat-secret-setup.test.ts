@@ -154,6 +154,20 @@ describe('sessions/set-env.sh', () => {
     expect(readFileSync(f, 'utf8')).toContain('PIXEL_CLASH_URL=http://10.0.0.2:9000\n');
   });
 
+  it('sets AGENT to claude or codex (the /admin wizard adds it), refuses anything else', () => {
+    const d = tmp();
+    const f = join(d, '.env');
+    writeFileSync(f, 'AGENT=claude\nSEAT_AGENT_7=codex\n', { mode: 0o600 });
+    expect(run(f, ['AGENT'], { AGENT: 'codex' }).status).toBe(0);
+    expect(readFileSync(f, 'utf8')).toBe('AGENT=codex\nSEAT_AGENT_7=codex\n');
+    for (const bad of ['Codex', 'gpt', '', 'codex\nEVIL=1']) {
+      const r = run(f, ['AGENT'], { AGENT: bad });
+      expect(r.status, JSON.stringify(bad)).not.toBe(0);
+      expect(r.stderr).toContain('AGENT');
+    }
+    expect(readFileSync(f, 'utf8')).toBe('AGENT=codex\nSEAT_AGENT_7=codex\n');
+  });
+
   it('refuses bad values and unknown names without writing anything (no shell injection)', () => {
     const d = tmp();
     const f = join(d, '.env');

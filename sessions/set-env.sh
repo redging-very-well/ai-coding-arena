@@ -1,5 +1,5 @@
 #!/bin/sh
-# Write PIXEL_CLASH_URL and/or SEAT_SECRET into sessions/.env (plan §11.1).
+# Write PIXEL_CLASH_URL, SEAT_SECRET and/or AGENT into sessions/.env (plan §11.1).
 #
 #   PIXEL_CLASH_URL=http://192.168.8.10:8080 SEAT_SECRET=otter-lamp-quartz-ninety \
 #     sh sessions/set-env.sh sessions/.env PIXEL_CLASH_URL SEAT_SECRET
@@ -7,13 +7,15 @@
 # The arguments after the file are the NAMES to set; their values come from the
 # environment (never from the command line, so make never pastes a value into a
 # shell command). The repo Makefile runs it for `make seats PIXEL_CLASH_URL=…
-# SEAT_SECRET=…` (the command /admin → AI seats → Claude box setup shows).
+# SEAT_SECRET=… [AGENT=codex]` (the command /admin → AI seats → Claude box setup
+# shows; the /admin setup wizard adds AGENT=… for the agent picked there).
 #
 # - Creates the file from .env.example next to it if it is missing.
 # - Replaces every `NAME=…` line, or appends one; all other lines are kept.
 # - Validates the values first (nothing is written if one is bad):
 #   PIXEL_CLASH_URL  http(s)://host[:port], no path (a trailing / is dropped)
 #   SEAT_SECRET      12-64 of A-Z a-z 0-9 . _ ~ - (what ttyd's -c can take)
+#   AGENT            claude or codex (SEAT_AGENT_N overrides stay as they are)
 # - The file ends up owner-only (0600): it holds the seat password.
 #
 # POSIX sh + awk only (macOS BSD tools and Linux), no sed -i.
@@ -31,8 +33,8 @@ shift
 
 for name in "$@"; do
   case $name in
-    PIXEL_CLASH_URL | SEAT_SECRET) ;;
-    *) die "unknown setting '$name' (only PIXEL_CLASH_URL and SEAT_SECRET)" ;;
+    PIXEL_CLASH_URL | SEAT_SECRET | AGENT) ;;
+    *) die "unknown setting '$name' (only PIXEL_CLASH_URL, SEAT_SECRET and AGENT)" ;;
   esac
 done
 
@@ -50,6 +52,10 @@ checked=$(PC_NAMES=$names awk 'BEGIN {
     } else if (k == "SEAT_SECRET") {
       if (length(v) < 12 || length(v) > 64 || v !~ /^[A-Za-z0-9._~-]+$/) {
         print "SEAT_SECRET must be 12-64 characters of A-Z a-z 0-9 . _ ~ - (copy it from /admin -> AI seats)" > "/dev/stderr"; bad = 1
+      }
+    } else if (k == "AGENT") {
+      if (v != "claude" && v != "codex") {
+        print "AGENT must be claude or codex" > "/dev/stderr"; bad = 1
       }
     }
     out = out k "=" v "\n"

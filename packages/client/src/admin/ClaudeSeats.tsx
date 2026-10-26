@@ -9,14 +9,18 @@
 // proxy, in its own tab). "Agent login" (§11.2 f): the shared Claude Code
 // token / API keys every seat's agent starts with, write-only (only "…last 4"
 // ever comes back), and per seat which shared login its last start fetched.
+// "Setup wizard" opens the step-by-step first-time setup (SeatSetupWizard.tsx),
+// which reuses the pieces exported here.
 
-import { useEffect, useState } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { AdminClaudeSeatDTO, AdminClaudeSeatsDTO, AgentCredentialKind, ClaudeSeatStatus, SeatCredentialEnv } from '@pixel-clash/shared';
 import { api } from '../common/api.js';
 import { copyText, cx } from '../common/ui.js';
 import { adminTerminalTabName, terminalPath } from '../play/claudePane.js';
 import { updateSetupSettings } from '../setup/setupApi.js';
 import { useAdmin } from './context.js';
+import { maskedSetupCommand, wizardSetupCommand, type WizardAgent } from './seatSetupSteps.js';
 
 /** Same rule as the server (§11.2 a): ttyd's `-c player:<secret>` can't take spaces or ':'. */
 export const SEAT_SECRET_RE = /^[A-Za-z0-9._~-]{12,64}$/;
@@ -59,13 +63,60 @@ function liveText(live: AdminClaudeSeatDTO['live'], now: number): string {
   return `${live.playerName ?? 'player'}, ${live.pane ? 'embedded' : 'own tab'} (${since})`;
 }
 
+/** Save setup settings (box address, seat password); on success the seats are re-checked and shown soon. */
+export function useSaveSetup() {
+  const { act, setSetup, setSeats } = useAdmin();
+  return async (patch: Parameters<typeof updateSetupSettings>[0], okText: string) => {
+    const r = await act(() => updateSetupSettings(patch), okText);
+    if (r) {
+      setSetup(r);
+      // The probe re-checks every seat on setup changes; show the result soon.
+      setTimeout(() => void api.admin.claudeSeats().then(setSeats).catch(() => undefined), 1500);
+    }
+    return !!r;
+  };
+}
+
+/** The Claude box address field + Save. */
+export function BoxAddress() {
+  const { setup, busy } = useAdmin();
+  const saveSetup = useSaveSetup();
+  const savedHost = setup?.settings.claudeBoxHost ?? '';
+  const [boxHost, setBoxHost] = useState(savedHost);
+  // Follow the saved address when it changes (not on mount: that would wipe what was typed before the first effect).
+  const lastSaved = useRef(savedHost);
+  useEffect(() => {
+    if (lastSaved.current === savedHost) return;
+    lastSaved.current = savedHost;
+    setBoxHost(savedHost);
+  }, [savedHost]);
+  return (
+    <form
+      class="btn-row"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const v = boxHost.trim();
+        void saveSetup({ claudeBoxHost: v || null }, v ? 'Claude box address saved' : 'Claude box address cleared');
+      }}
+    >
+      <input
+        placeholder="e.g. 192.168.8.20"
+        aria-label="Claude box address"
+        value={boxHost}
+        onInput={(e) => setBoxHost(e.currentTarget.value)}
+      />
+      <button class="btn" disabled={busy || boxHost.trim() === savedHost}>
+        Save
+      </button>
+    </form>
+  );
+}
+
 export function ClaudeSeats() {
-  const { seats, setup, overview, act, busy, showDetails, setShowDetails, setSetup, setSeats } = useAdmin();
+  const { seats, overview, act, busy, showDetails, setShowDetails, setSeats, openSeatWizard } = useAdmin();
   const [details, setDetails] = useState<AdminClaudeSeatsDTO | null>(null);
   const [now, setNow] = useState(Date.now());
-  const [boxHost, setBoxHost] = useState('');
-  const savedHost = setup?.settings.claudeBoxHost ?? '';
-  useEffect(() => setBoxHost(savedHost), [savedHost]);
+  const saveSetup = useSaveSetup();
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 5000);
@@ -89,16 +140,6 @@ export function ClaudeSeats() {
     };
   }, [showDetails, secretKey]);
 
-  const saveSetup = async (patch: Parameters<typeof updateSetupSettings>[0], okText: string) => {
-    const r = await act(() => updateSetupSettings(patch), okText);
-    if (r) {
-      setSetup(r);
-      // The probe re-checks every seat on setup changes; show the result soon.
-      setTimeout(() => void api.admin.claudeSeats().then(setSeats).catch(() => undefined), 1500);
-    }
-    return !!r;
-  };
-
   const rows = seats?.seats ?? [];
   const wrong = rows.filter((r) => r.status === 'wrong-password').map((r) => r.seat);
   const directOf = (seat: number) => details?.seats.find((d) => d.seat === seat)?.directUrl;
@@ -108,6 +149,9 @@ export function ClaudeSeats() {
     <section class="panel claude-seats">
       <div class="panel-head">
         <h2>AI seats</h2>
+        <button class="btn small primary" onClick={openSeatWizard}>
+          Setup wizard
+        </button>
         <label class="toggle">
           <input type="checkbox" checked={showDetails} onChange={(e) => setShowDetails(e.currentTarget.checked)} />
           Show details
@@ -136,19 +180,7 @@ export function ClaudeSeats() {
       <p class="dim small">
         The machine running the seat containers. Players reach their seat's terminal through this server at /terminal/N/, inside /play.
       </p>
-      <form
-        class="btn-row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const v = boxHost.trim();
-          void saveSetup({ claudeBoxHost: v || null }, v ? 'Claude box address saved' : 'Claude box address cleared');
-        }}
-      >
-        <input placeholder="e.g. 192.168.8.20" value={boxHost} onInput={(e) => setBoxHost(e.currentTarget.value)} />
-        <button class="btn" disabled={busy || boxHost.trim() === savedHost}>
-          Save
-        </button>
-      </form>
+      <BoxAddress />
 
       <BoxSetup command={details?.setupCommand ?? null} show={showDetails} secretSet={seats?.seatSecretSet ?? false} />
 
@@ -293,31 +325,44 @@ function OpenTerminal({ row }: { row: AdminClaudeSeatDTO }) {
  * writes PIXEL_CLASH_URL and SEAT_SECRET into sessions/.env and starts the
  * seats. It carries the seat password, so the text shows only with "Show
  * details"; Copy works either way (it fetches the details just for the copy).
+ * `agent` (the wizard) adds AGENT=claude|codex to the command.
  */
-function BoxSetup(props: { command: string | null; show: boolean; secretSet: boolean }) {
+export function BoxSetup(props: { command: string | null; show: boolean; secretSet: boolean; agent?: WizardAgent; children?: ComponentChildren }) {
   const { act, busy } = useAdmin();
+  const withAgent = (cmd: string | null | undefined) => (props.agent ? wizardSetupCommand(cmd, props.agent) : (cmd ?? null));
+  const shown = withAgent(props.command);
   const copy = () =>
     act(async () => {
-      const cmd = props.command ?? (await api.admin.claudeSeats(true)).setupCommand ?? null;
+      const cmd = shown ?? withAgent((await api.admin.claudeSeats(true)).setupCommand);
       if (!cmd) throw new Error('No seat password yet: set one below first.');
       if (!(await copyText(cmd))) throw new Error("Couldn't copy: turn on Show details and copy the command by hand.");
     }, 'Setup command copied: paste it in the repo folder on the Claude box');
   return (
     <div class="box-setup">
-      <h3>Claude box setup</h3>
-      <p class="dim small">
-        Run this in the Pixel Clash repo folder on the Claude box: it saves this server's address and the seat password in sessions/.env and
-        starts the seats (add N=4 for seats 1-4 only). Later starts need only <code>make seats</code>.
-      </p>
+      {props.children ?? (
+        <>
+          <h3>Claude box setup</h3>
+          <p class="dim small">
+            Run this in the Pixel Clash repo folder on the Claude box: it saves this server's address and the seat password in sessions/.env and
+            starts the seats (add N=4 for seats 1-4 only, AGENT=codex for Codex). Later starts need only <code>make seats</code>.
+          </p>
+        </>
+      )}
       {props.secretSet ? (
         <div class="btn-row">
-          {props.show && props.command ? <code class="secret" style={{ wordBreak: 'break-all', userSelect: 'all' }}>{props.command}</code> : <span class="dim">make seats PIXEL_CLASH_URL=… SEAT_SECRET=…</span>}
+          {props.show && shown ? (
+            <code class="secret" style={{ wordBreak: 'break-all', userSelect: 'all' }}>
+              {shown}
+            </code>
+          ) : (
+            <span class="dim">{props.agent ? maskedSetupCommand(props.agent) : 'make seats PIXEL_CLASH_URL=… SEAT_SECRET=…'}</span>
+          )}
           <button class="btn small" disabled={busy} onClick={() => void copy()}>
             Copy
           </button>
         </div>
       ) : (
-        <p class="warn-text small">No seat password yet: set one below, then the command appears here.</p>
+        <p class="warn-text small">No seat password yet: set one on the AI seats tab (Seat password), then the command appears here.</p>
       )}
     </div>
   );
@@ -421,7 +466,7 @@ const AGENT_FIELDS: ReadonlyArray<{ kind: AgentCredentialKind; label: string; pl
  * The shared agent logins (§11.2 f). Write-only: once saved, the page only
  * ever gets "…last 4" back, so it is safe on the projector.
  */
-function AgentLogin({ hints }: { hints: AdminClaudeSeatsDTO['agentCredentials'] | null }) {
+export function AgentLogin({ hints, kinds, intro = true }: { hints: AdminClaudeSeatsDTO['agentCredentials'] | null; kinds?: readonly AgentCredentialKind[]; intro?: boolean }) {
   const { act, busy, setSeats } = useAdmin();
   const [editing, setEditing] = useState<AgentCredentialKind | null>(null);
   const [text, setText] = useState('');
@@ -436,13 +481,17 @@ function AgentLogin({ hints }: { hints: AdminClaudeSeatsDTO['agentCredentials'] 
   };
   return (
     <div class="agent-login">
-      <h3>Agent login</h3>
-      <p class="dim small">
-        Paste one login here and every seat's agent starts with it (the next time its terminal opens), so no seat needs its own /login.
-        Without one, each seat uses the login stored in it. Any seat's agent can read this login, so use a dedicated event account and
-        revoke the token or keys after the event.
-      </p>
-      {AGENT_FIELDS.map((f) => {
+      {intro && (
+        <>
+          <h3>Agent login</h3>
+          <p class="dim small">
+            Paste one login here and every seat's agent starts with it (the next time its terminal opens), so no seat needs its own /login.
+            Without one, each seat uses the login stored in it. Any seat's agent can read this login, so use a dedicated event account and
+            revoke the token or keys after the event.
+          </p>
+        </>
+      )}
+      {AGENT_FIELDS.filter((f) => !kinds || kinds.includes(f.kind)).map((f) => {
         const hint = hints?.[f.kind] ?? null;
         const valid = AGENT_CREDENTIAL_RE[f.kind].test(value);
         return (

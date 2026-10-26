@@ -12,6 +12,8 @@ export interface AdminCtx extends AdminData {
   /** "Show details" (default off, the panel may be on the projector): rosters, sprites, seat password, direct seat URLs. */
   showDetails: boolean;
   setShowDetails(on: boolean): void;
+  /** Open the "Set up AI seats" wizard (SeatSetupWizard.tsx). */
+  openSeatWizard(): void;
 }
 
 export const AdminContext = createContext<AdminCtx | null>(null);

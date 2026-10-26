@@ -33,8 +33,8 @@ endif
 endif
 endif
 
-# PIXEL_CLASH_URL / SEAT_SECRET given on the make command line (the command
-# /admin -> AI seats -> Claude box setup shows) are written into sessions/.env
+# PIXEL_CLASH_URL / SEAT_SECRET / AGENT (claude or codex) given on the make
+# command line (the command /admin -> AI seats -> Claude box setup shows) are written into sessions/.env
 # by sessions/set-env.sh before compose runs. Only the NAMES go into the shell
 # command; the script reads the (validated) values from the environment, where
 # make puts command-line variables. Values from your shell environment are
@@ -45,6 +45,9 @@ SET_ENV_NAMES += PIXEL_CLASH_URL
 endif
 ifeq ($(origin SEAT_SECRET),command line)
 SET_ENV_NAMES += SEAT_SECRET
+endif
+ifeq ($(origin AGENT),command line)
+SET_ENV_NAMES += AGENT
 endif
 SET_ENV = $(if $(strip $(SET_ENV_NAMES)),sh sessions/set-env.sh sessions/.env $(strip $(SET_ENV_NAMES)),true)
 ENV_HINT = echo "sessions/.env is missing. On the game server open /admin -> AI seats -> Claude box setup, copy the command" && \
@@ -101,7 +104,7 @@ balance: ## Fast balance report (npm run balance; ARGS="--fast" etc.)
 
 # ------------------------------------------------------------------- AI seats
 
-seats-env: ## Create/update sessions/.env (PIXEL_CLASH_URL=... SEAT_SECRET=..., as /admin shows)
+seats-env: ## Create/update sessions/.env (PIXEL_CLASH_URL=... SEAT_SECRET=... [AGENT=codex], as /admin shows)
 	@$(SET_ENV)
 	@if [ -f sessions/.env ]; then [ -n "$(strip $(SET_ENV_NAMES))" ] || echo "sessions/.env already exists"; \
 	else umask 077 && cp sessions/.env.example sessions/.env && \
