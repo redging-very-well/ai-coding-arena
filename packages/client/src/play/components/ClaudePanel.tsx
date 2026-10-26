@@ -3,13 +3,13 @@
 // mounted across tab switches and breakpoints (not under the "open in another
 // tab" overlay, and not before the first `terminal` push says nobody else
 // holds the seat: loading it takes the seat over). Join / login assign a seat
-// by themselves (§11.2 c), so the picker is the fallback (no seat free, or
-// "Change seat"). Pane states: seat picker, not
+// by themselves (§11.2 c), so the picker is the fallback (no seat free; there is no
+// "Change seat" button: an admin moves a player). Pane states: seat picker, not
 // ready, the terminal (with a "host down" strip), and "open in another tab"
 // with "Use it here instead". "Open in new tab" opens the same terminal as its
 // own browser tab.
 
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
 import { cx } from '../../common/ui.js';
 import {
   NO_FREE_SEAT_TEXT,
@@ -101,7 +101,6 @@ export function ClaudePane({ visible, layout, focusSeq, onShowGame }: ClaudePane
             Open in new tab ↗
           </a>
         )}
-        {seat !== null && <ChangeSeat />}
       </div>
       {layout === 'tabs' && st.game?.phase === 'PLACEMENT' && (
         // Not focusable on purpose: game events never take the keyboard away from the terminal.
@@ -161,30 +160,6 @@ function TerminalFrame(props: { frameRef: { current: HTMLIFrameElement | null };
       allow="clipboard-read; clipboard-write"
       onLoad={onLoad}
     />
-  );
-}
-
-/** "Change seat" with a confirm step (changing restarts Claude on the new laptop's seat). */
-function ChangeSeat() {
-  const store = getStore();
-  const [ask, setAsk] = useState(false);
-  if (!ask) {
-    return (
-      <button class="mini ghost change-seat" onClick={() => setAsk(true)}>
-        Change seat
-      </button>
-    );
-  }
-  return (
-    <span class="change-seat confirm">
-      Wrong laptop?{' '}
-      <button class="mini" onClick={() => void store.claimSeat(null).then(() => setAsk(false))}>
-        Pick again
-      </button>{' '}
-      <button class="mini ghost" onClick={() => setAsk(false)}>
-        Cancel
-      </button>
-    </span>
   );
 }
 

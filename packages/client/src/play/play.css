@@ -758,7 +758,6 @@ button.btn.small, a.btn.small { min-height: 34px; padding: 0.25em 0.75em; font-s
   cursor: text;
 }
 .claude-title .pixel { font-size: 13px; }
-.change-seat.confirm { font-size: 0.95rem; }
 .place-strip {
   flex: none;
   padding: 0.3rem 0.75rem;
