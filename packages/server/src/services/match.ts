@@ -3,11 +3,14 @@
 //
 //   LOBBY → PLAN → PLACEMENT → BATTLE → RESULTS → PLAN … → MATCH_RESULTS → LOBBY
 //
-// PLAN auto-advances when its timer ends, or (timers.autoAdvanceWhenAllReady)
-// ~3 s after every active player is Ready; PLACEMENT never auto-starts (the
-// timer just runs out and shows "Waiting for host START"). The host can also
-// start a short, cancellable countdown to Next/START (the pending advance). BATTLE → RESULTS
-// follows the PLAYBACK clock (services/battle.ts releases the result).
+// PLAN auto-advances when its timer ends, Ready or not (players without a
+// pick get the auto-pick), or (timers.autoAdvanceWhenAllReady) ~3 s after
+// every active player is Ready. PLACEMENT never auto-starts: when its timer
+// runs out placement stops (empty zones are auto-placed, edits close) and the
+// host's START works without everyone Ready ("Waiting for host START"). The
+// host can also start a short, cancellable countdown to Next/START (the
+// pending advance). BATTLE → RESULTS follows the PLAYBACK clock
+// (services/battle.ts releases the result).
 
 import { fail, ok, type PendingAdvanceDTO, type Phase, type Result, type TimerDTO } from '@pixel-clash/shared';
 
@@ -69,6 +72,12 @@ export class MatchService {
   gate(op: GatedOp): Result<never> | null {
     const open = PHASE_GATES[op];
     const phase = this.m.phase;
+    if (op === 'placement' && this.placementTimeUp()) {
+      return fail('PHASE_CLOSED', "Time's up: placing units is over. Waiting for the host to press START.", {
+        hint: 'Wait for the battle.',
+        details: { phase, opensIn: 'PLACEMENT', timeUp: true },
+      });
+    }
     if (open.includes(phase)) return null;
     const opensIn = open[0]!;
     const details: Record<string, unknown> = { phase, opensIn };
@@ -84,6 +93,11 @@ export class MatchService {
       hint,
       details,
     });
+  }
+
+  /** PLACEMENT and its timer ran out (§3): placement is closed, START needs no Ready. */
+  placementTimeUp(): boolean {
+    return this.m.phase === 'PLACEMENT' && this.m.timer.expired === true;
   }
 
   submissionsOpen(): boolean {
@@ -176,7 +190,8 @@ export class MatchService {
   //    (/admin or /screen with the admin cookie). It keeps counting when
   //    someone un-readies (the host chose it); at zero it does exactly what
   //    Next (PLAN) or START without force (PLACEMENT) does, so a PLACEMENT one
-  //    can still be refused with NOT_ALL_READY (toast to the admin).
+  //    can still be refused with NOT_ALL_READY (toast to the admin) unless
+  //    the PLACEMENT timer has run out (then START needs no Ready).
   //  * by 'auto': timers.autoAdvanceWhenAllReady, PLAN only. Runs while every
   //    active player is Ready and the PLAN timer isn't paused; cancelled as
   //    soon as that stops being true.
@@ -229,7 +244,7 @@ export class MatchService {
 
   /**
    * Admin: start the countdown to the next step (PLAN → PLACEMENT any time,
-   * PLACEMENT → BATTLE when everyone is Ready, RESULTS → the next battle's
+   * PLACEMENT → BATTLE when everyone is Ready or its timer ran out, RESULTS → the next battle's
    * PLAN or, after the last round, MATCH_RESULTS). Replaces an auto countdown.
    */
   startAdvance(delayIn: unknown): Result<true> {
@@ -241,7 +256,7 @@ export class MatchService {
     if (phase !== 'PLAN' && phase !== 'PLACEMENT' && phase !== 'RESULTS') {
       return fail('PHASE_CLOSED', 'The countdown works only in PLAN, PLACEMENT and RESULTS.', { details: { phase, opensIn: 'PLAN' } });
     }
-    if (phase === 'PLACEMENT' && !this.game.round.allReady()) return this.notAllReady();
+    if (phase === 'PLACEMENT' && !this.game.round.allReady() && !this.placementTimeUp()) return this.notAllReady();
     const to: AdvanceTarget =
       phase === 'PLAN' ? 'PLACEMENT' : phase === 'PLACEMENT' ? 'BATTLE' : this.m.round < this.m.rounds ? 'PLAN' : 'MATCH_RESULTS';
     this.setPending(to, delay * 1000, 'host');
@@ -321,10 +336,15 @@ export class MatchService {
       log.info(`round ${this.m.round}: PLAN timer ended`);
       this.enterPlacement();
     } else if (this.m.phase === 'PLACEMENT') {
-      // No auto-start: wait for the host's START.
+      // Placement stops (empty zones are auto-placed now, edits close) but the
+      // battle is not auto-started: the host's START is the show moment, and
+      // now works without everyone Ready. Adding time reopens placement.
+      log.info(`round ${this.m.round}: PLACEMENT timer ended`);
       this.m.timer = { deadline: null, remainingMs: null, paused: false, expired: true };
+      this.autoPlace();
       this.game.notifier.toast({ all: true }, 'info', "Time's up! Waiting for the host to press START.");
       this.changed();
+      this.allPrivateChanged();
     }
   }
 
@@ -429,14 +449,9 @@ export class MatchService {
     if (this.m.phase !== 'PLACEMENT') {
       return fail('PHASE_CLOSED', 'START works only in PLACEMENT.', { details: { phase: this.m.phase, opensIn: 'PLACEMENT' } });
     }
-    if (!force && !this.game.round.allReady()) return this.notAllReady();
+    if (!force && !this.game.round.allReady() && !this.placementTimeUp()) return this.notAllReady();
     this.pending = null;
-    // A kick since PLACEMENT began changes the zone set (§9 Zones: per active count).
-    const activeIds = this.game.players.active().map((p) => p.id);
-    const zoned = Object.keys(this.m.zones);
-    if (activeIds.length !== zoned.length || activeIds.some((id) => !this.m.zones[id])) this.game.round.assignZones();
-    const auto = this.game.round.autoPlaceEmpty();
-    for (const name of auto) this.game.notifier.toast({ all: true }, 'info', `${name}'s army was placed for them.`);
+    this.autoPlace();
     for (const p of this.game.players.active()) {
       const rs = this.game.round.stateOf(p.id);
       if (rs.placements.length > 0) rs.lastLayout = rs.placements.map((x) => ({ ...x }));
@@ -447,6 +462,16 @@ export class MatchService {
     this.allPrivateChanged();
     this.game.battle.start();
     return ok(true);
+  }
+
+  /** Zones in line with the active players, then auto-place empty armies (§9 Auto-place). */
+  private autoPlace(): void {
+    // A kick since PLACEMENT began changes the zone set (§9 Zones: per active count).
+    const activeIds = this.game.players.active().map((p) => p.id);
+    const zoned = Object.keys(this.m.zones);
+    if (activeIds.length !== zoned.length || activeIds.some((id) => !this.m.zones[id])) this.game.round.assignZones();
+    const auto = this.game.round.autoPlaceEmpty();
+    for (const name of auto) this.game.notifier.toast({ all: true }, 'info', `${name}'s army was placed for them.`);
   }
 
   private notAllReady(): Result<never> {

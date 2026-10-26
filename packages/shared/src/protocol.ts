@@ -408,7 +408,11 @@ export interface TimerDTO {
   /** Seconds left in the current phase, or null when the phase has no timer. */
   secondsLeft: number | null;
   paused: boolean;
-  /** PLACEMENT only: the timer ran out; waiting for the host to press START. */
+  /**
+   * PLACEMENT only: the timer ran out. Placement is closed (empty zones were
+   * auto-placed) and the host's START works without everyone Ready (§3).
+   * Adding time clears it and reopens placement.
+   */
   expired?: boolean;
 }
 

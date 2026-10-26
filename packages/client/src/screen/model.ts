@@ -260,10 +260,11 @@ export interface ReadyBanner {
 /**
  * The banner over the top of the arena (§12.2), from the public flags: the
  * countdown to the next step while one runs (even if someone un-readied
- * during a host countdown), else "everyone's ready". Null otherwise.
+ * during a host countdown), else "time's up" (PLACEMENT timer ran out), else
+ * "everyone's ready". Null otherwise.
  */
 export function readyBanner(
-  state: Pick<GameStateDTO, 'phase' | 'allReady' | 'pendingAdvance'> | null | undefined,
+  state: (Pick<GameStateDTO, 'phase' | 'allReady' | 'pendingAdvance'> & Partial<Pick<GameStateDTO, 'timer'>>) | null | undefined,
   /** The facilitator's go control (§12.2): on RESULTS it gets a small banner to sit on. */
   goLabel?: string | null,
 ): ReadyBanner | null {
@@ -278,6 +279,8 @@ export function readyBanner(
   }
   // Results: only the facilitator's browser shows a banner (with the go button); everyone else sees the results.
   if (state.phase === 'RESULTS') return goLabel ? { title: 'Round over!', sub: 'Ready when you are' } : null;
+  // The PLACEMENT timer ran out (§3): placement is closed, START works without everyone Ready.
+  if (state.phase === 'PLACEMENT' && state.timer?.expired) return { title: "Time's up!", sub: 'Waiting for the host to press START' };
   if (!state.allReady) return null;
   if (state.phase === 'PLAN') return { title: "Everyone's ready! 🎉", sub: 'Waiting for the host to start placement' };
   if (state.phase === 'PLACEMENT') return { title: "Everyone's placed and ready!", sub: 'START when you like!' };

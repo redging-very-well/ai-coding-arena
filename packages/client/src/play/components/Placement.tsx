@@ -165,7 +165,11 @@ export function Placement() {
   );
   useEffect(() => () => save.flush(), [save]);
 
+  /** The PLACEMENT timer ran out: placement is closed until START (or the host adds time). */
+  const timeUp = st.game?.timer.expired === true;
+
   const commit = (next: PlacementDTO[]) => {
+    if (timeUp) return;
     latest.current = next;
     seq.current++;
     dirty.current = true;
@@ -204,6 +208,7 @@ export function Placement() {
       swallowClick.current = false;
       return;
     }
+    if (timeUp) return;
     const now = latest.current;
     const r = tapCell(now, col, row, chosen, rules);
     if (!r.ok) {
@@ -218,6 +223,7 @@ export function Placement() {
   const wallChosen = chosen !== null && typeOf(chosen) === 'wall';
   /** Paint a wall on an empty cell (press or drag); false stops the stroke (cap, budget). */
   const paintAt = (col: number, row: number): boolean => {
+    if (timeUp) return false;
     if (placementAt(latest.current, col, row)) return true;
     const r = tapCell(latest.current, col, row, chosen, rules);
     if (!r.ok) {
@@ -437,7 +443,7 @@ export function Placement() {
       <div class="placement-actions">
         <button
           class="btn"
-          disabled={!lastLayout || lastLayout.length === 0}
+          disabled={timeUp || !lastLayout || lastLayout.length === 0}
           onClick={() => {
             const r = copyLastLayout(lastLayout, rules);
             commit(r.placements);
@@ -452,14 +458,14 @@ export function Placement() {
         >
           ↺ Copy last layout
         </button>
-        <button class="btn" disabled={placements.length === 0} onClick={() => commit([])}>
+        <button class="btn" disabled={timeUp || placements.length === 0} onClick={() => commit([])}>
           ✕ Clear
         </button>
         <button class={cx('btn ready-btn', ready && 'on')} disabled={readyBusy} onClick={() => void toggleReady()} aria-pressed={ready}>
           {ready ? '✓ READY!' : 'READY'}
         </button>
       </div>
-      {ready && <p class="dim small">You're ready! You can still change things until the host presses START.</p>}
+      {ready && !timeUp && <p class="dim small">You're ready! You can still change things until the host presses START.</p>}
       {st.game?.pendingAdvance?.to === 'BATTLE' ? (
         <p class="note countdown pixel" role="status">
           {countdownText(st.game.pendingAdvance)}
@@ -467,7 +473,7 @@ export function Placement() {
       ) : (
         st.game?.allReady && <p class="note">Everyone's placed and ready! Waiting for the host to press START.</p>
       )}
-      {st.game?.timer.expired && <p class="note">Time's up! Waiting for the host to press START.</p>}
+      {timeUp && <p class="note">Time's up! Waiting for the host to press START.</p>}
     </section>
   );
 }

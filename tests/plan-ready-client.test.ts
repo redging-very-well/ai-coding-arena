@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG, type GameStateDTO, type PlayerStatusDTO } from '@pixel-clash/shared';
-import { NO_CONTROLS, advanceControls, advanceKey, countdownText } from '../packages/client/src/common/advance.js';
+import { NO_CONTROLS, advanceControls, advanceKey, countdownText, timeUp } from '../packages/client/src/common/advance.js';
 import { QUICK_GROUPS, QUICK_TOGGLES, fieldChanged, setPath, toggleValue } from '../packages/client/src/admin/quickSettings.js';
 import { planReadyView, readyWasCleared } from '../packages/client/src/play/logic.js';
 import { becameAllReady, newlyDone, readyBanner, statusTicks, tileDone } from '../packages/client/src/screen/model.js';
@@ -131,6 +131,24 @@ describe('go / cancel controls (/screen with an admin session, /admin)', () => {
     expect(advanceControls(counting, true)).toEqual({ go: null, cancel: true });
     expect(advanceControls(counting, false)).toEqual(NO_CONTROLS);
     expect(advanceControls(null, true)).toEqual(NO_CONTROLS);
+  });
+
+  it('shows go to the admin once the phase timer has run out, even when not everyone is ready', () => {
+    const up = { secondsLeft: 0, paused: false, expired: true };
+    // The bug report (2026-10-26): the PLACEMENT timer ran out, not everyone was ready, and /screen had no START.
+    expect(advanceControls({ ...st({ phase: 'PLACEMENT' }), timer: up }, true)).toEqual({ go: { label: 'START battle ▶', space: true }, cancel: false });
+    expect(advanceControls({ ...st({ phase: 'PLACEMENT' }), timer: up }, false)).toEqual(NO_CONTROLS);
+    expect(advanceControls({ ...st({ phase: 'PLAN' }), timer: up }, true).go?.label).toBe('Start placement ▶');
+    // Running, paused or extended timers: back to "everyone ready" only.
+    expect(advanceControls({ ...st({ phase: 'PLACEMENT' }), timer: { secondsLeft: 0, paused: true } }, true)).toEqual(NO_CONTROLS);
+    expect(advanceControls({ ...st({ phase: 'PLACEMENT' }), timer: { secondsLeft: 60, paused: false } }, true)).toEqual(NO_CONTROLS);
+    expect(timeUp({ timer: up })).toBe(true);
+    expect(timeUp({ timer: { secondsLeft: 0, paused: false } })).toBe(false);
+    expect(timeUp({})).toBe(false);
+    // A countdown still wins (Cancel), and the banner carries the button for everyone's "Time's up!".
+    expect(advanceControls({ ...st({ phase: 'PLACEMENT', pendingAdvance: { to: 'BATTLE', by: 'host', secondsLeft: 3 } }), timer: up }, true)).toEqual({ go: null, cancel: true });
+    expect(readyBanner({ phase: 'PLACEMENT', allReady: false, timer: up })).toEqual({ title: "Time's up!", sub: 'Waiting for the host to press START' });
+    expect(readyBanner({ phase: 'PLACEMENT', allReady: false, timer: { secondsLeft: 5, paused: false } })).toBeNull();
   });
 
   it('on RESULTS the admin always gets Next battle (or Final standings after the last round), Enter only', () => {

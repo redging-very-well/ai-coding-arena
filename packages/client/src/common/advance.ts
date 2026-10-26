@@ -6,7 +6,7 @@
 
 import type { GameStateDTO, PendingAdvanceDTO } from '@pixel-clash/shared';
 
-type StateBits = Pick<GameStateDTO, 'phase' | 'allReady' | 'pendingAdvance'> & Partial<Pick<GameStateDTO, 'round' | 'rounds'>>;
+type StateBits = Pick<GameStateDTO, 'phase' | 'allReady' | 'pendingAdvance'> & Partial<Pick<GameStateDTO, 'round' | 'rounds' | 'timer'>>;
 
 export interface AdvanceControls {
   /**
@@ -22,9 +22,10 @@ export interface AdvanceControls {
 export const NO_CONTROLS: AdvanceControls = { go: null, cancel: false };
 
 /**
- * What the facilitator can do now: go when everyone is ready (PLAN,
- * PLACEMENT) or any time on the results (next battle / final standings),
- * cancel while a countdown runs.
+ * What the facilitator can do now: go when everyone is ready or the phase
+ * timer has run out (PLAN, PLACEMENT; once the PLACEMENT timer is up the
+ * server's START needs no Ready) or any time on the results (next battle /
+ * final standings), cancel while a countdown runs.
  */
 export function advanceControls(state: StateBits | null | undefined, isAdmin: boolean): AdvanceControls {
   if (!state || !isAdmin) return NO_CONTROLS;
@@ -33,10 +34,18 @@ export function advanceControls(state: StateBits | null | undefined, isAdmin: bo
     const last = state.round !== undefined && state.rounds !== undefined && state.round >= state.rounds;
     return { go: { label: last ? 'Final standings ▶' : 'Next battle ▶', space: false }, cancel: false };
   }
-  if (!state.allReady) return NO_CONTROLS;
+  if (!state.allReady && !timeUp(state)) return NO_CONTROLS;
   if (state.phase === 'PLAN') return { go: { label: 'Start placement ▶', space: true }, cancel: false };
   if (state.phase === 'PLACEMENT') return { go: { label: 'START battle ▶', space: true }, cancel: false };
   return NO_CONTROLS;
+}
+
+/**
+ * The phase timer ran out (`timer.expired`: PLACEMENT waits for START; PLAN
+ * moves on by itself). A paused timer or one the host extended is not up.
+ */
+export function timeUp(state: Partial<Pick<GameStateDTO, 'timer'>>): boolean {
+  return state.timer?.expired === true;
 }
 
 /** Keyboard on /screen: Enter (and Space outside RESULTS) = go, Esc = cancel (only when that control shows). */
