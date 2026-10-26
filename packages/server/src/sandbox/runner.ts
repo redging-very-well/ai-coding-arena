@@ -1,7 +1,6 @@
 // The sandbox Runner interface, shared by every sandbox mode:
 //   - ivmRunner     (isolated-vm, the default; one isolate per player per battle)
 //   - inprocRunner  (node:vm, dev/tests only, refused at startup without --unsafe)
-//   - processRunner (child_process fallback; only built if isolated-vm fails)
 //
 // The sim engine (sim/engine.ts) talks ONLY to this interface, so it can be
 // tested with a scripted fake runner.
@@ -41,7 +40,7 @@ import type { SandboxMode } from '@pixel-clash/shared';
 /** The player a runner is created for (one runner per player per battle). */
 export interface RunnerPlayer {
   playerId: string;
-  /** Seat 0-3; prefix of every instanceId this player owns (`${seat}-${row}-${col}`). */
+  /** Seat 0-7; prefix of every instanceId this player owns (`${seat}-${row}-${col}`). */
   seat: number;
   /**
    * PRNG seed for the in-sandbox `Math.random` replacement:
