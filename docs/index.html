@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pixel Clash</title>
+  <meta name="description" content="Pixel Clash: a LAN auto-battler where players prompt an AI helper to write JavaScript units, then watch them fight on the big screen.">
+  <meta name="theme-color" content="#0d0f1a">
+  <meta property="og:title" content="Pixel Clash">
+  <meta property="og:description" content="A LAN auto-battler where players prompt an AI helper to write JavaScript units, then watch them fight on the big screen.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://redging-very-well.github.io/ai-coding-arena/images/fight-screen.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="#top">PIXEL <span>CLASH</span></a>
+    <nav class="topnav" aria-label="Sections">
+      <a href="#round">How a round works</a>
+      <a href="#players">What players do</a>
+      <a href="#features">Features</a>
+      <a href="#runs">How it runs</a>
+      <a href="#start">Get started</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" id="top">
+    <div class="wrap">
+      <h1 class="title"><span class="p">PIXEL</span><span class="c">CLASH</span></h1>
+      <div class="seats" aria-hidden="true">
+        <i style="background:var(--seat-0)"></i><i style="background:var(--seat-1)"></i>
+        <i style="background:var(--seat-2)"></i><i style="background:var(--seat-3)"></i>
+        <i style="background:var(--seat-4)"></i><i style="background:var(--seat-5)"></i>
+        <i style="background:var(--seat-6)"></i><i style="background:var(--seat-7)"></i>
+      </div>
+      <p class="pitch">A LAN auto-battler where players prompt an AI helper to write their units in JavaScript, then watch them fight on the big screen.</p>
+      <p class="sub">For 2-8 players, built for a Kids Coding Day. Players only describe what they want; the AI helper writes the code, the game server checks it, prices it and runs it in a sandbox.</p>
+      <div class="cta">
+        <a class="btn" href="https://github.com/redging-very-well/ai-coding-arena">
+          <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          View on GitHub
+        </a>
+        <a class="btn ghost" href="#start">Get started</a>
+      </div>
+      <figure class="shot">
+        <button type="button" data-full="images/fight-screen.png" aria-label="Enlarge: a battle on the projector">
+          <img src="images/fight-screen.png" width="1716" height="977" fetchpriority="high"
+               alt="The projector during a battle: an isometric pixel-art arena with two players' armies clashing in the middle, a CLASH! banner, the battle timer and an army value bar for each player">
+        </button>
+        <figcaption>A battle on the projector (/screen)</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="round">
+    <div class="wrap">
+      <h2>How a round works</h2>
+      <p class="lede">A match is several rounds, free-for-all or in teams, on a map that fits the player count. A facilitator runs each round from /admin through four phases.</p>
+      <ol class="steps">
+        <li class="step" style="--c:var(--seat-1)">
+          <div class="step-text">
+            <span class="step-num">1</span>
+            <h3>Plan</h3>
+            <p>Players talk to their AI helper to design new units or improve old ones, then pick which unit and building types to field and press "I'm ready!". The projector shows the timer and the join QR.</p>
+          </div>
+          <div class="step-shots">
+            <figure class="shot">
+              <button type="button" data-full="images/planning.png" aria-label="Enlarge: /play during Plan">
+                <img src="images/planning.png" width="1699" height="1274" loading="lazy"
+                     alt="/play during Plan: the AI helper terminal on the left after writing three mage units, and the My Units cards with stats and prices on the right">
+              </button>
+              <figcaption>/play: the AI helper next to My Units</figcaption>
+            </figure>
+            <figure class="shot">
+              <button type="button" data-full="images/plan-screen.png" aria-label="Enlarge: the projector during Plan">
+                <img src="images/plan-screen.png" width="1706" height="981" loading="lazy"
+                     alt="The projector during Plan: an empty arena, a countdown timer, the join QR code and each player's progress ticks">
+              </button>
+              <figcaption>/screen: timer and join QR</figcaption>
+            </figure>
+          </div>
+        </li>
+        <li class="step" style="--c:var(--seat-0)">
+          <div class="step-text">
+            <span class="step-num">2</span>
+            <h3>Placement</h3>
+            <p>Each player places copies of their picks in their zone of the arena, within a budget. Armies stay secret until the facilitator presses START.</p>
+          </div>
+          <div class="step-shots">
+            <figure class="shot">
+              <button type="button" data-full="images/placement.png" aria-label="Enlarge: the placement grid">
+                <img src="images/placement.png" width="873" height="970" loading="lazy"
+                     alt="The placement grid in /play: units and buildings placed on a 6 by 6 zone, a mini-map of the arena and a budget bar showing $9,517 of $10,000 spent">
+              </button>
+              <figcaption>/play: placing the army</figcaption>
+            </figure>
+            <figure class="shot">
+              <button type="button" data-full="images/placement-screen.png" aria-label="Enlarge: everyone ready on the projector">
+                <img src="images/placement-screen.png" width="1720" height="992" loading="lazy"
+                     alt="The projector at the end of Placement: a green banner saying everyone is placed and ready, with a START battle button">
+              </button>
+              <figcaption>/screen: everyone ready, START</figcaption>
+            </figure>
+          </div>
+        </li>
+        <li class="step" style="--c:var(--bad)">
+          <div class="step-text">
+            <span class="step-num">3</span>
+            <h3>Battle</h3>
+            <p>The units fight on their own, running the code the AI helper wrote. The battle plays live on the projector and on every player's /play.</p>
+          </div>
+          <div class="step-shots one">
+            <figure class="shot">
+              <button type="button" data-full="images/fight-screen.png" aria-label="Enlarge: a battle in progress">
+                <img src="images/fight-screen.png" width="1716" height="977" loading="lazy"
+                     alt="A battle in progress on the projector, with damage numbers and an OVERLOAD! effect in the middle of the arena">
+              </button>
+              <figcaption>/screen: the battle</figcaption>
+            </figure>
+          </div>
+        </li>
+        <li class="step" style="--c:var(--good)">
+          <div class="step-text">
+            <span class="step-num">4</span>
+            <h3>Results</h3>
+            <p>Ranking, points and badges on the projector, and a per-unit report for each player, including any errors to hand back to the AI helper. Then the next Plan starts.</p>
+          </div>
+          <div class="step-shots">
+            <figure class="shot">
+              <button type="button" data-full="images/results-screen.png" aria-label="Enlarge: results on the projector">
+                <img src="images/results-screen.png" width="1692" height="982" loading="lazy"
+                     alt="Round results on the projector: the battle results table with places, points and badges, a scoreboard and the top damage units">
+              </button>
+              <figcaption>/screen: ranking and points</figcaption>
+            </figure>
+            <figure class="shot">
+              <button type="button" data-full="images/results-player.png" aria-label="Enlarge: a player's round report">
+                <img src="images/results-player.png" width="861" height="1236" loading="lazy"
+                     alt="A player's round report in /play: their place and points, a badge, top damage, and a table of how each of their units did">
+              </button>
+              <figcaption>/play: each player's report</figcaption>
+            </figure>
+          </div>
+        </li>
+      </ol>
+      <p class="after">After the last round comes an awards ceremony on the projector.</p>
+    </div>
+  </section>
+
+  <section id="players">
+    <div class="wrap">
+      <h2>What players do</h2>
+      <p class="lede">Player laptops need only a browser. Everything happens in /play: the AI helper's terminal sits side by side with the game.</p>
+      <div class="grid two">
+        <article class="card">
+          <h3>Prompt the AI helper</h3>
+          <p>Each player gets their own AI helper (Claude Code or the OpenAI Codex CLI) in the browser, already logged in. They describe the unit they want; the helper writes the JavaScript, validates it and submits it to the game.</p>
+          <figure class="shot">
+            <button type="button" data-full="images/planning.png" aria-label="Enlarge: the AI helper terminal">
+              <img src="images/planning.png" width="1699" height="1274" loading="lazy"
+                   alt="The AI helper terminal in /play writing and submitting a Fire Mage, an Ice Mage and a Lightning Mage">
+            </button>
+          </figure>
+        </article>
+        <article class="card">
+          <h3>Edit the code</h3>
+          <p>Any unit can be opened in the built-in code editor from My Units, with live checks and a price breakdown before saving a new version.</p>
+          <figure class="shot">
+            <button type="button" data-full="images/edit-code.png" aria-label="Enlarge: the code editor">
+              <img src="images/edit-code.png" width="1140" height="1077" loading="lazy"
+                   alt="The unit code editor showing a healer unit's constructor and update() code, with a No mistakes check and its cost breakdown">
+            </button>
+          </figure>
+        </article>
+        <article class="card">
+          <h3>Read the unit guide</h3>
+          <p>/guide explains everything a unit can do, with the numbers from this game, built from the live config.</p>
+          <figure class="shot">
+            <button type="button" data-full="images/unit-guide.png" aria-label="Enlarge: the unit guide">
+              <img src="images/unit-guide.png" width="1130" height="1260" loading="lazy"
+                   alt="The unit guide: cards for the soldier, tower, wall, factory and minion types, and a table of stats with what each one costs">
+            </button>
+          </figure>
+        </article>
+        <article class="card">
+          <h3>Replay past battles</h3>
+          <p>Earlier rounds keep their results and a replay, with pause, 1x/2x and a scrubber.</p>
+          <figure class="shot">
+            <button type="button" data-full="images/past-battles-replay.png" aria-label="Enlarge: past battles">
+              <img src="images/past-battles-replay.png" width="1125" height="1208" loading="lazy"
+                   alt="Past battles in /play: the round 1 results table, top damage units and a replay of the battle with playback controls">
+            </button>
+          </figure>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>Features</h2>
+      <p class="lede">What's in the box.</p>
+      <div class="grid">
+        <article class="card feature" style="--c:var(--seat-5)">
+          <h3>Elements and combos</h3>
+          <p>Fire burns, ice slows and lightning can zap a neighbour. Elements combine into synergies such as shatter, kindle and brittle.</p>
+        </article>
+        <article class="card feature" style="--c:var(--good)">
+          <h3>Support units</h3>
+          <p>Units can heal allies or give off haste, might and shield auras.</p>
+        </article>
+        <article class="card feature" style="--c:var(--text-dim)">
+          <h3>Walls and towers</h3>
+          <p>Walls are solid blocks that stop everyone; towers stay put and shoot. The host can switch walls off for a match.</p>
+        </article>
+        <article class="card feature" style="--c:var(--seat-0)">
+          <h3>Factories and minions</h3>
+          <p>Factories build grunts, archers, runners, brutes or medics, give them squad orders, and can steer each one with an optional <code>updateMinion()</code>.</p>
+        </article>
+        <article class="card feature" style="--c:var(--seat-1)">
+          <h3>Teams</h3>
+          <p>Free-for-all or 2-4 teams, auto-balanced or arranged by the host. Unequal teams are allowed, with a budget per team.</p>
+        </article>
+        <article class="card feature" style="--c:var(--accent)">
+          <h3>Projector screen</h3>
+          <p>/screen shows the arena, timers, join QR, ready ticks, live battles, the scoreboard and an awards ceremony after the last round.</p>
+        </article>
+        <article class="card feature" style="--c:var(--seat-6)">
+          <h3>Facilitator /admin</h3>
+          <p>A setup wizard for the AI seats, match setup with map preview, phase and timer controls, player and seat management, and a live config editor.</p>
+        </article>
+        <article class="card feature" style="--c:var(--seat-4)">
+          <h3>Sandboxed, deterministic sim</h3>
+          <p>Player code runs in isolated-vm with tick deadlines. The battle runs at 60 ticks per second with a seeded random number generator: same inputs, same battle.</p>
+        </article>
+      </div>
+      <figure class="shot" style="margin-top:28px">
+        <button type="button" data-full="images/admin.png" aria-label="Enlarge: the admin page">
+          <img src="images/admin.png" width="1688" height="1326" loading="lazy"
+               alt="The /admin page during Plan: phase and timer controls on top, then the Players tab with each player's seat, status and units">
+        </button>
+        <figcaption>/admin: phase controls, players and their units</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="runs">
+    <div class="wrap">
+      <h2>How it runs</h2>
+      <p class="lede">Three kinds of machine on a local network. For a try-out, everything can run on one.</p>
+      <div class="arch" role="group" aria-label="Architecture: player laptops talk to the game server, which talks to the AI session host">
+        <div class="node" style="--c:var(--seat-1)">
+          <span class="tag">2-8</span>
+          <h3>Player laptops</h3>
+          <div class="pips" aria-hidden="true">
+            <i style="background:var(--seat-0)"></i><i style="background:var(--seat-1)"></i><i style="background:var(--seat-2)"></i><i style="background:var(--seat-3)"></i>
+            <i style="background:var(--seat-4)"></i><i style="background:var(--seat-5)"></i><i style="background:var(--seat-6)"></i><i style="background:var(--seat-7)"></i>
+          </div>
+          <ul>
+            <li>A browser, nothing else</li>
+            <li>/play: the game plus the AI helper pane</li>
+            <li>Projector: /screen; facilitator: /admin</li>
+          </ul>
+        </div>
+        <div class="link"><div class="bar" aria-hidden="true"></div><span>HTTP + WebSocket over the LAN</span></div>
+        <div class="node" style="--c:var(--accent)">
+          <span class="tag">Node</span>
+          <h3>Game server</h3>
+          <ul>
+            <li>Web pages, REST, MCP and WebSocket</li>
+            <li>Validator, isolated-vm sandbox, battle sim</li>
+            <li>Terminal proxy to the AI seats</li>
+            <li>Needs no internet</li>
+          </ul>
+        </div>
+        <div class="link"><div class="bar" aria-hidden="true"></div><span>Terminal traffic out, MCP tool calls back</span></div>
+        <div class="node" style="--c:var(--good)">
+          <span class="tag">Docker</span>
+          <h3>AI session host</h3>
+          <ul>
+            <li>One container per seat, 1-8</li>
+            <li>Claude Code or Codex in each seat's kit folder</li>
+            <li>The only machine that needs the internet</li>
+          </ul>
+        </div>
+        <p class="internet">&darr; <b>Anthropic / OpenAI API</b></p>
+      </div>
+      <ul class="arch-notes">
+        <li>The AI helper's terminal is shown inside /play through the game server's proxy, so players never see a seat password.</li>
+        <li>The helper submits units with MCP tools such as <code>validate_unit</code> and <code>submit_unit</code>.</li>
+        <li>Full details: <a href="https://github.com/redging-very-well/ai-coding-arena/blob/main/docs/architecture.md">docs/architecture.md</a>.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="start">
+    <div class="wrap">
+      <h2>Get started</h2>
+      <p class="lede">Game server: Node 24 LTS (22.13+ also works) and <code>make</code>. AI session host: Docker with Compose v2, about 1 core and 2 GB RAM per seat, internet access and a Claude account (and/or an OpenAI login for Codex seats).</p>
+      <div class="start-grid">
+        <div>
+          <h3>Try it on one machine</h3>
+          <div class="term">
+            <div class="term-bar" aria-hidden="true"><i style="background:var(--bad)"></i><i style="background:var(--accent)"></i><i style="background:var(--good)"></i><span>game server</span></div>
+<pre><code><span class="pr">$ </span>git clone \
+    https://github.com/redging-very-well/ai-coding-arena.git
+<span class="pr">$ </span>cd ai-coding-arena
+<span class="pr">$ </span>make install    <span class="cm"># npm ci</span>
+<span class="pr">$ </span>make build
+<span class="pr">$ </span>make start      <span class="cm"># LAN URLs, a /play QR, the admin password</span>
+<span class="pr">$ </span>make bots PLAYERS=3   <span class="cm"># optional: bot players</span></code></pre>
+          </div>
+          <p>Open <code>http://localhost:8080/admin</code>, <code>/screen</code> in another window and <code>/play</code> in a third. Without AI seats, /play still works with the starter units and the built-in code editor.</p>
+        </div>
+        <div>
+          <h3>Add the AI seats</h3>
+          <div class="term">
+            <div class="term-bar" aria-hidden="true"><i style="background:var(--bad)"></i><i style="background:var(--accent)"></i><i style="background:var(--good)"></i><span>AI session host</span></div>
+<pre><code><span class="cm"># copy this from /admin -&gt; AI seats -&gt; AI session host setup</span>
+<span class="pr">$ </span>make seats \
+    PIXEL_CLASH_URL=http://&lt;server-LAN-IP&gt;:8080 \
+    SEAT_SECRET=&lt;from /admin&gt;
+<span class="pr">$ </span>make seats-ps                <span class="cm"># all "running (healthy)"</span>
+<span class="pr">$ </span>make seat-check SEAT=1</code></pre>
+          </div>
+          <p>The /admin setup wizard walks through it. Then enter the AI session host's address in /admin &rarr; AI seats; every running seat turns green. Players open /play, join with a name and a 4-digit PIN, and get a free AI seat.</p>
+        </div>
+      </div>
+      <p style="margin-top:20px">Event-day setup, firewall rules and troubleshooting are in the <a href="https://github.com/redging-very-well/ai-coding-arena/blob/main/README.md">README</a> and <a href="https://github.com/redging-very-well/ai-coding-arena/blob/main/sessions/README.md">sessions/README.md</a>.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="pixel" style="font-size:11px;color:var(--accent)">PIXEL <span style="color:var(--bad)">CLASH</span></span>
+    <nav aria-label="Documentation">
+      <a href="https://github.com/redging-very-well/ai-coding-arena">GitHub</a>
+      <a href="https://github.com/redging-very-well/ai-coding-arena/blob/main/README.md">README</a>
+      <a href="https://github.com/redging-very-well/ai-coding-arena/blob/main/docs/architecture.md">Architecture</a>
+      <a href="https://github.com/redging-very-well/ai-coding-arena/blob/main/docs/decisions.md">Design decisions</a>
+    </nav>
+  </div>
+</footer>
+
+<dialog class="lightbox" id="lightbox" aria-label="Screenshot">
+  <img src="" alt="">
+  <div class="lb-bar">
+    <p></p>
+    <form method="dialog"><button type="submit">Close</button></form>
+  </div>
+</dialog>
+
+<script>
+  // Click a screenshot to see it full size.
+  (function () {
+    var lb = document.getElementById('lightbox');
+    if (!lb || typeof lb.showModal !== 'function') return;
+    var img = lb.querySelector('img');
+    var cap = lb.querySelector('p');
+    document.querySelectorAll('.shot button[data-full]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var src = b.querySelector('img');
+        img.src = b.getAttribute('data-full');
+        img.alt = src ? src.alt : '';
+        var fc = b.parentElement.querySelector('figcaption');
+        cap.textContent = fc ? fc.textContent : '';
+        lb.showModal();
+      });
+    });
+    lb.addEventListener('click', function (e) { if (e.target === lb || e.target === img) lb.close(); });
+  })();
+</script>
+</body>
+</html>

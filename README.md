@@ -13,6 +13,8 @@ or paste code by hand.
   <br><em>A battle on the projector (/screen)</em>
 </p>
 
+**Website:** [redging-very-well.github.io/ai-coding-arena](https://redging-very-well.github.io/ai-coding-arena/), a one-page showcase (served by GitHub Pages from `docs/index.html`).
+
 ## Screenshots
 
 A round, in order (the battle is the picture above):
