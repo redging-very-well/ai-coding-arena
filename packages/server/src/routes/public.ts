@@ -1,14 +1,14 @@
 // Public REST routes (no auth): health, rules, contract, state, create/login,
-// the generic kit, replays.
+// replays.
 
 import { Router } from 'express';
 import QRCode from 'qrcode';
 import { SESSION_COOKIE, ok, type HealthDTO, type JoinInfoDTO, type LoginResponse, type Result } from '@pixel-clash/shared';
 import type { Game } from '../services/game.js';
-import { kitZipName, parseKitAgent, safeHost, writeKitZip } from '../services/kit.js';
 import { buildGuide } from '../services/guide.js';
 import { buildContract, buildRules } from '../services/rules.js';
 import { lanUrls } from '../util/lan.js';
+import { safeHost } from '../services/kit.js';
 import { COOKIE_OPTS, body, cookieOf, optionalPlayer, roundParam, send, sendError, wrap } from './common.js';
 
 export const SERVER_VERSION = '0.1.0';
@@ -96,17 +96,6 @@ export function publicRoutes(game: Game): Router {
     res.clearCookie(SESSION_COOKIE, COOKIE_OPTS);
     res.json({ ok: true });
   });
-
-  r.get(
-    '/setup/kit.zip',
-    wrap(async (req, res) => {
-      // ?agent=codex: the OpenAI Codex CLI kit (AGENTS.md + .codex/config.toml, §11.3).
-      const agent = parseKitAgent(req.query.agent);
-      res.setHeader('Content-Type', 'application/zip');
-      res.setHeader('Content-Disposition', `attachment; filename="${kitZipName(agent)}"`);
-      await writeKitZip(res, { host: safeHost(req.headers.host), agent });
-    }),
-  );
 
   r.get(
     '/setup',

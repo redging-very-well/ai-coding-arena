@@ -8,6 +8,43 @@ and runs it in a sandbox. Players pick and place their army, and the battle
 plays on the projector. Players only describe what they want; they never write
 or paste code by hand.
 
+<p align="center">
+  <img src="docs/images/fight-screen.png" width="860" alt="A battle on the projector (/screen): units from every player fighting in the arena">
+  <br><em>A battle on the projector (/screen)</em>
+</p>
+
+## Screenshots
+
+A round, in order (the battle is the picture above):
+
+<table>
+  <tr>
+    <td width="50%" valign="top"><img src="docs/images/plan-screen.png" width="420" alt="/screen during PLAN with the join QR"><br><b>Plan</b> · the projector shows the timer and the join QR</td>
+    <td width="50%" valign="top"><img src="docs/images/planning.png" width="420" alt="/play during PLAN: the AI helper terminal next to My Units"><br><b>Plan</b> · /play: the AI helper terminal next to My Units</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="docs/images/placement.png" width="420" alt="/play placement grid"><br><b>Placement</b> · placing the army in your zone</td>
+    <td valign="top"><img src="docs/images/placement-screen.png" width="420" alt="/screen with everyone ready and the START battle button"><br><b>Placement</b> · everyone ready, START battle</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="docs/images/results-screen.png" width="420" alt="/screen round results"><br><b>Results</b> · ranking and points on the projector</td>
+    <td valign="top"><img src="docs/images/results-player.png" width="420" alt="/play round results"><br><b>Results</b> · each player's round report in /play</td>
+  </tr>
+</table>
+
+Player and facilitator tools:
+
+<table>
+  <tr>
+    <td width="50%" valign="top"><img src="docs/images/edit-code.png" width="420" alt="The unit code editor"><br><b>Code editor</b> · a unit's code, opened from My Units</td>
+    <td width="50%" valign="top"><img src="docs/images/unit-guide.png" width="420" alt="The unit guide (/guide)"><br><b>Unit guide</b> · /guide, built from the live config</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="docs/images/past-battles-replay.png" width="420" alt="Past battles and replays"><br><b>Past battles</b> · replay earlier rounds</td>
+    <td valign="top"><img src="docs/images/admin.png" width="420" alt="/admin Players tab with details"><br><b>/admin</b> · players, match setup and phase controls</td>
+  </tr>
+</table>
+
 ## How a round plays
 
 A match is several rounds (free-for-all or teams, on a map that fits the player
@@ -143,9 +180,10 @@ make seat-check SEAT=1        # versions, login, game server + API reachable
 The seat password is already shared (the game server made it up and the setup
 command carried it). Every running seat should turn green.
 
-**Seat cards:** print one per laptop from **/setup** (seat number + `/play?seat=N`
-QR). Players scan it, join with a name and a 4-digit PIN, and their AI helper is
-ready and already logged in as them.
+**Player laptops:** open `/play` (the join QR on /setup or the projector). Players
+join with a name and a 4-digit PIN and get a free AI seat automatically (the
+laptop's seat from last time if it is free); their AI helper is ready and already
+logged in as them. No seat cards and no kit download: everything is in the browser.
 
 **During the event:** `make new-player SEAT=n` clears a seat for a different
 player; `make seats-restart SEAT=n` unsticks a terminal; `make seats-logs SEAT=n`
@@ -163,7 +201,7 @@ key): any seat could read its own login.
 | `/play` | Players | Join, the AI helper terminal side by side with the game: roster, picks, placement, live battle, results, unit guide, code editor |
 | `/screen` | Projector | Arena, timers, join QR, ready ticks, battles, scoreboard, awards ceremony |
 | `/admin` | Facilitator | Run the match and manage players and AI seats (password protected) |
-| `/setup` | Facilitator | LAN URLs, join QR, printable seat cards (`/play?seat=N`), kit download |
+| `/setup` | Facilitator | LAN URLs, join QR, setup checklist |
 | `/guide` | Anyone | The unit guide: the rules for units, built from the live config |
 
 ## Admin features (brief)

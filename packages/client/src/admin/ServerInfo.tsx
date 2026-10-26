@@ -68,14 +68,6 @@ export function ServerInfo() {
             </ul>
           )}
 
-          <p class="dim small">
-            Seat cards (one per AI seat laptop, with its <code>/play?seat=N</code> QR) are on{' '}
-            <a class="link" href="/setup" target="_blank" rel="noopener">
-              /setup
-            </a>
-            .
-          </p>
-
           <h3>Wipe all data</h3>
           <p class="dim small">Deletes every player, unit, score and replay. Type WIPE to enable.</p>
           <div class="btn-row">

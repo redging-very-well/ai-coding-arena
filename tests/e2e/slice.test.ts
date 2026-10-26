@@ -121,7 +121,9 @@ describe.skipIf(!BUILT)('M3 vertical slice on the built production server', () =
       }
     }
     expect((await fetch(`${srv.url}/`, { redirect: 'manual' })).headers.get('location')).toBe('/play');
-    expect((await fetch(`${srv.url}/api/setup/kit.zip`)).status).toBe(200);
+    // No kit download (players join in their browser).
+    expect((await fetch(`${srv.url}/api/setup/kit.zip`)).status).not.toBe(200);
+    expect((await fetch(`${srv.url}/api/kit.zip`)).status).not.toBe(200);
   }, T);
 
   it('two players join via REST; the facilitator sets short timers', async () => {

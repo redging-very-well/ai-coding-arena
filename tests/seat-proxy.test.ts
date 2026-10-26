@@ -296,9 +296,7 @@ describe('seat terminal proxy', () => {
     expect(ok.status).toBe(200);
     expect(ok.body.seatSecretSet).toBe(true);
     expect(ok.text).not.toContain(SECRET);
-    expect(ok.body.seatCards.map((c) => c.seat)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-    expect(ok.body.seatCards[3]!.playUrl).toMatch(/\/play\?seat=4$/);
-    expect(ok.body.seatCards[3]!.qrSvg).toContain('<svg');
+    expect(ok.body).not.toHaveProperty('seatCards');
   }, T);
 
   it('refuses requests without a session, with no password dialog', async () => {
@@ -307,7 +305,8 @@ describe('seat terminal proxy', () => {
     expect(page.headers.get('content-type')).toContain('text/html');
     expect(page.headers.get('www-authenticate')).toBeNull();
     expect(page.text).toContain('Log in on the game page first');
-    expect(page.text).toContain('/play?seat=1');
+    expect(page.text).toContain('href="/play"');
+    expect(page.text).not.toContain('?seat=');
     const json = await raw(srv.url, '/terminal/1/token');
     expect(json.status).toBe(401);
     expect(JSON.parse(json.text).error.code).toBe('TERMINAL_LOGIN_REQUIRED');

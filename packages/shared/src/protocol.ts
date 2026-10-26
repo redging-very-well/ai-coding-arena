@@ -44,9 +44,7 @@
 //                                        reset on phase change; PLAN needs a selection: NOTHING_SELECTED)
 //   GET    /battles/:round/report     -> BattleReportDTO  (own units; after playback ends)
 //   GET    /battles/:round/replay     -> ReplayDTO        (after playback ends)
-//   GET    /kit.zip                   -> personal kit zip (player)
-//   GET    /setup/kit.zip             -> generic kit zip (no auth)
-//   GET    /setup                     -> SetupInfoDTO (no auth: LAN/play URL + QR, seat cards; never the seat password)
+//   GET    /setup                     -> SetupInfoDTO (no auth: LAN/play URL + QR; never the seat password)
 //   GET    /claude-seats              -> ClaudeSeatsDTO (player; the Claude seat picker, §11.2)
 //   PUT    /me/claude-seat {seat: 1-8 | null} -> {claudeSeat} (player, any phase, 1/s;
 //                                        BAD_CLAUDE_SEAT, CLAUDE_SEAT_OFF, CLAUDE_SEAT_TAKEN 409 with details {seat, takenBy})
@@ -1242,7 +1240,7 @@ export interface SetupSettingsDTO {
 
 /**
  * @deprecated Direct ttyd links (adults' fallback, needs the seat password).
- * Superseded by `seatCards` + the /terminal/<N>/ proxy (§11.2).
+ * Superseded by the AI helper pane in /play and the /terminal/<N>/ proxy (§11.2).
  */
 export interface SeatTerminalDTO {
   /** Index 0-7 (Claude seat `seat + 1`). */
@@ -1250,16 +1248,6 @@ export interface SeatTerminalDTO {
   /** `http://<ai-session-host>:778N/terminal/N/` */
   url: string;
   /** QR code of `url` as an SVG document (server-generated). */
-  qrSvg: string;
-}
-
-/** A printed seat card (§11): the laptop's Claude seat and its /play link. */
-export interface SeatCardDTO {
-  /** Claude seat 1-8. */
-  seat: number;
-  /** `${baseUrl}/play?seat=N` */
-  playUrl: string;
-  /** QR code of `playUrl` as an SVG document. */
   qrSvg: string;
 }
 
@@ -1274,10 +1262,8 @@ export interface SetupInfoDTO {
   /** QR code of playUrl as an SVG document. */
   playQrSvg: string;
   settings: SetupSettingsDTO;
-  /** @deprecated Empty until the facilitator sets the AI session host address. Use `seatCards`. */
+  /** @deprecated Empty until the facilitator sets the AI session host address. Use the AI helper pane in /play. */
   seatTerminals: SeatTerminalDTO[];
-  /** Seat cards for Claude seats 1-8 (`/play?seat=N` + QR). Never contains the seat password. */
-  seatCards: SeatCardDTO[];
   sandboxMode: GameStateDTO['sandboxMode'];
 }
 

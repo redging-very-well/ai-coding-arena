@@ -1,10 +1,8 @@
-// /setup (plan §11): the big join URL + QR, the generic Claude kit download,
-// the seat cards (Claude seats 1-8: `/play?seat=N` + QR, §11.2) and the setup
-// checklist.
+// /setup (plan §11): the big join URL + QR, the LAN addresses and the setup
+// checklist. Players join in their browser; there is no kit download.
 
 import { useEffect, useState } from 'preact/hooks';
 import type { SetupInfoDTO } from '@pixel-clash/shared';
-import { api } from '../common/api.js';
 import { copyText } from '../common/ui.js';
 import { CHECKLIST } from './checklist.js';
 import { getSetupInfo } from './setupApi.js';
@@ -82,48 +80,14 @@ export function SetupPage() {
               )}
               {info.lanUrls.length === 0 && <p class="warn-text">No LAN address found: is this machine on the event network?</p>}
               <div class="btn-row">
-                <a class="btn primary" href={api.setupKitUrl()} download>
-                  Download kit for Claude Code (zip)
-                </a>
-                <a class="btn" href={api.setupKitUrl('codex')} download>
-                  Download kit for Codex (zip)
-                </a>
                 <button class="btn" onClick={() => void copyText(info.playUrl)}>
                   Copy URL
                 </button>
               </div>
-              <p class="dim small">
-                The kit's MCP address is the one this page was opened with ({location.host}). Open /setup by the LAN address before
-                downloading it for another machine.
-              </p>
             </div>
           </>
         ) : (
           <p class="dim">Loading…</p>
-        )}
-      </section>
-
-      <section class="panel">
-        <h2>Seat cards (AI seat laptops)</h2>
-        <p class="dim small">
-          Print one card per laptop and lay it next to it. The QR opens /play with that laptop's AI seat, and the player's AI helper
-          terminal then shows inside /play. No terminal address or password goes on a card.
-          {info && !info.settings.aiSessionHost && ' Set the AI session host address and the seat password in /admin (AI seats).'}
-        </p>
-        {!info ? (
-          <p class="dim">Loading…</p>
-        ) : (
-          <div class="seat-grid">
-            {info.seatCards.map((c) => (
-              <div class="seat-card" key={c.seat}>
-                <div class="pixel seat-card-num">AI seat {c.seat}</div>
-                <div class="qr" dangerouslySetInnerHTML={{ __html: c.qrSvg }} />
-                <a href={c.playUrl} target="_blank" rel="noopener">
-                  {c.playUrl}
-                </a>
-              </div>
-            ))}
-          </div>
         )}
       </section>
 

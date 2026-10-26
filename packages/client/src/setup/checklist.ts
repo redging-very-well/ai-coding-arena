@@ -35,7 +35,7 @@ export const CHECKLIST: readonly ChecklistSection[] = [
       {
         id: 'box-up',
         title: 'Start the seat containers (all 8, or only the seats in use)',
-        detail: 'Fewer seats: docker compose up -d seat1 seat2 seat3 (one per player laptop, matching the seat cards).',
+        detail: 'Fewer seats: docker compose up -d seat1 seat2 seat3 (one per player laptop).',
         command: 'docker compose up -d',
       },
       {
@@ -64,10 +64,9 @@ export const CHECKLIST: readonly ChecklistSection[] = [
   {
     title: 'Player laptops',
     items: [
-      { id: 'laptop-cards', title: 'Each laptop has its seat card: the AI seat number and its /play?seat=N QR (no password)' },
       {
         id: 'laptop-tabs',
-        title: 'One tab per laptop: scan the card, join, and the AI helper pane in /play shows the terminal',
+        title: 'One tab per laptop: open /play, join, and the AI helper pane shows the terminal (a free AI seat is given automatically)',
         detail: '"Open in new tab" in the AI helper pane also works; the newest tab takes over the seat.',
       },
       { id: 'laptop-projector', title: 'Projector shows /screen in full screen (F11)' },

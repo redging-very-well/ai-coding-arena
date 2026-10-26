@@ -3,7 +3,6 @@
 import { Router } from 'express';
 import type { MeResponse } from '@pixel-clash/shared';
 import type { Game } from '../services/game.js';
-import { kitZipName, parseKitAgent, safeHost, writeKitZip } from '../services/kit.js';
 import { toPlayerDTO } from '../services/players.js';
 import { body, requirePlayer, roundParam, send, sendError, sendValidation, wrap } from './common.js';
 
@@ -92,17 +91,6 @@ export function playerRoutes(game: Game): Router {
     }
     res.json(report);
   });
-
-  r.get(
-    '/kit.zip',
-    wrap(async (req, res) => {
-      // ?agent=codex: the OpenAI Codex CLI kit (AGENTS.md + .codex/config.toml, §11.3).
-      const agent = parseKitAgent(req.query.agent);
-      res.setHeader('Content-Type', 'application/zip');
-      res.setHeader('Content-Disposition', `attachment; filename="${kitZipName(agent)}"`);
-      await writeKitZip(res, { host: safeHost(req.headers.host), player: req.player!, agent });
-    }),
-  );
 
   return r;
 }

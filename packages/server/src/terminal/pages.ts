@@ -60,7 +60,7 @@ function spec(code: ProxyErrorCode, ctx: ProxyErrorContext): PageSpec {
       return {
         heading: 'Log in on the game page first',
         text: 'Your AI helper terminal opens once you have joined the game with your name and PIN.',
-        link: [seat ? `/play?seat=${seat}` : '/play', 'Go to the game page'],
+        link: ['/play', 'Go to the game page'],
         message: 'Log in on the game page first.',
       };
     case 'CLAUDE_SEAT_NOT_YOURS':
@@ -73,8 +73,8 @@ function spec(code: ProxyErrorCode, ctx: ProxyErrorContext): PageSpec {
           }
         : {
             heading: `This is AI seat ${seat}`,
-            text: "You haven't picked your AI seat yet. Use the number on your laptop's card.",
-            link: [seat ? `/play?seat=${seat}` : '/play', 'Pick your seat on the game page'],
+            text: "You don't have an AI seat yet. The game page gives you one, or lets you pick a free seat.",
+            link: ['/play', 'Pick your seat on the game page'],
             message: `This is AI seat ${seat}, and you have no AI seat yet. Pick your seat on the game page.`,
           };
     case 'BAD_CLAUDE_SEAT':

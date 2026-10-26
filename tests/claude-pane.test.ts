@@ -1,5 +1,5 @@
-// /play's embedded Claude terminal (plan §11.2 c-d), DOM-free logic: the seat
-// card's ?seat=N and what happens after login, the split / tabs breakpoint and
+// /play's embedded Claude terminal (plan §11.2 c-d), DOM-free logic: seat
+// numbers and stripping a stale ?seat=N, the split / tabs breakpoint and
 // the divider, the first tab, the Claude pane states incl. "open in another
 // tab", the Game-tab badge reducer and the PLACEMENT nudge.
 
@@ -22,13 +22,12 @@ import {
   nextDisplaced,
   nudgeAllowed,
   parseSeat,
-  parseSeatQuery,
   parseSplit,
   reloadOnRecovery,
   rosterChanges,
-  seatAction,
   seatTakenText,
   splitKey,
+  stripSeatQuery,
   terminalPath,
   terminalTabName,
   unitsBadgeText,
@@ -39,18 +38,14 @@ import {
 
 const term = (patch: Partial<TerminalDTO> = {}): TerminalDTO => ({ seat: 3, status: 'up', boxReady: true, live: null, ...patch });
 
-describe('seat card ?seat=N (§11.2 c)', () => {
-  it('reads a valid seat and strips it from the query', () => {
-    expect(parseSeatQuery('?seat=4')).toEqual({ seat: 4, bad: false, search: '' });
-    expect(parseSeatQuery('?x=1&seat=8&y=2')).toEqual({ seat: 8, bad: false, search: '?x=1&y=2' });
-  });
-  it('flags a bad seat (still stripped) and leaves other queries alone', () => {
-    expect(parseSeatQuery('?seat=9')).toEqual({ seat: null, bad: true, search: '' });
-    expect(parseSeatQuery('?seat=0&a=b')).toEqual({ seat: null, bad: true, search: '?a=b' });
-    expect(parseSeatQuery('?seat=abc').bad).toBe(true);
-    expect(parseSeatQuery('?seat=').bad).toBe(true);
-    expect(parseSeatQuery('?a=b')).toEqual({ seat: null, bad: false, search: '?a=b' });
-    expect(parseSeatQuery('')).toEqual({ seat: null, bad: false, search: '' });
+describe('seat numbers and stale ?seat=N links (§11.2 c)', () => {
+  it('ignores ?seat=N from old printed seat cards: stripped from the URL, no seat taken from it', () => {
+    expect(stripSeatQuery('?seat=4')).toBe('');
+    expect(stripSeatQuery('?x=1&seat=8&y=2')).toBe('?x=1&y=2');
+    expect(stripSeatQuery('?seat=9&a=b')).toBe('?a=b');
+    expect(stripSeatQuery('?seat=')).toBe('');
+    expect(stripSeatQuery('?a=b')).toBeNull();
+    expect(stripSeatQuery('')).toBeNull();
   });
   it('parses seat numbers 1-8 only', () => {
     expect(parseSeat('1')).toBe(1);
@@ -59,15 +54,8 @@ describe('seat card ?seat=N (§11.2 c)', () => {
     expect(parseSeat(null)).toBeNull();
     expect(parseSeat('-1')).toBeNull();
   });
-  it('after login: claims a free laptop seat, asks before switching, ignores the same seat', () => {
-    expect(seatAction(null, 4)).toEqual({ kind: 'claim', seat: 4 });
-    expect(seatAction(2, 4)).toEqual({ kind: 'ask', seat: 4, current: 2 });
-    expect(seatAction(4, 4)).toEqual({ kind: 'none' });
-    expect(seatAction(2, null)).toEqual({ kind: 'none' });
-    expect(seatAction(null, null)).toEqual({ kind: 'none' });
-  });
-  it("explains a taken seat in kid words", () => {
-    expect(seatTakenText(3, 'Sam')).toBe("AI seat 3 is Sam's. Check the number on your laptop's card, or ask a grown-up.");
+  it("explains a taken seat in player words", () => {
+    expect(seatTakenText(3, 'Sam')).toBe("AI seat 3 is Sam's. Pick another seat, or ask a grown-up.");
     expect(seatTakenText(3, null)).toContain('AI seat 3 is taken');
   });
 });

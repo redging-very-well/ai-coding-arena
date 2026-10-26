@@ -1,13 +1,12 @@
 // Pure logic of the embedded Claude terminal on /play (plan §11.2 c-d),
-// DOM-free so tests/claude-pane.test.ts can run it: the `?seat=N` seat-card
-// parameter and what to do with it after login, the split / tabs layout
+// DOM-free so tests/claude-pane.test.ts can run it: stripping a stale
+// `?seat=N` from old links, the split / tabs layout
 // decision and the divider ratio, the first tab, which state the Claude pane
 // shows (picker, not ready, the terminal, open in another tab), the Game-tab
 // badges and the PLACEMENT nudge.
 
 import {
   CLAUDE_SEATS,
-  type ClaudeSeatAssignHow,
   type ClaudeSeatsDTO,
   type Phase,
   type TerminalDTO,
@@ -15,7 +14,7 @@ import {
   type UnitCardDTO,
 } from '@pixel-clash/shared';
 
-/** localStorage: the laptop's Claude seat from its seat card QR (kept for the next player). */
+/** localStorage: the laptop's Claude seat from its last assignment (preferred for the next player). */
 export const LAPTOP_SEAT_KEY = 'pc.laptopSeat';
 /** The seat picker of the earlier /play (direct links); read once as a fallback. */
 export const OLD_SEAT_KEY = 'pc-claude-seat';
@@ -25,7 +24,7 @@ export const SPLIT_KEY = 'pc.split';
 export const TAB_KEY = 'pc.tab';
 
 // ---------------------------------------------------------------------------
-// Seat numbers, the ?seat=N parameter
+// Seat numbers, join preference
 // ---------------------------------------------------------------------------
 
 /** A Claude seat 1-8 from a string or number, else null. */
@@ -34,48 +33,18 @@ export function parseSeat(v: unknown): number | null {
   return Number.isInteger(n) && n >= 1 && n <= CLAUDE_SEATS ? n : null;
 }
 
-export interface SeatQuery {
-  /** The valid seat, or null (absent or bad). */
-  seat: number | null;
-  /** `?seat=` was there but isn't 1-8 (show a toast). */
-  bad: boolean;
-  /** The query string without `seat` ("" or "?…"), for history.replaceState. */
-  search: string;
-}
-
-/** Read and strip `?seat=N` from a location.search string. */
-export function parseSeatQuery(search: string): SeatQuery {
+/**
+ * Old printed seat cards linked to `/play?seat=N`. Seat cards are gone (seats
+ * are auto-assigned on join), so the parameter is ignored: this returns the
+ * query string without `seat` ("" or "?…") for history.replaceState, or null
+ * when there was no `seat` to strip.
+ */
+export function stripSeatQuery(search: string): string | null {
   const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-  if (!params.has('seat')) return { seat: null, bad: false, search };
-  const raw = params.get('seat') ?? '';
+  if (!params.has('seat')) return null;
   params.delete('seat');
   const rest = params.toString();
-  const seat = parseSeat(raw);
-  return { seat, bad: seat === null, search: rest ? `?${rest}` : '' };
-}
-
-/**
- * What /play does with a seat from the seat card once logged in (§11.2 c):
- * claim it when the player has none, ask when they have a different one
- * (never switch silently), nothing when it's theirs already.
- */
-export type SeatAction = { kind: 'none' } | { kind: 'claim'; seat: number } | { kind: 'ask'; seat: number; current: number };
-
-export function seatAction(mySeat: number | null, cardSeat: number | null): SeatAction {
-  if (cardSeat === null || mySeat === cardSeat) return { kind: 'none' };
-  if (mySeat === null) return { kind: 'claim', seat: cardSeat };
-  return { kind: 'ask', seat: cardSeat, current: mySeat };
-}
-
-/**
- * After join / login with auto-assignment (§11.2 c): the server already took
- * the seat card's seat when it was free, so only a player who kept their own
- * seat is asked about the card's seat. `how` undefined (a page load with a
- * session) = the plain {@link seatAction}.
- */
-export function seatActionAfterJoin(mySeat: number | null, cardSeat: number | null, how: ClaudeSeatAssignHow | undefined): SeatAction {
-  if (how !== undefined && how !== 'kept') return { kind: 'none' };
-  return seatAction(mySeat, cardSeat);
+  return rest ? `?${rest}` : '';
 }
 
 /** What /play sends on join / login: this laptop's seat as the preference, else any free seat. */
@@ -99,7 +68,7 @@ export function seatOffText(seat: number): string {
 /** The player-facing text of a CLAUDE_SEAT_TAKEN conflict. */
 export function seatTakenText(seat: number, takenBy: string | null | undefined): string {
   const who = takenBy ? `${takenBy}'s` : 'taken';
-  return `AI seat ${seat} is ${who}. Check the number on your laptop's card, or ask a grown-up.`;
+  return `AI seat ${seat} is ${who}. Pick another seat, or ask a grown-up.`;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,14 +1,14 @@
 // One kit source, two coding agents (plan §11.3): the Claude Code kit
 // (CLAUDE.md, .mcp.json, .claude/settings.json) and the Codex kit (AGENTS.md,
 // .codex/config.toml) are rendered from the same packages/starter-kit files,
-// by services/kit.ts (zips) and sessions/entrypoint.sh (seat containers).
+// by services/kit.ts (the reference) and sessions/entrypoint.sh (seat containers).
 
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { kitFileAgent, kitFiles, parseKitAgent, type KitOptions } from '../packages/server/src/services/kit.js';
+import { kitFileAgent, kitFiles, type KitOptions } from '../packages/server/src/services/kit.js';
 import type { PlayerRecord } from '../packages/server/src/services/store.js';
 
 const HOST = '192.168.8.10:8080';
@@ -21,10 +21,7 @@ const contractBlock = () => {
 };
 
 describe('kit agents (§11.3)', () => {
-  it('parses ?agent and assigns each kit file to an agent', () => {
-    expect(parseKitAgent('codex')).toBe('codex');
-    expect(parseKitAgent(undefined)).toBe('claude');
-    expect(parseKitAgent(['codex'])).toBe('claude');
+  it('assigns each kit file to an agent', () => {
     expect(kitFileAgent('CLAUDE.md')).toBe('claude');
     expect(kitFileAgent('.claude/settings.json')).toBe('claude');
     expect(kitFileAgent('.mcp.json')).toBe('claude');

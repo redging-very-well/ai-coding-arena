@@ -231,7 +231,7 @@ export class ClaudeSeatsService {
     const seat = seatIn === null ? null : parseClaudeSeat(seatIn);
     if (seatIn !== null && seat === null) {
       return fail('BAD_CLAUDE_SEAT', `There is no AI seat ${String(seatIn)}. AI seats are 1-${CLAUDE_SEATS}.`, {
-        hint: "Use the number on your laptop's seat card.",
+        hint: 'Pick a seat from the list on the game page.',
       });
     }
     const current = this.seatOf(player);
@@ -241,7 +241,7 @@ export class ClaudeSeatsService {
       const other = this.holder(seat);
       if (other && other.id !== player.id) {
         return fail('CLAUDE_SEAT_TAKEN', `AI seat ${seat} is ${other.name}'s.`, {
-          hint: "Check the number on your laptop's card, or ask a grown-up.",
+          hint: 'Pick another seat, or ask a grown-up.',
           details: { seat, takenBy: other.name },
         });
       }

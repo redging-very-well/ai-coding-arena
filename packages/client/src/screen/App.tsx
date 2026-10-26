@@ -553,7 +553,7 @@ function JoinPoster({ snap, onClose }: { snap: ScreenSnapshot; onClose: () => vo
       {/* The terminal lives inside /play now (§11.2): no terminal addresses on the projector. */}
       <div class="poster-seats">
         <h2 class="pixel">Your AI helper terminal is on the game page</h2>
-        <p class="muted">On an AI seat laptop? Scan the seat card next to it.</p>
+        <p class="muted">Join on an AI seat laptop and you get a free AI seat automatically.</p>
       </div>
       <p class="poster-hint">Press P to close</p>
     </div>

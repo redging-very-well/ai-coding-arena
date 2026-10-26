@@ -108,7 +108,6 @@ export function ClaudePane({ visible, layout, focusSeq, onShowGame }: ClaudePane
           Time to place your army → <b>Game</b>
         </div>
       )}
-      {st.seatAsk && <SeatAsk ask={st.seatAsk} />}
       <div class="claude-body">
         {view.kind === 'picker' && <SeatPicker />}
         {view.kind === 'not-ready' && <NotReady seat={seat} />}
@@ -160,26 +159,6 @@ function TerminalFrame(props: { frameRef: { current: HTMLIFrameElement | null };
       allow="clipboard-read; clipboard-write"
       onLoad={onLoad}
     />
-  );
-}
-
-/** The seat card's seat differs from the player's: ask, never switch silently (§11.2 c). */
-function SeatAsk({ ask }: { ask: { seat: number; current: number } }) {
-  const store = getStore();
-  return (
-    <div class="note seat-ask" role="alert">
-      <p>
-        This laptop is AI seat <b>{ask.seat}</b>, but you're on seat <b>{ask.current}</b>. Switch to seat {ask.seat}?
-      </p>
-      <div class="btn-row">
-        <button class="btn primary" onClick={() => void store.claimSeat(ask.seat)}>
-          Switch to seat {ask.seat}
-        </button>
-        <button class="btn" onClick={() => store.keepSeat()}>
-          Keep seat {ask.current}
-        </button>
-      </div>
-    </div>
   );
 }
 

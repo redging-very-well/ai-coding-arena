@@ -7,7 +7,7 @@ import type { AdminClaudeSeatsDTO, ClaudeSeatsDTO, LoginResponse, MeResponse } f
 import { basicAuthMatches, pickClaudeSeat, seatPlayerToken } from '../packages/server/src/services/claudeSeats.js';
 import { normalizeSeatList } from '../packages/server/src/services/store.js';
 import type { RunningServer } from '../packages/server/src/server.js';
-import { joinSeatRequest, noFreeSeat, seatActionAfterJoin } from '../packages/client/src/play/claudePane.js';
+import { joinSeatRequest, noFreeSeat } from '../packages/client/src/play/claudePane.js';
 import { Client, adminClient, bootServer, removeDir, tempDataDir } from './helpers/server.js';
 
 const T = 60_000;
@@ -41,16 +41,6 @@ describe('pickClaudeSeat (§11.2 c)', () => {
 });
 
 describe('/play after join (DOM-free, §11.2 c)', () => {
-  it('asks about the seat card only when the player kept their own seat', () => {
-    expect(seatActionAfterJoin(2, 4, 'kept')).toEqual({ kind: 'ask', seat: 4, current: 2 });
-    expect(seatActionAfterJoin(5, 4, 'lowest')).toEqual({ kind: 'none' });
-    expect(seatActionAfterJoin(4, 4, 'preferred')).toEqual({ kind: 'none' });
-    expect(seatActionAfterJoin(null, 4, 'none')).toEqual({ kind: 'none' });
-    // A page load with a session (no auto-assignment): as before.
-    expect(seatActionAfterJoin(null, 4, undefined)).toEqual({ kind: 'claim', seat: 4 });
-    expect(seatActionAfterJoin(4, null, 'kept')).toEqual({ kind: 'none' });
-  });
-
   it('sends the laptop seat as the preference, and spots a full picker', () => {
     expect(joinSeatRequest(3)).toBe(3);
     expect(joinSeatRequest(null)).toBe('auto');

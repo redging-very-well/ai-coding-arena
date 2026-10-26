@@ -2,6 +2,8 @@
 
 Date: 2026-10-21. Claude Code 2.1.304 (headless `claude -p`, default model, logged in with a claude.ai account). Server: the production build (`node scripts/start.mjs`, `PORT=18431 HOST=127.0.0.1`, temp `DATA_DIR`, `ADMIN_PASSWORD` set), 8 players created over REST, match started from admin (8-player FFA), PLAN timer paused.
 
+> Note (2026-10-26): the kit download (`/api/setup/kit.zip`, `/api/kit.zip`) has been removed since these runs; players join in their browser. To repeat a run, render a kit folder from `kitFiles()` in `packages/server/src/services/kit.ts` (the same files a seat renders into `/kit`).
+
 Each scenario used a **fresh copy of the generic kit** (`GET /api/setup/kit.zip` with `Host: 127.0.0.1:18431`), unzipped outside the repo so the repo's CLAUDE.md wasn't loaded, and ran
 
 ```sh

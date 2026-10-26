@@ -1,6 +1,6 @@
 // /setup info and the facilitator's setup settings (plan §11 /setup page,
 // §12.3 server info): join URL + QR, seat terminal links from the AI session host
-// address, seat cards for Claude seats 1-8, persistence across a restart,
+// address (no seat cards: seats are auto-assigned), persistence across a restart,
 // and admin-only updates.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -40,7 +40,7 @@ describe('GET /api/setup and PUT /api/admin/setup', () => {
     expect(info.playUrl).toBe(`${info.baseUrl}/play`);
     expect(info.playQrSvg).toContain('<svg');
     expect(info.seatTerminals).toEqual([]);
-    expect(info.seatCards.map((c) => c.seat)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(info).not.toHaveProperty('seatCards');
     expect(info.settings).toEqual({ aiSessionHost: null, preferredUrl: null });
     expect(info.sandboxMode).toBe('ivm');
     expect(Array.isArray(info.lanUrls)).toBe(true);
@@ -62,13 +62,10 @@ describe('GET /api/setup and PUT /api/admin/setup', () => {
     // All 8 Claude seats (ttyd runs under the /terminal/N base path, §11.1).
     expect(ok.body.seatTerminals.map((t) => t.url)).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => `http://10.0.0.5:778${n}/terminal/${n}/`));
     expect(ok.body.seatTerminals[0]!.qrSvg).toContain('<svg');
-    // Seat cards point at /play?seat=N on the preferred URL.
-    expect(ok.body.seatCards.map((c) => c.playUrl)).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => `http://10.0.0.9:8080/play?seat=${n}`));
 
     // Public view matches; a partial update leaves the other field alone.
     const pub = (await new Client(srv.url).get<SetupInfoDTO>('/setup')).body;
     expect(pub.seatTerminals).toHaveLength(8);
-    expect(pub.seatCards).toHaveLength(8);
     const cleared = await admin.put<SetupInfoDTO>('/admin/setup', { preferredUrl: null });
     expect(cleared.body.settings).toEqual({ aiSessionHost: '10.0.0.5', preferredUrl: null });
   });

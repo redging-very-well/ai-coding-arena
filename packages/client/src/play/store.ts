@@ -4,7 +4,7 @@
 // before the battle panel mounts). Components subscribe with `useStore`.
 // Sounds (§12.4) are muted by default here; the header has the unmute button.
 // The embedded Claude terminal (§11.2): the player's Claude seat and its live
-// holder (`terminal` push), the seat picker, the seat card's `?seat=N`, the
+// holder (`terminal` push), the seat picker, this laptop's remembered seat, the
 // "open in another tab" state and the Game-tab badges.
 
 import { useEffect, useState } from 'preact/hooks';
@@ -46,12 +46,11 @@ import {
   newPaneId,
   nextDisplaced,
   parseSeat,
-  parseSeatQuery,
   reloadOnRecovery,
   rosterChanges,
-  seatActionAfterJoin,
   seatOffText,
   seatTakenText,
+  stripSeatQuery,
   type BadgeEvent,
   type GameBadges,
 } from './claudePane.js';
@@ -130,11 +129,9 @@ export interface PlayState {
   holderKnown: boolean;
   /** Bumped by "Use it here instead": remounts the iframe, which takes the seat back. */
   frameSeq: number;
-  /** The seat card says another seat than the player's: ask before switching. */
-  seatAsk: { seat: number; current: number } | null;
   /** Last seat-picker problem ("Claude seat 3 is Sam's…"). */
   seatError: string | null;
-  /** The laptop's Claude seat from its seat card (localStorage), for the picker. */
+  /** The laptop's Claude seat from its last assignment (localStorage): the join preference and the picker's offer. */
   laptopSeat: number | null;
   /** AI session host address (public /setup), for the grown-ups' direct link. */
   boxHost: string | null;
@@ -170,7 +167,6 @@ export class PlayStore {
     lastHolder: null,
     holderKnown: false,
     frameSeq: 0,
-    seatAsk: null,
     seatError: null,
     laptopSeat: null,
     boxHost: null,
@@ -183,8 +179,6 @@ export class PlayStore {
   /** Until then another live holder is ignored (our iframe is still connecting). */
   private claimingUntil = 0;
   private claimTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Seat from the seat card QR, applied after login. */
-  private cardSeat: number | null = null;
   /** The game side is visible (split view, or the Game tab). */
   private gameShowing = true;
   /** Last keystroke in the terminal (ms epoch), to hold back the PLACEMENT nudge. */
@@ -256,7 +250,7 @@ export class PlayStore {
   // -------------------------------------------------------------------------
 
   async boot(): Promise<void> {
-    this.readSeatCard();
+    this.readLaptopSeat();
     void this.loadRules();
     try {
       const me = await api.me();
@@ -305,21 +299,18 @@ export class PlayStore {
   // Claude seat (§11.2 c)
   // -------------------------------------------------------------------------
 
-  /** `?seat=N` from the seat card: remember it on this laptop and take it out of the URL. */
-  private readSeatCard(): void {
-    let laptop = parseSeat(readLocal(LAPTOP_SEAT_KEY)) ?? parseSeat(readLocal(OLD_SEAT_KEY));
+  /**
+   * This laptop's remembered seat (from its last assignment). A stale
+   * `?seat=N` from an old printed seat card is ignored and taken out of the
+   * URL, so those links work like a plain /play link.
+   */
+  private readLaptopSeat(): void {
+    const laptop = parseSeat(readLocal(LAPTOP_SEAT_KEY)) ?? parseSeat(readLocal(OLD_SEAT_KEY));
     try {
-      const q = parseSeatQuery(location.search);
-      if (q.seat !== null) {
-        laptop = q.seat;
-        this.cardSeat = q.seat;
-        writeLocal(LAPTOP_SEAT_KEY, String(q.seat));
-      } else if (q.bad) {
-        this.toast("That seat card link has a seat number we don't know. Pick your AI seat below.", 'warn');
-      }
-      if (q.seat !== null || q.bad) history.replaceState(history.state, '', `${location.pathname}${q.search}${location.hash}`);
+      const rest = stripSeatQuery(location.search);
+      if (rest !== null) history.replaceState(history.state, '', `${location.pathname}${rest}${location.hash}`);
     } catch {
-      // no location/history (tests): nothing to read
+      // no location/history (tests): nothing to strip
     }
     this.set({ laptopSeat: laptop });
   }
@@ -329,22 +320,11 @@ export class PlayStore {
     return joinSeatRequest(this.state.laptopSeat);
   }
 
-  /**
-   * After login: apply the seat card's seat (claim, or ask when the player
-   * has another one). After an auto-assigning join (`assigned`), only a kept
-   * seat can lead to the ask (no free seat: the picker says so itself).
-   */
-  private applySeatCard(mySeat: number | null, assigned?: ClaudeSeatAssignDTO): void {
-    const card = this.cardSeat;
-    this.cardSeat = null;
-    // A laptop without a seat card learns its seat from the first auto-assignment.
-    if (assigned?.seat != null && this.state.laptopSeat === null) {
-      writeLocal(LAPTOP_SEAT_KEY, String(assigned.seat));
-      this.set({ laptopSeat: assigned.seat });
-    }
-    const a = seatActionAfterJoin(mySeat, card, assigned?.how);
-    if (a.kind === 'claim') void this.claimSeat(a.seat);
-    else if (a.kind === 'ask') this.set({ seatAsk: { seat: a.seat, current: a.current } });
+  /** After an auto-assigning join: this laptop remembers the seat it was given (the next player's preference). */
+  private rememberAssignedSeat(assigned?: ClaudeSeatAssignDTO): void {
+    if (assigned?.seat == null || assigned.seat === this.state.laptopSeat) return;
+    writeLocal(LAPTOP_SEAT_KEY, String(assigned.seat));
+    this.set({ laptopSeat: assigned.seat });
   }
 
   /** PUT /me/claude-seat. Resolves true when the seat is now the player's. */
@@ -355,7 +335,6 @@ export class PlayStore {
       const t = this.state.terminal;
       const boxReady = t?.boxReady ?? this.state.claudeSeats?.boxReady ?? true;
       this.set({
-        seatAsk: null,
         seatError: null,
         laptopSeat: r.claudeSeat ?? this.state.laptopSeat,
         // Show the seat at once; the `terminal` push that follows has the details.
@@ -367,20 +346,16 @@ export class PlayStore {
     } catch (err) {
       if (err instanceof ApiError && err.code === 'CLAUDE_SEAT_TAKEN') {
         const d = err.details as { seat?: number; takenBy?: string } | undefined;
-        this.set({ seatAsk: null, seatError: seatTakenText(d?.seat ?? seat ?? 0, d?.takenBy) });
+        this.set({ seatError: seatTakenText(d?.seat ?? seat ?? 0, d?.takenBy) });
         void this.loadClaudeSeats();
       } else if (err instanceof ApiError && err.code === 'CLAUDE_SEAT_OFF') {
-        this.set({ seatAsk: null, seatError: seatOffText(seat ?? 0) });
+        this.set({ seatError: seatOffText(seat ?? 0) });
         void this.loadClaudeSeats();
       } else if (err instanceof ApiError) {
         this.set({ seatError: err.playerMessage });
       }
       return false;
     }
-  }
-
-  keepSeat(): void {
-    this.set({ seatAsk: null });
   }
 
   /** The seat picker's list (refetched on every `terminal` push while there is no seat). */
@@ -474,7 +449,7 @@ export class PlayStore {
     if (!this.state.terminal && me.claudeSeat != null) {
       this.set({ terminal: { seat: me.claudeSeat, status: 'unknown', boxReady: true, live: null } });
     }
-    this.applySeatCard(me.claudeSeat ?? null, assigned);
+    this.rememberAssignedSeat(assigned);
     this.arena.setOptions({ highlightSeat: me.player.seat });
     // Reconnect first: the new socket carries the session cookie and says
     // hello as 'player' once open (a hello on the old socket would be refused).
@@ -674,7 +649,6 @@ const LOGGED_OUT: Partial<PlayState> = {
   displaced: false,
   lastHolder: null,
   holderKnown: false,
-  seatAsk: null,
   seatError: null,
   badges: NO_BADGES,
   editor: null,

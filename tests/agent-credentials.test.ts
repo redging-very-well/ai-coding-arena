@@ -119,8 +119,6 @@ describe('shared agent login API (§11.2 f)', () => {
     }
     texts.push(['PUT /admin/setup', (await admin.put('/admin/setup', { preferredUrl: null })).text]);
     texts.push(['POST /admin/claude-seats/check', (await admin.post('/admin/claude-seats/check')).text]);
-    texts.push(['kit.zip', (await sam.client.get('/kit.zip')).text]);
-    texts.push(['setup kit.zip', (await new Client(srv.url).get('/setup/kit.zip?agent=codex')).text]);
     texts.push(['admin WS', adminWs.raw.join('\n')]);
     texts.push(['player WS', playerWs.raw.join('\n')]);
     texts.push(['screen WS', screenWs.raw.join('\n')]);

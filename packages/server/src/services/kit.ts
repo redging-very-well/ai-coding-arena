@@ -1,6 +1,7 @@
-// Starter kit zips (plan §11, §11.3). The address is ALWAYS built from the
-// download request's Host header (the address the laptop actually reached),
-// never a guessed LAN IP.
+// The starter kit's files (plan §11, §11.3), rendered the same way
+// sessions/entrypoint.sh renders a seat's /kit (tests/kit-agents.test.ts
+// compares the two). There is no kit download: players join in their
+// browser and their AI helper runs in an AI seat (§11.2).
 //
 // Files in packages/starter-kit ending in `.tmpl` get their `{{HOST}}`,
 // `{{API_KEY}}`, `{{PLAYER_NAME}}` and `{{AGENT_NAME}}` placeholders filled
@@ -14,8 +15,6 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import type { Writable } from 'node:stream';
-import { ZipArchive } from 'archiver';
 import { repoPath } from '../util/paths.js';
 import type { PlayerRecord } from './store.js';
 
@@ -26,11 +25,6 @@ export const KIT_AGENTS: Readonly<Record<KitAgent, { name: string; instructions:
   claude: { name: 'Claude', instructions: 'CLAUDE.md' },
   codex: { name: 'Codex', instructions: 'AGENTS.md' },
 };
-
-/** `?agent=codex` picks the Codex kit; anything else is the Claude Code kit. */
-export function parseKitAgent(v: unknown): KitAgent {
-  return v === 'codex' ? 'codex' : 'claude';
-}
 
 /**
  * Which agent a kit file (name after `.tmpl` is removed) belongs to; null =
@@ -45,14 +39,14 @@ export function kitFileAgent(rel: string): KitAgent | null {
 /**
  * In packages/starter-kit but not a kit file: FIRST_PROMPT.md(.tmpl) is the
  * message a seat's agent starts with when a new player sits down (sent by
- * sessions/entrypoint.sh, plan §11.2 e). Neither the zips nor /kit get it.
+ * sessions/entrypoint.sh, plan §11.2 e). /kit doesn't get it.
  */
 export const SEAT_ONLY_FILES: ReadonlySet<string> = new Set(['FIRST_PROMPT.md']);
 
 export interface KitOptions {
   /** host[:port] from the request's Host header. */
   host: string;
-  /** Personal kit: the player (key pre-filled). Generic kit: undefined. */
+  /** With a player: their key pre-filled (as a seat has after login). Without: generic. */
   player?: PlayerRecord;
   /** Which coding agent the kit is for (default: Claude Code). */
   agent?: KitAgent;
@@ -146,7 +140,7 @@ function walk(dir: string): string[] {
   return out;
 }
 
-/** The kit's files (path inside the kit → content), in zip order. */
+/** The kit's files (path inside the kit → content). */
 export function kitFiles(opts: KitOptions): Array<{ name: string; content: string | Buffer }> {
   const agent = opts.agent ?? 'claude';
   const root = repoPath('packages', 'starter-kit');
@@ -192,15 +186,3 @@ export function kitFiles(opts: KitOptions): Array<{ name: string; content: strin
   return files;
 }
 
-/** Stream the kit zip to `out` (an HTTP response). */
-export async function writeKitZip(out: Writable, opts: KitOptions): Promise<void> {
-  const zip = new ZipArchive({ zlib: { level: 9 } });
-  zip.pipe(out);
-  for (const f of kitFiles(opts)) zip.append(f.content, { name: `pixel-clash-kit/${f.name}` });
-  await zip.finalize();
-}
-
-/** The download's file name: pixel-clash-kit.zip or pixel-clash-codex-kit.zip. */
-export function kitZipName(agent: KitAgent): string {
-  return agent === 'codex' ? 'pixel-clash-codex-kit.zip' : 'pixel-clash-kit.zip';
-}

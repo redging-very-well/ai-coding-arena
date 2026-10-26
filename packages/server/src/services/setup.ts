@@ -1,15 +1,14 @@
-// /setup info (plan §11 "/setup page", §12.3 server info): the join URL + QR,
-// the seat cards (`/play?seat=N` + QR for Claude seats 1-8, §11.2), and the
-// facilitator's settings: the AI session host address and the shared seat password
+// /setup info (plan §11 "/setup page", §12.3 server info): the join URL + QR
+// and the facilitator's settings: the AI session host address and the shared seat password
 // (`seatSecret`, §11.2 a), which never appears in any public payload.
 
 import { randomInt } from 'node:crypto';
 import QRCode from 'qrcode';
-import { CLAUDE_SEATS, type Result, type SeatCardDTO, type SeatTerminalDTO, type SetupInfoDTO, type SetupSettingsDTO } from '@pixel-clash/shared';
+import { CLAUDE_SEATS, type Result, type SeatTerminalDTO, type SetupInfoDTO, type SetupSettingsDTO } from '@pixel-clash/shared';
 import { log } from '../util/log.js';
 import { lanUrls } from '../util/lan.js';
 import { PASSWORD_WORDS } from './auth.js';
-import { SEAT_SECRET_RE, directSeatUrl, seatNumbers } from './claudeSeats.js';
+import { SEAT_SECRET_RE, directSeatUrl } from './claudeSeats.js';
 import type { Game } from './game.js';
 import { safeHost } from './kit.js';
 
@@ -188,11 +187,6 @@ export class SetupService {
         seatTerminals.push({ seat, url, qrSvg: await qrSvg(url) });
       }
     }
-    const seatCards: SeatCardDTO[] = [];
-    for (const seat of seatNumbers()) {
-      const url = `${baseUrl}/play?seat=${seat}`;
-      seatCards.push({ seat, playUrl: url, qrSvg: await qrSvg(url) });
-    }
     return {
       lanUrls: lan,
       baseUrl,
@@ -200,7 +194,6 @@ export class SetupService {
       playQrSvg: await qrSvg(playUrl),
       settings: this.settings,
       seatTerminals,
-      seatCards,
       sandboxMode: this.game.config.sandbox.mode,
     };
   }

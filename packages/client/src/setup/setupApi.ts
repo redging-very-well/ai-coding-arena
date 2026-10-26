@@ -4,7 +4,7 @@
 import type { SetupInfoDTO, SetupSettingsDTO } from '@pixel-clash/shared';
 import { request } from '../common/api.js';
 
-/** GET /api/setup: join URL + QR, LAN URLs, seat cards (no auth, never the seat password). */
+/** GET /api/setup: join URL + QR, LAN URLs (no auth, never the seat password). */
 export const getSetupInfo = () => request<SetupInfoDTO>('GET', '/setup');
 
 /** The facilitator's settings: the public ones plus the seat password (§11.2 a, admin only). */

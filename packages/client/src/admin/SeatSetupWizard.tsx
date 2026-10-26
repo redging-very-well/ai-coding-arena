@@ -397,7 +397,7 @@ function SeatsStep({ seats }: { seats: AdminClaudeSeatsDTO | null }) {
   return (
     <div>
       <p>
-        Turn on one seat per player laptop (seat cards from /setup go next to each laptop). Seats that are off are never given to a player;
+        Turn on one seat per player laptop. Seats that are off are never given to a player;
         players get a free seat that is on when they join.
       </p>
       <SeatList seats={seats} toggles />
@@ -445,7 +445,7 @@ function DoneStep({ steps, goto }: { steps: WizardStep[]; goto(id: WizardStepId)
           ))}
       </ul>
       <p class="dim small">
-        Next: print the seat cards and work through the checklist on{' '}
+        Next: work through the checklist on{' '}
         <a class="link" href="/setup" target="_blank" rel="noopener">
           /setup
         </a>
