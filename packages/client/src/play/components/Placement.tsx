@@ -96,14 +96,15 @@ export function Placement() {
   const rules: PlacementRules = useMemo(
     () => ({
       costs: new Map(palette.map((u) => [u.unitId, u.cost])),
-      budget: priv?.budget ?? st.caps.budget,
+      // The live budget (per-team budgets, §9.2) from every state push, like the copy caps.
+      budget: st.game?.me?.budget ?? priv?.budget ?? st.caps.budget,
       maxCopies: st.caps.maxCopies,
       typeOf,
       maxWallCopies: st.caps.maxWallCopies,
       maxFactoryCopies: st.caps.maxFactoryCopies,
       copyRamp: st.caps.copyRamp,
     }),
-    [palette, typeOf, priv?.budget, st.caps],
+    [palette, typeOf, st.game?.me?.budget, priv?.budget, st.caps],
   );
   /** The newest placements (a wall paint stroke places several before the next render). */
   const latest = useRef<PlacementDTO[]>([]);

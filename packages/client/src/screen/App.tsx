@@ -648,6 +648,9 @@ function PlayerTiles({ state, maxPlayers = MAX_PLAYERS }: { state: GameStateDTO;
           {teams && (
             <div class="group-head">
               {g.team ? <TeamChip teamId={g.team.teamId} name={g.team.name} /> : <span class="muted">Next match</span>}
+              {g.team && state.match?.teamBudgets?.[g.team.teamId] !== undefined && (
+                <span class="muted">${state.match.teamBudgets[g.team.teamId]!.toLocaleString('en-US')} each</span>
+              )}
               {g.team && state.round > 0 && table.get(g.team.teamId) && <span class="pts pixel">{table.get(g.team.teamId)!.points} pts</span>}
             </div>
           )}

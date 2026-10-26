@@ -241,6 +241,8 @@ export interface MatchSetupState {
   revealNames?: true;
   /** "Walls allowed" (§9.1b, default on); stored only when off. */
   wallsAllowed?: false;
+  /** Budget per player per team (§9.2): teamId → budget, only the teams that differ from caps.budget; absent = none. */
+  teamBudgets?: Record<string, number>;
 }
 
 /** MatchState as written to state.json (Armory code lives in data/armory). */
@@ -422,6 +424,7 @@ export class Store {
         teamMode: isTeamMode(setup.teamMode) ? setup.teamMode : 'ffa',
         ...(setup.revealNames === true ? { revealNames: true } : {}),
         ...(setup.wallsAllowed === false ? { wallsAllowed: false } : {}),
+        ...(setup.teamBudgets && typeof setup.teamBudgets === 'object' ? { teamBudgets: setup.teamBudgets } : {}),
       };
       this.match.teams ??= null;
       this.match.map ??= null;

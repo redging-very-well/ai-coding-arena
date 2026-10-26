@@ -49,7 +49,7 @@ export function adminRoutes(game: Game): Router {
 
   r.put('/match/setup', (req, res) => {
     const b = body(req);
-    send(res, game.teams.setDraft({ mapStyle: b.mapStyle, teamMode: b.teamMode, revealNames: b.revealNames, wallsAllowed: b.wallsAllowed }));
+    send(res, game.teams.setDraft({ mapStyle: b.mapStyle, teamMode: b.teamMode, revealNames: b.revealNames, wallsAllowed: b.wallsAllowed, teamBudgets: b.teamBudgets }));
   });
 
   // Swap two players between draft teams (§9.2, LOBBY only).

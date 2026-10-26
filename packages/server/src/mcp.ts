@@ -329,6 +329,8 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
                 }))
             : [],
           teamTable: s.match?.teamTable ?? null,
+          // Per-team budgets (§9.2): only when the host gave the teams different budgets.
+          ...(s.match?.teamBudgets ? { teamBudgets: s.match.teamBudgets } : {}),
           // MATCH_RESULTS only (§9 Match awards): every award and the ones this player won, to congratulate them.
           ...(s.matchAwards
             ? {
@@ -353,6 +355,9 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
             (data.wallsAllowed ? '' : " Walls are switched off for this match: wall designs can't be picked, placed or borrowed (they can still be validated and submitted).") +
             (data.arena ? ` Map: ${data.mapStyle}, arena ${data.arena.width}x${data.arena.height}.` : '') +
             (team ? ` Team mode: you are on ${team.name} with ${data.myTeam!.members.filter((n) => n !== p.name).join(', ') || 'nobody else'}.` : '') +
+            (s.match?.teamBudgets && s.match.teams
+              ? ` Budgets differ by team this match (per player): ${s.match.teams.map((t) => `${t.name} $${(s.match!.teamBudgets![t.teamId] ?? 0).toLocaleString('en-US')}`).join(', ')}. Your budget is $${data.myBudget.toLocaleString('en-US')}.`
+              : '') +
             (s.matchAwards
               ? ` The game is over! Match awards: ${s.matchAwards.map((a) => `${a.emoji} ${a.title}: ${a.winners.map((w) => w.name).join(' & ')} (${a.text})`).join('; ')}.` +
                 (s.me?.awards?.length

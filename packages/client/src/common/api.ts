@@ -190,7 +190,7 @@ export const api = {
       }),
     matchSetup: () => request<MatchSetupDTO>('GET', '/admin/match/setup'),
     /** LOBBY draft: map style override (null = auto by player count), team mode (re-balances the teams), "Show enemy names to units" and "Walls allowed". */
-    setMatchSetup: (setup: { mapStyle?: MapStyle | null; teamMode?: TeamMode; revealNames?: boolean; wallsAllowed?: boolean }) => request<MatchSetupDTO>('PUT', '/admin/match/setup', setup),
+    setMatchSetup: (setup: { mapStyle?: MapStyle | null; teamMode?: TeamMode; revealNames?: boolean; wallsAllowed?: boolean; teamBudgets?: (number | null)[] }) => request<MatchSetupDTO>('PUT', '/admin/match/setup', setup),
     /** Swap two players on different draft teams (LOBBY only). */
     swapTeams: (playerA: string, playerB: string) => request<{ teams: TeamDTO[] }>('POST', '/admin/teams/swap', { playerA, playerB }),
     /** Move a player to another draft team (LOBBY only; every team keeps ≥ 1 player). */

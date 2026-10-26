@@ -111,7 +111,7 @@ export class VisibilityService {
     const zone = showRound ? g.round.zoneOf(playerId) : null;
     const me: MyStateDTO = {
       playerId,
-      budget: g.config.caps.budget,
+      budget: g.teams.budgetOf(playerId),
       spent: showRound ? g.round.spent(playerId) : 0,
       selection: rs.selection.slice(),
       placement: showRound ? rs.placements.slice() : [],

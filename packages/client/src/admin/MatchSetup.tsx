@@ -82,12 +82,19 @@ function TeamLists({
   players,
   onSwap,
   onMove,
+  budgets,
+  defaultBudget,
+  onBudget,
   busy,
 }: {
   teams: TeamDTO[];
   players: Map<string, PreviewPlayer>;
   onSwap: (a: string, b: string) => void;
   onMove: (id: string, teamId: number) => void;
+  /** Budget per player of each team (index = teamId), §9.2. */
+  budgets: number[];
+  defaultBudget: number;
+  onBudget: (teamId: number, budget: number | null) => void;
   busy: boolean;
 }) {
   const [picked, setPicked] = useState<string | null>(null);
@@ -124,6 +131,25 @@ function TeamLists({
                 );
               })}
             </ul>
+            <label class="inline small team-budget">
+              Budget per player $
+              <input
+                type="number"
+                min={1}
+                max={defaultBudget * 10}
+                step={500}
+                value={budgets[t.teamId] ?? defaultBudget}
+                disabled={busy}
+                style={{ width: '7rem' }}
+                title={`Default $${defaultBudget.toLocaleString('en-US')} (config budget). Locked once the match starts.`}
+                onChange={(e) => {
+                  const raw = e.currentTarget.value.trim();
+                  const v = raw === '' ? null : Math.round(Number(raw));
+                  onBudget(t.teamId, v === null || v === defaultBudget ? null : v);
+                }}
+              />
+              {(budgets[t.teamId] ?? defaultBudget) !== defaultBudget && <span class="dim small"> (default ${defaultBudget.toLocaleString('en-US')})</span>}
+            </label>
           </div>
         );
       })}
@@ -245,6 +271,17 @@ export function MatchSetup({ rounds }: { rounds: number }) {
           busy={busy}
           onSwap={(a, b) => void act(() => api.admin.swapTeams(a, b), `Swapped ${byId.get(a)?.name ?? a} and ${byId.get(b)?.name ?? b}`)}
           onMove={(id, teamId) => void act(() => api.admin.moveTeam(id, teamId), `Moved ${byId.get(id)?.name ?? id} to ${teams.find((t) => t.teamId === teamId)?.name ?? `Team ${teamId + 1}`}`)}
+          budgets={setup.teamBudgets ?? []}
+          defaultBudget={setup.defaultBudget}
+          onBudget={(teamId, budget) => {
+            const next: (number | null)[] = teams.map((t) => {
+              const b = setup.teamBudgets?.[t.teamId];
+              return b === undefined || b === setup.defaultBudget ? null : b;
+            });
+            next[teamId] = budget;
+            const name = teams.find((t) => t.teamId === teamId)?.name ?? `Team ${teamId + 1}`;
+            void act(() => api.admin.setMatchSetup({ teamBudgets: next }), `${name}: $${(budget ?? setup.defaultBudget).toLocaleString('en-US')} per player`);
+          }}
         />
       )}
     </div>

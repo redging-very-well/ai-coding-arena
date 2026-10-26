@@ -349,9 +349,10 @@ export class RoundService {
     }
     // Redesign: copies of one design beyond caps.copyRamp.freeCopies cost more (§6 copy ramp).
     const spent = layoutSpent(placements.map((p) => p.unitId), (id) => designs.get(id)?.cost, (id) => designs.get(id)?.type, caps.copyRamp) ?? 0;
-    if (spent > caps.budget) {
-      return fail('OVER_BUDGET', `That army costs ${money(spent)} but your budget is ${money(caps.budget)}.`, {
-        details: { spent, budget: caps.budget },
+    const budget = this.game.teams.budgetOf(playerId);
+    if (spent > budget) {
+      return fail('OVER_BUDGET', `That army costs ${money(spent)} but your budget is ${money(budget)}.`, {
+        details: { spent, budget },
       });
     }
     const warnings: PlacementWarningDTO[] = [];
@@ -367,7 +368,7 @@ export class RoundService {
         });
       }
     }
-    return ok({ placements, spent, remaining: caps.budget - spent, counts, warnings });
+    return ok({ placements, spent, remaining: budget - spent, counts, warnings });
   }
 
   setPlacements(playerId: string, input: unknown): Result<PlacementResponse> {
@@ -556,7 +557,7 @@ export class RoundService {
         available: this.lockedDesigns(p.id).map((d) => ({ unitId: d.unitId, cost: d.cost, type: d.type, ...(d.fighter !== undefined ? { fighter: d.fighter } : {}) })),
         lastLayout: rs.lastLayout,
         caps: {
-          budget: caps.budget,
+          budget: this.game.teams.budgetOf(p.id),
           maxCopies: caps.maxCopies,
           maxUnitTypes: caps.maxUnitTypes,
           maxBuildingTypes: caps.maxBuildingTypes,

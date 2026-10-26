@@ -56,7 +56,9 @@
 //                                        wallsAllowed = "Walls allowed" (omitted = the draft's, on by default), §9.1b;
 //                                        BAD_MAP_STYLE / BAD_TEAM_MODE with details {players, valid})
 //   GET  /admin/match/setup           -> MatchSetupDTO (the LOBBY draft, or the running match's setup)
-//   PUT  /admin/match/setup {mapStyle?, teamMode?, revealNames?, wallsAllowed?} -> MatchSetupDTO (LOBBY only; re-balances the draft teams)
+//   PUT  /admin/match/setup {mapStyle?, teamMode?, revealNames?, wallsAllowed?, teamBudgets?} -> MatchSetupDTO (LOBBY only; re-balances the draft teams;
+//                                        teamBudgets = budget per player for each team, index = teamId, null = default caps.budget;
+//                                        whole number 1..10× caps.budget, else BAD_REQUEST; team mode only)
 //   POST /admin/teams/swap {playerA, playerB} -> {teams: TeamDTO[]} (LOBBY, team-mode draft only; SAME_TEAM, NO_TEAMS)
 //   POST /admin/teams/move {playerId, teamId} -> {teams: TeamDTO[]} (LOBBY, team-mode draft only; every team keeps ≥ 1 player: LAST_MEMBER; SAME_TEAM, BAD_TEAM, NO_TEAMS)
 //   POST /admin/match/new             -> GameStateDTO (MATCH_RESULTS -> LOBBY)
@@ -441,6 +443,10 @@ export interface MatchSetupDTO {
   wallsAllowed: boolean;
   map: MapDTO;
   teams: TeamDTO[] | null;
+  /** The normal budget per player (config caps.budget). */
+  defaultBudget: number;
+  /** Team mode: the budget per player of each team (index = teamId; §9.2 per-team budgets); null without teams. Locked at Start match. */
+  teamBudgets: number[] | null;
   validStyles: MapStyle[];
   validTeamModes: TeamMode[];
 }
@@ -466,6 +472,8 @@ export interface MatchInfoDTO {
   map: MapDTO | null;
   teams: TeamDTO[] | null;
   teamTable: TeamTableRowDTO[] | null;
+  /** Team mode with per-team budgets set (§9.2): the budget per player of each team (index = teamId). Absent when every team has the default. */
+  teamBudgets?: number[];
 }
 
 /** A teammate as seen by the other members (team privacy, §9.2). */

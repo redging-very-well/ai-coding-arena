@@ -82,6 +82,16 @@ function switchesOf(revealNames: boolean, wallsAllowed: boolean): { revealNames?
   return { ...(revealNames ? { revealNames: true as const } : {}), ...(wallsAllowed ? {} : { wallsAllowed: false as const }) };
 }
 
+/** Per-team budgets (§9.2): teamId → budget, only the teams that differ from caps.budget. */
+type TeamBudgets = Record<string, number>;
+
+/** Keep only the per-team budgets for teams 0..teamCount-1 (none in free-for-all); undefined when empty. */
+function budgetsFor(b: TeamBudgets | undefined, teamCount: number): { teamBudgets?: TeamBudgets } {
+  if (!b) return {};
+  const kept = Object.fromEntries(Object.entries(b).filter(([k]) => Number(k) < teamCount));
+  return Object.keys(kept).length > 0 ? { teamBudgets: kept } : {};
+}
+
 /** A requested switch: undefined/null = keep the draft's, else it must be a boolean. */
 function checkSwitch(name: string, v: unknown): Result<boolean | undefined> {
   if (v === undefined || v === null) return ok(undefined);
@@ -104,6 +114,25 @@ export class TeamsService {
   /** "Walls allowed" (§9.1b, default on): the draft in LOBBY, fixed from Start match. */
   get wallsAllowed(): boolean {
     return this.m.setup.wallsAllowed !== false;
+  }
+
+  /**
+   * The budget per player of `playerId` (§9.2 per-team budgets): their team's
+   * budget while a team match runs and the host set one, else caps.budget.
+   */
+  budgetOf(playerId: string): number {
+    const def = this.game.config.caps.budget;
+    if (!this.active) return def;
+    const teamId = this.teamIdOf(playerId);
+    return teamId === undefined ? def : (this.m.setup.teamBudgets?.[String(teamId)] ?? def);
+  }
+
+  /** The budget of each team (index = teamId), or null without teams. */
+  teamBudgetList(): number[] | null {
+    const teams = this.m.teams;
+    if (!teams) return null;
+    const def = this.game.config.caps.budget;
+    return teams.map((t) => this.m.setup.teamBudgets?.[String(t.teamId)] ?? def);
   }
 
   /** A team match is running (teams fixed from Start match to New match). */
@@ -198,10 +227,13 @@ export class TeamsService {
     if (this.m.phase !== 'LOBBY') return;
     const ids = this.game.players.list().map((p) => p.id);
     const fixed = this.normalised(ids.length);
+    const budgets = this.m.setup.teamBudgets;
     this.m.setup = { mapStyle: fixed.mapStyle, teamMode: fixed.teamMode, ...switchesOf(this.revealNames, this.wallsAllowed) };
     const mode = fixed.teamMode;
     const before = JSON.stringify(this.m.teams);
     this.m.teams = mode !== 'ffa' && isValidTeamMode(mode, ids.length) ? autoBalance(ids, mode) : null;
+    // Per-team budgets stay per team number while that team still exists.
+    Object.assign(this.m.setup, budgetsFor(budgets, this.m.teams?.length ?? 0));
     if (quiet) return;
     if (fixed.notes.length > 0) {
       const text = `${fixed.notes.join(' and ')} for ${ids.length} player${ids.length === 1 ? '' : 's'}`;
@@ -259,7 +291,7 @@ export class TeamsService {
   }
 
   /** PUT /admin/match/setup (LOBBY only): store the draft and re-balance its teams. */
-  setDraft(body: { mapStyle?: unknown; teamMode?: unknown; revealNames?: unknown; wallsAllowed?: unknown }): Result<MatchSetupDTO> {
+  setDraft(body: { mapStyle?: unknown; teamMode?: unknown; revealNames?: unknown; wallsAllowed?: unknown; teamBudgets?: unknown }): Result<MatchSetupDTO> {
     if (this.m.phase !== 'LOBBY') {
       return fail('PHASE_CLOSED', 'The match setup can only change in the lobby.', { details: { phase: this.m.phase, opensIn: 'LOBBY' } });
     }
@@ -269,6 +301,8 @@ export class TeamsService {
     if (!walls.ok) return walls;
     const checked = this.check(body.mapStyle, body.teamMode, this.game.players.list().length);
     if (!checked.ok) return checked;
+    const budgetsIn = this.checkBudgets(body.teamBudgets);
+    if (!budgetsIn.ok) return budgetsIn;
     const before = this.m.setup;
     const modeChanged = checked.data.teamMode !== before.teamMode;
     if (body.mapStyle === undefined && before.mapStyle !== null && checked.data.mapStyle === null) {
@@ -280,10 +314,38 @@ export class TeamsService {
         `Map reset to auto (${auto}): ${MAP_STYLE_INFO[before.mapStyle].label} doesn't suit ${teamModeLabel(checked.data.teamMode, n, this.draftSizes(checked.data.teamMode))}`,
       );
     }
+    const budgets = budgetsIn.data ?? before.teamBudgets;
     this.m.setup = { ...checked.data, ...switchesOf(reveal.data ?? before.revealNames === true, walls.data ?? before.wallsAllowed !== false) };
-    if (modeChanged || this.m.teams === null) this.rebalance(true);
+    if (modeChanged || this.m.teams === null) {
+      if (budgets) this.m.setup.teamBudgets = budgets;
+      this.rebalance(true);
+    } else Object.assign(this.m.setup, budgetsFor(budgets, this.m.teams.length));
     this.changed();
     return ok(this.setupDTO());
+  }
+
+  /**
+   * `teamBudgets` of PUT /admin/match/setup: one budget per player per team
+   * (index = team number; null = the default caps.budget). Undefined = keep.
+   * A positive whole number up to 10× the default. Returns the stored form
+   * (only the teams that differ from the default).
+   */
+  private checkBudgets(v: unknown): Result<TeamBudgets | undefined> {
+    if (v === undefined || v === null) return ok(undefined);
+    const def = this.game.config.caps.budget;
+    const max = def * 10;
+    if (!Array.isArray(v)) return fail('BAD_REQUEST', 'teamBudgets must be a list: one budget per team (null = the default).');
+    const teams = this.m.teams?.length ?? 0;
+    if (v.length > teams) return fail('BAD_REQUEST', teams === 0 ? 'Per-team budgets need a team mode.' : `There are only ${teams} teams.`);
+    const out: TeamBudgets = {};
+    for (const [i, b] of v.entries()) {
+      if (b === null || b === undefined) continue;
+      if (typeof b !== 'number' || !Number.isInteger(b) || b < 1 || b > max) {
+        return fail('BAD_REQUEST', `Team ${i + 1}'s budget must be a whole number from 1 to ${max}.`, { details: { team: i, min: 1, max } });
+      }
+      if (b !== def) out[String(i)] = b;
+    }
+    return ok(out);
   }
 
   /** POST /admin/teams/swap (LOBBY, team-mode draft only). */
@@ -373,7 +435,13 @@ export class TeamsService {
 
   /** Fix the resolved setup for the match (team mode: map and teams; free-for-all: per PLACEMENT). */
   applyStart(s: ResolvedSetup): void {
-    this.m.setup = { mapStyle: s.mapStyle, teamMode: s.teamMode, ...switchesOf(s.revealNames, s.wallsAllowed) };
+    const budgets = this.m.setup.teamBudgets;
+    this.m.setup = {
+      mapStyle: s.mapStyle,
+      teamMode: s.teamMode,
+      ...switchesOf(s.revealNames, s.wallsAllowed),
+      ...budgetsFor(budgets, s.teams?.length ?? 0),
+    };
     this.m.teams = s.teams;
     this.m.map = s.teams ? { style: s.style, players: s.players } : null;
     this.m.zones = {};
@@ -413,6 +481,8 @@ export class TeamsService {
       wallsAllowed: this.wallsAllowed,
       map: this.previewMap(),
       teams: this.publicTeams(),
+      defaultBudget: this.game.config.caps.budget,
+      teamBudgets: this.teamBudgetList(),
       validStyles: validMapStyles(n, this.m.setup.teamMode, this.draftSizes()),
       validTeamModes: validTeamModes(n),
     };
@@ -429,6 +499,7 @@ export class TeamsService {
       map: layout ? mapDTO(layout) : null,
       teams: this.publicTeams(),
       teamTable: this.active ? this.teamTable(exclude) : null,
+      ...(this.m.setup.teamBudgets && this.m.teams ? { teamBudgets: this.teamBudgetList()! } : {}),
     };
   }
 
