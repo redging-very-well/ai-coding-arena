@@ -1,6 +1,8 @@
 // Claude seats panel (plan §12.3, §11.2): the Claude box address, the shared
 // seat password (the value only with "Show details" on, since this page may be
-// on the projector), the seats 1-8 with an On switch (off = never assigned or
+// on the projector), the "Claude box setup" command (`make seats
+// PIXEL_CLASH_URL=… SEAT_SECRET=…`, which writes sessions/.env on the Claude
+// box; shown only with "Show details", copyable either way), the seats 1-8 with an On switch (off = never assigned or
 // pickable; turning off a held seat moves its player to another free seat),
 // live status, assigned player (reassign / Unassign), who holds the live
 // terminal, and "Open terminal" (rescue: the seat's terminal through the
@@ -123,7 +125,8 @@ export function ClaudeSeats() {
       </div>
       {wrong.length > 0 && (
         <div class="banner-bad" role="alert">
-          The seat password here doesn't match SEAT_SECRET on the Claude box (seat {wrong.join(', ')}). Enter the value from sessions/.env below.
+          The seat password here doesn't match SEAT_SECRET on the Claude box (seat {wrong.join(', ')}). Run the Claude box setup command below on the
+          Claude box again, or enter the value from its sessions/.env below.
         </div>
       )}
 
@@ -146,6 +149,8 @@ export function ClaudeSeats() {
           Save
         </button>
       </form>
+
+      <BoxSetup command={details?.setupCommand ?? null} show={showDetails} secretSet={seats?.seatSecretSet ?? false} />
 
       <SeatPassword set={seats?.seatSecretSet ?? false} value={details?.seatSecret ?? null} show={showDetails} onSave={saveSetup} />
 
@@ -283,6 +288,41 @@ function OpenTerminal({ row }: { row: AdminClaudeSeatDTO }) {
   );
 }
 
+/**
+ * The one command the Claude box needs (§11.1): run in the repo there, it
+ * writes PIXEL_CLASH_URL and SEAT_SECRET into sessions/.env and starts the
+ * seats. It carries the seat password, so the text shows only with "Show
+ * details"; Copy works either way (it fetches the details just for the copy).
+ */
+function BoxSetup(props: { command: string | null; show: boolean; secretSet: boolean }) {
+  const { act, busy } = useAdmin();
+  const copy = () =>
+    act(async () => {
+      const cmd = props.command ?? (await api.admin.claudeSeats(true)).setupCommand ?? null;
+      if (!cmd) throw new Error('No seat password yet: set one below first.');
+      if (!(await copyText(cmd))) throw new Error("Couldn't copy: turn on Show details and copy the command by hand.");
+    }, 'Setup command copied: paste it in the repo folder on the Claude box');
+  return (
+    <div class="box-setup">
+      <h3>Claude box setup</h3>
+      <p class="dim small">
+        Run this in the Pixel Clash repo folder on the Claude box: it saves this server's address and the seat password in sessions/.env and
+        starts the seats (add N=4 for seats 1-4 only). Later starts need only <code>make seats</code>.
+      </p>
+      {props.secretSet ? (
+        <div class="btn-row">
+          {props.show && props.command ? <code class="secret" style={{ wordBreak: 'break-all', userSelect: 'all' }}>{props.command}</code> : <span class="dim">make seats PIXEL_CLASH_URL=… SEAT_SECRET=…</span>}
+          <button class="btn small" disabled={busy} onClick={() => void copy()}>
+            Copy
+          </button>
+        </div>
+      ) : (
+        <p class="warn-text small">No seat password yet: set one below, then the command appears here.</p>
+      )}
+    </div>
+  );
+}
+
 function SeatPassword(props: { set: boolean; value: string | null; show: boolean; onSave: (patch: { seatSecret: string | null }, okText: string) => Promise<boolean> }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState('');
@@ -291,7 +331,8 @@ function SeatPassword(props: { set: boolean; value: string | null; show: boolean
     <div class="seat-secret">
       <h3>Seat password</h3>
       <p class="dim small">
-        The same value as SEAT_SECRET in sessions/.env on the Claude box. Players never see it: this server adds it for them.
+        The same value as SEAT_SECRET in sessions/.env on the Claude box (this server made one up on its first start; the setup command above
+        carries it). Players never see it: this server adds it for them. After changing it, run the setup command on the Claude box again.
       </p>
       {!editing ? (
         <div class="btn-row">

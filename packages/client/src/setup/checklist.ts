@@ -29,8 +29,8 @@ export const CHECKLIST: readonly ChecklistSection[] = [
     items: [
       {
         id: 'box-env',
-        title: 'Set the game server address and seat password in sessions/.env',
-        detail: 'PIXEL_CLASH_URL is the address above (http://<ip>:8080). SEAT_SECRET is one made-up password for all seats (12-64 characters, e.g. otter-lamp-quartz-ninety); players never see it.',
+        title: 'Run the Claude box setup command from /admin → AI seats in the repo folder on the Claude box',
+        detail: 'make seats PIXEL_CLASH_URL=… SEAT_SECRET=…: it writes this server\'s address and the seat password (made up by this server; players never see it) into sessions/.env and starts the seats.',
       },
       {
         id: 'box-up',
@@ -51,7 +51,7 @@ export const CHECKLIST: readonly ChecklistSection[] = [
       },
       {
         id: 'box-admin',
-        title: 'In /admin → AI seats, enter the Claude box address and the same SEAT_SECRET',
+        title: 'In /admin → AI seats, enter the Claude box address',
         detail: 'Turn on Show details first (not on the projector). Every running seat should turn green (up).',
       },
       {

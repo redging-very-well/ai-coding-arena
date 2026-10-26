@@ -1,13 +1,16 @@
 # Pixel Clash Claude box: one container per seat (plan §11.1).
 #
-#   cp .env.example .env    # then edit PIXEL_CLASH_URL and SEAT_SECRET
+#   First run: copy the command from the game server's /admin -> AI seats ->
+#   Claude box setup and run it in the repo root:
+#     make seats PIXEL_CLASH_URL=http://<game-server>:8080 SEAT_SECRET=<from /admin>
+#   (it writes both into .env; or cp .env.example .env and edit them by hand)
 #   docker compose up -d --build                          # all 8 seats
 #   docker compose up -d --build seat1 seat2 seat3        # or only the seats in use
 #
 # Players reach seat N (1-8) through the game server's proxy, inside /play
 # (/terminal/N/). Directly (adults' fallback): http://<claude-box>:778N/terminal/N/
-# with basic auth player / SEAT_SECRET. Enter the same SEAT_SECRET in
-# /admin -> Claude seats. See README.md for the login, resets, firewall and wipe.
+# with basic auth player / SEAT_SECRET. The game server makes SEAT_SECRET up
+# (/admin -> AI seats -> Seat password); .env must hold the same value. See README.md for the login, resets, firewall and wipe.
 
 name: pixel-clash-seats
 
@@ -37,11 +40,11 @@ x-seat: &seat
   stop_grace_period: 5s
 
 x-seat-env: &seat-env
-  PIXEL_CLASH_URL: ${PIXEL_CLASH_URL:?set PIXEL_CLASH_URL in sessions/.env}
+  PIXEL_CLASH_URL: ${PIXEL_CLASH_URL:?is not set. Run the command from the game server /admin -> AI seats -> Claude box setup in the repo folder (make seats PIXEL_CLASH_URL=... SEAT_SECRET=...)}
   TTYD_USER: player
   # One shared seat password for all 8 seats (plan §11.2). The game server's
   # proxy injects it; players never see it. Old TTYD_PASS_N lines are ignored.
-  TTYD_PASS: ${SEAT_SECRET:?set SEAT_SECRET in sessions/.env}
+  TTYD_PASS: ${SEAT_SECRET:?is not set. Run the command from the game server /admin -> AI seats -> Claude box setup in the repo folder (make seats PIXEL_CLASH_URL=... SEAT_SECRET=...)}
   CLAUDE_PERMISSION_MODE: ${CLAUDE_PERMISSION_MODE:-}
   CLAUDE_CONTINUE: ${CLAUDE_CONTINUE:-1}
   # Which coding agent the seats run: claude (default) or codex (§11.3).

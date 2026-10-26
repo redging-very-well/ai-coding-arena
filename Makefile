@@ -5,6 +5,11 @@
 # targets on the game server laptop and the seats-* / seat-* targets on the
 # Claude box. See README.md and sessions/README.md.
 #
+# First run on the Claude box: copy the command from the game server's
+# /admin -> AI seats -> Claude box setup, e.g.
+#   make seats PIXEL_CLASH_URL=http://192.168.8.10:8080 SEAT_SECRET=otter-lamp-quartz-ninety
+# It saves both values in sessions/.env; later runs need only `make seats`.
+#
 # Works with GNU make 3.81 (macOS) and newer (Linux). `make` alone lists the
 # targets.
 
@@ -27,6 +32,23 @@ SEAT_SERVICES := $(addprefix seat,$(shell seq 1 $(N)))
 endif
 endif
 endif
+
+# PIXEL_CLASH_URL / SEAT_SECRET given on the make command line (the command
+# /admin -> AI seats -> Claude box setup shows) are written into sessions/.env
+# by sessions/set-env.sh before compose runs. Only the NAMES go into the shell
+# command; the script reads the (validated) values from the environment, where
+# make puts command-line variables. Values from your shell environment are
+# ignored here.
+SET_ENV_NAMES :=
+ifeq ($(origin PIXEL_CLASH_URL),command line)
+SET_ENV_NAMES += PIXEL_CLASH_URL
+endif
+ifeq ($(origin SEAT_SECRET),command line)
+SET_ENV_NAMES += SEAT_SECRET
+endif
+SET_ENV = $(if $(strip $(SET_ENV_NAMES)),sh sessions/set-env.sh sessions/.env $(strip $(SET_ENV_NAMES)),true)
+ENV_HINT = echo "sessions/.env is missing. On the game server open /admin -> AI seats -> Claude box setup, copy the command" && \
+	echo "(make seats PIXEL_CLASH_URL=... SEAT_SECRET=...) and run it here in the repo folder."
 
 # Per-seat targets need SEAT=n.
 need_seat = $(if $(SEAT),,$(error Set SEAT=n, e.g. make $@ SEAT=3))
@@ -79,18 +101,20 @@ balance: ## Fast balance report (npm run balance; ARGS="--fast" etc.)
 
 # ------------------------------------------------------------------- AI seats
 
-seats-env: ## Create sessions/.env from .env.example (then edit it)
-	@if [ -f sessions/.env ]; then echo "sessions/.env already exists"; \
-	else cp sessions/.env.example sessions/.env && \
-	echo "Created sessions/.env: set PIXEL_CLASH_URL and SEAT_SECRET in it"; fi
+seats-env: ## Create/update sessions/.env (PIXEL_CLASH_URL=... SEAT_SECRET=..., as /admin shows)
+	@$(SET_ENV)
+	@if [ -f sessions/.env ]; then [ -n "$(strip $(SET_ENV_NAMES))" ] || echo "sessions/.env already exists"; \
+	else umask 077 && cp sessions/.env.example sessions/.env && \
+	echo "Created sessions/.env. Fill it in with the command from the game server's /admin -> AI seats -> Claude box setup"; fi
 
 seats-build: ## Build the seat image (docker compose build)
 	$(COMPOSE) build
 
 seats: seats-up ## Same as seats-up
 
-seats-up: ## Build if needed and start seats (all, or N=6 / SEATS="1 2" / SEAT=3)
-	@[ -f sessions/.env ] || { echo "sessions/.env is missing: run 'make seats-env' and edit it"; exit 1; }
+seats-up: ## Build if needed and start seats (all, or N=6 / SEATS="1 2" / SEAT=3); see /admin for the first run
+	@$(SET_ENV)
+	@[ -f sessions/.env ] || { $(ENV_HINT); exit 1; }
 	$(COMPOSE) up -d --build $(SEAT_SERVICES)
 
 seats-stop: ## Stop seats, keeping containers and volumes (docker compose stop)

@@ -140,6 +140,7 @@ export class Game {
     })();
     this.config = patched;
     this.auth.init();
+    this.setup.ensureSeatSecret();
     await this.units.init();
     this.match.recover();
     this.store.save();

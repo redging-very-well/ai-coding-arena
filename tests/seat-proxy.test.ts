@@ -758,7 +758,7 @@ describe('Claude seat assignment', () => {
     // Seat 3 is Ben's: giving it to Cat unassigns Ben.
     const r = await admin.put<AdminClaudeSeatsDTO>('/admin/claude-seats/3', { playerId: c.id });
     expect(r.body.seats[2]).toMatchObject({ playerId: c.id, playerName: 'Cat', status: 'no-box', live: null });
-    expect(r.body.seatSecretSet).toBe(false);
+    expect(r.body.seatSecretSet).toBe(true); // made up on the first start (tests/seat-secret-setup.test.ts)
     expect(r.body.seatSecret).toBeUndefined();
     // Moving Cat to seat 5 frees seat 3.
     const moved = await admin.put<AdminClaudeSeatsDTO>('/admin/claude-seats/5', { playerId: c.id });

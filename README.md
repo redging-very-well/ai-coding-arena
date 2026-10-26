@@ -126,10 +126,10 @@ Allow Node through the OS firewall (TCP 8080) and turn off sleep.
 **Claude box (the day before):**
 
 ```sh
-make seats-env                # creates sessions/.env
-# edit sessions/.env: PIXEL_CLASH_URL=http://<game-server-LAN-IP>:8080
-#                     SEAT_SECRET=<a made-up seat password, 12-64 chars>
-make seats                    # all 8 seats; or: make seats N=4 for seats 1-4
+# Copy the command from the game server's /admin -> AI seats -> Claude box setup:
+make seats PIXEL_CLASH_URL=http://<game-server-LAN-IP>:8080 SEAT_SECRET=<from /admin>
+#   writes both into sessions/.env and starts all 8 seats (add N=4 for seats 1-4);
+#   later runs need only: make seats
 make seats-ps                 # all "running (healthy)" after ~30 s
 make seat-login SEAT=1        # once per seat: /login with the event account, trust /kit, /exit
 # ... repeat for each seat in use (Codex seats: make seat-login-codex SEAT=n)
@@ -137,8 +137,9 @@ make seats-restart            # so every terminal starts logged in
 make seat-check SEAT=1        # versions, login, game server + API reachable
 ```
 
-**Connect them:** in /admin → AI seats enter the Claude box's address (IP only)
-and the same `SEAT_SECRET`. Every running seat should turn green.
+**Connect them:** in /admin → AI seats enter the Claude box's address (IP only).
+The seat password is already shared (the game server made it up and the setup
+command carried it). Every running seat should turn green.
 
 **Seat cards:** print one per laptop from **/setup** (seat number + `/play?seat=N`
 QR). Players scan it, join with a name and a 4-digit PIN, and their AI helper is

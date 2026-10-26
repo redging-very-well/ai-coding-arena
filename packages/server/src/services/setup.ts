@@ -3,9 +3,12 @@
 // facilitator's settings: the Claude box address and the shared seat password
 // (`seatSecret`, §11.2 a), which never appears in any public payload.
 
+import { randomInt } from 'node:crypto';
 import QRCode from 'qrcode';
 import { CLAUDE_SEATS, type Result, type SeatCardDTO, type SeatTerminalDTO, type SetupInfoDTO, type SetupSettingsDTO } from '@pixel-clash/shared';
+import { log } from '../util/log.js';
 import { lanUrls } from '../util/lan.js';
+import { PASSWORD_WORDS } from './auth.js';
 import { SEAT_SECRET_RE, directSeatUrl, seatNumbers } from './claudeSeats.js';
 import type { Game } from './game.js';
 import { safeHost } from './kit.js';
@@ -52,8 +55,46 @@ export async function qrSvg(text: string): Promise<string> {
   return svg;
 }
 
+/**
+ * A new seat password: four random words joined by '-' (400^4 ≈ 2.6e10, ~34
+ * bits; the seat-login check is rate-limited). Always matches SEAT_SECRET_RE.
+ */
+export function generateSeatSecret(): string {
+  return Array.from({ length: 4 }, () => PASSWORD_WORDS[randomInt(PASSWORD_WORDS.length)]).join('-');
+}
+
+/**
+ * The Claude box setup command shown in /admin → AI seats (details only): run
+ * in the repo on the Claude box, it writes both values into sessions/.env and
+ * starts the seats. Both values are validated (URL shape, secret charset), so
+ * the command needs no quoting. Null when either is unusable.
+ */
+export function seatSetupCommand(baseUrl: string, seatSecret: string | null): string | null {
+  const url = normalizeBaseUrl(baseUrl);
+  if (!url || !seatSecret || !SEAT_SECRET_RE.test(seatSecret)) return null;
+  return `make seats PIXEL_CLASH_URL=${url} SEAT_SECRET=${seatSecret}`;
+}
+
 export class SetupService {
   constructor(private readonly game: Game) {}
+
+  /**
+   * On start (after the store loaded): if no seat password is stored, make one
+   * up and save it with the venue settings, so nobody has to invent one. An
+   * existing password is never replaced. The value is not logged.
+   */
+  ensureSeatSecret(): boolean {
+    if (this.game.store.setup.seatSecret) return false;
+    this.game.store.setup = { ...this.game.store.setup, seatSecret: generateSeatSecret() };
+    this.game.store.save();
+    log.info('[setup] made up a seat password for the Claude box (see /admin → AI seats → Claude box setup)');
+    return true;
+  }
+
+  /** {@link seatSetupCommand} for this server's base URL (preferred URL, else the request's LAN host, else the first LAN address). */
+  setupCommand(requestHost: string | undefined): string | null {
+    return seatSetupCommand(this.baseUrl(requestHost), this.game.store.setup.seatSecret);
+  }
 
   /** The public settings (never the seat password). */
   get settings(): SetupSettingsDTO {

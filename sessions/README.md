@@ -29,7 +29,7 @@ Inside every container ttyd listens on 7781; compose publishes seat N on host po
 
 All commands below run in this `sessions/` folder.
 
-**Shortcuts:** the repo root `Makefile` wraps the common commands (run `make` in the repo root to list them): `make seats-env`, `make seats` (or `make seats N=4`, `SEATS="1 2 5"`), `make seats-ps`, `make seat-login SEAT=n` (`seat-login-codex` for Codex), `make seats-restart [SEAT=n]`, `make seat-check SEAT=n`, `make new-player SEAT=n` (runs `new-player`, then restarts the seat), `make seats-logs [SEAT=n]`, `make seats-stop`, `make seats-down` and `make seats-wipe` (`down -v`). The commands below are what they run.
+**Shortcuts:** the repo root `Makefile` wraps the common commands (run `make` in the repo root to list them): `make seats PIXEL_CLASH_URL=… SEAT_SECRET=…` (the first run: writes both into `.env` via `set-env.sh`, then starts the seats), `make seats-env`, `make seats` (or `make seats N=4`, `SEATS="1 2 5"`), `make seats-ps`, `make seat-login SEAT=n` (`seat-login-codex` for Codex), `make seats-restart [SEAT=n]`, `make seat-check SEAT=n`, `make new-player SEAT=n` (runs `new-player`, then restarts the seat), `make seats-logs [SEAT=n]`, `make seats-stop`, `make seats-down` and `make seats-wipe` (`down -v`). The commands below are what they run.
 
 ## 1. Set up (day before)
 
@@ -37,26 +37,26 @@ Needs Docker with Compose v2 and BuildKit (any current Docker Engine or Docker D
 
 **Sizing.** Each seat runs one Claude Code process (more if a player opens extra tabs). For all 8 seats plan on about **8 cores and 16 GB RAM**; 4 seats need about 4 cores / 8 GB, 2 seats about 2 cores / 4 GB. Each container is capped at 1.5 GB RAM and 1 CPU (limits, not reservations: a seat typically uses well under 1 GB and under 1 core), so 8 seats at their cap still leave ~4 GB for the host on a 16 GB box. On Docker Desktop, give the Docker VM that much memory and CPU in its settings.
 
+**`.env` needs two values**, and the game server has both: on the game server open **/admin → AI seats → Claude box setup** and press **Copy** (turn on **Show details** to see it). Run the command in the repo root on the Claude box:
+
 ```sh
-cp .env.example .env
-# Edit .env: PIXEL_CLASH_URL = the game server's LAN address (not localhost),
-# and SEAT_SECRET = one made-up seat password for all seats, 12-64 characters
-# of A-Z a-z 0-9 . _ ~ - (e.g. four random words: otter-lamp-quartz-ninety).
-docker compose up -d --build
+make seats PIXEL_CLASH_URL=http://192.168.8.10:8080 SEAT_SECRET=otter-lamp-quartz-ninety   # the copied command
 docker compose ps        # all eight seats "running (healthy)" after ~30 s
 ```
 
+It creates `sessions/.env` from `.env.example` (owner-only), sets `PIXEL_CLASH_URL` (the game server's LAN address as the game server sees it; containers can't use localhost) and `SEAT_SECRET` (the seat password the game server made up on its first start), keeps every other line, then runs `docker compose up -d --build`. Bad values are refused before anything is written. Later runs need only `make seats`. By hand instead: `cp .env.example .env`, set both values, `docker compose up -d --build`. Without `.env` values, compose stops and points back to /admin.
+
 Allow inbound TCP 7781-7788 on the Claude box firewall (at least from the game server; to allow **only** the game server, see section 8). Turn off sleep.
 
-### Give the game server the seat password
+### Tell the game server where the Claude box is
 
-On the game server, open **/admin → AI seats** (turn on **Show details** first; keep it off while /admin is on the projector):
+On the game server, open **/admin → AI seats** (turn on **Show details** to see secrets; keep it off while /admin is on the projector):
 
 1. **Claude box address**: the Claude box's LAN IP or name, e.g. `192.168.8.20` (no port: the proxy uses 778N per seat).
-2. **Seat password**: exactly the `SEAT_SECRET` from `sessions/.env`. It is saved in the game server's `data/state.json` (it survives a game wipe) and is shown only with "Show details" on.
-3. Every running seat should go **up** (green) within a few seconds; press **Check now** to re-test. **Wrong password** means the two values differ; **down** means the seat isn't running or the box address is wrong.
+2. **Seat password**: already set. The game server makes one up on its first start (four random words) and saves it in `data/state.json` (it survives a game wipe); the setup command above carries it. It is shown only with "Show details" on. You can still replace it (**Change**, e.g. with a value an older `sessions/.env` already has).
+3. Every running seat should go **up** (green) within a few seconds; press **Check now** to re-test. **Wrong password** means the two values differ (run the setup command again); **down** means the seat isn't running or the box address is wrong.
 
-To change the password later: edit `SEAT_SECRET` in `.env`, `docker compose up -d` (the seats restart; conversations reopen), then enter the same value in /admin.
+To change the password later: **Change** it in /admin, then copy the new setup command and run it on the Claude box (the seats restart; conversations reopen). Editing `SEAT_SECRET` in `.env` + `docker compose up -d` and entering the same value in /admin works too.
 
 ### Seat cards
 
@@ -64,7 +64,7 @@ Print one card per laptop from the game server's **/setup** page: the big Claude
 
 ### Upgrading from per-seat passwords (`TTYD_PASS_1..8`)
 
-The compose file now needs `SEAT_SECRET` and ignores `TTYD_PASS_N`, so an old `.env` stops with `set SEAT_SECRET in sessions/.env` instead of half-working. Add a `SEAT_SECRET=…` line (delete the 8 `TTYD_PASS_N` lines; leftovers are harmless), run `docker compose up -d` (it rebuilds: `pull_policy: build`; the new entrypoint adds the base path `-b /terminal/N`), enter the same value in /admin, and reprint the seat cards (QR only).
+The compose file now needs `SEAT_SECRET` and ignores `TTYD_PASS_N`, so an old `.env` stops with `SEAT_SECRET is not set. Run the command from the game server /admin -> AI seats -> Claude box setup …` instead of half-working. Add a `SEAT_SECRET=…` line (or run the setup command from /admin; delete the 8 `TTYD_PASS_N` lines; leftovers are harmless), run `docker compose up -d` (it rebuilds: `pull_policy: build`; the new entrypoint adds the base path `-b /terminal/N`), enter the same value in /admin, and reprint the seat cards (QR only).
 
 ### Running fewer seats (games are 2-8 players)
 

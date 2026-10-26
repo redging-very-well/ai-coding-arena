@@ -87,7 +87,7 @@
 //   POST /admin/wipe {confirm:'WIPE'} -> {ok:true}
 //   PUT  /admin/setup {claudeBoxHost?, preferredUrl?, seatSecret?} (null/"" clears) -> SetupInfoDTO & {seatSecretSet}
 //                                        (BAD_SEAT_SECRET: 12-64 of A-Z a-z 0-9 . _ ~ -)
-//   GET  /admin/claude-seats[?details=1] -> AdminClaudeSeatsDTO (seatSecret + directUrl only with details=1)
+//   GET  /admin/claude-seats[?details=1] -> AdminClaudeSeatsDTO (seatSecret, setupCommand + directUrl only with details=1)
 //   PUT  /admin/claude-seats/:seat {playerId | null} -> AdminClaudeSeatsDTO (assign/move/unassign; BAD_CLAUDE_SEAT, CLAUDE_SEAT_OFF, NOT_FOUND)
 //   PUT  /admin/claude-seats/:seat/enabled {enabled: boolean} -> AdminClaudeSeatsDTO (turn a seat on/off; off releases
 //                                        its player, who is moved to the lowest free seat that is on, if any)
@@ -1363,6 +1363,12 @@ export interface AdminClaudeSeatsDTO {
   seatSecretSet: boolean;
   /** The shared seat password (`?details=1` only). */
   seatSecret?: string | null;
+  /**
+   * `?details=1` only: the command to run in the repo on the Claude box,
+   * `make seats PIXEL_CLASH_URL=<this server> SEAT_SECRET=<seatSecret>` (it
+   * writes sessions/.env and starts the seats). Null without a seat password.
+   */
+  setupCommand?: string | null;
   /**
    * The shared agent logins (§11.2 f): "…" + the last 4 characters when set,
    * else null. Write-only: the value itself never leaves the server, not even
