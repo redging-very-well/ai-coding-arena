@@ -1,4 +1,4 @@
-// The live config for /admin (plan §12.3): one copy shared by the Match tab
+// The live config for /admin: one copy shared by the Match tab
 // (budget, timers) and the Game rules tab. Every setting saves on its own as
 // soon as it changes (PUT /admin/config with just that change); there is no
 // Save button. Saves run one after another, each answer becomes the copy, and

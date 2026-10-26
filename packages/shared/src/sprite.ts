@@ -1,5 +1,5 @@
-// §5.1 unit sprites: validation of the SpriteSpec returned by a unit's
-// optional sprite() method (§7 step 8b), and the fallback sprite generated
+// Validation of the SpriteSpec returned by a unit's
+// optional sprite() method, and the fallback sprite generated
 // from color + shape + type when a unit has no sprite (or it was hidden by the
 // facilitator). Shared by the server (validation) and the client (fallback).
 //
@@ -22,7 +22,7 @@ export type SpriteGrid = (typeof SPRITE_GRIDS)[number];
 export const SPRITE_STATES = ['idle', 'walk', 'attack', 'hit', 'death'] as const;
 export type SpriteState = (typeof SPRITE_STATES)[number];
 
-/** Frame count limits per state (§5 contract comments). */
+/** Frame count limits per state. */
 export const SPRITE_FRAME_LIMITS: Readonly<Record<SpriteState, { min: number; max: number }>> = {
   idle: { min: 1, max: 4 },
   walk: { min: 1, max: 4 },
@@ -37,7 +37,7 @@ export const SPRITE_TRANSPARENT = '.';
 export const SPRITE_MAX_PALETTE = 16;
 /** Min share of opaque pixels in every idle frame. */
 export const SPRITE_MIN_OPAQUE = 0.1;
-/** Max size of the JSON copy of sprite()'s result (§7 step 8b). */
+/** Max size of the JSON copy of sprite()'s result. */
 export const SPRITE_MAX_JSON_BYTES = 200 * 1024;
 /** At most this many SPRITE_BAD_FRAME errors are reported per check (keeps the result short). */
 export const SPRITE_MAX_FRAME_ERRORS = 5;
@@ -71,7 +71,7 @@ const SHAPE_HINT =
   'sprite() must return { grid: 16, palette: { o: "#222034", b: "#3399FF" }, frames: { idle: [[ ...16 strings of 16 chars ]] } }.';
 
 /**
- * Check a sprite (the JSON copy of sprite()'s result) per §5.1. On success
+ * Check a sprite (the JSON copy of sprite()'s result). On success
  * returns the normalized spec: only the known keys, palette colours in upper
  * case, empty optional states dropped.
  */
@@ -430,7 +430,7 @@ export function noSpriteWarning(): ValidationWarning {
 }
 
 // ---------------------------------------------------------------------------
-// Fallback sprite (§5.1): generated from color + shape + type.
+// Fallback sprite: generated from color + shape + type.
 // ---------------------------------------------------------------------------
 
 function hexToRgb(hex: string): [number, number, number] {

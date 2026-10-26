@@ -1,4 +1,4 @@
-// Entry of /setup (plan §11 "/setup page"): open to facilitators.
+// Entry of /setup: open to facilitators.
 
 import { render } from 'preact';
 import '../common/theme.css';

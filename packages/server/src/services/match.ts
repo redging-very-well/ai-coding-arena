@@ -1,5 +1,5 @@
-// The authoritative game state machine (plan §3) with phase timers, the
-// phase gates (§10.2) and the facilitator's controls (§10.3 admin).
+// The authoritative game state machine with phase timers, the
+// phase gates and the facilitator's controls.
 //
 //   LOBBY → PLAN → PLACEMENT → BATTLE → RESULTS → PLAN … → MATCH_RESULTS → LOBBY
 //
@@ -23,7 +23,7 @@ import { accumulateRound, computeAwards, type RoundStatsInput } from './awards.j
 
 export type GatedOp = 'submit' | 'retire' | 'selection' | 'placement' | 'ready' | 'adminSubmit';
 
-/** §10.2: the phases in which each operation is open (validate is always open). */
+/** The phases in which each operation is open (validate is always open). */
 export const PHASE_GATES: Record<GatedOp, readonly Phase[]> = {
   submit: ['PLAN'],
   retire: ['PLAN'],
@@ -65,7 +65,7 @@ export class MatchService {
   }
 
   // -------------------------------------------------------------------------
-  // Phase gates (§10.2)
+  // Phase gates
   // -------------------------------------------------------------------------
 
   /** null when `op` is open now, else a PHASE_CLOSED result. */
@@ -95,7 +95,7 @@ export class MatchService {
     });
   }
 
-  /** PLACEMENT and its timer ran out (§3): placement is closed, START needs no Ready. */
+  /** PLACEMENT and its timer ran out: placement is closed, START needs no Ready. */
   placementTimeUp(): boolean {
     return this.m.phase === 'PLACEMENT' && this.m.timer.expired === true;
   }
@@ -183,7 +183,7 @@ export class MatchService {
   }
 
   // -------------------------------------------------------------------------
-  // Pending advance: a short countdown to the next step (§3, §10.3)
+  // Pending advance: a short countdown to the next step
   // -------------------------------------------------------------------------
   //
   //  * by 'host': the facilitator pressed "Start placement ▶" / "START battle ▶"
@@ -363,12 +363,12 @@ export class MatchService {
 
   /**
    * LOBBY → PLAN (needs 2-8 players). `armoryIn` switches Open Armory on for
-   * the whole match (§9.1). `mapStyleIn` (undefined = the draft's, null = the
+   * the whole match. `mapStyleIn` (undefined = the draft's, null = the
    * default for the player count) and `teamModeIn` (undefined = the draft's)
-   * are checked against the players now (§9.2); team mode fixes the teams and
-   * the map for the whole match. `revealNamesIn` ("Show enemy names to units",
-   * §5; undefined = the draft's) and `wallsAllowedIn` ("Walls allowed",
-   * §9.1b; undefined = the draft's) are fixed for the match too. With walls
+   * are checked against the players now; team mode fixes the teams and
+   * the map for the whole match. `revealNamesIn` ("Show enemy names to units";
+   * undefined = the draft's) and `wallsAllowedIn` ("Walls allowed";
+   * undefined = the draft's) are fixed for the match too. With walls
    * off, walls carried over in a selection are dropped (with a toast).
    */
   startMatch(
@@ -415,7 +415,7 @@ export class MatchService {
     const m = this.m;
     m.phase = 'PLAN';
     m.zones = {};
-    // Entries of creators deleted during PLACEMENT go now (§9.1 Lifecycle).
+    // Entries of creators deleted during PLACEMENT go now.
     this.game.armory.applyPendingRemovals();
     for (const p of this.game.players.list()) {
       const rs = this.game.round.stateOf(p.id);
@@ -444,7 +444,7 @@ export class MatchService {
     this.allPrivateChanged();
   }
 
-  /** PLACEMENT → BATTLE. Without force everyone must be Ready (§10.3). */
+  /** PLACEMENT → BATTLE. Without force everyone must be Ready. */
   start(force: boolean): Result<true> {
     if (this.m.phase !== 'PLACEMENT') {
       return fail('PHASE_CLOSED', 'START works only in PLACEMENT.', { details: { phase: this.m.phase, opensIn: 'PLACEMENT' } });
@@ -464,9 +464,9 @@ export class MatchService {
     return ok(true);
   }
 
-  /** Zones in line with the active players, then auto-place empty armies (§9 Auto-place). */
+  /** Zones in line with the active players, then auto-place empty armies. */
   private autoPlace(): void {
-    // A kick since PLACEMENT began changes the zone set (§9 Zones: per active count).
+    // A kick since PLACEMENT began changes the zone set (per active count).
     const activeIds = this.game.players.active().map((p) => p.id);
     const zoned = Object.keys(this.m.zones);
     if (activeIds.length !== zoned.length || activeIds.some((id) => !this.m.zones[id])) this.game.round.assignZones();
@@ -499,19 +499,19 @@ export class MatchService {
   /** Called by the battle service when playback reached the end (or Skip). */
   battleReleased(result: RoundResultRecord, roundStats?: RoundStatsInput): void {
     const m = this.m;
-    // Round points, match damage (standings tie-break) and badge counts (§9).
+    // Round points, match damage (standings tie-break) and badge counts.
     for (const r of result.end.ranking) {
       m.points[r.playerId] = (m.points[r.playerId] ?? 0) + r.pointsGained;
       m.damage[r.playerId] = (m.damage[r.playerId] ?? 0) + r.damage;
       const badges = (m.badges[r.playerId] ??= {});
       for (const b of r.badges) badges[b] = (badges[b] ?? 0) + 1;
     }
-    // Players kicked during this battle leave the scoreboard with it (§4).
+    // Players kicked during this battle leave the scoreboard with it.
     const leaving = new Set(m.pendingKicks);
     result.end.scoreboard = this.game.visibility.scoreboard(leaving);
-    // Match awards (§9): add the round to the per-match stats (places after this round).
+    // Match awards: add the round to the per-match stats (places after this round).
     if (roundStats) accumulateRound((m.stats ??= {}), roundStats, result.end.scoreboard);
-    // Team mode (§9.2): the round's team ranking, then the match team table.
+    // Team mode: the round's team ranking, then the match team table.
     if (this.game.teams.active) result.end.teams = teamRoundRanking(result.end.ranking);
     m.results.push(result);
     if (this.game.teams.active) result.end.teamTable = this.game.teams.teamTable(leaving) ?? [];
@@ -576,7 +576,7 @@ export class MatchService {
   }
 
   /**
-   * Admin "New match" (§10.3): → LOBBY. From MATCH_RESULTS this is the normal
+   * Admin "New match": → LOBBY. From MATCH_RESULTS this is the normal
    * step; from any other phase it is the host's (confirmed) escape hatch that
    * throws the running match away. A running battle is aborted first, and
    * kicks queued during it are applied (they would otherwise be lost).
@@ -586,7 +586,7 @@ export class MatchService {
     return this.resetToLobby();
   }
 
-  /** → LOBBY: resets round, points, damage, badges and the Armory (§9.1); keeps players and units. */
+  /** → LOBBY: resets round, points, damage, badges and the Armory; keeps players and units. */
   private resetToLobby(): Result<true> {
     const m = this.m;
     this.game.players.applyPendingKicks();
@@ -614,7 +614,7 @@ export class MatchService {
       rs.submittedThisPlan = false;
     }
     // Teams are only fixed for a match: back in LOBBY the draft is re-dealt
-    // for everyone (benched players included), §9.2.
+    // for everyone (benched players included).
     m.teams = null;
     this.game.teams.rebalance(true);
     this.changed();
@@ -623,7 +623,7 @@ export class MatchService {
   }
 
   /**
-   * The match awards (§9 Match awards) from the per-match stats and the final
+   * The match awards from the per-match stats and the final
    * standings. Kicked players can't win (their stats stay but don't count).
    */
   computeAwards() {
@@ -646,7 +646,7 @@ export class MatchService {
     });
   }
 
-  /** After a restart: a running battle is reset to PLACEMENT (§13). */
+  /** After a restart: a running battle is reset to PLACEMENT. */
   recover(): void {
     if (this.m.phase === 'BATTLE') {
       log.warn(`a battle was running when the server stopped; round ${this.m.round} is back in PLACEMENT`);

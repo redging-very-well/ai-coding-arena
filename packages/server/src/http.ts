@@ -1,4 +1,4 @@
-// The Express app (plan §2): REST under /api, MCP at /mcp, and the static
+// The Express app: REST under /api, MCP at /mcp, and the static
 // client build with its multi-page routes (/play /screen /admin /setup /guide).
 
 import { existsSync } from 'node:fs';

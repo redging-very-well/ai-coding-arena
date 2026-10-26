@@ -1,4 +1,4 @@
-// Factory production (plan §5.2, §9.3 tick order step 9b).
+// Factory production.
 //
 // Each living factory, in instanceId order: unless it returned `hold` this
 // tick, its timer goes up by 1 (to at most productionInterval). When the timer
@@ -10,7 +10,7 @@
 // A disabled factory keeps producing toward its last rally point: production
 // is engine-side, only its update() naps. A dead factory makes nothing.
 //
-// M8.6 (§5.3, §9.3 Store and release): a minion that doesn't complete the
+// M8.6: a minion that doesn't complete the
 // factory's burst waits inside (`stored`, no spawn spot needed); the one
 // that completes it leaves together with the stored ones. Stored minions
 // count toward the alive caps, leave early on `release`, and leave on their
@@ -20,13 +20,13 @@ import { FACTORY_RADIUS, zoneAxes, type FactoryConfig, type Point, type ZoneRef 
 import { circleOverlapsWall, type WallGrid } from './walls.js';
 import type { FactoryState, SimUnit } from './types.js';
 
-/** The alive-minion cap per player (§5.2 (c)). */
+/** The alive-minion cap per player. */
 export function alivePerPlayerCap(factory: Pick<FactoryConfig, 'maxAlivePerPlayer' | 'maxAlivePerBattle'>, players: number): number {
   return Math.min(factory.maxAlivePerPlayer, Math.floor(factory.maxAlivePerBattle / Math.max(1, players)));
 }
 
 /**
- * The zone's facing as a direction (§9.2): out of the front edge for N/S/E/W
+ * The zone's facing as a direction: out of the front edge for N/S/E/W
  * zones, diagonally towards the corner nearest the arena centre for corner
  * zones (the same arrow as the /play placement grid).
  */
@@ -42,7 +42,7 @@ export function zoneFacingDir(zone: ZoneRef): Point {
 }
 
 /**
- * How many more minions a factory can make before time runs out (§9.3): spawns
+ * How many more minions a factory can make before time runs out: spawns
  * happen when the timer is full, at most one per tick, and one at the time
  * limit itself doesn't count (E = floor((battleTicks − 1) / interval)), so
  * min(minionsLeft, floor((timer + ticksLeft − 1) / interval)). A factory that
@@ -59,7 +59,7 @@ export function canMakeOf(f: Pick<FactoryState, 'minionsLeft' | 'timer' | 'produ
 const SPAWN_ANGLES = [0, 45, -45, 90, -90, 135, -135, 180];
 
 /**
- * The spawn spot for a factory's next minion (§5.2): 8 candidates
+ * The spawn spot for a factory's next minion: 8 candidates
  * 18 + minionRadius + 2 px from the factory centre, starting toward the rally
  * point (or along the zone's facing, `zoneFacingDir`, when the rally point
  * is the factory itself). The first one inside the arena that overlaps no wall square and no
@@ -78,7 +78,7 @@ export function spawnSpot(
 }
 
 /**
- * Spots for `count` minions leaving together (§9.3 Store and release): the
+ * Spots for `count` minions leaving together: the
  * free candidates of `spawnSpot` in its order, cycling when fewer are free
  * than minions leave (separation spreads them). Empty when none is free.
  */

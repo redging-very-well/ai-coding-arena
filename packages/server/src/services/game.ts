@@ -1,4 +1,4 @@
-// The composition root of the service layer (plan §10.1). REST (routes/*)
+// The composition root of the service layer. REST (routes/*)
 // and MCP (mcp.ts) are thin adapters over these services; ws.ts implements
 // the Notifier the services push through.
 
@@ -51,9 +51,9 @@ export interface Notifier {
   isConnected(playerId: string): boolean;
   /** Open WebSocket connections of any role (diagnostics, GET /admin/metrics). */
   clientCount?(): number;
-  /** A facilitator command for the projector (§12.2); returns how many sockets got it. */
+  /** A facilitator command for the projector; returns how many sockets got it. */
   screenCommand?(command: ScreenCommandDTO): number;
-  /** A Claude seat's assignment, status or live terminal changed (§11.2): 'terminal' / 'terminals' pushes. */
+  /** A Claude seat's assignment, status or live terminal changed: 'terminal' / 'terminals' pushes. */
   terminalsChanged?(): void;
 }
 
@@ -110,7 +110,7 @@ export interface GameOptions {
   autoAdvanceDelayMs?: number;
   /** Debounce for state.json writes. */
   saveDebounceMs?: number;
-  /** Ready spam limit (§3). Default the READY_* constants; `false` turns it off (tests that toggle fast). */
+  /** Ready spam limit. Default the READY_* constants; `false` turns it off (tests that toggle fast). */
   readyLimit?: { minGapMs: number; maxPerWindow: number; windowMs: number } | false;
 }
 

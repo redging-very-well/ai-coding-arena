@@ -1,4 +1,4 @@
-// Walls and factories in the API (M8.5, plan §5.2, §10.5): the 4 + 4 type
+// Walls and factories in the API (M8.5): the 4 + 4 type
 // limits, the per-group copy caps, W_TRAPPED, NO_FIGHTERS in PLAN and
 // PLACEMENT, auto-place around a walls-only layout, the selection fallback
 // that adds a fighter, and privacy (no building data before START; the
@@ -42,7 +42,7 @@ async function submit(c: Client, source: string): Promise<string> {
   return r.body.unitId as string;
 }
 
-describe('selection: up to 4 unit types AND 4 building types (§5.2)', () => {
+describe('selection: up to 4 unit types AND 4 building types', () => {
   it('accepts 4 + 4 and rejects a 5th of either group with details.group', async () => {
     const s = await boot();
     const a = await newPlayer(s.url, 'Ann');
@@ -73,7 +73,7 @@ describe('selection: up to 4 unit types AND 4 building types (§5.2)', () => {
   }, T);
 });
 
-describe('a picked design revised into the other group (§5.2 type caps)', () => {
+describe('a picked design revised into the other group', () => {
   it('Ready is refused with TOO_MANY_TYPES and a toast says why; un-picking fixes it', async () => {
     const s = await boot();
     const a = await newPlayer(s.url, 'Ann');
@@ -129,7 +129,7 @@ describe('a picked design revised into the other group (§5.2 type caps)', () =>
   }, T);
 });
 
-describe('NO_FIGHTERS (§5.2 Fighters)', () => {
+describe('NO_FIGHTERS', () => {
   it('PLAN Ready needs a soldier, tower or factory; walls alone are refused', async () => {
     const s = await boot();
     const a = await newPlayer(s.url, 'Ann');
@@ -183,7 +183,7 @@ describe('NO_FIGHTERS (§5.2 Fighters)', () => {
   }, T);
 });
 
-describe('placement: copy caps per group and W_TRAPPED (§5.2 Copies, §9.3)', () => {
+describe('placement: copy caps per group and W_TRAPPED', () => {
   it('≤ 12 fighters, ≤ 5 factories, ≤ 16 walls; counts and W_TRAPPED in the result', async () => {
     const s = await boot();
     const a = await newPlayer(s.url, 'Ann');
@@ -235,7 +235,7 @@ describe('placement: copy caps per group and W_TRAPPED (§5.2 Copies, §9.3)', (
   }, T);
 });
 
-describe('privacy with walls and factories (§3)', () => {
+describe('privacy with walls and factories', () => {
   it('no wall or factory data leaks before START; the reveal carries the minion only from START', async () => {
     const s = await boot({ playbackRate: 1, config: { timers: { battleTicks: 1200 }, suddenDeath: { startTick: 900, endTick: 1200 } } });
     const alice = await newPlayer(s.url, 'Alice');
@@ -328,7 +328,7 @@ describe('minion kinds stay hidden until START (M8.6)', () => {
   }, T);
 });
 
-describe('autoPlace with buildings (§9 Auto-place, M8.5)', () => {
+describe('autoPlace with buildings (M8.5)', () => {
   it('never places walls, puts factories last, and fills fighters around a walls-only layout', async () => {
     const { autoPlace } = await import('../packages/server/src/sim/autoPlace.js');
     const caps = { budget: 1000, maxCopies: 12, maxUnitTypes: 4, maxBuildingTypes: 4, maxFactoryCopies: 2, maxWallCopies: 12 };
@@ -358,7 +358,7 @@ describe('autoPlace with buildings (§9 Auto-place, M8.5)', () => {
   });
 });
 
-describe('battle report per type (§10.5)', () => {
+describe('battle report per type', () => {
   it('credits minions to their factory type and hints at soldiers stuck behind walls', async () => {
     const { buildBattleReport } = await import('../packages/server/src/sim/engine.js');
     const base = { playerId: 'p1', cost: 0, hp: 1, diedAtTick: null, kills: 0, valueDestroyed: 0, strikes: 0, disabled: false, errors: [] };

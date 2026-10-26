@@ -16,7 +16,7 @@ const DOT = (color: string): SpriteSpec => ({
   frames: { idle: [['aaaaaaaa', 'aaaaaaaa', 'aaaaaaaa', 'aaaaaaaa', '........', '........', '........', '........']] },
 });
 
-describe('sprite bake key (§5.1, §7)', () => {
+describe('sprite bake key', () => {
   it('changes when a revision redraws the sprite, even with the same unitId, cost and colour', () => {
     const base = { unitId: 'ninja', spriteHidden: false, stats: SOLDIER };
     const v1 = revealedSprite('p1', { ...base, sprite: DOT('#FF0000') });
@@ -30,7 +30,7 @@ describe('sprite bake key (§5.1, §7)', () => {
   });
 });
 
-describe('reveal drop-in (§12.2)', () => {
+describe('reveal drop-in', () => {
   const at = { revealAt: 1000, units: 4 };
   it('plays even when the t=0 frame is already buffered', () => {
     expect(dropInActive({ ...at, now: 1100, bufferLength: 1, tick: 0, firstT: 0 })).toBe(true);
@@ -51,7 +51,7 @@ describe('WS liveness watchdog', () => {
   });
 });
 
-describe('FACING_LEFT in screen space (§5.1, §12)', () => {
+describe('FACING_LEFT in screen space', () => {
   it('a soldier stepping (+1, +3) moves LEFT on screen and faces left', async () => {
     const config = parseConfig({ timers: { battleTicks: 20 }, suddenDeath: { startTick: 100_000, endTick: 100_001 } });
     const downLeft = scripted((self) => ({ action: 'move', destination: { x: self.x + 10, y: self.y + 30 } }));

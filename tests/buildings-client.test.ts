@@ -1,4 +1,4 @@
-// M8.5 client logic without a DOM (plan §12.5): walls carried between frames,
+// M8.5 client logic without a DOM: walls carried between frames,
 // the iso wall block, minions and factory rings, the grouped 4 + 4 roster,
 // placement copy caps and W_TRAPPED, building cards and cost breakdowns, the
 // editor cost panel, /screen living-value army bars and the admin quick
@@ -81,7 +81,7 @@ const WALL_SPRITE: SpriteSpec = {
 const cards = (list: Array<[string, UnitType, ('valid' | 'invalid')?]>) => list.map(([unitId, type, status]) => ({ unitId, status: status ?? 'valid', stats: { type } }) as const);
 
 // ---------------------------------------------------------------------------
-// Frames: walls are listed only when they change (§9.3 Frames)
+// Frames: walls are listed only when they change
 // ---------------------------------------------------------------------------
 
 describe('frame buffer carries walls between the frames that list them', () => {
@@ -266,7 +266,7 @@ describe('minions and factories on the arena', () => {
 // /play: roster (4 units + 4 buildings), Ready, placement caps
 // ---------------------------------------------------------------------------
 
-describe('grouped roster picks (§5.2: 4 units + 4 buildings)', () => {
+describe('grouped roster picks (4 units + 4 buildings)', () => {
   const roster = cards([
     ['s1', 'soldier'],
     ['s2', 'soldier'],
@@ -457,7 +457,7 @@ describe('building cards and prices', () => {
 });
 
 // ---------------------------------------------------------------------------
-// /screen: army bars use the living value (§9.3)
+// /screen: army bars use the living value
 // ---------------------------------------------------------------------------
 
 describe('/screen army bars with buildings', () => {
@@ -538,7 +538,7 @@ describe('admin quick settings for walls and factories', () => {
     }
     const p = costPreview(DEFAULT_CONFIG);
     const by = Object.fromEntries(p.rows.map((r) => [r.key, r]));
-    // The $10,000 templates (plan §6): Basic Wall 3,200 HP, Basic Factory 2,400 HP every 600 ticks; Swarm Factory every 300.
+    // The $10,000 templates: Basic Wall 3,200 HP, Basic Factory 2,400 HP every 600 ticks; Swarm Factory every 300.
     expect(by.basicWall).toMatchObject({ cost: 149, overCap: false, outOfBounds: null, template: true });
     expect(by.basicFactory).toMatchObject({ cost: 2194, overCap: false, outOfBounds: null, template: true });
     expect(by.swarmFactory!.cost).toBe(2371);

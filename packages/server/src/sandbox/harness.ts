@@ -1,4 +1,4 @@
-// The in-sandbox harness (plan §8), exported as a string so the build needs no
+// The in-sandbox harness, exported as a string so the build needs no
 // stray .js asset. The same source runs in every sandbox mode (isolated-vm and
 // node:vm) and in both the validation and the battle sandboxes.
 //
@@ -65,7 +65,7 @@ const STAT_FIELD_LIST =
 export const MAX_ACTION_JSON = 4096;
 
 /**
- * Max length of sprite()'s JSON copy (§7 step 8b). Mirrors shared
+ * Max length of sprite()'s JSON copy. Mirrors shared
  * SPRITE_MAX_JSON_BYTES (a test keeps them equal): this file must not import
  * the shared package at runtime, because the sandbox child process loads it.
  */
@@ -377,7 +377,7 @@ export const HARNESS_SOURCE = String.raw`(function setup(seed) {
   // ---- tick: one update() per self ---------------------------------------
   // Input (built by the host, see encodeTickInput):
   //   { nowMs, selves: [SelfView], enemiesJson, worldJson, allyIds: [id], alliesJson: [json], minions?: [SelfView] }
-  // 'minions' (§5.3 updateMinion): the views of the minions whose factory is
+  // 'minions': the views of the minions whose factory is
   // in 'selves' and has updateMinion(); each carries 'minion.factoryId'.
   // Right after a factory's update(), its updateMinion() runs once for each
   // of them (with '__current' = the minion's id, so a timeout names it), and
@@ -464,7 +464,7 @@ export const HARNESS_SOURCE = String.raw`(function setup(seed) {
     }
     return '[' + out + ']';
   }
-  // updateMinion() for each minion of factory 'fid' (§5.3): ',"minions":[…],"mms":n' or ''.
+  // updateMinion() for each minion of factory 'fid': ',"minions":[…],"mms":n' or ''.
   function minionCalls(inst, fid, minions, nM, enemiesAll, alliesAll, worldJson) {
     var list = '';
     var n = 0;

@@ -1,10 +1,10 @@
-// Units (plan §7, §6 re-pricing, §10): validate (dry run), submit (stores),
+// Units: validate (dry run), submit (stores),
 // list, source, retire, re-price after a config change, sprite moderation.
 // Every player has the four templates (soldier, tower, wall, factory) pre-registered (never persisted; built
 // from packages/starter-kit at boot).
 //
 // `private` is pushed to all the owner's sockets after every submit, retire,
-// re-price and invalidation (§10.3), so a unit Claude submits shows up on the
+// re-price and invalidation, so a unit Claude submits shows up on the
 // player's open /play page within a second.
 
 import { createHash } from 'node:crypto';
@@ -67,7 +67,7 @@ export type SubmitResult = ValidationResult & { unitId?: string; version?: numbe
 
 export class UnitsService {
   private templates: Array<UnitVersionRecord & { unitId: string }> = [];
-  /** The templates as the unit guide prices them (GET /guide, §10.3); one array per init so the guide can memoize. */
+  /** The templates as the unit guide prices them (GET /guide); one array per init so the guide can memoize. */
   private guideTemplateList: GuideTemplate[] = [];
   private readonly validateLimiter = new RateLimiter(1, 1000);
   private readonly submitLimiter = new RateLimiter(1, 3000);
@@ -220,7 +220,7 @@ export class UnitsService {
   }
 
   getSource(playerId: string, unitId: unknown): Result<UnitSourceDTO> {
-    // Borrowed Armory units: the source is never shared (§9.1).
+    // Borrowed Armory units: the source is never shared.
     if (typeof unitId === 'string' && isArmoryUnitId(unitId)) return borrowedNotFound(unitId);
     const d = typeof unitId === 'string' ? this.design(playerId, unitId) : undefined;
     if (!d) return notFoundUnit(unitId);
@@ -237,7 +237,7 @@ export class UnitsService {
   }
 
   private async runValidator(source: unknown, config: GameConfig, player?: PlayerRecord) {
-    // "Show enemy names to units" (§5): the practice worlds carry names too.
+    // "Show enemy names to units": the practice worlds carry names too.
     const names = player && this.game.teams.revealNames ? { names: { me: player.name, teams: this.game.store.match.setup.teamMode !== 'ffa' } } : {};
     return this.sandboxes.run(() => validateDetailed(source, { ...this.validateOptions({}), ...names }, config));
   }
@@ -292,7 +292,7 @@ export class UnitsService {
   }
 
   /**
-   * Optimistic concurrency (§10.3): with a `baseVersion` (the version the
+   * Optimistic concurrency: with a `baseVersion` (the version the
    * caller started from), the design's latest version must still be that one,
    * else UNIT_CHANGED. Left out, there is no check (older callers keep working).
    */
@@ -344,7 +344,7 @@ export class UnitsService {
     return ok(result);
   }
 
-  /** Submit (PLAN only, §10.2). Stores on success and pushes `private` to the owner. */
+  /** Submit (PLAN only). Stores on success and pushes `private` to the owner. */
   async submit(
     player: PlayerRecord,
     source: unknown,
@@ -390,7 +390,7 @@ export class UnitsService {
       warnings: result.warnings,
       ...(result.unit.orders ? { orders: result.unit.orders } : {}),
       ...(result.unit.healUsed !== undefined ? { healUsed: result.unit.healUsed } : {}),
-      // M8.8: made for the ×5 economy (§6 M8.8 migration).
+      // M8.8: made for the ×5 economy.
       scaleVersion: SCALE_VERSION,
       sha256: d.sha256 ?? '',
       createdAt: now,
@@ -415,11 +415,11 @@ export class UnitsService {
     }
     const rs = this.game.round.stateOf(player.id);
     rs.submittedThisPlan = true;
-    // A new or revised unit changes the army the player said Ready to (§3).
+    // A new or revised unit changes the army the player said Ready to.
     this.game.round.armyChanged(player.id);
     // A picked design revised into the other group (e.g. a soldier resubmitted
     // as a tower) can push the selection over a type cap: tell the player now
-    // (Ready waits until it fits, §5.2).
+    // (Ready waits until it fits).
     if (this.game.store.match.phase === 'PLAN' && rs.selection.includes(unitId)) {
       const over = this.game.round.overCap(player.id, rs.selection);
       if (over) this.game.notifier.toast({ playerId: player.id }, 'warn', over.message);
@@ -452,7 +452,7 @@ export class UnitsService {
 
   setSpriteHidden(playerId: string, unitId: string, hidden: boolean): Result<{ ok: true }> {
     // Retired designs count too, and so do Armory entries whose design is gone
-    // (kick + delete): the entry may still be borrowable (§9.1 Moderation).
+    // (kick + delete): the entry may still be borrowable.
     const d = this.game.store.designs.get(playerId)?.get(unitId);
     // The design's Armory entry hides (or shows) its sprite too.
     const entry = this.game.armory.setSpriteHidden(playerId, unitId, hidden);
@@ -467,7 +467,7 @@ export class UnitsService {
   }
 
   // -------------------------------------------------------------------------
-  // Re-pricing (§6)
+  // Re-pricing
   // -------------------------------------------------------------------------
 
   /** Errors a version would have under `config` (empty = valid). */
@@ -476,7 +476,7 @@ export class UnitsService {
     config: GameConfig,
     opts: { template?: boolean } = {},
   ): { error?: ValidationError; cost: ReturnType<typeof computeCost> } {
-    // Per type (§6): a factory's price also follows the minion, battle length and soldier coefficients.
+    // Per type: a factory's price also follows the minion, battle length and soldier coefficients.
     const pricing = pricingOf(config);
     const priced = computeCost(v.stats, config.cost, pricing);
     const checked = checkStats(snapshotInput(v.stats), config.stats.bounds);
@@ -529,7 +529,7 @@ export class UnitsService {
         }
       }
     }
-    // Open Armory entries are re-priced too (§9.1 Cost).
+    // Open Armory entries are re-priced too.
     const armory = this.game.armory.reprice(config);
     if (armory.repriced.length > 0 || armory.invalidated.length > 0) {
       repriced.push(...armory.repriced);
@@ -564,7 +564,7 @@ export class UnitsService {
           );
         }
         if (droppedBorrowed.length > 0) {
-          // A borrowed unit can't be changed (§9.1 Source), so don't suggest fixing it.
+          // A borrowed unit can't be changed, so don't suggest fixing it.
           this.game.notifier.toast(
             { playerId },
             'warn',

@@ -1,4 +1,4 @@
-// Typed REST client for the game server (plan §10.3; contract documented at
+// Typed REST client for the game server (contract documented at
 // the top of packages/shared/src/protocol.ts). Same-origin fetch with the
 // session cookie; every non-2xx response becomes an ApiError.
 
@@ -43,7 +43,7 @@ export function retryAfterMs(err: unknown): number {
   return typeof ms === 'number' && Number.isFinite(ms) ? Math.max(0, ms) : 0;
 }
 
-/** A failed request. `validation` is set for HTTP 422 unit validation failures (§7). */
+/** A failed request. `validation` is set for HTTP 422 unit validation failures. */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -71,7 +71,7 @@ export class ApiError extends Error {
   }
 }
 
-/** True for the §7 failure body `{ok:false, errors:[…]}`. */
+/** True for the failure body `{ok:false, errors:[…]}`. */
 function isValidationFailure(body: unknown): body is ValidationFailure {
   return typeof body === 'object' && body !== null && (body as { ok?: unknown }).ok === false && Array.isArray((body as { errors?: unknown }).errors);
 }
@@ -85,7 +85,7 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 export interface RequestOptions {
   signal?: AbortSignal;
-  /** Return the §7 ValidationFailure body (HTTP 422) instead of throwing. */
+  /** Return the ValidationFailure body (HTTP 422) instead of throwing. */
   validationAsResult?: boolean;
 }
 
@@ -143,12 +143,12 @@ export const api = {
   health: () => request<HealthDTO>('GET', '/health'),
   rules: () => request<RulesDTO>('GET', '/rules'),
   contract: () => request<ContractDTO>('GET', '/contract'),
-  /** The unit guide (§10.3): the rulebook for units from the live config. */
+  /** The unit guide: the rulebook for units from the live config. */
   guide: () => request<GuideDTO>('GET', '/guide'),
   state: () => request<GameStateDTO>('GET', '/state'),
   /**
    * Create / log in. With `claudeSeat` ('auto', or this laptop's seat 1-8 as
-   * the preference) the server also assigns an AI seat (§11.2 c).
+   * the preference) the server also assigns an AI seat.
    */
   join: (name: string, pin: string, claudeSeat?: number | 'auto') =>
     request<LoginResponse>('POST', '/players', { name, pin, ...(claudeSeat !== undefined ? { claudeSeat } : {}) }),
@@ -160,7 +160,7 @@ export const api = {
 
   // --- player -------------------------------------------------------------
   me: () => request<MeResponse>('GET', '/me'),
-  /** Dry run; resolves with the §7 result (ok or not) instead of throwing on 422. */
+  /** Dry run; resolves with the result (ok or not) instead of throwing on 422. */
   validateUnit: (source: string, unitId?: string, baseVersion?: number) =>
     request<ValidationResult>('POST', '/units/validate', unitBody(source, unitId, baseVersion), { validationAsResult: true }),
   /**
@@ -177,7 +177,7 @@ export const api = {
   report: (round: number | 'latest') => request<BattleReportDTO>('GET', `/battles/${round}/report`),
   /** A released round's public result (ranking, points, badges, top units). */
   results: (round: number) => request<BattleEndDTO>('GET', `/battles/${round}/results`),
-  /** The Claude seat picker (§11.2 c). */
+  /** The Claude seat picker. */
   claudeSeats: () => request<ClaudeSeatsDTO>('GET', '/claude-seats'),
   /** Pick the laptop's Claude seat 1-8 (null = none). CLAUDE_SEAT_TAKEN (409) has details {seat, takenBy}. */
   setClaudeSeat: (seat: number | null) => request<{ claudeSeat: number | null }>('PUT', '/me/claude-seat', { seat }),
@@ -187,7 +187,7 @@ export const api = {
     login: (password: string) => request<{ ok: true }>('POST', '/admin/login', { password }),
     logout: () => request<{ ok: true }>('POST', '/admin/logout'),
     session: () => request<{ admin: boolean }>('GET', '/admin/session'),
-    /** Start match (§9.2): mapStyle/teamMode left out = the LOBBY draft's; mapStyle null = default for the player count. */
+    /** Start match: mapStyle/teamMode left out = the LOBBY draft's; mapStyle null = default for the player count. */
     startMatch: (rounds?: number, armory?: boolean, setup: { mapStyle?: MapStyle | null; teamMode?: TeamMode; revealNames?: boolean; wallsAllowed?: boolean } = {}) =>
       request<GameStateDTO>('POST', '/admin/match', {
         ...(rounds === undefined ? {} : { rounds }),
@@ -210,7 +210,7 @@ export const api = {
     advance: (delaySec = 3) => request<GameStateDTO>('POST', '/admin/phase/advance', { delaySec }),
     cancelAdvance: () => request<GameStateDTO>('POST', '/admin/phase/advance/cancel'),
     battle: (b: { paused?: boolean; speed?: 1 | 2 }) => request<PlaybackDTO>('POST', '/admin/battle', b),
-    /** Projector remote (§12.2): replay, 1x/2x, pause, join poster. `screens` = projectors reached. */
+    /** Projector remote: replay, 1x/2x, pause, join poster. `screens` = projectors reached. */
     screen: (command: ScreenCommandDTO) => request<{ ok: true; screens: number }>('POST', '/admin/screen', command),
     kick: (playerId: string, deleteData = false) =>
       request<{ ok: true; effective: 'now' | 'after-battle' }>('POST', `/admin/players/${enc(playerId)}/kick`, { deleteData }),
@@ -223,17 +223,17 @@ export const api = {
       request<{ ok: true }>('POST', `/admin/units/${enc(playerId)}/${enc(unitId)}/sprite`, { hidden }),
     config: () => request<AdminConfigResponse>('GET', '/admin/config'),
     updateConfig: (patch: DeepPartial<GameConfig>) => request<AdminConfigResponse>('PUT', '/admin/config', patch),
-    /** M8.8 (§6 migration): dismiss the "economy overrides were reset" banner. */
+    /** M8.8: dismiss the "economy overrides were reset" banner. */
     overview: () => request<AdminOverviewDTO>('GET', '/admin/overview'),
     wipe: () => request<{ ok: true }>('POST', '/admin/wipe', { confirm: 'WIPE' }),
-    /** Claude seats (§11.2): with `details`, also the seat password and the direct URLs. */
+    /** Claude seats: with `details`, also the seat password and the direct URLs. */
     claudeSeats: (details = false) => request<AdminClaudeSeatsDTO>('GET', `/admin/claude-seats${details ? '?details=1' : ''}`),
     /** Assign a Claude seat to a player (moves them, unassigns the seat's holder); null unassigns. */
     assignClaudeSeat: (seat: number, playerId: string | null) => request<AdminClaudeSeatsDTO>('PUT', `/admin/claude-seats/${seat}`, { playerId }),
     checkClaudeSeats: () => request<AdminClaudeSeatsDTO>('POST', '/admin/claude-seats/check'),
-    /** Turn an AI seat on or off (§11.2 c); off moves its player to another free seat. */
+    /** Turn an AI seat on or off; off moves its player to another free seat. */
     setClaudeSeatEnabled: (seat: number, enabled: boolean) => request<AdminClaudeSeatsDTO>('PUT', `/admin/claude-seats/${seat}/enabled`, { enabled }),
-    /** The shared agent logins (§11.2 f): write-only; null clears one. The answer has only "…last 4". */
+    /** The shared agent logins: write-only; null clears one. The answer has only "…last 4". */
     setAgentCredentials: (patch: Partial<Record<AgentCredentialKind, string | null>>) =>
       request<AdminClaudeSeatsDTO>('PUT', '/admin/agent-credentials', patch),
   },

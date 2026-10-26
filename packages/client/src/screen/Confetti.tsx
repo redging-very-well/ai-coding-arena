@@ -1,4 +1,4 @@
-// Simple pixel confetti for the MATCH_RESULTS podium (plan §12.2/§12.4):
+// Simple pixel confetti for the MATCH_RESULTS podium:
 // square flakes in the seat colours falling and swaying on a canvas.
 // Respects prefers-reduced-motion (a few static flakes instead).
 

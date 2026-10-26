@@ -1,4 +1,4 @@
-// /admin "Set up AI seats" wizard (plan §12.3, §11.1-11.3), DOM-free logic:
+// /admin "Set up AI seats" wizard, DOM-free logic:
 // which steps are done from the seats DTO, when the banner hides, where the
 // wizard opens, the troubleshooting hints per failure, and the command with
 // AGENT=… added.

@@ -1,5 +1,4 @@
-// Runner parity for the balance tooling (plan §14, docs/balance.md "Fast
-// balance runs"). The balance round robins play the archetype brains on the
+// Runner parity for the balance tooling. The balance round robins play the archetype brains on the
 // LEAN runner (helpers/balance.ts BrainRunner: plain functions in this
 // process, no isolate, no IPC), about 10× faster than the real sandbox. That
 // is only sound if the lean runner gives exactly the battles the real sandbox

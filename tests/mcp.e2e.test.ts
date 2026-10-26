@@ -1,4 +1,4 @@
-// MCP end to end (plan §14 mcp.e2e.test.ts): the SDK Client +
+// MCP end to end: the SDK Client +
 // StreamableHTTPClientTransport against a booted server.
 
 import { Client as McpClient } from '@modelcontextprotocol/sdk/client/index.js';
@@ -67,7 +67,7 @@ describe('MCP (stateless Streamable HTTP)', () => {
     const submit = tools.find((t) => t.name === 'submit_unit')!;
     expect(Object.keys(submit.inputSchema.properties ?? {})).toEqual(expect.arrayContaining(['source', 'unitId', 'apiKey']));
     expect(mcp.getInstructions()).toContain('login');
-    // M8.8 (§10.6): one line on elements, splash and support; no new tools.
+    // M8.8: one line on elements, splash and support; no new tools.
     expect(mcp.getInstructions()).toContain('element (fire, ice, lightning), splash (splashRadius) and one support (heal, haste, might, shield)');
     expect(mcp.getInstructions()).toContain('at most 12 fighters');
     expect(mcp.getInstructions()).toContain('never volunteer strategy advice');
@@ -87,7 +87,7 @@ describe('MCP (stateless Streamable HTTP)', () => {
     const contract = await call(mcp, 'get_unit_contract');
     expect(contract.s.typescript).toContain('interface WorldView');
     expect(contract.s.templates.basic_soldier).toContain('export default class');
-    // M8.8 (§10.6): the rules and contract teach elements, splash and support.
+    // M8.8: the rules and contract teach elements, splash and support.
     expect(rules.s).toMatchObject({ caps: { unitCost: 3000 }, coefficients: { curveK: 1, powerFactor: 2 } });
     expect(rules.s.copyRamp).toMatchObject({ freeCopies: 3, pctPerCopy: 15 });
     expect(rules.s.elements.lightning).toContain('35%');

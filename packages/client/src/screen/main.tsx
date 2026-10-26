@@ -1,4 +1,4 @@
-// /screen entry: the projector view (plan §12.2).
+// /screen entry: the projector view.
 
 import { render } from 'preact';
 import '../common/theme.css';

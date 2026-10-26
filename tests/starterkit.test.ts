@@ -3,15 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG, computeCost, type CostStats } from '@pixel-clash/shared';
 import { validate } from '../packages/server/src/validator/validate.js';
 
-// The player-facing kit templates (plan §11). sessions/entrypoint.sh and (later)
+// The player-facing kit templates. sessions/entrypoint.sh and (later)
 // services/kit.ts fill {{HOST}} and rename *.tmpl.
 const kitFile = (rel: string) => readFileSync(new URL(`../packages/starter-kit/${rel}`, import.meta.url), 'utf8');
 const fill = (text: string) => text.replaceAll('{{HOST}}', '192.168.8.10:8080');
 
-describe('starter-kit templates (§11)', () => {
+describe('starter-kit templates', () => {
   const claudeMd = kitFile('CLAUDE.md.tmpl');
 
-  it('CLAUDE.md carries the §5 contract verbatim from shared/contract.ts', () => {
+  it('CLAUDE.md carries the contract verbatim from shared/contract.ts', () => {
     const src = readFileSync(new URL('../packages/shared/src/contract.ts', import.meta.url), 'utf8');
     const begin = src.indexOf('// --- BEGIN CONTRACT');
     const end = src.indexOf('// --- END CONTRACT');
@@ -21,7 +21,7 @@ describe('starter-kit templates (§11)', () => {
     expect(claudeMd).toContain('```ts\n' + block + '\n```');
   });
 
-  it('CLAUDE.md has every §11 section, including 4b sprites', () => {
+  it('CLAUDE.md has every section, including 4b sprites', () => {
     for (const heading of [
       '## 1. Who you',
       '## 2. Player',
@@ -42,7 +42,7 @@ describe('starter-kit templates (§11)', () => {
   });
 
   it('CLAUDE.md worked cost examples match computeCost', () => {
-    // The $10,000 redesign (§6 worked examples).
+    // The $10,000 redesign (worked examples).
     const soldier: CostStats = { type: 'soldier', maxHealth: 1400, damage: 56, range: 40, speed: 1.5, attackCooldown: 60, size: 10 };
     const body: CostStats = { type: 'soldier', maxHealth: 800, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, size: 10 };
     const cases: Array<[CostStats, number]> = [
@@ -58,7 +58,7 @@ describe('starter-kit templates (§11)', () => {
       [{ ...body, support: { kind: 'might', power: 30, range: 100 } }, 869],
       [{ type: 'wall', maxHealth: 3200, damage: 0, range: 0, speed: 0, attackCooldown: 0 }, 149],
       [{ type: 'factory', maxHealth: 360, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 600 }, 2194],
-      // §4d examples: the Frost Spire (ice + splash 40 at CD 60) and the fire archer factory.
+      // CLAUDE.md §4d examples: the Frost Spire (ice + splash 40 at CD 60) and the fire archer factory.
       [{ type: 'tower', maxHealth: 1200, damage: 72, range: 140, speed: 0, attackCooldown: 60, size: 14, element: 'ice', splashRadius: 40 }, 2520],
       [{ type: 'factory', maxHealth: 360, damage: 0, range: 0, speed: 0, attackCooldown: 0, productionInterval: 900, produces: 'archer', minionElement: 'fire' }, 2214],
     ];
@@ -76,7 +76,7 @@ describe('starter-kit templates (§11)', () => {
     expect(claudeMd).toContain(`cost = (${c.base} + the five stat prices + heal) × max(1, ${c.referenceCooldown} / attackCooldown) × power × splash × element + aura`);
     expect(claudeMd).toContain(`power   = 1 + ${c.powerFactor} × (maxHealth / ${DEFAULT_CONFIG.stats.bounds.maxHealth.max}) × (damage / ${DEFAULT_CONFIG.stats.bounds.damage.max})`);
     expect(claudeMd).toContain(`Maxing a stat costs ${1 + c.curveK}×, being tough AND strong costs up to ×${1 + c.powerFactor} more.`);
-    // §6 budget and caps, and the §4d teaching points.
+    // CLAUDE.md §6 budget and caps, and the §4d teaching points.
     expect(claudeMd).toContain(`**$${DEFAULT_CONFIG.caps.budget.toLocaleString('en-US')} per round**`);
     expect(claudeMd).toContain(`at most **$${DEFAULT_CONFIG.caps.unitCost.toLocaleString('en-US')}** per unit`);
     expect(claudeMd).toContain('## 4d. Elements, splash and support');
@@ -149,12 +149,12 @@ describe('starter-kit templates (§11)', () => {
     expect(settings.enabledMcpjsonServers).toEqual(['pixel-clash']);
     expect(settings.permissions.allow).toContain('mcp__pixel-clash');
     // No Bash rules at all: a prefix rule can't confine curl to the game API
-    // (anything may follow the URL), so the §9 curl fallback asks an adult (§11).
+    // (anything may follow the URL), so the CLAUDE.md §9 curl fallback asks an adult.
     expect(settings.permissions.allow.some((r) => r.startsWith('Bash('))).toBe(false);
     const md = fill(claudeMd);
     expect([...md.matchAll(/^curl .*$/gm)].length).toBeGreaterThan(0);
     expect(md).toMatch(/not pre-approved, so each one asks for permission/);
-    // §3's "tools only" rule must not forbid the §9 fallback.
+    // CLAUDE.md §3's "tools only" rule must not forbid the §9 fallback.
     expect(md).toContain('(or the §9 `curl` commands if the tools are missing)');
   });
 

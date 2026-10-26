@@ -1,4 +1,4 @@
-// One live terminal per Claude seat, newest wins (plan §11.2 b). Each ttyd
+// One live terminal per Claude seat, newest wins. Each ttyd
 // connection spawns its own `claude`, so two tabs on one seat would be two
 // Claudes fighting over /kit. When a new relay for seat N is established the
 // old one gets a takeover line in its terminal and is closed with 1000 (ttyd's

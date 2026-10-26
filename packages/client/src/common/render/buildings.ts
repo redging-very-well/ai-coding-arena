@@ -1,4 +1,4 @@
-// Buildings and minions on the iso arena (plan §12.5), DOM-free so tests can
+// Buildings and minions on the iso arena, DOM-free so tests can
 // run it:
 //
 //   * Walls are iso blocks: the 40×40 cell footprint extruded upwards, the top
@@ -9,8 +9,8 @@
 //     into a PixelImage; arena.ts bakes it once per design, seat, crack level
 //     and zoom, so 96 walls cost one drawImage each.
 //   * Factories get a production ring on the ground (`productionRing`).
-//   * Minions are engine-made bodies with ids `${factoryId}-mN` (§9.3): they
-//     take their owner, seat and tint from their factory, and (M8.6, §5.3)
+//   * Minions are engine-made bodies with ids `${factoryId}-mN`: they
+//     take their owner, seat and tint from their factory, and (M8.6)
 //     their kind's built-in sprite from the factory's `produces`.
 //   * M8.6: `factoryStatus` also decodes a factory's stored minions, burst
 //     and squad order from its `fac` entry; `storedBadgeText` is the count
@@ -50,7 +50,7 @@ export function minionLook(factoryColor: string, kind: MinionKind = 'grunt'): { 
   return { spec: minionSprite(color, kind), key: kind === 'grunt' ? `minion:${color}` : `minion-${kind}:${color}` };
 }
 
-/** One icon per minion kind (§12.5 M8.6 kind chip). */
+/** One icon per minion kind. */
 export const KIND_ICON: Readonly<Record<MinionKind, string>> = { grunt: '👊', archer: '🎯', runner: '💨', brute: '🔨', medic: '💚' };
 
 /** "Grunts", "Archers", … for chips and breakdown rows. */
@@ -58,7 +58,7 @@ export function kindPlural(kind: MinionKind): string {
   return `${MINION_KIND_NAMES[kind]}s`;
 }
 
-/** Squad orders in player words (§5.3). */
+/** Squad orders in player words. */
 export const ORDER_LABEL: Readonly<Record<MinionOrder, string>> = {
   attack: 'attack',
   defend: 'defend',
@@ -83,7 +83,7 @@ export interface ProductionRing {
   idle: boolean;
   minionsLeft: number;
   holding: boolean;
-  /** Where its minions head (§9.3 focus): rally point, factory, swarm target or guarded ally. */
+  /** Where its minions head: rally point, factory, swarm target or guarded ally. */
   rally: { x: number; y: number };
   /** M8.6: minions waiting inside (0 in older frames). */
   stored: number;
@@ -93,7 +93,7 @@ export interface ProductionRing {
   order: MinionOrder;
 }
 
-/** The ground ring of a factory from its `fac` entry (§9.3 Frames; M8.6 fields default to 0 stored, burst 1, attack). */
+/** The ground ring of a factory from its `fac` entry (M8.6 fields default to 0 stored, burst 1, attack). */
 export function productionRing(f: FrameFactory): ProductionRing {
   const [, progress, minionsLeft, rx, ry, holding] = f;
   const done = minionsLeft <= 0;
@@ -112,7 +112,7 @@ export function productionRing(f: FrameFactory): ProductionRing {
 /** Alias for reading a factory's M8.6 state (same decoding as `productionRing`). */
 export const factoryStatus = productionRing;
 
-/** The minions a factory in a frame is worth (§9.3): canMake (minionsLeft in older frames) + stored. */
+/** The minions a factory in a frame is worth: canMake (minionsLeft in older frames) + stored. */
 export function factoryWorth(f: FrameFactory): number {
   return (f[6] ?? f[2]) + (f[7] ?? 0);
 }
@@ -121,10 +121,10 @@ export function factoryWorth(f: FrameFactory): number {
 // Walls
 // ---------------------------------------------------------------------------
 
-/** Height of a wall block in arena px, drawn with the billboard zoom (§12.5: 28 logical px). */
+/** Height of a wall block in arena px, drawn with the billboard zoom (28 logical px). */
 export const WALL_HEIGHT = 28;
 
-/** Crack overlay level: 0 above 66% HP, 1 below, 2 below 33% (§12.5). */
+/** Crack overlay level: 0 above 66% HP, 1 below, 2 below 33%. */
 export function wallCrackLevel(hp: number, maxHp: number): 0 | 1 | 2 {
   const f = maxHp > 0 ? hp / maxHp : 1;
   if (f < 1 / 3) return 2;

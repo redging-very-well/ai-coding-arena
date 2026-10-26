@@ -1,6 +1,6 @@
-// The isolated-vm runner (plan §8, the default sandbox mode).
+// The isolated-vm runner (the default sandbox mode).
 //
-// One isolate per player per battle, as the plan says. Each isolate lives in
+// One isolate per player per battle. Each isolate lives in
 // its own small child process (ivmChild.ts) rather than in the server process:
 // V8 can abort the whole process on some out-of-memory patterns that
 // isolated-vm's memoryLimit does not catch (see ivmCore.ts). In a child, that

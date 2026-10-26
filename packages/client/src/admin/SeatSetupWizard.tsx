@@ -1,4 +1,4 @@
-// "Set up AI seats" (plan §12.3, §11.1-11.3): the banner on top of /admin
+// "Set up AI seats": the banner on top of /admin
 // while the AI seats aren't usable yet, and the step-by-step wizard it opens
 // (also from AI seats → Setup wizard). Each step says what to do; its ✓ comes
 // from the seats DTO the server pushes (seatSetupSteps.ts), so the facilitator

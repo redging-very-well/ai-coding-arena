@@ -1,4 +1,4 @@
-// Loading the code editor chunk (plan §12.1), DOM-free so tests can run it.
+// Loading the code editor chunk, DOM-free so tests can run it.
 //
 // CodeMirror is a separate, content-hashed chunk fetched on the first "Edit
 // code". If the game is rebuilt (`npm run build`) while /play stays open, the

@@ -1,9 +1,9 @@
-// The projector's data layer (plan §12.2): one GameSocket in the 'screen' role,
+// The projector's data layer: one GameSocket in the 'screen' role,
 // the shared ArenaRenderer, and a tiny observable snapshot the Preact view
 // renders from. Owns the battle lifecycle: neutral empty zones before START,
 // the "3-2-1 CLASH!" reveal with a delayed drop-in, live frames, the
 // sudden-death banner, napping toasts and the RESULTS replay (replay.ts),
-// the synthesized sounds (§12.4) and the join poster. The facilitator can
+// the synthesized sounds and the join poster. The facilitator can
 // drive the replay and the poster from /admin ('screen' WS commands).
 
 import {
@@ -248,7 +248,7 @@ export class ScreenController {
     const patch: Partial<ScreenSnapshot> = { state, stateAt: performance.now() };
     if (state.battle) patch.playback = state.battle;
     if (changed && PRE_BATTLE.includes(phase)) {
-      // Back to an empty arena: no unit data at all before START (§3).
+      // Back to an empty arena: no unit data at all before START.
       this.cancelPendingReveal();
       this.arena.clearBattle();
       this.neutralKey = '';
@@ -261,7 +261,7 @@ export class ScreenController {
     } else if (PRE_BATTLE.includes(phase)) {
       // Someone joined or left: re-read the seat limit in case the host lowered it.
       if (state.players.length !== this.snap.state?.players.length) void this.loadRules();
-      // The map grows or changes style as players join or leave (§9.2).
+      // The map grows or changes style as players join or leave.
       this.neutralZones(state.match?.map ?? null);
     }
     if (state.lastBattle && !this.snap.end) patch.end = state.lastBattle;
@@ -276,7 +276,7 @@ export class ScreenController {
   }
 
   // -------------------------------------------------------------------------
-  // Sounds (§12.4)
+  // Sounds
   // -------------------------------------------------------------------------
 
   /** Ready chimes, status blips, the results jingle and badge pops. */
@@ -473,7 +473,7 @@ export class ScreenController {
   }
 
   /**
-   * The current map's empty zone outlines, zoomed to fit (§12.2). Zone
+   * The current map's empty zone outlines, zoomed to fit. Zone
    * assignment is private until START, so every base is neutral. Without a
    * map (an older server) the four corners are shown.
    */

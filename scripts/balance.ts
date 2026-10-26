@@ -1,5 +1,5 @@
-// `npm run balance`: the fast balance round robin (plan §14, docs/balance.md
-// "Fast balance runs"). Plays the archetype matrix of tests/balance.test.ts
+// `npm run balance`: the fast balance round robin (see docs/architecture.md,
+// testing and balance tooling). Plays the archetype matrix of tests/balance.test.ts
 // with early stopping (tests/helpers/balanceFast.ts) and the result cache
 // (tests/helpers/balanceCache.ts), checks the same rules (the 70% cap and the
 // recorded exceptions, beats someone / not everyone / loses to someone, the

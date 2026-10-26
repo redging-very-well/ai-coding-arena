@@ -1,8 +1,8 @@
-// Isometric projection, depth sort and floor tiles (plan §12). Shared by
+// Isometric projection, depth sort and floor tiles. Shared by
 // /screen, the /play battle view and the replay.
 //
 // The sim is top-down on an S×S arena (S = 800, 1040 or 1200 by player
-// count, §9.2). The view is a 2:1 isometric projection of it:
+// count). The view is a 2:1 isometric projection of it:
 //     screenX = (x − y) · k        screenY = (x + y) · k / 2
 // so the arena becomes a diamond 2Sk wide and Sk tall, with arena (0,0) at
 // the top vertex, (S,0) on the right, (0,S) on the left and (S,S) at the
@@ -43,7 +43,7 @@ export interface IsoView {
   /**
    * Billboard zoom: screen px per arena px of a ground-plane circle's width
    * (= k·√2). A unit of radius `size` gets a ground ring 2·size·zoom wide and
-   * a sprite of the same width (plan §5.1).
+   * a sprite of the same width.
    */
   zoom: number;
   /** Canvas position of arena (0,0) (the diamond's top vertex). */
@@ -55,7 +55,7 @@ export interface IsoView {
 }
 
 export interface FitOptions {
-  /** Arena side S in arena px (800, 1040 or 1200, §9.2). Default 800. */
+  /** Arena side S in arena px (800, 1040 or 1200). Default 800. */
   arena?: number;
   /** Screen margin on every side (CSS px). Default 8. */
   margin?: number;
@@ -124,7 +124,7 @@ export function isoEllipse(r: number, k: number): { rx: number; ry: number } {
   return { rx, ry: rx / 2 };
 }
 
-/** Billboard width of a unit with body radius `size` (plan §5.1: 2·size, times the zoom). */
+/** Billboard width of a unit with body radius `size` (2·size, times the zoom). */
 export function billboardWidth(size: number, view: Pick<IsoView, 'zoom'>): number {
   return 2 * size * view.zoom;
 }
@@ -145,7 +145,7 @@ export function depthCompare(a: DepthItem, b: DepthItem): number {
   return a.x + a.y - (b.x + b.y) || a.x - b.x || (a.key ?? '').localeCompare(b.key ?? '');
 }
 
-/** A new array sorted back-to-front by x + y (plan §12). */
+/** A new array sorted back-to-front by x + y. */
 export function depthSort<T extends DepthItem>(items: readonly T[]): T[] {
   return [...items].sort(depthCompare);
 }
@@ -164,7 +164,7 @@ export const FLOOR_CLIFF_PX = 10;
 /** The same in arena px (fit uses it for bottom room). */
 export const FLOOR_CLIFF_WORLD = FLOOR_CLIFF_PX / FLOOR_K;
 
-/** A zone base to tint: a corner of the 800 arena, or any zone rectangle (§9.2 maps). */
+/** A zone base to tint: a corner of the 800 arena, or any zone rectangle. */
 export type FloorZone = ({ corner: Corner } | Rect) & {
   /** "#RRGGBB" tint: the seat colour, or the team colour in team mode. */
   color: string;

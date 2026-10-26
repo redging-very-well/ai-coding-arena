@@ -1,5 +1,4 @@
-// Elements and splash (plan §5.4, §9.4 Hit pipeline, Fire: burn, Ice: freeze,
-// M8.8): the hit pipeline on hand-built bodies (burn, freeze, shatter, zap,
+// Elements and splash (M8.8): the hit pipeline on hand-built bodies (burn, freeze, shatter, zap,
 // overload, splash, walls, shields, might, credit) and headless battles
 // (tempo on moves, cooldowns and factories, frames and events, lightning
 // determinism, and a battle without elements that is bit-identical to M8.7).
@@ -77,7 +76,7 @@ function pulse(bodies: SimUnit[], from: number, to: number): FrameEvent[] {
   return out;
 }
 
-describe('fire: burn (§9.4)', () => {
+describe('fire: burn', () => {
   it('a fire hit adds half its damage as a burn: 6 pulses, 30 ticks apart, +50% if the target lives 3 s', () => {
     const A = body('0-0-0', soldier({ damage: 100, element: 'fire' }));
     const T = body('1-0-0', dummy());
@@ -138,7 +137,7 @@ describe('fire: burn (§9.4)', () => {
   });
 });
 
-describe('ice: freeze (§9.4)', () => {
+describe('ice: freeze', () => {
   it('an ice hit freezes for 120 ticks, even at damage 0; another hit refreshes, never stacks', () => {
     const A = body('0-0-0', soldier({ damage: 0, element: 'ice' }));
     const T = body('1-0-0', dummy());
@@ -164,7 +163,7 @@ describe('ice: freeze (§9.4)', () => {
   });
 });
 
-describe('shatter (§5.4 combo)', () => {
+describe('shatter', () => {
   it('fire on a frozen body: ×1.4 and a thaw, a shatter event and a combo; the burn uses the pre-shatter damage', () => {
     const A = body('0-0-0', soldier({ damage: 100, element: 'fire' }));
     const T = body('1-0-0', dummy(), { frozen: 80 });
@@ -192,7 +191,7 @@ describe('shatter (§5.4 combo)', () => {
   });
 });
 
-describe('lightning: zaps (§9.4 step 7)', () => {
+describe('lightning: zaps', () => {
   const ring = () => {
     const A = body('0-0-0', soldier({ damage: 100, element: 'lightning' }), { x: 300 });
     const T = body('1-0-0', dummy(), { x: 400 });
@@ -261,7 +260,7 @@ describe('lightning: zaps (§9.4 step 7)', () => {
   });
 });
 
-describe('splash (§5.4)', () => {
+describe('splash', () => {
   it('half the hit to every other living enemy whose edge is within R of the target centre; never walls or allies; one splash event', () => {
     const A = body('0-0-0', soldier({ damage: 100, splashRadius: 40 }), { x: 300 });
     const T = body('1-0-0', dummy(), { x: 400 });
@@ -298,7 +297,7 @@ describe('splash (§5.4)', () => {
   });
 });
 
-describe('shield and might (§5.5 auras on the pipeline)', () => {
+describe('shield and might', () => {
   it('shield reduces hits, splash, zaps, burns and shatters, but never sudden death', () => {
     const A = body('0-0-0', soldier({ damage: 100, element: 'fire', splashRadius: 40 }), { x: 300 });
     const shielded = { ...noAura(), shield: 25 };

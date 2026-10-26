@@ -1,6 +1,6 @@
 // Programmatic server start (used by index.ts and the tests): one process,
-// one port serving the static client, REST, MCP, the WebSocket (§2) and the
-// seat terminal proxy (/terminal/<N>/, §11.2), which is mounted first.
+// one port serving the static client, REST, MCP, the WebSocket and the
+// seat terminal proxy (/terminal/<N>/), which is mounted first.
 
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
@@ -24,7 +24,7 @@ export interface ServerOptions extends GameOptions {
   loadConfigFile?: boolean;
   /** Test-only: where seat N's ttyd is (a fake ttyd). Default `<aiSessionHost>:778N`. */
   terminalUpstream?: ResolveUpstream;
-  /** Test-only: seat proxy timeouts (§11.2 b). */
+  /** Test-only: seat proxy timeouts. */
   terminalTimeouts?: Partial<TerminalTimeouts>;
 }
 

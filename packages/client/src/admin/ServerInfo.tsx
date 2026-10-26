@@ -1,4 +1,4 @@
-// Server info (plan §12.3, §11): LAN URLs + QR (pick the preferred interface),
+// Server info: LAN URLs + QR (pick the preferred interface),
 // sandbox mode and the wipe button (type WIPE). The AI session host address and
 // the seat password live in the Claude seats panel (ClaudeSeats.tsx).
 

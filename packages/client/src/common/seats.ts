@@ -1,4 +1,4 @@
-// Seat colours (plan §12): an 8-colour set based on Okabe-Ito, adjusted for
+// Seat colours: an 8-colour set based on Okabe-Ito, adjusted for
 // the dark floor, used ONLY for outlines, zone tints and accents (never for a
 // unit's own body colour).
 //
@@ -25,7 +25,7 @@ export interface SeatStyle {
   ink: string;
 }
 
-/** Seats 0-7 = badges 1-8 (§12): orange, sky, green, yellow, blue, vermillion, pink, white. */
+/** Seats 0-7 = badges 1-8: orange, sky, green, yellow, blue, vermillion, pink, white. */
 export const SEATS: readonly SeatStyle[] = [
   { seat: 0, name: 'Orange', symbol: '1', color: '#E69F00', light: '#FFCF66', dark: '#8A5F00', ink: '#0D0F1A' },
   { seat: 1, name: 'Sky', symbol: '2', color: '#56B4E9', light: '#A6DAF5', dark: '#1F6E99', ink: '#0D0F1A' },
@@ -115,7 +115,7 @@ export function deltaE(a: string, b: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// Team looks (§9.2): ground-ring colour + pattern
+// Team looks: ground-ring colour + pattern
 // ---------------------------------------------------------------------------
 
 export interface TeamLook {

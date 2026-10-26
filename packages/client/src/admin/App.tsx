@@ -1,7 +1,7 @@
-// The facilitator page /admin (plan §12.3): login, then the phase controls
+// The facilitator page /admin: login, then the phase controls
 // (always on top) and five tabs: Match (the step-by-step match setup in
 // LOBBY, a summary after the start), Players (the table, details behind a
-// toggle), Game rules (settings that save as they change), AI seats (§11.2)
+// toggle), Game rules (settings that save as they change), AI seats
 // and Server. The chosen tab is remembered in this browser; starting a match
 // goes from Match to Players, New match back. Until the AI seats work, a
 // "Set up AI seats" banner on top opens the setup wizard (SeatSetupWizard.tsx).

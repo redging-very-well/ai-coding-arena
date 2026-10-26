@@ -1,4 +1,4 @@
-// The unit guide view (plan §12.1 "📖 Unit guide"): the server-built GuideDTO
+// The unit guide view: the server-built GuideDTO
 // (GET /guide) with a sticky table of contents, a search box that filters and
 // highlights sections, collapsible "For Claude / code" boxes, and either a
 // close button + "Open in new tab ↗" (the /play overlay) or a print button

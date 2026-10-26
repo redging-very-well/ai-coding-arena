@@ -48,7 +48,7 @@ export interface CallOptions {
    * Wall-clock deadline measured from the moment of the call, enforced by the
    * process that runs the isolate. If no answer arrives by then the session is
    * disposed and the call resolves 'crashed' (e.g. a microtask loop the
-   * timeout didn't stop, §8). A child-process host adds its own, more generous
+   * timeout didn't stop). A child-process host adds its own, more generous
    * backstop on top (HOST_BACKSTOP_MS).
    */
   deadlineMs?: number;
@@ -88,7 +88,7 @@ export const DEFAULT_DEADLINE_SLACK_MS = 500;
  */
 export const HOST_BACKSTOP_MS = 500;
 
-/** Bound an error string that came out of a sandbox (§7 bounded messages). */
+/** Bound an error string that came out of a sandbox. */
 export function capMessage(message: string, max = MAX_ERROR_MESSAGE): string {
   return message.length > max ? `${message.slice(0, max)}…` : message;
 }
@@ -132,14 +132,14 @@ export function encodeTickInput(input: Pick<TickInput, 'nowMs' | 'selves' | 'ene
     worldJson: worldJsonOf(input.world),
     allyIds: input.allies.map((a) => a.id),
     alliesJson: alliesJsonOf(input.allies),
-    // §5.3: only when some factory runs updateMinion() this tick.
+    // Only when some factory runs updateMinion() this tick.
     ...(input.minions && input.minions.length > 0 ? { minions: input.minions } : {}),
   });
 }
 
 // The engine shares one enemies/allies array per side and tick between that
-// side's players, so each is serialised once per side, not once per player
-// (§9.2 Performance). Keyed by array identity; entries die with the arrays.
+// side's players, so each is serialised once per side, not once per player.
+// Keyed by array identity; entries die with the arrays.
 const enemiesJsonCache = new WeakMap<readonly unknown[], string>();
 const alliesJsonCache = new WeakMap<readonly unknown[], string[]>();
 
@@ -193,7 +193,7 @@ export function isMemoryCrash(detail: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Defensive parsing of __tick output (§8 hardening rules)
+// Defensive parsing of __tick output
 // ---------------------------------------------------------------------------
 
 export interface ParsedTick {
@@ -204,7 +204,7 @@ export interface ParsedTick {
   promises: Set<string>;
   /** Raw error stacks by instanceId, for line mapping (minions' updateMinion() errors too). */
   stacks: Map<string, string>;
-  /** §5.3: the factories' updateMinion() results, sorted by instanceId (empty when none ran). */
+  /** The factories' updateMinion() results, sorted by instanceId (empty when none ran). */
   minions: MinionOutput[];
   /** Minions whose updateMinion() returned a Promise (the dry run reports it). */
   minionPromises: Set<string>;
@@ -245,7 +245,7 @@ export function parseTickOutput(
   const outputs: UnitOutput[] = [];
   const promises = new Set<string>();
   const stacks = new Map<string, string>();
-  // §5.3: minion id → its factory id, for the minions listed in the input.
+  // Minion id → its factory id, for the minions listed in the input.
   const minionFactory = new Map<string, string>();
   for (const m of minionViews) if (m.minion) minionFactory.set(m.id, m.minion.factoryId);
   const minionSeen = new Set<string>();
@@ -315,7 +315,7 @@ export function unitMsTotal(outputs: readonly UnitOutput[]): number {
 
 /**
  * The slowest code in a slow tick: the instance with the largest update()
- * time, or (§5.3) a factory whose updateMinion() calls took longer still
+ * time, or a factory whose updateMinion() calls took longer still
  * (`minionCode`). Undefined when no timings are available.
  */
 export function slowestCode(outputs: readonly UnitOutput[]): { instanceId: string; minionCode: boolean } | undefined {
@@ -494,7 +494,7 @@ export class SessionPlayerRunner implements PlayerRunner {
         this.markCrashed(out.detail);
         return crashed(out.detail);
       case 'timeout': {
-        // A minion's id names its factory's updateMinion() (§5.3).
+        // A minion's id names its factory's updateMinion().
         const selfIds = new Set([...input.selves.map((s) => s.id), ...(input.minions ?? []).map((m) => m.id)]);
         // The sandbox process was frozen for at least half the budget, and
         // without the freeze the tick would have finished in time: the host's

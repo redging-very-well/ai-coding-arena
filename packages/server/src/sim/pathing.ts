@@ -1,4 +1,4 @@
-// Routing round walls (plan §9.3 Routing round walls, M8.7): soldiers and
+// Routing round walls (M8.7): soldiers and
 // minions walk round walls when an open way exists. Player code is unchanged
 // (`move` + destination); the engine plans a waypoint and the wall steering
 // (sim/steering.ts) moves the body toward it. Deterministic, no PRNG.
@@ -35,7 +35,7 @@ import { distanceToWall, type WallGrid } from './walls.js';
 import { BuildingGrid } from './buildings.js';
 import type { PathingMode, RoutePlan, SimUnit } from './types.js';
 
-/** Bodies up to this radius fit a one-cell gap (§5.2 gates). */
+/** Bodies up to this radius fit a one-cell gap. */
 export const ONE_CELL_MAX_RADIUS = 18;
 /** Extra cost of entering a wall node: more than any open route on a 30×30 grid. */
 export const WALL_STEP = 100_000;
@@ -147,7 +147,7 @@ export class Pathfinder {
     return { moved: s.moved, blocked: false };
   }
 
-  /** A route plan for `u` toward `dest` (§9.3 Planning per body); nextPlan is set by the caller. */
+  /** A route plan for `u` toward `dest`; nextPlan is set by the caller. */
   plan(u: Pick<SimUnit, 'x' | 'y' | 'radius'>, dest: Point): RoutePlan {
     this.stats.plans++;
     const direct: RoutePlan = { mode: 'direct', waypoint: null, press: -1, nextPlan: 0 };
@@ -207,7 +207,7 @@ export class Pathfinder {
     return !withBuildings || this.buildings.segmentClear(p, q, r);
   }
 
-  /** The flow field toward `goal` for size class `k` (cached, §9.3 Cache). */
+  /** The flow field toward `goal` for size class `k` (cached). */
   field(k: 1 | 2, goal: number, withBuildings = this.buildings.size > 0): Field {
     const key = (withBuildings ? 4 : 0) * KEY * KEY + k * KEY * KEY + goal;
     const version = this.version;
@@ -308,7 +308,7 @@ export class Pathfinder {
     return best;
   }
 
-  /** Dijkstra from `goal` over the class-k nodes (§9.3 Algorithm). */
+  /** Dijkstra from `goal` over the class-k nodes. */
   private dijkstra(k: 1 | 2, goal: number, withBuildings: boolean): Int32Array {
     const layer = this.layer(k, withBuildings);
     const n = layer.n;

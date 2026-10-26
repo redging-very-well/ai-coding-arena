@@ -1,4 +1,4 @@
-// /guide entry (plan §12.1 "📖 Unit guide"): the standalone unit guide, opened
+// /guide entry: the standalone unit guide, opened
 // from /play's overlay with "Open in new tab ↗". Public (no login); the data is
 // GET /guide, built from the live config. Refetched when the tab comes back
 // into view and every 30 s, so an admin retune shows up. Print-friendly.

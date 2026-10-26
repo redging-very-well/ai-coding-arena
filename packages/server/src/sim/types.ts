@@ -1,4 +1,4 @@
-// Shared types of the headless simulation (plan §9).
+// Shared types of the headless simulation.
 //
 // Conventions used throughout sim/:
 //   * Tick k (0-based) is the k-th simulation step. `world.tick` given to units
@@ -9,7 +9,7 @@
 //     compared with them directly.
 //   * Everything that iterates units does so in instanceId order (plain string
 //     comparison), players in seat order. Never in Promise-resolve order.
-//   * Sides (§9, §9.2): free-for-all every player is a side of their own; in
+//   * Sides: free-for-all every player is a side of their own; in
 //     team mode (every setup carries a `teamId`) a side is a team. Allies,
 //     friendly fire, elimination, End and ranking work on sides.
 
@@ -41,7 +41,7 @@ export function compareIds(a: string, b: string): number {
 export interface BattleUnitDesign {
   unitId: string;
   stats: StatsSnapshot;
-  /** Rounded unit cost at lock time (§6). Used for the living-cost ranking. */
+  /** Rounded unit cost at lock time. Used for the living-cost ranking. */
   cost: number;
 }
 
@@ -49,10 +49,10 @@ export interface BattlePlayerSetup {
   playerId: string;
   /** Seat 0-7: instanceId prefix, and the order results are applied in. */
   seat: number;
-  /** This round's zone (§9 Zones): a zone of the battle's map, or a Corner of the 800 Corners map. */
+  /** This round's zone: a zone of the battle's map, or a Corner of the 800 Corners map. */
   zone: ZoneRef;
   /**
-   * Team mode only (§9.2): the player's team 0..T−1. Give it to every player
+   * Team mode only: the player's team 0..T−1. Give it to every player
    * or to none; without it every player is their own side (teamId = seat).
    */
   teamId?: number;
@@ -60,7 +60,7 @@ export interface BattlePlayerSetup {
   name?: string;
   /** Team mode: the team's name (e.g. "Team 2"), shown to units only with `revealNames`. */
   teamName?: string;
-  /** The designs this player fields (≤ 4 unit + ≤ 4 building types, §5.2). */
+  /** The designs this player fields (≤ 4 unit + ≤ 4 building types). */
   units: readonly BattleUnitDesign[];
   /** Zone-local placements (one per cell). Order does not matter. */
   placements: readonly PlacementDTO[];
@@ -93,10 +93,10 @@ export type DisableReason =
   | 'player-slow' // slow strikes continued after the slowest unit was disabled
   | 'crashed'; // the player's sandbox crashed or ran out of memory
 
-/** The stats a body fights with: a design's snapshot, or the built-in minion's (§5.2). */
+/** The stats a body fights with: a design's snapshot, or the built-in minion's. */
 export type SimStats = Omit<StatsSnapshot, 'type'> & { readonly type: BodyType };
 
-/** Wall steering memory (§9.3 Wall steering step 5). */
+/** Wall steering memory. */
 export interface SlideMemory {
   /** +1 / −1 along `axis`. */
   side: 1 | -1;
@@ -110,10 +110,10 @@ export interface SlideMemory {
   flipped: boolean;
 }
 
-/** How the last move went (§5 `SelfView.pathing`, §9.3 Routing round walls). */
+/** How the last move went. */
 export type PathingMode = 'direct' | 'detour' | 'no-route';
 
-/** A body's current route plan (§9.3 Routing round walls). */
+/** A body's current route plan. */
 export interface RoutePlan {
   mode: PathingMode;
   /** Where to steer; null = straight at the destination. */
@@ -124,7 +124,7 @@ export interface RoutePlan {
   nextPlan: number;
 }
 
-/** A factory's production state (§5.2, §9.3). */
+/** A factory's production state. */
 export interface FactoryState {
   productionInterval: number;
   /** Ticks towards the next minion (0..productionInterval). */
@@ -132,7 +132,7 @@ export interface FactoryState {
   /** Minions this factory can still make (of the E it paid for). */
   minionsLeft: number;
   /**
-   * Minions it can still make before time runs out (`canMakeOf`, §9.3):
+   * Minions it can still make before time runs out (`canMakeOf`):
    * ≤ minionsLeft, 0 at the time limit. A factory is a fighter while it is
    * > 0, and its living value counts these, not minionsLeft.
    */
@@ -143,9 +143,9 @@ export interface FactoryState {
   made: number;
   /** Minions that left the factory so far (the next one is `${id}-m${released + 1}`). */
   released: number;
-  /** M8.6 (§5.3): the minion kind it builds. */
+  /** M8.6: the minion kind it builds. */
   kind: MinionKind;
-  /** M8.8 (§5.4): its minions' element (`minionElement`; medics: normal). Absent = normal. */
+  /** M8.8: its minions' element (`minionElement`; medics: normal). Absent = normal. */
   element?: Element;
   /** Minions saved up inside before they leave together (1 = each leaves at once). */
   burst: number;
@@ -162,7 +162,7 @@ export interface FactoryState {
   rally: Point;
   /** Returned `hold` this tick. */
   holding: boolean;
-  /** Rounded body price (§6): its living value is bodyCost + minionValue × canMake. */
+  /** Rounded body price: its living value is bodyCost + minionValue × canMake. */
   bodyCost: number;
   minionValue: number;
   /** Spawned a minion since the last recorded frame (the door flash). */
@@ -171,7 +171,7 @@ export interface FactoryState {
   minionsLost: number;
 }
 
-/** M8.8 (§9.4 Fire: burn): one burn on a body, per owning player (at most 8 per body). */
+/** M8.8 (burn): one burn on a body, per owning player (at most 8 per body). */
 export interface BurnRecord {
   /** The player whose fire hits made it. */
   ownerId: string;
@@ -186,7 +186,7 @@ export interface BurnRecord {
   source: SimUnit;
 }
 
-/** M8.8 (§5.5 Auras): the strongest aura of each kind on a body this tick, in %, and who gives it. */
+/** M8.8: the strongest aura of each kind on a body this tick, in %, and who gives it. */
 export interface AuraState {
   haste: number;
   might: number;
@@ -196,7 +196,7 @@ export interface AuraState {
   shieldSrc: SimUnit | null;
 }
 
-/** M8.8 (§9.4 Scoring and reports): effective damage per kind. */
+/** M8.8: effective damage per kind. */
 export type DamageSplit = DamageSplitDTO;
 
 /** One unit on the field (engine-internal, mutable). */
@@ -204,12 +204,12 @@ export interface SimUnit {
   id: string;
   playerId: string;
   seat: number;
-  /** The side: the team in team mode, else the seat (§5 `teamId`). */
+  /** The side: the team in team mode, else the seat. */
   teamId: number;
   /** The design (a minion: its factory's design). */
   unitId: string;
   stats: SimStats;
-  /** Full price: walls and factories their §6 price, minions minionValue (value destroyed, §9.3). */
+  /** Full price: walls and factories their price, minions minionValue (value destroyed). */
   cost: number;
   type: BodyType;
   radius: number;
@@ -232,10 +232,10 @@ export interface SimUnit {
   /** Faces left (sprite mirrored): last horizontal move or target direction. */
   facingLeft: boolean;
   outsideSafeZone: boolean;
-  // Report data (§9 Damage metric / Value destroyed).
+  // Report data.
   /** Effective damage dealt: min(hit, target hp before the hit), credited when the hit lands. */
   damageDealt: number;
-  /** Most ticks in a row a wall blocked it (report hint, §10.5). */
+  /** Most ticks in a row a wall blocked it (report hint). */
   blockedTicksMax?: number;
   /** Hits of this unit that took an enemy from > 0 to ≤ 0 hp. */
   kills: number;
@@ -244,9 +244,9 @@ export interface SimUnit {
   strikes: number;
   errors: UnitErrorRecord[];
   diedAtTick: number | null;
-  /** The unit whose hit took it to ≤ 0 hp (undefined: not killed by a hit, e.g. sudden death). Credits the crumbled minions of a factory (§9.3). */
+  /** The unit whose hit took it to ≤ 0 hp (undefined: not killed by a hit, e.g. sudden death). Credits the crumbled minions of a factory. */
   killedBy?: SimUnit;
-  // M8.5 (§9.3). Optional so plain test fixtures stay valid; the engine always sets them.
+  // M8.5. Optional so plain test fixtures stay valid; the engine always sets them.
   /** The wall that stopped or turned the last move, else null. */
   blockedBy?: string | null;
   /** Ticks in a row a wall has been in the way. */
@@ -262,18 +262,18 @@ export interface SimUnit {
   spawnedAtTick?: number;
   /** Factories. */
   factory?: FactoryState;
-  /** Minions: the factory that made it (alive or not), its number there and its kind (§5.3). */
+  /** Minions: the factory that made it (alive or not), its number there and its kind. */
   minion?: { factory: SimUnit; n: number; kind?: MinionKind };
   /**
-   * Factories (§5.3 updateMinion, 2026-10-26): the design has player-written
+   * Factories (2026-10-26): the design has player-written
    * minion code. Its state: `off` once it was switched off (too many errors,
    * timeouts or slow ticks; its minions use the built-in logic from then on),
    * and the strike / timeout counts that switch it off. Absent: no minion code.
    */
   minionCode?: { off: boolean; strikes: number; timeouts: number };
-  /** Walls: hp as last listed in a frame (walls are only listed when it changed, §9.3 Frames). */
+  /** Walls: hp as last listed in a frame (walls are only listed when it changed). */
   frameHp?: number;
-  // M8.8 (§9.4). Optional so plain test fixtures stay valid; the engine always sets them.
+  // M8.8. Optional so plain test fixtures stay valid; the engine always sets them.
   // `cooldownRemaining` is a float that drops by the tempo (views show Math.ceil).
   /** Ticks until the freeze ends (0 = not frozen). */
   frozen?: number;
@@ -289,7 +289,7 @@ export interface SimUnit {
   combos?: number;
   assist?: number;
   damageSplit?: DamageSplit;
-  // Redesign (accuracy, §9.4): px moved in step 4 of the last tick (0 = standing), and the report counters.
+  // Redesign (accuracy): px moved in step 4 of the last tick (0 = standing), and the report counters.
   moved?: number;
   /** Ranged shots of this unit that missed a moving target. */
   misses?: number;
@@ -297,7 +297,7 @@ export interface SimUnit {
   dodges?: number;
 }
 
-/** A homing projectile in flight (§9 Attacks). */
+/** A homing projectile in flight. */
 export interface Projectile {
   id: number;
   x: number;
@@ -320,7 +320,7 @@ export interface Projectile {
 // Result
 // ---------------------------------------------------------------------------
 
-/** A unit's report counters as of a recorded frame (Skip trims to the shown frame, §9). */
+/** A unit's report counters as of a recorded frame (Skip trims to the shown frame). */
 export interface UnitCounters {
   damageDealt: number;
   kills: number;
@@ -359,7 +359,7 @@ export interface PlayerOutcome {
   teamId?: number;
   /** Time (completed ticks) at which the player's last unit died; null = survived. */
   eliminatedAtTick: number | null;
-  /** Living value of the player's units at the end (§9.3: walls $0, factories body + unbuilt minions). */
+  /** Living value of the player's units at the end (walls $0, factories body + unbuilt minions). */
   livingCost: number;
   livingUnits: number;
   /** Player-level strikes (forged or malformed sandbox output). */
@@ -372,17 +372,17 @@ export interface PlayerOutcome {
   incidents: PlayerIncident[];
 }
 
-/** Per-instance report data (§10.3 battle report). */
+/** Per-instance report data. */
 export interface UnitReport {
   instanceId: string;
   playerId: string;
-  /** The design; a minion carries its factory's (so its damage counts for the factory type, §9.3). */
+  /** The design; a minion carries its factory's (so its damage counts for the factory type). */
   unitId: string;
   unitName: string;
   cost: number;
   /** M8.5: the body type (absent = soldier/tower, for older fixtures). */
   type?: BodyType;
-  /** Living value at the end (§9.3: walls 0, factories body + minionValue × left); 0 when dead. */
+  /** Living value at the end (walls 0, factories body + minionValue × left); 0 when dead. */
   livingValue?: number;
   /** Time the body appeared (minions: their spawn). */
   spawnedAtTick?: number;
@@ -402,7 +402,7 @@ export interface UnitReport {
   disabled: boolean;
   disabledReason?: DisableReason;
   errors: UnitErrorRecord[];
-  /** M8.8: not a fighter even while alive (damage-0 units, medic minions, medic factories, §9.4). */
+  /** M8.8: not a fighter even while alive (damage-0 units, medic minions, medic factories). */
   nonFighter?: boolean;
   /** M8.8: a heal-support unit or a medic factory (the "never healed anyone" hint). */
   healer?: boolean;
@@ -427,8 +427,8 @@ export interface BattleResult {
   players: PlayerOutcome[];
   /** Sorted by instanceId. */
   units: UnitReport[];
-  /** Ranking and round scores at the sim's end, kicked players excluded (§9 Ranking, Points). */
+  /** Ranking and round scores at the sim's end, kicked players excluded. */
   ranking: RankingEntryDTO[];
-  /** Team mode only: the round's team ranking (§9.2 Team scoring). */
+  /** Team mode only: the round's team ranking. */
   teams?: TeamRoundRankDTO[];
 }

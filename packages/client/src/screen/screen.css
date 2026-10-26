@@ -1,4 +1,4 @@
-/* Projector /screen (plan §12.2). Everything sits on a 1920×1080 stage that
+/* Projector /screen. Everything sits on a 1920×1080 stage that
    App.tsx scales to the window, so sizes here are in stage pixels. */
 
 html,
@@ -860,7 +860,7 @@ canvas.arena {
   color: var(--text-dim);
 }
 
-/* ------------------------------------------- maps, seats and teams (§9.2) */
+/* -------------------------------------------------- maps, seats and teams */
 
 .sym.seat-num {
   color: #0d0f1a;
@@ -1292,7 +1292,7 @@ canvas.arena {
   }
 }
 
-/* ------------------------------------------------- play layout (§12.2) */
+/* --------------------------------------------------------- play layout */
 /* PLAN, PLACEMENT and BATTLE: the arena takes most of the stage and the side
    is a narrow strip (names, points, ticks, army bars stay readable from the
    back of the room). LOBBY, RESULTS and MATCH_RESULTS keep the wide side. */
@@ -1580,10 +1580,10 @@ canvas.arena {
   }
 }
 
-/* M8.5 (§12.5): the first battle with walls explains why wall armies look short. */
+/* M8.5: the first battle with walls explains why wall armies look short. */
 .walls-caption { margin: 0.4rem 0 0; font-size: 0.9rem; text-align: center; }
 
-/* ------------------------------------- awards ceremony (MATCH_RESULTS, §12.2) */
+/* -------------------------------------------- awards ceremony (MATCH_RESULTS) */
 /* Drumroll intro → one award at a time → podium 3-2-1 → final board. Sized
    for the back of the room on the 1920×1080 stage (scaled down at 1280×720). */
 

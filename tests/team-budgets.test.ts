@@ -1,4 +1,4 @@
-// Per-team budgets (plan §9.2): in team mode the host can give each team its
+// Per-team budgets: in team mode the host can give each team its
 // own budget per player in the LOBBY match setup (e.g. a 4v2 where the smaller
 // team gets $20,000). Checked: validation and the lock at Start match, the
 // placement budget per team, /state me.budget, get_game_state, and

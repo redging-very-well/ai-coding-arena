@@ -1,4 +1,4 @@
-// /screen (plan §12.2): GET /api/join gives the projector its join URL and a
+// /screen: GET /api/join gives the projector its join URL and a
 // QR code (no auth, no player data), plus the DOM-free view model.
 
 import { request } from 'node:http';

@@ -1,4 +1,4 @@
-// Start-match map preview (plan §12.3): which styles fit the player count, a
+// Start-match map preview: which styles fit the player count, a
 // top-down model of a map with zone numbers, each player's round-1 zone and
 // team colours, "close neighbours" notes, the Lanes / Islands tips and the
 // "team areas differ" note for maps whose team blocks aren't mirror images.
@@ -56,7 +56,7 @@ export interface MapPreview {
   zones: PreviewZone[];
   /** "close neighbours": Lanes and Islands in free-for-all. */
   closeNeighbours: boolean;
-  /** Lanes for 2 teams, Islands for teams of 2 (§9.2). */
+  /** Lanes for 2 teams, Islands for teams of 2. */
   tip: string | null;
   /** Team mode on a map whose team blocks differ: only a multiple of T rounds is fair (`unevenNote`). */
   uneven: boolean;
@@ -124,7 +124,7 @@ export function unevenNote(preview: Pick<MapPreview, 'uneven'>, mode: TeamMode, 
 
 /**
  * Round-1 zone owners: free-for-all players in join order take
- * `zones[(i + 1) % P]`; in team mode whole teams take blocks (§9.2). Empty
+ * `zones[(i + 1) % P]`; in team mode whole teams take blocks. Empty
  * when the roster doesn't match the map.
  */
 export function roundOneOwners(zones: readonly MapZone[], players: readonly PreviewPlayer[], teams: readonly TeamDTO[] | null, round = 1): Map<number, PreviewPlayer> {

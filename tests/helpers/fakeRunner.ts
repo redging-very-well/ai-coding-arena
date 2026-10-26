@@ -174,7 +174,7 @@ export const scripted =
  */
 export function stats(over: Partial<Omit<StatsSnapshot, 'type'>> & Pick<UnitStats, 'type'>): StatsSnapshot {
   if (over.type === 'wall' || over.type === 'factory') {
-    // Buildings (§5.2): no attack, no move, fixed size.
+    // Buildings: no attack, no move, fixed size.
     const b: StatsSnapshot =
       over.type === 'wall'
         ? { name: 'Basic Wall', type: 'wall', maxHealth: 2000, damage: 0, range: 0, speed: 0, attackCooldown: 0, color: '#8A8F98', size: 20, shape: 'square' }
@@ -198,9 +198,9 @@ export function design(unitId: string, s: StatsSnapshot, cost?: number, config: 
 export interface FakePlayerSpec {
   playerId: string;
   seat: number;
-  /** A Corner of the 800 Corners map, or a zone of any §9.2 map. */
+  /** A Corner of the 800 Corners map, or a zone of any map. */
   zone: ZoneRef;
-  /** Team mode (§9.2): give it to every player or to none. */
+  /** Team mode: give it to every player or to none. */
   teamId?: number;
   units: BattleUnitDesign[];
   placements: PlacementDTO[];

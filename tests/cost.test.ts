@@ -3,8 +3,8 @@
 // by column (cost, raw, linear, curve, heal, every factor, the aura and the
 // "$5,000 game" price of the same unit in M8.8), the factor tables (copy ramp
 // included), the breakdown texts, the levers of UNIT_TOO_EXPENSIVE and the
-// $10,000 example armies. The numbers come from the reference implementation
-// of the redesign (redesign-10k/cost.mjs / tables.mjs).
+// $10,000 example armies. The numbers come from an independent reference
+// implementation of the formula.
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -117,7 +117,7 @@ const M88 = {
   element: { normal: 1, fire: 1.2, ice: 1.2, lightning: 1.2 }, heal: 4.5 / 1.6, aura: { haste: 5, might: 4, shield: 7 },
 };
 
-describe('computeCost: §6 "Reference units (curve k = 1)", every column', () => {
+describe('computeCost: "Reference units (curve k = 1)", every column', () => {
   it('parses every row of the reference table', () => {
     expect(UNITS.length).toBeGreaterThanOrEqual(40);
     expect(UNITS.map((u) => u.name)).toContain('Basic Soldier (template)');
@@ -172,7 +172,7 @@ describe('computeCost: §6 "Reference units (curve k = 1)", every column', () =>
   });
 });
 
-describe('the factor tables (§6 Factor tables, tables.mjs)', () => {
+describe('the factor tables', () => {
   const block = REF.slice(REF.indexOf('### Factor tables'));
   const line = (prefix: string) => block.split('\n').find((l) => l.startsWith(prefix))!;
   const pairs = (l: string) => [...l.matchAll(/(\d+(?:\/\d+)?):×([\d.]+)/g)].map((m) => [m[1]!, Number(m[2])] as const);
@@ -215,7 +215,7 @@ describe('the factor tables (§6 Factor tables, tables.mjs)', () => {
   });
 });
 
-describe('breakdown texts (§6 Economy: breakdown)', () => {
+describe('breakdown texts', () => {
   // The M8.8 brick 1750 / 265 rescaled (HP ×1.6, damage ×0.8): same stat prices, power ×2.24 now.
   const brick: CostStats = { type: 'soldier', maxHealth: 2800, damage: 212, range: 40, speed: 1.5, attackCooldown: 60, size: 16 };
 
@@ -242,7 +242,7 @@ describe('breakdown texts (§6 Economy: breakdown)', () => {
     );
   });
 
-  it('the §6 worked examples (exact arithmetic)', () => {
+  it('the worked examples (exact arithmetic)', () => {
     // Basic Soldier: base 50 + HP 262.5 (+32.16) + damage 105 (+5.72) + range 55.2 (+0.98) + speed 135 (+12.15) + size 32 (+2.61).
     const soldier = computeCost({ type: 'soldier', maxHealth: 1400, damage: 56, range: 40, speed: 1.5, attackCooldown: 60, size: 10 }, coeffs).breakdown;
     expect(soldier.terms.base).toBe(50);
@@ -307,10 +307,10 @@ describe('cooldown factor clamp and rounding', () => {
   });
 });
 
-describe('UNIT_TOO_EXPENSIVE levers (§6 order: cooldown, power, splash, element, support, stat)', () => {
+describe('UNIT_TOO_EXPENSIVE levers (in order: cooldown, power, splash, element, support, stat)', () => {
   const scout = (cd: number): CostStats => ({ type: 'soldier', maxHealth: 480, damage: 24, range: 30, speed: 4, attackCooldown: cd, size: 6 });
 
-  it('Scout with cooldown 10 ($5,032) names the cooldown factor: CD 20 makes it $2,516 (§7)', () => {
+  it('Scout with cooldown 10 ($5,032) names the cooldown factor: CD 20 makes it $2,516', () => {
     const err = tooExpensiveError(scout(10), computeCost(scout(10), coeffs), cap, coeffs);
     expect(err).toMatchObject({ code: 'UNIT_TOO_EXPENSIVE', value: 5032, allowed: { max: 3000 } });
     expect(err.fix).toContain('Cost is $5,032 but the max is $3,000. The ×6 cooldown factor is the biggest cost: raising attackCooldown from 10 to 20 makes it ×3 ($2,516).');
@@ -363,7 +363,7 @@ describe('UNIT_TOO_EXPENSIVE levers (§6 order: cooldown, power, splash, element
   });
 });
 
-describe('§6 example armies at $10,000 (with the copy ramp)', () => {
+describe('example armies at $10,000 (with the copy ramp)', () => {
   const c = (st: CostStats) => computeCost(st, coeffs).cost;
   const ramp = DEFAULT_CONFIG.caps.copyRamp;
   const soldier = c({ type: 'soldier', maxHealth: 1400, damage: 56, range: 40, speed: 1.5, attackCooldown: 60, size: 10 });

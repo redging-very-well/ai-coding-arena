@@ -1,4 +1,4 @@
-// /play Past battles and the top damage units (plan §12.1), DOM-free parts:
+// /play Past battles and the top damage units, DOM-free parts:
 // which rounds are listed, the picked round, a past round's ranking rows,
 // and the top-unit texts with the player's own highlight.
 

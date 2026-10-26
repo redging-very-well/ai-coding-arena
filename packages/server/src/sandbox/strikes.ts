@@ -1,5 +1,4 @@
-// Strike and disable policy for ONE player's sandbox in one battle (plan §8
-// "Deadlines, strikes, disable"). Pure bookkeeping, no I/O: the sim feeds it
+// Strike and disable policy for ONE player's sandbox in one battle. Pure bookkeeping, no I/O: the sim feeds it
 // every TickResult and leaves disabled instances out of the next TickInput.
 //
 // | Event                                  | Effect                                               |
@@ -39,7 +38,7 @@ export interface StrikeLimits {
 export type DisableReason = 'errors' | 'timeout' | 'slow' | 'spawn-failed';
 export type PlayerDisableReason = 'timeouts' | 'slow' | 'crashed';
 
-/** One entry for the battle report (§10), in the order it happened. */
+/** One entry for the battle report, in the order it happened. */
 export type StrikeEvent =
   | { kind: 'unit-error'; tick: number; instanceId: string; message: string; line?: number; strikes: number }
   | { kind: 'unit-disabled'; tick: number; instanceId: string; reason: DisableReason; message: string }
@@ -49,7 +48,7 @@ export type StrikeEvent =
   | { kind: 'bad-output'; tick: number; detail?: string }
   | { kind: 'player-disabled'; tick: number; reason: PlayerDisableReason; message: string };
 
-/** The friendly §8 message for a unit that hit its strike limit. */
+/** The friendly message for a unit that hit its strike limit. */
 export function napMessage(name: string): string {
   return `${name} got confused too many times and is taking a nap 💤`;
 }
@@ -113,7 +112,7 @@ export class StrikeTracker {
     return this.push(out);
   }
 
-  /** Apply the §8 rules to one tick's result. Returns the new events. */
+  /** Apply the rules to one tick's result. Returns the new events. */
   record(tick: number, result: TickResult): StrikeEvent[] {
     const out: StrikeEvent[] = [];
     if (this._playerDisabled) return out;
@@ -159,7 +158,7 @@ export class StrikeTracker {
             if (strikes >= this.limits.unitStrikeLimit) this.disable(out, tick, culprit, 'errors');
           }
           // A culprit's own timeouts don't count toward the player limits:
-          // those are for timeouts that continue after it naps (§8), so 2
+          // those are for timeouts that continue after it naps, so 2
           // copies of one looping design can't disable the whole player.
           return this.push(out);
         }

@@ -1,4 +1,4 @@
-// Factories die at sudden death (plan §9.3, §17; user 2026-10-25: "add an
+// Factories die at sudden death (user 2026-10-25: "add an
 // option that makes factories die at sudden death. Enable it by default"): on
 // the first tick of sudden death every factory still standing is destroyed,
 // credited to nobody; stored minions are lost with it; other bodies are untouched.
@@ -38,7 +38,7 @@ async function run(config: GameConfig) {
 const deathTick = (engine: BattleEngine, id: string) =>
   engine.frames.find((f) => f.events.some((e) => e.type === 'death' && 'instanceId' in e && e.instanceId === id))?.t;
 
-describe('factories die at sudden death (§9.3)', () => {
+describe('factories die at sudden death', () => {
   it('is off by default (user, after the measurements)', () => {
     expect(DEFAULT_CONFIG.factory.dieAtSuddenDeath).toBe(false);
   });

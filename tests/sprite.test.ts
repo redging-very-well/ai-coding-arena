@@ -1,4 +1,4 @@
-// §5.1 sprites: the shared checkSprite() rules and the fallback sprite.
+// The shared checkSprite() rules and the fallback sprite.
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -29,7 +29,7 @@ function errorsOf(raw: unknown): ValidationError[] {
 }
 const codes = (raw: unknown) => errorsOf(raw).map((e) => e.code);
 
-describe('checkSprite (§5.1 validation rules)', () => {
+describe('checkSprite', () => {
   it('accepts every allowed grid and normalizes the spec', () => {
     for (const grid of [8, 12, 16, 24, 32] as const) {
       const r = checkSprite({ grid, palette: { a: '#aabbcc' }, frames: { idle: [solid(grid)], walk: [], extra: undefined } });
@@ -129,7 +129,7 @@ describe('checkSprite (§5.1 validation rules)', () => {
   });
 });
 
-describe('fallbackSprite (§5.1)', () => {
+describe('fallbackSprite', () => {
   it('is a valid, deterministic 16x16 sprite for every type and shape', () => {
     for (const type of ['soldier', 'tower'] as const) {
       for (const shape of [...SHAPES, undefined]) {

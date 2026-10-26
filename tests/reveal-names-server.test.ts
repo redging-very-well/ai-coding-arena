@@ -1,4 +1,4 @@
-// "Show enemy names to units" (plan §9.1a) against a booted server with the
+// "Show enemy names to units" against a booted server with the
 // real validator and isolated-vm sandboxes: the draft toggle and Start match,
 // locked once the match runs, shown in /state, /rules, get_rules,
 // get_game_state and the guide; the validator's practice worlds carry names;

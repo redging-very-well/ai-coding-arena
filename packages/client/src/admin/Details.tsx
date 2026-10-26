@@ -1,6 +1,6 @@
-// "Show details" (plan §12.3, §3 privacy): rosters, sources, selections,
+// "Show details": rosters, sources, selections,
 // placements and sprites, OFF by default because the admin panel may be on the
-// projector. Each unit has a Hide sprite button (§5.1 moderation).
+// projector. Each unit has a Hide sprite button.
 
 import { useState } from 'preact/hooks';
 import type { AdminArmoryEntryDTO, AdminOverviewDTO, PlacementDTO } from '@pixel-clash/shared';
@@ -44,7 +44,7 @@ export function Details() {
 
 function PlayerDetails({ player, armory }: { player: OverviewPlayer; armory: AdminArmoryEntryDTO[] }) {
   const seat = seatStyle(player.seat);
-  // Borrowed types show as "Ogre (Ninja Sam)", never the raw armory id (§9.1).
+  // Borrowed types show as "Ogre (Ninja Sam)", never the raw armory id.
   const nameOf = (id: string) =>
     player.units.find((u) => u.unitId === id)?.name ?? armory.find((e) => e.unitId === id)?.displayName ?? id;
   return (
@@ -75,7 +75,7 @@ function placementText(placement: PlacementDTO[], nameOf: (id: string) => string
   return [...counts].map(([id, n]) => `${n}× ${nameOf(id)}`).join(', ');
 }
 
-/** Open Armory entries (§9.1 Moderation): Hide sprite works even if the design was retired or deleted. */
+/** Open Armory entries: Hide sprite works even if the design was retired or deleted. */
 function ArmoryDetails({ armory }: { armory: AdminArmoryEntryDTO[] }) {
   const { act, busy } = useAdmin();
   return (

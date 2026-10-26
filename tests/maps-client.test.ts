@@ -1,4 +1,4 @@
-// Client logic for 2-8 player maps and teams (plan §9.2, §12) that runs
+// Client logic for 2-8 player maps and teams that runs
 // without a DOM: the placement grid in its true orientation for every zone of
 // every map (arrow to the centre, front row), plain words for zones, the 8 seat
 // colours and team looks, fit-to-canvas zoom for the bigger arenas, the
@@ -35,10 +35,10 @@ const zonesOfAllMaps = (): MapZone[] => allMapLayouts().flatMap((l) => l.zones);
 const label = (z: MapZone) => `arena ${z.arena} zone ${z.index} (${z.x},${z.y}) ${z.facing}`;
 
 // ---------------------------------------------------------------------------
-// Placement grid (§12.1): true orientation, arrow to the centre
+// Placement grid: true orientation, arrow to the centre
 // ---------------------------------------------------------------------------
 
-describe('placement grid for every map zone (§9.2, §12.1)', () => {
+describe('placement grid for every map zone', () => {
   it('draws each of the 36 cells where it sits in the top-down arena', () => {
     for (const z of zonesOfAllMaps()) {
       const g = zoneGrid(z);
@@ -136,11 +136,11 @@ describe('zone words and DTO helpers', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Colours (§12): 8 seats + badges, 4 team looks
+// Colours: 8 seats + badges, 4 team looks
 // ---------------------------------------------------------------------------
 
-describe('seat colours and team looks (§12)', () => {
-  it('has 8 clearly different seat colours in the plan order, each with a number badge', () => {
+describe('seat colours and team looks', () => {
+  it('has 8 clearly different seat colours in the seat order, each with a number badge', () => {
     expect(SEATS.map((s) => s.color)).toEqual(['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#4B8DFF', '#D55E00', '#CC79A7', '#EEEEEE']);
     expect(SEATS.map((s) => s.symbol)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
     for (const a of SEATS) {
@@ -167,7 +167,7 @@ describe('seat colours and team looks (§12)', () => {
 // Renderer: fit, floor, props, reveal zones
 // ---------------------------------------------------------------------------
 
-describe('renderer for bigger arenas (§9.2, §12)', () => {
+describe('renderer for bigger arenas', () => {
   it('zooms out to fit the 1040 and 1200 arenas on the 1080p projector', () => {
     const fits = [800, 1040, 1200].map((S) => {
       for (const [w, h] of [
@@ -262,10 +262,10 @@ describe('renderer for bigger arenas (§9.2, §12)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// /admin map preview (§12.3)
+// /admin map preview
 // ---------------------------------------------------------------------------
 
-describe('admin map preview (§12.3)', () => {
+describe('admin map preview', () => {
   const roster = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, seat: i }));
 
   it('offers only the styles valid for the count, the auto default first', () => {
@@ -347,10 +347,10 @@ describe('admin map preview (§12.3)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// /screen team helpers (§12.2)
+// /screen team helpers
 // ---------------------------------------------------------------------------
 
-describe('projector team helpers (§12.2)', () => {
+describe('projector team helpers', () => {
   it('fills the tile grid with free seats up to 4, then to an even count, at most 8', () => {
     expect([0, 1, 2, 3, 4, 5, 6, 7, 8].map((n) => freeTiles(n))).toEqual([4, 3, 2, 1, 0, 1, 0, 1, 0]);
   });

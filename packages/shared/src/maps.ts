@@ -1,4 +1,4 @@
-// Map styles, player counts and zone-local cells (plan §9.2).
+// Map styles, player counts and zone-local cells.
 //
 // Pure data + functions, shared by the server (round, battle, visibility) and
 // the client (/admin previews, /play grid, /screen). Arena sizes and zone
@@ -37,7 +37,7 @@ import {
   type Rect,
 } from './geometry.js';
 
-/** Where a zone's front edge points (§9.2 Facing). */
+/** Where a zone's front edge points. */
 export type Facing = 'diag' | 'N' | 'S' | 'E' | 'W';
 
 /** One player zone of a map. */
@@ -63,7 +63,7 @@ export const MAP_STYLES: readonly MapStyle[] = ['duel', 'triangle', 'corners', '
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 8;
 
-/** Display info per style (§9.2 table). */
+/** Display info per style. */
 export const MAP_STYLE_INFO: Readonly<Record<MapStyle, { label: string; players: readonly number[]; idea: string; suitedTo: string }>> = {
   duel: { label: 'Duel', players: [2], idea: 'opposite corners', suitedTo: '1v1' },
   triangle: { label: 'Triangle', players: [3], idea: '3 bases around the centre', suitedTo: 'free-for-all' },
@@ -76,7 +76,7 @@ export const MAP_STYLE_INFO: Readonly<Record<MapStyle, { label: string; players:
 /** Styles whose neighbours sit close together on purpose (meant for teams; the preview says "close neighbours"). */
 export const CLOSE_NEIGHBOUR_STYLES: readonly MapStyle[] = ['lanes', 'islands'];
 
-/** Arena side S by player count (§9.2): 800 for 2-4, 1040 for 5-6, 1200 for 7-8 (whole 40 px cells). */
+/** Arena side S by player count: 800 for 2-4, 1040 for 5-6, 1200 for 7-8 (whole 40 px cells). */
 export function arenaSizeFor(players: number): number {
   if (players <= 4) return 800;
   if (players <= 6) return 1040;
@@ -141,7 +141,7 @@ export function validMapStyles(players: number, mode: TeamMode = 'ffa', teamSize
 }
 
 /**
- * The style to use for P players (§9.2 Map resolution): the host's override if
+ * The style to use for P players: the host's override if
  * it is valid for P (and the team mode), otherwise the default. `fellBack` is
  * true when an override was given but replaced (admin toast "Map changed to
  * Ring for 5 players").
@@ -157,7 +157,7 @@ export function resolveMapStyle(
 }
 
 // ---------------------------------------------------------------------------
-// Zone tables (§9.2 Zone positions): top-left corner and facing, index order.
+// Zone tables: top-left corner and facing, index order.
 // ---------------------------------------------------------------------------
 
 type ZoneSpec = readonly [x: number, y: number, facing: Facing];
@@ -179,7 +179,7 @@ const ZONE_TABLE: Readonly<Record<string, readonly ZoneSpec[]>> = {
 };
 
 /**
- * Facing derived from d = arena centre − zone centre (§9.2): |dx| = |dy| →
+ * Facing derived from d = arena centre − zone centre: |dx| = |dy| →
  * diag; |dy| > |dx| → S if dy > 0 else N; |dx| > |dy| → E if dx > 0 else W.
  * (Lanes overrides this: its rows face each other.)
  */
@@ -194,7 +194,7 @@ export function derivedFacing(zone: Rect, arena: number): Facing {
 const layoutCache = new Map<string, MapLayout>();
 
 /**
- * The layout of `style` for `players` (§9.2). 1 player: Duel zone 0 only.
+ * The layout of `style` for `players`. 1 player: Duel zone 0 only.
  * Throws a RangeError when the style isn't valid for that count (use
  * `resolveMapStyle` first). The returned object is frozen and shared.
  */
@@ -229,7 +229,7 @@ export function allMapLayouts(): MapLayout[] {
 }
 
 // ---------------------------------------------------------------------------
-// Corner bridge (the original 4-corner API, §9 Zones)
+// Corner bridge (the original 4-corner API)
 // ---------------------------------------------------------------------------
 
 const CORNER_INDEX: Readonly<Record<Corner, number>> = { TL: 0, TR: 1, BR: 2, BL: 3 };
@@ -272,7 +272,7 @@ export function arenaCenter(arena: number): Point {
 }
 
 // ---------------------------------------------------------------------------
-// Zone-local cells (§9.2 Facing and zone-local cells)
+// Zone-local cells
 // ---------------------------------------------------------------------------
 
 /**
@@ -357,7 +357,7 @@ export function cellAt(zone: ZoneRef, x: number, y: number): Cell | null {
 }
 
 // ---------------------------------------------------------------------------
-// Zone rotation per round (§9.2)
+// Zone rotation per round
 // ---------------------------------------------------------------------------
 
 const mod = (a: number, n: number) => ((a % n) + n) % n;
@@ -381,7 +381,7 @@ export interface TeamSlots {
 }
 
 /**
- * Team mode (§9.2): the zone list is cut into T blocks of consecutive
+ * Team mode: the zone list is cut into T blocks of consecutive
  * indices, one per team, sized to the team (n_t = its slots). In round r the
  * blocks are laid out from zone 0 in team order starting with team
  * `(−r) mod T`, so with equal teams team t takes block `(t + r) % T` (blocks
@@ -468,7 +468,7 @@ export function teamBlock(layout: MapLayout, teams: number, block: number): MapZ
 // ---------------------------------------------------------------------------
 
 /**
- * Sudden-death settings for an S arena (§9.2): the config radii are for the
+ * Sudden-death settings for an S arena: the config radii are for the
  * 800 arena and are scaled by S/800 and rounded (570 → 741 / 855, 60 → 78 / 90).
  */
 export function scaleSuddenDeath(sd: GameConfig['suddenDeath'], arena: number): GameConfig['suddenDeath'] {
@@ -497,7 +497,7 @@ export function mapZoneDTO(zone: MapZone): MapZoneDTO {
   return { index: zone.index, x: zone.x, y: zone.y, width: zone.width, height: zone.height, facing: zone.facing };
 }
 
-/** The public map DTO (§9.2): no owners. */
+/** The public map DTO: no owners. */
 export function mapDTO(layout: MapLayout): MapDTO {
   return {
     style: layout.style,

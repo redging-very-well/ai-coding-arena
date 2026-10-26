@@ -5,7 +5,7 @@ import { ADMIN_COOKIE, deepMerge, parseScreenCommand, migrateConfigPatch, safePa
 import type { Game } from '../services/game.js';
 import { COOKIE_OPTS, body, cookieOf, requireAdmin, send, sendError, sendValidation, wrap } from './common.js';
 
-/** Phases in which PUT /admin/config is allowed (§10.3). */
+/** Phases in which PUT /admin/config is allowed. */
 const CONFIG_PHASES = new Set(['LOBBY', 'PLAN', 'RESULTS', 'MATCH_RESULTS']);
 
 export function adminRoutes(game: Game): Router {
@@ -37,12 +37,12 @@ export function adminRoutes(game: Game): Router {
 
   r.post('/match', (req, res) => {
     const b = body(req);
-    // `mapStyle`/`teamMode` left out = the LOBBY draft's (§9.2); mapStyle null = default for the player count.
-    // `revealNames` ("Show enemy names to units", §5) and `wallsAllowed` (§9.1b) left out = the draft's.
+    // `mapStyle`/`teamMode` left out = the LOBBY draft's; mapStyle null = default for the player count.
+    // `revealNames` ("Show enemy names to units") and `wallsAllowed` left out = the draft's.
     stateAfter(game.match.startMatch(b.rounds, b.armory, b.mapStyle, b.teamMode, b.revealNames, b.wallsAllowed), res);
   });
 
-  // Match setup draft (§9.2, LOBBY only): map style override + team mode, with the preview.
+  // Match setup draft (LOBBY only): map style override + team mode, with the preview.
   r.get('/match/setup', (_req, res) => {
     res.json(game.teams.setupDTO());
   });
@@ -52,13 +52,13 @@ export function adminRoutes(game: Game): Router {
     send(res, game.teams.setDraft({ mapStyle: b.mapStyle, teamMode: b.teamMode, revealNames: b.revealNames, wallsAllowed: b.wallsAllowed, teamBudgets: b.teamBudgets }));
   });
 
-  // Swap two players between draft teams (§9.2, LOBBY only).
+  // Swap two players between draft teams (LOBBY only).
   r.post('/teams/swap', (req, res) => {
     const b = body(req);
     send(res, game.teams.swap(b.playerA, b.playerB));
   });
 
-  // Move a player to another draft team (§9.2, LOBBY only; every team keeps ≥ 1 player).
+  // Move a player to another draft team (LOBBY only; every team keeps ≥ 1 player).
   r.post('/teams/move', (req, res) => {
     const b = body(req);
     send(res, game.teams.move(b.playerId, b.teamId));
@@ -136,7 +136,7 @@ export function adminRoutes(game: Game): Router {
     send(res, game.units.setSpriteHidden(String(req.params.playerId), String(req.params.unitId), body(req).hidden === true));
   });
 
-  // Projector remote (§12.2): replay on /screen and the join poster.
+  // Projector remote: replay on /screen and the join poster.
   r.post('/screen', (req, res) => {
     const command = parseScreenCommand(req.body);
     if (!command) {
@@ -158,7 +158,7 @@ export function adminRoutes(game: Game): Router {
     res.json(game.visibility.adminOverview());
   });
 
-  // Diagnostics for the facilitator and `npm run loadtest` (§14, §15 "check CPU per tick"):
+  // Diagnostics for the facilitator and `npm run loadtest`:
   // server memory, WS connections and the running (else last) battle's sim ms/tick and playback stalls.
   r.get('/metrics', (_req, res) => {
     const mem = process.memoryUsage();
@@ -256,7 +256,7 @@ export function adminRoutes(game: Game): Router {
     }),
   );
 
-  // Claude seats (§11.2): assignments, live terminals and the seat probe.
+  // Claude seats: assignments, live terminals and the seat probe.
   // The seat password, the AI session host setup command and direct URLs only with
   // ?details=1 ("Show details").
   r.get('/claude-seats', (req, res) => {
@@ -274,13 +274,13 @@ export function adminRoutes(game: Game): Router {
     }),
   );
 
-  // The shared agent logins (§11.2 f): write-only, the answer has only "…last 4".
+  // The shared agent logins: write-only, the answer has only "…last 4".
   r.put('/agent-credentials', (req, res) => {
     const b = body(req);
     send(res, game.claudeSeats.setAgentCredentials({ claudeToken: b.claudeToken, anthropicApiKey: b.anthropicApiKey, openaiApiKey: b.openaiApiKey }));
   });
 
-  // Turn a seat on or off (§11.2 c). Registered before '/claude-seats/:seat'.
+  // Turn a seat on or off. Registered before '/claude-seats/:seat'.
   r.put('/claude-seats/:seat/enabled', (req, res) => {
     send(res, game.claudeSeats.setEnabled(String(req.params.seat), body(req).enabled));
   });

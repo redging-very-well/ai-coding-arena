@@ -1,6 +1,6 @@
-// /setup info (plan §11 "/setup page", §12.3 server info): the join URL + QR
+// /setup info: the join URL + QR
 // and the facilitator's settings: the AI session host address and the shared seat password
-// (`seatSecret`, §11.2 a), which never appears in any public payload.
+// (`seatSecret`), which never appears in any public payload.
 
 import { randomInt } from 'node:crypto';
 import QRCode from 'qrcode';
@@ -12,7 +12,7 @@ import { SEAT_SECRET_RE, directSeatUrl } from './claudeSeats.js';
 import type { Game } from './game.js';
 import { safeHost } from './kit.js';
 
-/** ttyd host port of seat index 0 (index i → 7781 + i = Claude seat i + 1, §11.1). */
+/** ttyd host port of seat index 0 (index i → 7781 + i = Claude seat i + 1). */
 export const SEAT_TERMINAL_BASE_PORT = 7781;
 /** AI seats on the AI session host (seat1..seat8). */
 export const SEAT_COUNT = CLAUDE_SEATS;

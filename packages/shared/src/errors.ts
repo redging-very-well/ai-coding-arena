@@ -1,13 +1,13 @@
-// Error codes, the §7 error object format, and friendly hint templates.
+// Error codes, the error object format, and friendly hint templates.
 //
 // Errors are written for Claude first (precise `message` + actionable `fix`)
 // and the player second (`playerHint`). Every validation failure is a
-// `ValidationIssue`; every service failure is a `ServiceError` (§10.1).
+// `ValidationIssue`; every service failure is a `ServiceError`.
 
 import { money, type CostBreakdown } from './cost.js';
 import type { MinionOrder, SpriteSpec, StatsSnapshot } from './contract.js';
 
-/** §7 validation pipeline failure codes, in pipeline order. */
+/** Validation pipeline failure codes, in pipeline order. */
 export const VALIDATION_ERROR_CODES = [
   // 1 normalize
   'SOURCE_TOO_LARGE',
@@ -33,17 +33,17 @@ export const VALIDATION_ERROR_CODES = [
   'BAD_COLOR',
   'BAD_NAME',
   'TOWER_CANNOT_MOVE',
-  // M8.5 buildings (§5.2)
+  // M8.5 buildings
   'BUILDING_CANNOT_ATTACK',
   'BUILDING_CANNOT_MOVE',
   'INTERVAL_NOT_INTEGER',
-  // M8.6 minion kinds, orders and burst (§5.3)
+  // M8.6 minion kinds, orders and burst
   'BURST_NOT_INTEGER',
   // 7 determinism
   'STATS_NOT_STABLE',
   // 8 cost
   'UNIT_TOO_EXPENSIVE',
-  // 8b sprite (§5.1)
+  // 8b sprite
   'SPRITE_THREW',
   'SPRITE_BAD_GRID',
   'SPRITE_BAD_PALETTE',
@@ -59,7 +59,7 @@ export const VALIDATION_ERROR_CODES = [
 ] as const;
 export type ValidationErrorCode = (typeof VALIDATION_ERROR_CODES)[number];
 
-/** §7 step 10 non-fatal warnings (W_NO_SPRITE comes from step 8b). */
+/** Step 10 non-fatal warnings (W_NO_SPRITE comes from step 8b). */
 export const WARNING_CODES = [
   'W_NO_SPRITE',
   'W_NEVER_ATTACKS',
@@ -69,23 +69,23 @@ export const WARNING_CODES = [
   'W_SLOW',
   'W_SLOW_NO_DISCOUNT',
   'W_STAT_NEAR_MAX',
-  // M8.5 buildings (§5.2, §7, §9.3)
+  // M8.5 buildings
   'W_STAT_IGNORED',
   'W_UPDATE_IGNORED',
   'W_ACTION_NOT_FOR_TYPE',
-  // §5.3 minion code (2026-10-26)
+  // Minion code
   'W_MINION_IGNORED',
   'W_TRAPPED',
-  // M8.6 (§5.3, §7)
+  // M8.6
   'W_ORDER_TARGET',
   'W_BURST_NEVER_FULL',
-  // M8.8 elements, splash and support (§7)
+  // M8.8 elements, splash and support
   'W_HEAL_NEVER_USED',
   'W_POWER_HIGH',
 ] as const;
 export type WarningCode = (typeof WARNING_CODES)[number];
 
-/** Service / API error codes (§4, §6 caps, §10). */
+/** Service / API error codes. */
 export const SERVICE_ERROR_CODES = [
   'PHASE_CLOSED',
   'NAME_TAKEN',
@@ -109,30 +109,30 @@ export const SERVICE_ERROR_CODES = [
   'UNIT_INVALID',
   'ARMORY_OFF',
   'ARMORY_OWN_UNIT',
-  // The match setting "Walls allowed" is off (§9.1b): wall designs can't be picked, placed or borrowed.
+  // The match setting "Walls allowed" is off: wall designs can't be picked, placed or borrowed.
   'WALLS_OFF',
   'NOT_ALL_READY',
   'NOTHING_SELECTED',
-  // M8.5: only walls selected / placed (§5.2 Fighters).
+  // M8.5: only walls selected / placed.
   'NO_FIGHTERS',
   'NOT_ENOUGH_PLAYERS',
   'BAD_MAP_STYLE',
   'BAD_TEAM_MODE',
   'NO_TEAMS',
   'SAME_TEAM',
-  // Moving the last player off a team (§9.2 Move): every team keeps ≥ 1 player.
+  // Moving the last player off a team: every team keeps ≥ 1 player.
   'LAST_MEMBER',
   'TEMPLATE_PROTECTED',
   'TEMPLATE_WOULD_BREAK',
-  // Optimistic concurrency: the unit was revised since `baseVersion` (§10.3).
+  // Optimistic concurrency: the unit was revised since `baseVersion`.
   'UNIT_CHANGED',
-  // Claude seats and the seat terminal proxy (§11.2).
+  // Claude seats and the seat terminal proxy.
   'BAD_CLAUDE_SEAT',
   'CLAUDE_SEAT_TAKEN',
-  // The admin turned that AI seat off (§11.2 c): never assigned or pickable.
+  // The admin turned that AI seat off: never assigned or pickable.
   'CLAUDE_SEAT_OFF',
   'BAD_SEAT_SECRET',
-  // A shared agent login pasted in /admin has the wrong shape (§11.2 f).
+  // A shared agent login pasted in /admin has the wrong shape.
   'BAD_AGENT_CREDENTIAL',
   'TERMINAL_LOGIN_REQUIRED',
   'CLAUDE_SEAT_NOT_YOURS',
@@ -148,7 +148,7 @@ export type ServiceErrorCode = (typeof SERVICE_ERROR_CODES)[number];
 
 export type ErrorCode = ValidationErrorCode | ServiceErrorCode;
 
-/** One entry of `errors[]` / `warnings[]` in the §7 result body. */
+/** One entry of `errors[]` / `warnings[]` in the result body. */
 export interface ValidationIssue<C extends string = ValidationErrorCode | WarningCode> {
   code: C;
   /** The stat (or other input) the issue is about, e.g. "damage". */
@@ -169,7 +169,7 @@ export interface ValidationIssue<C extends string = ValidationErrorCode | Warnin
   errorMessage?: string;
   /** UNIT_TOO_EXPENSIVE only. */
   breakdown?: CostBreakdown;
-  // SPRITE_* location (§5.1), all counted from 0 like array indexes.
+  // SPRITE_* location, all counted from 0 like array indexes.
   /** Animation state, e.g. "walk". */
   state?: string;
   /** Frame index within the state. */
@@ -183,7 +183,7 @@ export interface ValidationIssue<C extends string = ValidationErrorCode | Warnin
 export type ValidationError = ValidationIssue<ValidationErrorCode>;
 export type ValidationWarning = ValidationIssue<WarningCode>;
 
-/** Successful §7 result. */
+/** Successful result. */
 export interface ValidationSuccess {
   ok: true;
   unit: {
@@ -192,18 +192,18 @@ export interface ValidationSuccess {
     stats: StatsSnapshot;
     cost: number;
     breakdown: CostBreakdown;
-    /** The normalized sprite (§5.1), or null when the unit has no sprite(). */
+    /** The normalized sprite, or null when the unit has no sprite(). */
     sprite: SpriteSpec | null;
-    /** M8.6 factories: the squad orders update() gave in the dry run, in first-seen order (§7). */
+    /** M8.6 factories: the squad orders update() gave in the dry run, in first-seen order. */
     orders?: MinionOrder[];
-    /** M8.8 heal support: whether update() returned { action: 'heal' } in the dry run (§7). */
+    /** M8.8 heal support: whether update() returned { action: 'heal' } in the dry run. */
     healUsed?: boolean;
   };
   warnings: ValidationWarning[];
   playerHint: string;
 }
 
-/** Failed §7 result (HTTP 422 body, MCP isError result). */
+/** Failed result (HTTP 422 body, MCP isError result). */
 export interface ValidationFailure {
   ok: false;
   errors: ValidationError[];
@@ -214,7 +214,7 @@ export interface ValidationFailure {
 
 export type ValidationResult = ValidationSuccess | ValidationFailure;
 
-/** §10.1 service error. */
+/** A service error (REST and MCP return the same object). */
 export interface ServiceError {
   code: ErrorCode;
   message: string;
@@ -222,7 +222,7 @@ export interface ServiceError {
   details?: Record<string, unknown>;
 }
 
-/** §10.1 service result. */
+/** A service result. */
 export type Result<T> = { ok: true; data: T } | { ok: false; error: ServiceError };
 
 export const ok = <T>(data: T): Result<T> => ({ ok: true, data });

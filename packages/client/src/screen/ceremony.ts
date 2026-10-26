@@ -1,4 +1,4 @@
-// The MATCH_RESULTS awards ceremony on /screen (plan §12.2, §12.4), DOM-free
+// The MATCH_RESULTS awards ceremony on /screen, DOM-free
 // so tests can run it: the step timeline (drumroll intro → one step per
 // award → podium 3-2-1 → final scoreboard), a pausable clock the facilitator
 // can skip ahead (→ / Enter), pause (Space) and replay (R), the keyboard

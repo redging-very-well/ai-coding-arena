@@ -1,4 +1,4 @@
-// Client-side map and team helpers (plan §9.2, §12): turning the public DTOs
+// Client-side map and team helpers: turning the public DTOs
 // back into shared/maps.ts zones, plain words for where a zone sits, map names,
 // and team lookups. DOM-free (imported by tests).
 
@@ -82,7 +82,7 @@ export function groupByTeam<T extends { id: string }>(
     return { team, players: members };
   });
   const rest = players.filter((p) => !placed.has(p.id));
-  // A team whose members were all kicked has no group (§9.2: it left the table).
+  // A team whose members were all kicked has no group (it left the table).
   const groups = out.filter((g) => g.players.length > 0);
   if (rest.length) groups.push({ team: null, players: rest });
   return groups;

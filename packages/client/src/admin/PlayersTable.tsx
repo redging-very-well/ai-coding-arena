@@ -1,4 +1,4 @@
-// Players table (plan §12.3): seat (number badge), Claude seat, team, zone this round, name, connected, designs, submitted
+// Players table: seat (number badge), Claude seat, team, zone this round, name, connected, designs, submitted
 // this PLAN, selected, ready, strikes. Per player: Kick ("after this battle"
 // during BATTLE), Reset PIN, Rotate key, and the rescue paste box with
 // Validate (any phase) and Submit on behalf (PLAN only).

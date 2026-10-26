@@ -1,5 +1,4 @@
-// No required settings in sessions/.env (plan §11.1 "AI session host setup",
-// §11.2 a): the game server makes up the seat password on its first start
+// No required settings in sessions/.env: the game server makes up the seat password on its first start
 // (persisted, never replaced), /admin gets a ready-to-copy
 // `make seats PIXEL_CLASH_URL=… SEAT_SECRET=…` (admin + details only), and
 // sessions/set-env.sh writes those values into .env safely.

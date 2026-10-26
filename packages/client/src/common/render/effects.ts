@@ -1,5 +1,4 @@
-// M8.8 element, splash and support effects for the iso arena (plan §12.2,
-// elements spec §9): the projector-readable layer on top of fx.ts.
+// M8.8 element, splash and support effects for the iso arena: the projector-readable layer on top of fx.ts.
 //
 //   * Status from frame flags (BURNING, FROZEN, HASTED, MIGHTY, SHIELDED) and
 //     the sprite tint of a frozen or burning body (`tintSpec`: a palette mix,
@@ -35,7 +34,7 @@ export const ELEMENT_COLOR: Readonly<Record<Element, string>> = {
   lightning: '#FFE14A',
 };
 
-/** Aura ring and icon colours (spec §9: haste green, might red, shield blue). */
+/** Aura ring and icon colours (haste green, might red, shield blue). */
 export const AURA_COLOR: Readonly<Record<AuraKind, string>> = {
   haste: '#4ADE80',
   might: '#FF5A5A',
@@ -64,7 +63,7 @@ export function damageColor(kind: HitKind | undefined, element: Element | undefi
   return big ? '#FFD447' : '#FF8A7A';
 }
 
-/** Damage numbers of 100 or more are drawn 1.5× bigger (spec §9). */
+/** Damage numbers of 100 or more are drawn 1.5× bigger. */
 export const BIG_NUMBER_DAMAGE = 100;
 
 // ---------------------------------------------------------------------------
@@ -98,7 +97,7 @@ export function statusIconCount(flags: number): number {
   return n;
 }
 
-/** Frozen bodies move, reload and animate 35% slower (spec §3.3); a hasted one animates a little faster. */
+/** Frozen bodies move, reload and animate 35% slower; a hasted one animates a little faster. */
 export const FROZEN_TEMPO = 0.65;
 export const HASTED_TEMPO = 1.25;
 
@@ -270,7 +269,7 @@ export const LEGEND_COLOR: Readonly<Record<LegendKey, string>> = {
 };
 
 /**
- * The first-battle legend (spec §9): each key is explained once per match
+ * The first-battle legend: each key is explained once per match
  * (the renderer's lifetime, or until `reset`). `note` returns true when the
  * key is new; `lines(now)` is what to show (in the order they appeared),
  * all of them until LEGEND_MS after the newest one.
@@ -606,7 +605,7 @@ const AURA_FILL: Readonly<Record<AuraKind, string>> = {
 export const AURA_MARKS = 6;
 
 /**
- * A support unit's aura on the ground (spec §9): a translucent ring at its
+ * A support unit's aura on the ground: a translucent ring at its
  * reach (body radius + supportRange, as an iso ellipse), pulsing slowly, with
  * the kind's marks on it: haste chevrons, might arrows, shield hexagons.
  */

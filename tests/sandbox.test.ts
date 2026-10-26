@@ -1,4 +1,4 @@
-// §14 sandbox.test.ts (core set, M1): the isolated-vm runner (isolates in
+// sandbox.test.ts (core set, M1): the isolated-vm runner (isolates in
 // child processes), the hardened harness, timeouts with culprit attribution,
 // slow strikes, memory limits, strikes -> disable, and output forgery.
 

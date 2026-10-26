@@ -1,5 +1,5 @@
 // The archetype brains as real unit code, for the sandbox runners (balance
-// tooling, plan §14). `brainUnitSource` is the text of helpers/brains.ts (the
+// tooling). `brainUnitSource` is the text of helpers/brains.ts (the
 // very functions the lean BrainRunner calls) plus a unit class whose update()
 // calls `actFor`; it goes through the validator's transpile like a player's
 // unit, and the sandbox runs it with the harness's seeded Math.random as `rng`.
@@ -66,7 +66,7 @@ export const BALANCE_SANDBOX_LIMITS: RunnerLimits = {
   loadTimeoutMs: 5000,
 };
 
-/** A real sandbox runner for one player's archetype (walls run no code, §5.2). */
+/** A real sandbox runner for one player's archetype (walls run no code). */
 export async function sandboxRunner(
   kind: Exclude<BalanceRunnerKind, 'lean'>,
   player: RunnerPlayer,

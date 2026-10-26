@@ -1,5 +1,4 @@
-// Buildings in routing (redesign 2026-10-24, plan §9.3 Routing round walls
-// and buildings): towers and factories never move and stand on their cell
+// Buildings in routing (redesign 2026-10-24): towers and factories never move and stand on their cell
 // centre, one per cell, so the router keeps them in a cell grid like the
 // walls. Unlike walls they are circles: line-of-sight checks use their real
 // radius inflated by the moving body's radius, so a gap between two

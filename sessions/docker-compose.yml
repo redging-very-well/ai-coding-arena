@@ -1,4 +1,4 @@
-# Pixel Clash AI session host: one container per seat (plan §11.1).
+# Pixel Clash AI session host: one container per seat.
 #
 #   First run: copy the command from the game server's /admin -> AI seats ->
 #   AI session host setup and run it in the repo root:
@@ -42,12 +42,12 @@ x-seat: &seat
 x-seat-env: &seat-env
   PIXEL_CLASH_URL: ${PIXEL_CLASH_URL:?is not set. Run the command from the game server /admin -> AI seats -> AI session host setup in the repo folder (make seats PIXEL_CLASH_URL=... SEAT_SECRET=...)}
   TTYD_USER: player
-  # One shared seat password for all 8 seats (plan §11.2). The game server's
+  # One shared seat password for all 8 seats. The game server's
   # proxy injects it; players never see it. Old TTYD_PASS_N lines are ignored.
   TTYD_PASS: ${SEAT_SECRET:?is not set. Run the command from the game server /admin -> AI seats -> AI session host setup in the repo folder (make seats PIXEL_CLASH_URL=... SEAT_SECRET=...)}
   CLAUDE_PERMISSION_MODE: ${CLAUDE_PERMISSION_MODE:-}
   CLAUDE_CONTINUE: ${CLAUDE_CONTINUE:-1}
-  # Which coding agent the seats run: claude (default) or codex (§11.3).
+  # Which coding agent the seats run: claude (default) or codex.
   # SEAT_AGENT_N in .env overrides it for seat N (set per seat below).
   AGENT: ${AGENT:-claude}
   CODEX_SANDBOX: ${CODEX_SANDBOX:-danger-full-access}

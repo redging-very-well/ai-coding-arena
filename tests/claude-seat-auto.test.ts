@@ -1,5 +1,5 @@
 // AI seat auto-assignment, seats turned on/off in /admin, and the seat login
-// for the AI helper (plan §11.2 c, e): the pure rule (pickClaudeSeat), /play's
+// for the AI helper: the pure rule (pickClaudeSeat), /play's
 // DOM-free side (claudePane.ts), and the real server's REST routes.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -14,7 +14,7 @@ const T = 60_000;
 const SECRET = 'otter-lamp-quartz-ninety';
 const basic = (secret: string) => `Basic ${Buffer.from(`player:${secret}`).toString('base64')}`;
 
-describe('pickClaudeSeat (§11.2 c)', () => {
+describe('pickClaudeSeat', () => {
   const on = (off: number[] = []) => (s: number) => !off.includes(s);
   const held = (seats: number[]) => (s: number) => seats.includes(s);
 
@@ -40,7 +40,7 @@ describe('pickClaudeSeat (§11.2 c)', () => {
   });
 });
 
-describe('/play after join (DOM-free, §11.2 c)', () => {
+describe('/play after join (DOM-free)', () => {
   it('sends the laptop seat as the preference, and spots a full picker', () => {
     expect(joinSeatRequest(3)).toBe(3);
     expect(joinSeatRequest(null)).toBe('auto');

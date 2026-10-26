@@ -1,4 +1,4 @@
-// Wall geometry in the sim (plan §5.2, §9.3): the wall grid and the wall push.
+// Wall geometry in the sim: the wall grid and the wall push.
 //
 // A wall's body is the axis-aligned 40×40 square of its placement cell
 // (`[cx − 20, cx + 20] × [cy − 20, cy + 20]`). Zones are cell-aligned, so
@@ -21,7 +21,7 @@ export class WallGrid {
     this.cells = new Array<SimUnit | undefined>(this.cols * this.cols).fill(undefined);
   }
 
-  /** Goes up by 1 whenever a wall is added or removed (routing caches key on it, §9.3). */
+  /** Goes up by 1 whenever a wall is added or removed (routing caches key on it). */
   get version(): number {
     return this.changes;
   }
@@ -104,7 +104,7 @@ export function circleOverlapsWall(c: { x: number; y: number }, r: number, w: { 
 const scratch: SimUnit[] = [];
 
 /**
- * Push a moving body out of every wall square it overlaps (§9.3 Wall push):
+ * Push a moving body out of every wall square it overlaps:
  * along c − q (q = the closest point of the square) by r − |c − q|; a centre
  * inside the square leaves through the nearest face (ties −x, +x, −y, +y).
  * Walls are visited in instanceId order. Returns true if the body moved.

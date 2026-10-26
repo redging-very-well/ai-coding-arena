@@ -1,4 +1,4 @@
-// The /screen awards ceremony (plan §12.2, §12.4), DOM-free: the step
+// The /screen awards ceremony, DOM-free: the step
 // timeline and its length, the pausable clock with skip and replay, the
 // facilitator-only keys, which sound each step starts with (and that a
 // pause or re-render doesn't replay it), the synthesized drumroll / sting /

@@ -1,10 +1,10 @@
-// The headless battle engine (plan §9).
+// The headless battle engine.
 //
 // The engine owns all game rules. It talks to player code only through the
 // PlayerRunner interface (sandbox/runner.ts) and owns the sandbox POLICY:
 // strike counting, disabling culprit units / whole players, and the report.
 //
-// Tick k (0-based) follows §9 exactly:
+// Tick k (0-based):
 //   1) decrement every cooldownRemaining (not below 0), then build the views
 //      from the start-of-tick state;
 //   2) call every player's runner in parallel (Promise.all), then apply the
@@ -16,7 +16,7 @@
 //      firing sets cooldownRemaining = attackCooldown;
 //   7) advance projectiles (including the ones just fired), then land this
 //      tick's melee hits and projectile impacts together in seat, then
-//      instanceId order (§9 Value destroyed);
+//      instanceId order;
 //   8) apply sudden-death damage; 8b) with factory.dieAtSuddenDeath every
 //      factory is destroyed on the first sudden-death tick;
 //   9) remove the dead (hp ≤ 0); 9a) with factory.minionsDieWithFactory, the
@@ -30,7 +30,7 @@
 // frames to `frames` / `onFrame`. Playback, result release and Skip are the
 // battle service's job; `stop()` ends the loop early.
 //
-// Maps and teams (§9.2): the arena is S×S (800 / 1040 / 1200, from
+// Maps and teams: the arena is S×S (800 / 1040 / 1200, from
 // `BattleOptions.map` or the zones), and the sudden-death radii are scaled by
 // S/800. Free-for-all every player is their own side (teamId = seat); in team
 // mode (every setup has a `teamId`) `allies` are all of the team's units,
@@ -38,7 +38,7 @@
 // battle ends when ≤ 1 side has units, and sides are ranked (team living cost
 // on timeout).
 //
-// Walls, factories and minions (M8.5, §9.3): walls never run code (no spawn,
+// Walls, factories and minions (M8.5): walls never run code (no spawn,
 // no update) and live in a wall grid; soldiers and minions steer round them
 // (step 4, sim/steering.ts) and separation ends with a wall push (step 5);
 // minions decide in step 2 from the same snapshot (sim/minion.ts); factories
@@ -46,12 +46,12 @@
 // 9b, sim/factory.ts); elimination (step 10) counts fighters only, and an
 // eliminated side's walls and spent factories crumble.
 //
-// Minion kinds, squad orders and burst (M8.6, §5.3, §9.3): factories accept
+// Minion kinds, squad orders and burst (M8.6): factories accept
 // `command`/`release` in step 3, swarm/guard orders whose target died fall
 // back in step 1, minion hits on walls are multiplied per kind in step 6,
 // and step 9b stores minions inside until a burst is complete.
 //
-// Elements, splash and support (M8.8, §9.4): step 1 lowers cooldowns (a
+// Elements, splash and support (M8.8): step 1 lowers cooldowns (a
 // float) and the factory timers by each body's tempo (×0.65 frozen, ×(1 +
 // haste%) hasted), resets the heal room every 60 ticks and computes the
 // auras; step 3 accepts `heal`; step 4 moves at speed × tempo (the router's
@@ -153,7 +153,7 @@ const MAX_INCIDENTS_PER_PLAYER = 40;
 // ---------------------------------------------------------------------------
 
 /**
- * Runner limits from config (§8 table). Delegates to the sandbox's own helper
+ * Runner limits from config. Delegates to the sandbox's own helper
  * so the two can't drift (it also carries `loadTimeoutMs`, the per-design
  * evaluation budget, which the runner otherwise defaults).
  */
@@ -163,8 +163,8 @@ export function runnerLimitsFrom(config: GameConfig): RunnerLimits {
 
 /**
  * Create one fresh runner per player (in parallel). The sandbox PRNG seed is
- * `battleSeed + seat` (§8). A player who fields borrowed Armory units gets a
- * split runner: each borrowed design in a sandbox of its own (§9.1). If any creation fails, the runners already made
+ * `battleSeed + seat`. A player who fields borrowed Armory units gets a
+ * split runner: each borrowed design in a sandbox of its own. If any creation fails, the runners already made
  * are disposed and the error is rethrown.
  */
 export async function createBattleRunners(
@@ -177,9 +177,9 @@ export async function createBattleRunners(
   const settled = await Promise.allSettled(
     players.map((p) => {
       const player = { playerId: p.playerId, seat: p.seat, seed: battleSeed + p.seat };
-      // Walls have no code: they are never loaded into a sandbox (§5.2).
+      // Walls have no code: they are never loaded into a sandbox.
       const units = p.units.filter((u) => runsCode(u.stats.type));
-      // Borrowed Armory units get sandboxes of their own (§9.1 Source).
+      // Borrowed Armory units get sandboxes of their own.
       return needsSplit(units) ? createSplitRunner(factory, player, units, limits) : factory.create(player, units, limits);
     }),
   );
@@ -236,7 +236,7 @@ export function designFor(unitId: string, stats: BattleUnitDesign['stats'], conf
 export interface BattleOptions {
   players: readonly BattlePlayerSetup[];
   /**
-   * The battle's map (§9.2): arena size and style for `world`. Omitted: the
+   * The battle's map: arena size and style for `world`. Omitted: the
    * arena is taken from the players' map zones (800 for Corners), and the
    * style is Duel for ≤ 2 players, else Corners.
    */
@@ -248,12 +248,12 @@ export interface BattleOptions {
   /** Called synchronously for every recorded frame, in order. */
   onFrame?: (frame: FrameDTO) => void;
   /**
-   * The match setting "Show enemy names to units" (§5, §9.2): every OtherView
+   * The match setting "Show enemy names to units": every OtherView
    * also carries `ownerName` (and `teamName` in team mode) and `world.players`
    * lists the battle's players. Off/omitted: the views are exactly as before.
    */
   revealNames?: boolean;
-  /** Players kicked during this battle; excluded from `result.ranking` (§4). */
+  /** Players kicked during this battle; excluded from `result.ranking`. */
   kickedPlayerIds?: ReadonlySet<string>;
   /**
    * Yield to the event loop every N ticks (default 30) so a fast runner that
@@ -271,14 +271,14 @@ interface PlayerState {
   playerStrikes: number;
   /** Every hard timeout (reported); host stalls (`TickResult.hostStall`) are not counted. */
   timeouts: number;
-  /** Timeouts without a culprit that can still be blamed (they count toward the player limits, §8). */
+  /** Timeouts without a culprit that can still be blamed (they count toward the player limits). */
   playerTimeouts: number;
   timeoutsInARow: number;
   /** Hard timeouts blamed on each of this player's instances (via `__current`). */
   unitTimeouts: Map<string, number>;
   /**
    * The unit the last host-stall timeout named, until the next tick result: if
-   * it then times out on its own, the stall was its first timeout (§8).
+   * it then times out on its own, the stall was its first timeout.
    */
   stallSuspect?: string;
   slowStrikes: number;
@@ -296,7 +296,7 @@ interface PendingAction {
 
 export class BattleEngine {
   readonly frames: FrameDTO[];
-  /** Arena side S (§9.2). */
+  /** Arena side S. */
   readonly arena: number;
   readonly mapStyle: MapStyle;
   /** Team mode: every setup carries a teamId. */
@@ -310,22 +310,22 @@ export class BattleEngine {
   private readonly byId = new Map<string, SimUnit>();
   private readonly recorder = new FrameRecorder();
   private readonly rng: Rng;
-  /** M8.8 (§9.4 Determinism): the lightning stream, drawn once per lightning main hit (the separation rng is untouched). */
+  /** M8.8: the lightning stream, drawn once per lightning main hit (the separation rng is untouched). */
   private readonly elementRng: Rng;
-  /** Redesign (§9.4 Accuracy): drawn once per ranged shot at a moving target (other streams untouched). */
+  /** Redesign: drawn once per ranged shot at a moving target (other streams untouched). */
   private readonly accuracyRng: Rng;
   private readonly onFrame: ((frame: FrameDTO) => void) | undefined;
   private readonly kicked: ReadonlySet<string>;
   private readonly yieldEvery: number;
-  /** Living walls by arena cell (§9.3). */
+  /** Living walls by arena cell. */
   private readonly walls: WallGrid;
-  /** Living towers and factories by arena cell (redesign: solid for routing, §9.3). */
+  /** Living towers and factories by arena cell (redesign: solid for routing). */
   private readonly buildings: BuildingGrid;
-  /** Routing round walls: flow fields and plans (§9.3, M8.7). */
+  /** Routing round walls: flow fields and plans (M8.7). */
   private readonly paths: Pathfinder;
-  /** What a factory pays per minion; a minion's value (§6). */
+  /** What a factory pays per minion; a minion's value. */
   private readonly minionValue: number;
-  /** Alive minions allowed per player (§5.2 (c)). */
+  /** Alive minions allowed per player. */
   private readonly minionCapPerPlayer: number;
   /** revealNames: playerId → the names its bodies carry; null = off (views unchanged). */
   private readonly ownerNames: ReadonlyMap<string, OwnerNames> | null;
@@ -337,7 +337,7 @@ export class BattleEngine {
   /** Per-player strikes at each frame where they changed. */
   private readonly playerStrikeLog = new Map<string, Array<{ t: number; strikes: number }>>();
 
-  /** Wall time of every completed tick in ms (sandbox calls included): the §14 "sim ms/tick" (diagnostics, load test). */
+  /** Wall time of every completed tick in ms (sandbox calls included): the "sim ms/tick" (diagnostics, load test). */
   readonly tickMs: number[] = [];
   /**
    * Of each tick's `tickMs`, the wall time spent waiting for the players'
@@ -429,7 +429,7 @@ export class BattleEngine {
     }
   }
 
-  /** Routing counters: plans made, flow fields built, cache hits (§9.3, tests). */
+  /** Routing counters: plans made, flow fields built, cache hits (tests). */
   get pathStats(): Readonly<{ plans: number; built: number; hits: number }> {
     return this.paths.stats;
   }
@@ -441,7 +441,7 @@ export class BattleEngine {
 
   /**
    * Every unit's report counters as they were at recorded frame time `t`
-   * (Skip ranks and reports from the frame the players were shown, §9).
+   * (Skip ranks and reports from the frame the players were shown).
    */
   countersAt(t: number): CountersAtTick {
     const units = new Map<string, UnitCounters>();
@@ -471,9 +471,9 @@ export class BattleEngine {
   }
 
   /**
-   * Every player's scoring metrics (§9) as of the recorded frame at or before
+   * Every player's scoring metrics as of the recorded frame at or before
    * `t`: damage, kills and value destroyed from the logged counters, living
-   * army value from that frame's units. Skip scores from this (§9 Skip / kick).
+   * army value from that frame's units. Skip scores from this.
    */
   metricsAt(t: number): PlayerMetricsDTO[] {
     const counters = this.countersAt(t);
@@ -567,19 +567,19 @@ export class BattleEngine {
       stats: s,
       cost: design.cost,
       type: s.type,
-      radius: sizeOf(s), // the size stat (§9 Radii); type default if a snapshot lacks it
+      radius: sizeOf(s), // the size stat; type default if a snapshot lacks it
       x: inst.x,
       y: inst.y,
       hp: s.maxHealth,
       maxHp: s.maxHealth,
-      cooldownRemaining: 0, // every unit can fire on tick 0 (§5 rule 4)
+      cooldownRemaining: 0, // every unit can fire on tick 0
       alive: true,
       disabled: false,
       spawned: false,
       movedSinceFrame: false,
       firedSinceFrame: false,
       // Sprites are drawn facing right: start facing the arena centre, in
-      // SCREEN space (iso screenX ∝ x − y, §12; ties by arena x).
+      // SCREEN space (iso screenX ∝ x − y; ties by arena x).
       facingLeft: screenX(inst) > screenX(center) || (screenX(inst) === screenX(center) && inst.x > center.x),
       outsideSafeZone: false,
       damageDealt: 0,
@@ -596,14 +596,14 @@ export class BattleEngine {
       blockedSinceFrame: false,
       slide: null,
       spawnedAtTick: 0,
-      // M8.8 (§9.4): no status yet; the heal room fills on tick 0.
+      // M8.8: no status yet; the heal room fills on tick 0.
       frozen: 0,
       burns: [],
       healRoom: 0,
       aura: noAura(),
     };
     if (s.type === 'factory') {
-      // Priced like the validator does (§6): body + minionValue × E.
+      // Priced like the validator does: body + minionValue × E.
       const priced = computeCost(s, this.config.cost, pricingOf(this.config)).breakdown;
       const prod = priced.production;
       const kind = producesOf(s);
@@ -618,7 +618,7 @@ export class BattleEngine {
         released: 0,
         kind,
         element,
-        // A burst never exceeds what one factory may have alive (§5.3).
+        // A burst never exceeds what one factory may have alive.
         burst: Math.min(burstOf(s), this.config.factory.maxAlivePerFactory),
         stored: 0,
         releaseRequested: false,
@@ -640,7 +640,7 @@ export class BattleEngine {
     await Promise.all(
       this.players.map(async (p) => {
         for (const u of p.units) {
-          // Walls have no code: nothing to construct (§5.2).
+          // Walls have no code: nothing to construct.
           if (u.type === 'wall') {
             u.spawned = true;
             continue;
@@ -653,7 +653,7 @@ export class BattleEngine {
           }
           if (res.ok) {
             u.spawned = true;
-            // §5.3: a factory with updateMinion() decides for its minions.
+            // A factory with updateMinion() decides for its minions.
             if (res.hasMinion && u.type === 'factory') u.minionCode = { off: false, strikes: 0, timeouts: 0 };
           } else {
             this.recordUnitError(u, 0, res.error.message, res.error.line);
@@ -703,7 +703,7 @@ export class BattleEngine {
     // 2) Minions decide from the same snapshot (engine AI, no isolate), then
     //    all runners in parallel; results applied in seat order below. The
     //    built-in action is also each minion's `self.minion.builtIn` for a
-    //    factory's updateMinion() (§5.3), so it is worked out first.
+    //    factory's updateMinion(), so it is worked out first.
     const minionRaw = new Map<string, unknown>();
     const minionWorld = {
       living,
@@ -717,7 +717,7 @@ export class BattleEngine {
       if (u.type === 'minion') minionRaw.set(u.id, minionAction(u, minionWorld, cfg));
     }
     // enemies/allies are built once per side and shared by its players, so
-    // the sandbox serialises them once per side (§9.2 Performance).
+    // the sandbox serialises them once per side.
     const sideViews = new Map<number, { enemies: OtherView[]; allies: OtherView[] }>();
     const inputs = this.players.map((p) => this.buildInput(p, tick, living, others, safeRadius, sideViews, minionRaw));
     const waitStart = performance.now();
@@ -737,8 +737,8 @@ export class BattleEngine {
       const minionActs = new Map<string, unknown>();
       const raw = input && res ? this.applyTickResult(p, input, res, tick, minionActs) : new Map<string, unknown>();
       // The player's code-run units and its minions, in instanceId order. A
-      // minion takes its factory's updateMinion() action when it gave one
-      // (§5.3), else the built-in one.
+      // minion takes its factory's updateMinion() action when it gave one,
+      // else the built-in one.
       const acting: Array<[SimUnit, unknown]> = [];
       for (const u of p.units) {
         if (!u.alive) continue;
@@ -765,8 +765,7 @@ export class BattleEngine {
     });
 
     // 4) Moves (soldiers and minions; other types were turned into idle in
-    //    step 3), routed round walls and sliding along them (§9.3 Routing
-    //    round walls, Wall steering).
+    //    step 3), routed round walls and sliding along them.
     // Redesign (accuracy): how far each body moves this tick (0 unless it moves below).
     for (const u of living) u.moved = 0;
     for (const { unit, action } of pending) {
@@ -800,7 +799,7 @@ export class BattleEngine {
 
     // 6) Fire attacks. Melee hits are queued and land in step 7 together with
     //    the projectile impacts, so the first hit in seat, then instanceId
-    //    order to take a target to ≤ 0 hp gets the kill (§9 Value destroyed).
+    //    order to take a target to ≤ 0 hp gets the kill.
     const hits: PendingHit[] = [];
     const heals: QueuedHeal[] = [];
     for (const { unit, action } of pending) {
@@ -822,7 +821,7 @@ export class BattleEngine {
       if (screenX(target) < screenX(unit)) unit.facingLeft = true;
       else if (screenX(target) > screenX(unit)) unit.facingLeft = false;
       this.recorder.event({ type: 'fire', instanceId: unit.id, targetId: target.id, melee });
-      // Brutes hit walls harder (M8.6, §5.3); everyone else deals plain damage.
+      // Brutes hit walls harder (M8.6); everyone else deals plain damage.
       // M8.8: might is taken at fire time and travels with the shot, with the element and splash.
       const might = unit.aura?.might ?? 0;
       const damage = might > 0 ? hitDamage(unit, target, cfg) * (1 + might / 100) : hitDamage(unit, target, cfg);
@@ -832,7 +831,7 @@ export class BattleEngine {
       if (melee) {
         hits.push({ attackerId: unit.id, target, damage, element, splash, might, mightSrc });
       } else {
-        // Redesign (§9.4 Accuracy): a shot at a moving body may miss; it then
+        // Redesign: a shot at a moving body may miss; it then
         // flies to where the body is now and lands there (splash only).
         const chance = missChance(target.moved ?? 0, cfg);
         const miss = chance > 0 && this.accuracyRng() < chance;
@@ -894,7 +893,7 @@ export class BattleEngine {
 
     // 8) Sudden death on every body, buildings included (credits nobody).
     applySuddenDeath(living, tick, cfg, this.center);
-    // 8b) factory.dieAtSuddenDeath (§9.3, 2026-10-25, on by default): on the first
+    // 8b) factory.dieAtSuddenDeath (2026-10-25, on by default): on the first
     // tick of sudden death every factory still standing is destroyed (credits
     // nobody; step 9 removes it and its stored minions are lost as usual).
     if (cfg.factory.dieAtSuddenDeath && tick === cfg.suddenDeath.startTick) {
@@ -910,7 +909,7 @@ export class BattleEngine {
         if (u.factory) (deadFactories ??= []).push(u);
       }
     }
-    // 9a) factory.minionsDieWithFactory (§9.3, 2026-10-25): the living minions of
+    // 9a) factory.minionsDieWithFactory (2026-10-25): the living minions of
     // every factory removed above crumble now, factory by factory in instanceId
     // order (they are dead for 9b and step 10).
     if (deadFactories && cfg.factory.minionsDieWithFactory) for (const fac of deadFactories) this.crumbleMinionsOf(fac, living, tick + 1);
@@ -932,7 +931,7 @@ export class BattleEngine {
     else if (isRoutingBuilding(u)) this.buildings.remove(u);
     const f = u.minion?.factory.factory;
     if (f) f.minionsLost += 1;
-    // Minions waiting inside a factory die with it (M8.6, §5.3).
+    // Minions waiting inside a factory die with it (M8.6).
     const own = u.factory;
     if (own && own.stored > 0) {
       this.recorder.event({ type: 'lost', factoryId: u.id, count: own.stored });
@@ -944,7 +943,7 @@ export class BattleEngine {
   }
 
   /**
-   * Minions die with their factory (factory.minionsDieWithFactory, §9.3): the
+   * Minions die with their factory (factory.minionsDieWithFactory): the
    * factory's living minions within factory.crumbleRadius of it crumble at time `t`, in instanceId order, in one
    * `crumble` event carrying the factory's id. The unit whose hit destroyed the
    * factory gets a kill and the minion's value destroyed for each (the same
@@ -970,7 +969,7 @@ export class BattleEngine {
   }
 
   /**
-   * The order fallbacks (§5.3): a swarm needs a living enemy target, a guard a
+   * The order fallbacks: a swarm needs a living enemy target, a guard a
    * living ally (same side); otherwise they become attack / defend.
    */
   private checkOrder(fac: SimUnit): void {
@@ -983,7 +982,7 @@ export class BattleEngine {
     f.orderTargetId = null;
   }
 
-  /** Where a factory's minions head (§9.3 Frames focus): rally point, factory, swarm target or guarded ally. */
+  /** Where a factory's minions head: rally point, factory, swarm target or guarded ally. */
   private focusOf(fac: SimUnit): Point {
     const f = fac.factory!;
     if (f.order === 'defend') return { x: fac.x, y: fac.y };
@@ -995,7 +994,7 @@ export class BattleEngine {
   }
 
   /**
-   * Step 9b (§9.3 Factory production, M8.6 Store and release). `t` = the
+   * Step 9b (M8.6 Store and release). `t` = the
    * time the new minions appear at. Caps count alive + stored minions.
    */
   private produce(t: number, tempos: ReadonlyMap<SimUnit, number>): void {
@@ -1015,7 +1014,7 @@ export class BattleEngine {
       if (u.minion) add(u.minion.factory.id, u.playerId, 1);
       if (u.factory && u.factory.stored > 0) add(u.id, u.playerId, u.factory.stored);
     }
-    // factory.stopAtSuddenDeath (§9.3, 2026-10-25, off by default): a minion that
+    // factory.stopAtSuddenDeath (2026-10-25, off by default): a minion that
     // would appear at or after sudden death is never built, the timers stop and
     // the minions left unbuilt are gone; stored minions still leave. Off: the
     // production window is the battle (the pre-2026-10-25 behaviour, unchanged).
@@ -1089,7 +1088,7 @@ export class BattleEngine {
     return true;
   }
 
-  /** Create a factory's n-th minion at `spot` (§5.2 Minions). */
+  /** Create a factory's n-th minion at `spot`. */
   private addMinion(fac: SimUnit, n: number, spot: Point, t: number): void {
     const kind = fac.factory?.kind ?? 'grunt';
     const stats = minionStats(this.config, fac.stats.color, kind, fac.factory?.element ?? 'normal');
@@ -1132,7 +1131,7 @@ export class BattleEngine {
       minion: { factory: fac, n, kind },
       frozen: 0,
       burns: [],
-      // A fresh minion starts with a full heal room for its window (§5.5).
+      // A fresh minion starts with a full heal room for its window.
       healRoom: freshHealRoom({ type: 'minion', maxHp: stats.maxHealth }, t, this.config),
       aura: noAura(),
     };
@@ -1153,15 +1152,15 @@ export class BattleEngine {
     minionRaw: ReadonlyMap<string, unknown>,
   ): TickInput | undefined {
     if (p.disabled || p.runner.disposed) return undefined;
-    // Only units that run code act through the sandbox: not walls, not minions (§5.2).
+    // Only units that run code act through the sandbox: not walls, not minions.
     const cap = this.config.factory.maxAlivePerFactory;
-    // Production stops for sudden death (factory.stopAtSuddenDeath): this tick's step 9b builds only if its minion appears before it (§9.3).
+    // Production stops for sudden death (factory.stopAtSuddenDeath): this tick's step 9b builds only if its minion appears before it.
     const producing = !this.config.factory.stopAtSuddenDeath || tick + 1 < productionEndTick(this.config);
     const selves = living
       .filter((u) => u.playerId === p.setup.playerId && !u.disabled && u.type !== 'wall' && u.type !== 'minion')
       .map((u) => toSelfView(u, u.factory ? factoryView(u, living, cap, producing) : null, tick, this.config));
     if (selves.length === 0) return undefined;
-    // §5.3: the minions of the acting factories that run updateMinion().
+    // The minions of the acting factories that run updateMinion().
     let minions: SelfView[] | undefined;
     for (const u of living) {
       const fac = u.minion?.factory;
@@ -1210,7 +1209,7 @@ export class BattleEngine {
   }
 
   // -------------------------------------------------------------------------
-  // Sandbox policy (§8 Deadlines, strikes, disable)
+  // Sandbox policy (strikes, disable)
   // -------------------------------------------------------------------------
 
   /**
@@ -1232,7 +1231,7 @@ export class BattleEngine {
     if (res.status === 'timeout' && res.hostStall) {
       // The sandbox process was frozen (OS / VM scheduler) for most of the
       // tick: the units idle, but it's not the player's code, so no strike and
-      // no timeout count (§8). The stall hides whether the unit it named was
+      // no timeout count. The stall hides whether the unit it named was
       // looping, so remember it: if it times out again on its own next tick,
       // this stall counts as its first timeout.
       const named = res.culprit !== undefined ? this.byId.get(res.culprit) : undefined;
@@ -1246,7 +1245,7 @@ export class BattleEngine {
       const culprit = res.culprit !== undefined ? this.byId.get(res.culprit) : undefined;
       const minionFactory = culprit?.minion?.factory;
       if (culprit && minionFactory?.minionCode && !minionFactory.minionCode.off && minionFactory.playerId === p.setup.playerId) {
-        // §5.3: the factory's updateMinion() was running (for this minion).
+        // The factory's updateMinion() was running (for this minion).
         // Like a unit's update(): the first timeout only idles this tick (the
         // minions use their built-in logic), a repeat switches the minion
         // code off; the factory itself keeps running. Neither counts toward
@@ -1273,7 +1272,7 @@ export class BattleEngine {
         // first timeout only idles this tick and is reported; a repeat naps.
         // A culprit's own timeouts (forgiven or disabling) don't count toward
         // the player limits, which are for timeouts that CONTINUE after the
-        // culprit naps (§8). Otherwise 2 copies of one looping design (A, A,
+        // culprit naps. Otherwise 2 copies of one looping design (A, A,
         // then B) would disable the whole player, healthy units included.
         // Timing out right after a host stall that named it: that stall was its
         // first timeout (an endless loop the stall hid), so this one is a repeat.
@@ -1336,7 +1335,7 @@ export class BattleEngine {
       }
     }
 
-    // §5.3: the factories' updateMinion() actions. Nothing (undefined/null) =
+    // The factories' updateMinion() actions. Nothing (undefined/null) =
     // the built-in logic. An error: that minion uses the built-in logic this
     // tick, and its factory's minion code gets one strike per tick (at the
     // unit strike limit it is switched off; the factory keeps running).
@@ -1365,7 +1364,7 @@ export class BattleEngine {
     return actions;
   }
 
-  /** §5.3: switch a factory's updateMinion() off for the rest of the battle (its minions use the built-in logic). */
+  /** Switch a factory's updateMinion() off for the rest of the battle (its minions use the built-in logic). */
   private minionCodeOff(fac: SimUnit, tick: number, message: string): void {
     if (!fac.minionCode || fac.minionCode.off) return;
     fac.minionCode.off = true;
@@ -1381,7 +1380,7 @@ export class BattleEngine {
       ? this.byId.get(res.slowestInstanceId)
       : undefined;
     if (!p.slowUnitDisabled && slowest && !slowest.disabled && res.slowestIsMinionCode && slowest.minionCode && !slowest.minionCode.off) {
-      // §5.3: the slowest code was the factory's updateMinion(): switch that off, not the factory.
+      // The slowest code was the factory's updateMinion(): switch that off, not the factory.
       this.minionCodeOff(slowest, tick, `${slowest.stats.name}'s updateMinion() was too slow (over ${limits.softTimeoutMs} ms) too many times, so its minions use their built-in logic for the rest of the battle`);
       p.slowUnitDisabled = true;
       p.slowStrikes = 0;
@@ -1439,7 +1438,7 @@ export class BattleEngine {
 
   /**
    * Step 10: mark newly eliminated players. A player (and a side) is out when
-   * it has no living FIGHTERS (§9.3: walls and spent factories don't count).
+   * it has no living FIGHTERS (walls and spent factories don't count).
    * An eliminated side's leftover walls and spent factories crumble at once
    * (credited to nobody). Returns true when ≤ 1 side has fighters.
    */
@@ -1566,7 +1565,7 @@ export class BattleEngine {
       if (u.minion) r.factoryId = u.minion.factory.id;
       if (u.factory) r.factory = factoryReport(u);
       if (u.type === 'soldier' || u.type === 'minion') r.blockedTicksMax = u.blockedTicksMax ?? 0;
-      // M8.8 (§9.4): pure support is no fighter; healing, cleanses, combos, assist and the damage split.
+      // M8.8: pure support is no fighter; healing, cleanses, combos, assist and the damage split.
       if (!canFight(u) && u.type !== 'wall') r.nonFighter = true;
       if (supportOf(u.stats)?.kind === 'heal' || u.factory?.kind === 'medic') r.healer = true;
       if (u.healing) r.healing = u.healing;
@@ -1606,8 +1605,8 @@ function zoneArena(zone: ZoneRef): number {
 }
 
 /**
- * Horizontal screen position in the isometric view, up to scale (§12:
- * screenX = (x − y)·k). Sprite facing (FACING_LEFT) is decided on this axis.
+ * Horizontal screen position in the isometric view, up to scale
+ * (screenX = (x − y)·k). Sprite facing (FACING_LEFT) is decided on this axis.
  */
 function screenX(p: { x: number; y: number }): number {
   return p.x - p.y;
@@ -1639,11 +1638,11 @@ function lastAtOrBefore<T extends { t: number }>(list: readonly T[], tick: numbe
 }
 
 // ---------------------------------------------------------------------------
-// Reports (§10.3)
+// Reports
 // ---------------------------------------------------------------------------
 
 /**
- * Skip (§9): the result as of recorded frame `endTick` (the frame the players were
+ * Skip: the result as of recorded frame `endTick` (the frame the players were
  * shown): survival and living value from that frame's living bodies, counters
  * from `counters`, and only the errors and incidents up to that tick. Ranking
  * is left as is (the caller ranks and scores from the frame).
@@ -1758,11 +1757,11 @@ export function buildBattleReport(
   };
 }
 
-/** Share of the battle a soldier type may spend blocked by walls before the report hints (§10.5). */
+/** Share of the battle a soldier type may spend blocked by walls before the report hints. */
 const STUCK_HINT_SHARE = 0.3;
 
 /**
- * Per fielded type of one player (M8.5, §10.5): factories with their
+ * Per fielded type of one player (M8.5): factories with their
  * minions' output, soldiers with their longest wall block, and the
  * "got stuck behind walls" hint.
  */
@@ -1817,7 +1816,7 @@ function reportTypes(units: readonly UnitReport[], endTick: number): Pick<Battle
         .map((t) => `Your ${t.name} was destroyed with ${t.storedLost} minion${t.storedLost === 1 ? '' : 's'} inside (stored minions are lost with their factory).`),
     )
     .concat(
-      // M8.8 (§10.6): a heal-support type that never healed or cleansed anyone.
+      // M8.8: a heal-support type that never healed or cleansed anyone.
       types
         .filter((t) => healers.has(t.unitId) && !(t.healing ?? 0) && !(t.cleanses ?? 0))
         .map((t) => `Your ${t.name} never healed anyone (a heal needs a hurt, burning or frozen ally within its supportRange).`),
@@ -1841,7 +1840,7 @@ function roundSplit(s: DamageSplitDTO): DamageSplitDTO {
 }
 
 /**
- * Redesign (§9.4 Accuracy): the chance a ranged shot misses a body that moved
+ * Redesign: the chance a ranged shot misses a body that moved
  * `moved` px this tick: missMaxPct% × min(1, moved / speedRef).
  */
 export function missChance(moved: number, config: Pick<GameConfig, 'accuracy'>): number {
@@ -1861,11 +1860,11 @@ interface OwnerNames {
 }
 
 function toOtherView(u: SimUnit, tick: number, config: GameConfig, names: ReadonlyMap<string, OwnerNames> | null): OtherView {
-  // A wall is a circle of radius 20 for range (§5.2); walls and factories have range 0.
+  // A wall is a circle of radius 20 for range; walls and factories have range 0.
   const view: OtherView = {
     id: u.id,
     ownerId: u.playerId,
-    teamId: u.teamId, // free-for-all: the seat; team mode: the team (§5, §9.2)
+    teamId: u.teamId, // free-for-all: the seat; team mode: the team
     type: u.type,
     name: u.stats.name,
     x: u.x,
@@ -1874,7 +1873,7 @@ function toOtherView(u: SimUnit, tick: number, config: GameConfig, names: Readon
     hp: u.hp,
     maxHp: u.maxHp,
     range: u.stats.range,
-    // M8.8 (§5.6): a minion's element is its factory's minionElement; walls and factories 'normal'.
+    // M8.8: a minion's element is its factory's minionElement; walls and factories 'normal'.
     element: elementOf(u.stats),
     splashRadius: splashOf(u.stats),
     support: supportOf(u.stats),
@@ -1883,9 +1882,9 @@ function toOtherView(u: SimUnit, tick: number, config: GameConfig, names: Readon
     moving: (u.moved ?? 0) > 0,
     currentSpeed: Math.round((u.moved ?? 0) * 100) / 100,
   };
-  // 2026-10-25 (§5): a minion names the factory that made it.
+  // 2026-10-25: a minion names the factory that made it.
   if (u.minion) view.factoryId = u.minion.factory.id;
-  // revealNames (§5): a minion's playerId is its factory's player; a borrowed
+  // revealNames: a minion's playerId is its factory's player; a borrowed
   // Armory unit's is the player who fielded it.
   const n = names?.get(u.playerId);
   if (n) {
@@ -1900,8 +1899,8 @@ function toSelfView(u: SimUnit, factory: FactoryView | null, tick: number, confi
     id: u.id,
     unitId: u.unitId,
     ownerId: u.playerId,
-    teamId: u.teamId, // free-for-all: the seat; team mode: the team (§5, §9.2)
-    type: u.type, // a minion only in its factory's updateMinion() (§5.3)
+    teamId: u.teamId, // free-for-all: the seat; team mode: the team
+    type: u.type, // a minion only in its factory's updateMinion()
     name: u.stats.name,
     x: u.x,
     y: u.y,
@@ -1925,7 +1924,7 @@ function toSelfView(u: SimUnit, factory: FactoryView | null, tick: number, confi
   };
 }
 
-/** A factory's `self.factory` (§5.2 FactoryView). */
+/** A factory's `self.factory`. */
 function factoryView(u: SimUnit, living: readonly SimUnit[], maxAlive: number, producing: boolean): FactoryView {
   const f = u.factory!;
   let alive = 0;

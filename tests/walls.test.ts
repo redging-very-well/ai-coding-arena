@@ -1,4 +1,4 @@
-// Walls in the headless sim (plan §5.2, §9.3, M8.5): blocking, the
+// Walls in the headless sim (M8.5): blocking, the
 // deterministic wall slide, gates, the wall push, breaking a wall, towers and
 // projectiles vs walls, sudden death, walls running no code, crumbling and
 // determinism.
@@ -80,7 +80,7 @@ function walk(u: SimUnit, dest: { x: number; y: number }, grid: WallGrid, walls:
   return { path, maxPenetration, arrivedAt };
 }
 
-describe('wall steering (§9.3)', () => {
+describe('wall steering', () => {
   it('a soldier walking straight into a wall never overlaps it and reports blockedBy/blockedTicks', () => {
     // A long wall row 10 from the left edge to col 17: the soldier at col 5 walks straight down into it.
     const { grid, walls } = gridOf(Array.from({ length: 18 }, (_, c) => [c, 10] as [number, number]));
@@ -219,7 +219,7 @@ function engineOf(specs: FakePlayerSpec[], config: GameConfig, seed = 7) {
 const at = (col: number, row: number, unitId: string): PlacementDTO => ({ unitId, col, row });
 const allEvents = (frames: FrameDTO[]) => frames.flatMap((f) => f.events.map((e) => ({ t: f.t, e })));
 
-describe('walls in battle (§9.3)', () => {
+describe('walls in battle', () => {
   it('walls run no code: never spawned in the sandbox, never disabled, never act', async () => {
     const { engine } = engineOf(
       [

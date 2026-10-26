@@ -1,11 +1,11 @@
-// Integration (plan §16 M2 acceptance): the REAL path end to end.
-//   starter-kit templates → validator (§7) → StatsSnapshot + compiledJs
-//   → ivmRunner (isolates in child processes, §8) → BattleEngine (§9).
+// Integration: the REAL path end to end.
+//   starter-kit templates → validator → StatsSnapshot + compiledJs
+//   → ivmRunner (isolates in child processes) → BattleEngine.
 //
 // Checks: a template-vs-template battle produces a ranking, a full-length
 // battle (7200 ticks since the redesign) finishes in < 2.7 s of wall time (the
 // M2 budget of 2 s per 5400 ticks, scaled), and the per-tick cost (p50/p99) of
-// a 4-player × 8-unit battle and of the §9.2 / §14 load shape (8 players × 12
+// a 4-player × 8-unit battle and of the load shape (8 players × 12
 // copies = 96 units on Ring 8 and as 4v4 on Lanes 8, 1200 arena) stays within
 // the 8 ms p99 budget.
 
@@ -51,7 +51,7 @@ interface StoredDesign {
   runner: RunnerUnitDesign;
 }
 
-/** Validate a source through the real §7 pipeline (fresh isolate), like submit_unit does. */
+/** Validate a source through the real pipeline (fresh isolate), like submit_unit does. */
 async function submit(source: string, config: GameConfig): Promise<StoredDesign> {
   const d = await validateDetailed(source, {}, config);
   if (!d.result.ok) throw new Error(`validation failed: ${JSON.stringify(d.result.errors)}`);
@@ -130,7 +130,7 @@ function percentile(values: number[], p: number): number {
  * No unit misbehaved: templates must never throw or get disabled. With
  * `maxTimeouts`, up to that many hard timeouts (a host GC/scheduler stall
  * under load) are tolerated across the battle; each must be the forgiven
- * first one ("…took too long once", §8), so nothing gets disabled. The
+ * first one ("…took too long once"), so nothing gets disabled. The
  * players tick in lockstep, so ONE host stall can time out every player that
  * was ticking at that moment: one stall's worth is one timeout per player.
  * (Stalls the sandbox detects itself are `hostStall` ticks and not counted.)
@@ -205,7 +205,7 @@ describe('integration: validator → ivm runner → engine (M2 acceptance)', () 
 
     expectCleanRun(result);
     // The mirrored armies fight in the middle; the towers stay home, and the
-    // shrinking circle (§9 sudden death, from 75 s at 10%/s since the redesign)
+    // shrinking circle (from 75 s at 10%/s since the redesign)
     // takes both armies' last towers on the same tick before the end.
     expect(result.endTick).toBeGreaterThan(config.suddenDeath.startTick);
     expect(result.endTick).toBeLessThanOrEqual(config.timers.battleTicks);
@@ -253,14 +253,14 @@ describe('integration: validator → ivm runner → engine (M2 acceptance)', () 
     expectCleanRun(result);
     expect(result.endReason).toBe('elimination');
     expect(result.ranking).toEqual([
-      // 2 players: place points 1/0 (§9 Points: 1st gets P − 1).
+      // 2 players: place points 1/0 (1st gets P − 1).
       expect.objectContaining({ playerId: 'strong', place: 1, placePoints: 1 }),
       expect.objectContaining({ playerId: 'weak', place: 2, placePoints: 0 }),
     ]);
   }, 30_000);
 
   it('4 players × 8 units: logs sim ms/tick (p50/p99)', async () => {
-    // §14 load test shape: 8 units each, update() loops over all enemies.
+    // 8 units each, update() loops over all enemies.
     const config: GameConfig = parseConfig({});
     const zones = assignZones(['p0', 'p1', 'p2', 'p3'], 0);
     const eight = (): PlacementDTO[] => [
@@ -285,15 +285,15 @@ describe('integration: validator → ivm runner → engine (M2 acceptance)', () 
         `max ${Math.max(...tickMs).toFixed(2)} ms`,
     );
     // One stall (GC/scheduler) may cross the 12 ms hard timeout under load;
-    // §8 forgives a culprit's first timeout, so it must not disable anything.
+    // The sandbox forgives a culprit's first timeout, so it must not disable anything.
     expectCleanRun(result, { maxTimeouts: specs.length });
     expect(result.ranking).toHaveLength(4);
     expect(tickMs.length).toBe(result.endTick);
-    // §14 load-test budget: sim p99 < 8 ms/tick.
+    // Sim p99 < 8 ms/tick.
     expect(p99).toBeLessThan(8);
   }, 60_000);
 
-  // §9.2 Performance / §14 loadtest: 8 players × 12 copies = 96 units on the
+  // 8 players × 12 copies = 96 units on the
   // 1200 arena, every update() looping over all enemies; once free-for-all on
   // Ring 8 and once as 4v4 on Lanes 8 (allies/enemies serialised once per side).
   const twelve = (): PlacementDTO[] => [
@@ -340,7 +340,7 @@ describe('integration: validator → ivm runner → engine (M2 acceptance)', () 
       else expect(result.teams?.map((t) => t.members.length)).toEqual([4, 4]);
       expect(result.ranking).toHaveLength(8);
       expect(tickMs.length).toBe(result.endTick);
-      // §9.2 Performance: sim p99 < 8 ms/tick with 8 players × 12 copies.
+      // Sim p99 < 8 ms/tick with 8 players × 12 copies.
       expect(p99).toBeLessThan(8);
     }, 120_000);
   }

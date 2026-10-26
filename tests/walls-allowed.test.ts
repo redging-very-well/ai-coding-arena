@@ -1,4 +1,4 @@
-// "Walls allowed" (plan §9.1b) against a booted server with the real
+// "Walls allowed" against a booted server with the real
 // validator and sandboxes: on by default (state files unchanged), a LOBBY
 // draft setting picked up by Start match and then locked; with walls off a
 // carried-over selection loses its walls (toast), picking, placing and

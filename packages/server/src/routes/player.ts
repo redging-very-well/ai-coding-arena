@@ -26,7 +26,7 @@ export function playerRoutes(game: Game): Router {
     res.json(me);
   });
 
-  // Claude seat (§11.2 c): the laptop's terminal. Any phase, also for benched players.
+  // Claude seat: the laptop's terminal. Any phase, also for benched players.
   r.get('/claude-seats', (req, res) => {
     res.json(game.claudeSeats.playerDTO(req.player!));
   });

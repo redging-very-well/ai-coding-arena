@@ -138,7 +138,7 @@ describe('kicks, zones and new match', () => {
   }, T);
 });
 
-describe('kicks during the battle and the released result (§9 Skip / kick)', () => {
+describe('kicks during the battle and the released result', () => {
   it('a kick that lands while Skip waits for the sim is left out of the ranking, and the scoreboard places have no gap', async () => {
     const dir = tempDataDir();
     const srv = await bootServer({ dataDir: dir, playbackRate: 0.01 });
@@ -173,7 +173,7 @@ describe('kicks during the battle and the released result (§9 Skip / kick)', ()
   }, T);
 });
 
-describe('Skip reports what was shown (§9)', () => {
+describe('Skip reports what was shown', () => {
   it('resultAtTick trims counters, survival and errors to the shown frame', async () => {
     const config = parseConfig({ timers: { battleTicks: 900 }, suddenDeath: { startTick: 100_000, endTick: 100_001 } });
     const army: PlacementDTO[] = [
@@ -221,7 +221,7 @@ describe('Skip reports what was shown (§9)', () => {
   });
 });
 
-describe('MCP replies (§10.4)', () => {
+describe('MCP replies', () => {
   it('dry runs predict template protection, name new designs as new, and summarize sprites', async () => {
     const { Client: McpClient } = await import('@modelcontextprotocol/sdk/client/index.js');
     const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
@@ -261,7 +261,7 @@ describe('MCP replies (§10.4)', () => {
   }, T);
 });
 
-describe('late joiner catch-up frame (M8.5, §9.3 Frames)', () => {
+describe('late joiner catch-up frame (M8.5)', () => {
   const f = (t: number, units: Array<[string, number, number, number, number]>, events: unknown[] = []) =>
     ({ t, units, projectiles: [], safeZoneRadius: 500, events }) as Parameters<typeof catchUpFrame>[0][number];
   const frames = [

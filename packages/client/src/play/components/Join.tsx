@@ -1,4 +1,4 @@
-// Join (plan §12.1, §4): "New player" / "I'm back" tabs, a name field and a
+// Join: "New player" / "I'm back" tabs, a name field and a
 // big 4-digit PIN keypad (the keyboard's digits work too).
 
 import { useEffect, useRef, useState } from 'preact/hooks';

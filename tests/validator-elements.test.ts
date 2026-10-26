@@ -1,4 +1,4 @@
-// §7 M8.8 (elements, splash and support, the $10,000 bounds): the step-6 guards on
+// Validation, M8.8 (elements, splash and support, the $10,000 bounds): the step-6 guards on
 // the six new stats (checkStats, fast) and the real pipeline (esbuild + a
 // fresh isolated-vm sandbox) for the dry run's `heal`, the new warnings and
 // the snapshot.

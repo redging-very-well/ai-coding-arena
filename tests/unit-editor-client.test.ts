@@ -1,4 +1,4 @@
-// The /play code editor (plan §12.1 "✏️ Edit code"), DOM-free parts: the
+// The /play code editor, DOM-free parts: the
 // read-only sprite() range found in the lezer syntax tree, the CodeMirror
 // transaction filter that protects it, validator issues → diagnostics, the
 // cost panel, the debounced/coalesced live validation, drafts and guards.

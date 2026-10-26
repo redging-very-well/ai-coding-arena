@@ -1,4 +1,4 @@
-// Start-match setup (plan §12.3, §9.2), as steps 1 and 2 of the Match tab
+// Start-match setup, as steps 1 and 2 of the Match tab
 // (MatchTab.tsx). TeamsStep: team mode (only the valid modes) and the
 // auto-balanced team boxes, each with its "Budget per player $" on top (with
 // a balance note above $15,000), where dragging a player chip onto another
@@ -22,7 +22,7 @@ import { budgetBalanceWarning } from './quickSettings.js';
 import { applyMove, canDrop, dropResult, LAST_MEMBER_TEXT, menuChoices, parseChoice, teamIdOf } from './teamDnd.js';
 import { mapPreview, previewCount, selectedStyleOption, styleOptions, teamModeOptions, unevenNote, type MapPreview, type PreviewPlayer } from './mapPreview.js';
 
-/** The front edge(s) of a zone as SVG line coordinates (row 0 faces the centre, §9.2). */
+/** The front edge(s) of a zone as SVG line coordinates (row 0 faces the centre). */
 function frontEdges(z: MapPreview['zones'][number], S: number): Array<[number, number, number, number]> {
   const { x, y, width: w, height: h } = z;
   const right: [number, number, number, number] = [x + w, y, x + w, y + h];
@@ -80,7 +80,7 @@ export function MapView({ preview, size, detail }: { preview: MapPreview; size: 
   );
 }
 
-/** One team's "Budget per player $" field (§9.2): Enter/blur saves, empty or the default clears it. */
+/** One team's "Budget per player $" field: Enter/blur saves, empty or the default clears it. */
 function TeamBudget({ team, budget, defaultBudget, onBudget, busy }: { team: TeamDTO; budget: number; defaultBudget: number; onBudget: (teamId: number, budget: number | null) => void; busy: boolean }) {
   const [typed, setTyped] = useState<number | null>(null);
   const warning = budgetBalanceWarning(typed ?? budget);
@@ -151,7 +151,7 @@ function TeamBoard({
   /** Resolves true when the server accepted the move. */
   onMove: (id: string, teamId: number) => Promise<boolean>;
   onRefused: (text: string) => void;
-  /** Budget per player of each team (index = teamId), §9.2. */
+  /** Budget per player of each team (index = teamId). */
   budgets: number[];
   defaultBudget: number;
   onBudget: (teamId: number, budget: number | null) => void;

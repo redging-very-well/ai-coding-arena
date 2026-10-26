@@ -1,4 +1,4 @@
-// PLAN Ready (plan §3, §10.2, §10.3): players say "my army is picked" in PLAN.
+// PLAN Ready: players say "my army is picked" in PLAN.
 // Gates, NOTHING_SELECTED, clearing on a changed army (selection, own submit),
 // the reset on every phase change, the public `allReady` flag with benched and
 // kicked players, and the optional auto-advance (timers.autoAdvanceWhenAllReady)

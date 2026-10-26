@@ -1,4 +1,4 @@
-// Settings that save as they change (plan §12.3 config editor): one labelled
+// Settings that save as they change: one labelled
 // field per quick setting (quickSettings.ts), grouped into collapsible
 // sections on the Game rules tab, plus a few of them on the Match tab.
 //

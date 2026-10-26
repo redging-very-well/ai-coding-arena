@@ -1,4 +1,4 @@
-// GET /rules + MCP get_rules, GET /contract + MCP get_unit_contract (§10).
+// GET /rules + MCP get_rules, GET /contract + MCP get_unit_contract.
 
 import { readFileSync } from 'node:fs';
 import {
@@ -41,7 +41,7 @@ import {
 import { repoPath } from '../util/paths.js';
 import { templateSource } from './units.js';
 
-/** The Open Armory paragraph of the rules (§9.1). */
+/** The Open Armory paragraph of the rules. */
 export function armoryRules(enabled: boolean): Record<string, unknown> {
   return {
     enabled,
@@ -58,7 +58,7 @@ export function armoryRules(enabled: boolean): Record<string, unknown> {
   };
 }
 
-/** The "Show enemy names to units" paragraph of the rules (§5 views, a match setting). */
+/** The "Show enemy names to units" paragraph of the rules (a match setting). */
 export function revealNamesRules(enabled: boolean): Record<string, unknown> {
   return {
     enabled,
@@ -74,7 +74,7 @@ export function revealNamesRules(enabled: boolean): Record<string, unknown> {
   };
 }
 
-/** The walls paragraph of the rules (§9.1b, a match setting: "Disable walls" in /admin). */
+/** The walls paragraph of the rules (a match setting: "Disable walls" in /admin). */
 export function wallsAllowedRules(allowed: boolean): Record<string, unknown> {
   return {
     allowed,
@@ -89,7 +89,7 @@ export function wallsAllowedRules(allowed: boolean): Record<string, unknown> {
   };
 }
 
-/** Map styles, arena sizes and zone rules (§9.2). */
+/** Map styles, arena sizes and zone rules. */
 export function mapRules(): Record<string, unknown> {
   const counts = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, i) => i + MIN_PLAYERS);
   return {
@@ -103,7 +103,7 @@ export function mapRules(): Record<string, unknown> {
   };
 }
 
-/** Team modes and team rules (§9.2). */
+/** Team modes and team rules. */
 export function teamRules(): Record<string, unknown> {
   const counts = Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, i) => i + MIN_PLAYERS);
   return {
@@ -126,8 +126,8 @@ export function teamRules(): Record<string, unknown> {
 }
 
 /**
- * The four unit types (§5.2): groups, per-type stats and prices, the
- * factory's minions, and the fighter / living-value rules (§9.3).
+ * The four unit types: groups, per-type stats and prices, the
+ * factory's minions, and the fighter / living-value rules.
  */
 export function unitTypeRules(config: GameConfig): Record<string, unknown> {
   const b = config.stats.bounds;
@@ -192,7 +192,7 @@ export function unitTypeRules(config: GameConfig): Record<string, unknown> {
       minionCode: MINION_CODE_FACTS(config).map(plainFact),
       minionCost,
       minionValue,
-      // M8.6 (§5.3): the four kinds a factory can build (this.produces).
+      // M8.6: the four kinds a factory can build (this.produces).
       minionKinds: Object.fromEntries(
         MINION_KINDS.map((k) => {
           const price = minionPrice(c, pricing, k);
@@ -220,7 +220,7 @@ export function unitTypeRules(config: GameConfig): Record<string, unknown> {
   };
 }
 
-/** One sentence for the copy ramp (redesign, §6), or that it is off. */
+/** One sentence for the copy ramp (redesign), or that it is off. */
 export function copyRampText(config: GameConfig): string {
   const r = config.caps.copyRamp;
   if (r.pctPerCopy <= 0) return 'Copies of one design all cost the same (the copy ramp is off).';
@@ -253,7 +253,7 @@ export function buildRules(config: GameConfig, armoryEnabled = false, match?: Ma
       ` Walls: cost = ceil(c.wall.base + maxHealth*c.wall.hp*(1 + c.curveK*(maxHealth/${BUILDING_HP_CURVE_MAX.wall})^2)). ` +
       `Factories: cost = ceil(c.factory.base + maxHealth*c.factory.hp*(1 + c.curveK*(maxHealth/${BUILDING_HP_CURVE_MAX.factory})^2)) + minionValue * E, where E = the minions it can build in one battle (unitTypes.factories.minionsPerBattle) and minionValue = half the price of its minion kind priced as a soldier, times the minionElement factor (unitTypes.factories.minionKinds[produces].byElement: grunt is the default; medics ignore the element). burst never changes the price.`,
     coefficients: { ...config.cost },
-    // M8.8 (§5.4, §5.5): one line per rule; the numbers are config.
+    // M8.8: one line per rule; the numbers are config.
     elements: {
       ...config.elements,
       fire: `${config.elements.fire.burnPct}% of the hit again as a burn over ${(config.elements.fire.pulses * config.elements.fire.pulseTicks) / t.ticksPerSecond} s (one burn per attacking player, refreshed by new hits)`,
@@ -328,7 +328,7 @@ export function buildRules(config: GameConfig, armoryEnabled = false, match?: Ma
   };
 }
 
-/** §9 Points / Badges / Match standings, with the numbers from config. */
+/** Points / Badges / Match standings, with the numbers from config. */
 export function scoringRules(config: GameConfig): RulesDTO['scoring'] {
   const sc = config.scoring;
   const four = placePointsTable(4);
@@ -360,7 +360,7 @@ function ordinal(n: number): string {
 
 let contractText: string | undefined;
 
-/** The verbatim §5 contract block from packages/shared/src/contract.ts. */
+/** The verbatim contract block from packages/shared/src/contract.ts. */
 export function contractTypescript(): string {
   if (contractText !== undefined) return contractText;
   try {
@@ -375,7 +375,7 @@ export function contractTypescript(): string {
   return contractText;
 }
 
-/** The facts of a factory's optional updateMinion() (§5.3), for the guide and get_rules. */
+/** The facts of a factory's optional updateMinion(), for the guide and get_rules. */
 export function MINION_CODE_FACTS(c: Pick<GameConfig, 'sandbox'>): string[] {
   const b = c.sandbox.battle;
   return [
@@ -401,7 +401,7 @@ export const ENGINE_RULES = [
   '8. Redesign: burning enemies take extra damage from non-fire hits (kindle) and frozen ones from non-ice, non-fire hits (brittle); ranged shots at moving enemies can miss (melee never misses); soldiers reach 160 px at most, towers 300.',
 ];
 
-/** The price in one paragraph (§6 M8.8, CLAUDE.md §5, get_unit_contract). */
+/** The price in one paragraph (CLAUDE.md §5, get_unit_contract). */
 export const PRICE_PARAGRAPH =
   'Each stat costs its normal price, more near its max (up to 2× at the max). Healing adds a price too. Then multiply: fast attacks (60 / cooldown), being both tough and strong (up to ×3), splash (×1.6 at 40 px, ×1.8 at 80) and an element (fire and lightning ×1.3, ice ×1.75). An aura is added at the end. From the 4th copy of one design each copy costs 15% more again.';
 
@@ -473,7 +473,7 @@ function num(n: number): string {
 
 /**
  * Rule notes (get_unit_contract `notes`, the guide): facts only, no strategy.
- * Players find their own tactics (plan §17); the cost-curve, sudden-death and
+ * Players find their own tactics; the cost-curve, sudden-death and
  * element notes follow the config.
  */
 export function ruleNotes(config: GameConfig = DEFAULT_CONFIG): string[] {

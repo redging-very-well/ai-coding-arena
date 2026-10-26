@@ -1,4 +1,4 @@
-// The "everyone's ready → go" step (plan §3 pending advance, §12.2, §12.3),
+// The "everyone's ready → go" step,
 // DOM-free so tests/plan-ready-client.test.ts can run it. The server runs one
 // countdown (`state.pendingAdvance`) that every page shows; only the
 // facilitator (an /admin session in this browser) gets the go / cancel

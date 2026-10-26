@@ -1,4 +1,4 @@
-// PLAN "I'm ready!" (plan §12.1): once at least one unit type is picked, a
+// PLAN "I'm ready!": once at least one unit type is picked, a
 // big toggle says "my army is picked". Disabled with a hint before any pick.
 // The server clears it when the army changes (another pick, or Claude sends a
 // new or revised unit): then a small note asks to press Ready again. PLAN
@@ -55,7 +55,7 @@ export function PlanReady() {
       holdMs = Math.max(holdMs, retryAfterMs(err));
       store.toast(err instanceof ApiError ? err.playerMessage : "Couldn't change Ready. Try again!", 'error');
     } finally {
-      // No spamming (§3): the button stays off for the server's minimum gap.
+      // No spamming: the button stays off for the server's minimum gap.
       setTimeout(() => setBusy(false), holdMs);
     }
   };

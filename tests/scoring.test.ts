@@ -1,5 +1,5 @@
-// Round scoring (plan §9 Points, Badges, Skip / kick, Match standings; §9.2
-// Team scoring), hand-computed. The sim-side metrics (effective damage, kill
+// Round scoring (points, badges, Skip / kick, match standings, team
+// scoring), hand-computed. The sim-side metrics (effective damage, kill
 // credit, sudden death, Skip) and team battles are tested in sim.test.ts.
 
 import { describe, expect, it } from 'vitest';
@@ -55,7 +55,7 @@ describe('config', () => {
   });
 });
 
-describe('place points and bonus maxima scale with the player count (§9 Points)', () => {
+describe('place points and bonus maxima scale with the player count', () => {
   it('free-for-all: 1st gets P − 1 down to 0 for last', () => {
     expect(placePointsTable(2)).toEqual([1, 0]);
     expect(placePointsTable(3)).toEqual([2, 1, 0]);
@@ -278,7 +278,7 @@ describe('match standings', () => {
   });
 });
 
-describe('team scoring (§9.2)', () => {
+describe('team scoring', () => {
   const st = (playerId: string, seat: number, teamId: number, livingCost: number, eliminatedAtTick: number | null) => ({
     playerId,
     seat,

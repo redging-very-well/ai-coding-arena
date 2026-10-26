@@ -1,4 +1,4 @@
-// "My team" (plan §12.1, §9.2 Team privacy): in team mode, each teammate's
+// "My team": in team mode, each teammate's
 // picked unit types as small cards, live, with ✓ submitted / picked / ready
 // ticks, their zone and how much they spent. Read-only: teammates see each
 // other's picks and placements but can't change them. Data comes only from
@@ -52,7 +52,7 @@ function Member({ m, phase, me, submitted, arena }: { m: TeamMemberPrivateDTO; p
       )}
       <div class="tm-cards">
         {m.selection.length === 0 && <span class="dim small">No units picked yet.</span>}
-        {/* Units first, then buildings (§12.5), each titled with its type. */}
+        {/* Units first, then buildings, each titled with its type. */}
         {[...m.selection].sort((a, b) => Number(groupOf(a.stats.type) === 'building') - Number(groupOf(b.stats.type) === 'building')).map((u) => (
           <span
             key={u.unitId}

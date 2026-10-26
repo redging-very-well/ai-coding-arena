@@ -1,4 +1,4 @@
-/* Pixel Clash shared theme (plan §12): dark retro arcade look.
+/* Pixel Clash shared theme: dark retro arcade look.
    "Press Start 2P" (SIL OFL 1.1, bundled from @fontsource/press-start-2p,
    latin subset) is for headings only; body text uses a readable sans.
    Import once per page:  import '../common/theme.css';  */
@@ -74,7 +74,7 @@ img.pixelated {
 .seat-6 { --seat: var(--seat-6); }
 .seat-7 { --seat: var(--seat-7); }
 
-/* Seat-number badge (1-8): colour is never the only cue (§12). */
+/* Seat-number badge (1-8): colour is never the only cue. */
 .seat-num {
   display: inline-grid;
   place-items: center;

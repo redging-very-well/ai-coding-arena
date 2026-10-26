@@ -1,4 +1,4 @@
-// MATCH_RESULTS on /play (plan §12.1): the player's own match awards
+// MATCH_RESULTS on /play: the player's own match awards
 // highlighted, then every award of the match with its winner(s), the stat and
 // the winner's best unit (sprite of a design revealed when it was fielded).
 

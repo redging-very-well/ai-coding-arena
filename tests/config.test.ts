@@ -28,7 +28,7 @@ describe('config', () => {
   });
 });
 
-describe('$10,000 redesign config keys (§6 coefficients, bounds and config keys)', () => {
+describe('$10,000 redesign config keys', () => {
   it('has the redesign economy, the element, accuracy and support constants and economyVersion 3', () => {
     const c = DEFAULT_CONFIG;
     expect(c.economyVersion).toBe(3);

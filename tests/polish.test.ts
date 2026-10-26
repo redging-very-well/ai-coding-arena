@@ -1,4 +1,4 @@
-// M7 polish (plan §12.2, §12.4): the DOM-free parts of sound (recipes,
+// M7 polish: the DOM-free parts of sound (recipes,
 // countdown beeps, shot pitch, rate limiting, remembered mute), battle effects
 // (shake, flashes, damage numbers, pooled particles), animation timing, the
 // replay controller, and the /admin → /screen remote (POST /admin/screen).
@@ -49,7 +49,7 @@ import { Client, WsRecorder, adminClient, bootServer, removeDir, tempDataDir } f
 // Sound decisions
 // ---------------------------------------------------------------------------
 
-describe('sound recipes (§12.4)', () => {
+describe('sound recipes', () => {
   it('has every effect, each a short, quiet, well-formed recipe', () => {
     const names: SfxName[] = ['place', 'remove', 'ready', 'allReady', 'beep', 'beepFinal', 'clash', 'shoot', 'swing', 'hit', 'bigHit', 'death', 'siren', 'victory', 'badge', 'wallHit', 'crumble', 'spawn'];
     for (const n of names) {
@@ -225,7 +225,7 @@ describe('audio unlock', () => {
   });
 });
 
-describe('battle effects (§12.2)', () => {
+describe('battle effects', () => {
   it('a big hit is more than 20% of max HP, and only big hits shake', () => {
     expect(BIG_HIT_FRACTION).toBe(0.2);
     expect(isBigHit(20, 100)).toBe(false);

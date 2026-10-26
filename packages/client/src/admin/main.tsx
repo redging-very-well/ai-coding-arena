@@ -1,4 +1,4 @@
-// Entry of /admin (plan §12.3).
+// Entry of /admin.
 
 import { render } from 'preact';
 import '../common/theme.css';

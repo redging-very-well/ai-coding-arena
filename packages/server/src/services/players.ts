@@ -1,4 +1,4 @@
-// Players (plan §4): create, login, seats, kick, PIN reset, key rotation.
+// Players: create, login, seats, kick, PIN reset, key rotation.
 
 import { randomBytes } from 'node:crypto';
 import { fail, ok, type LoginResponse, type PlayerDTO, type Result } from '@pixel-clash/shared';
@@ -7,7 +7,7 @@ import { hashPin, newApiKey, verifyPin } from './auth.js';
 import type { Game } from './game.js';
 import { newRoundState, type PlayerRecord } from './store.js';
 
-/** The most seats any config allows (§4: seats 0-7). The live limit is `config.match.maxPlayers`. */
+/** The most seats any config allows (seats 0-7). The live limit is `config.match.maxPlayers`. */
 export const MAX_SEATS = 8;
 export const NAME_RE = /^[A-Za-z0-9 _-]{1,16}$/;
 export const PIN_RE = /^\d{4}$/;
@@ -113,7 +113,7 @@ export class PlayersService {
     store.match.points[player.id] ??= 0;
     this.game.auth.registerKey(player);
     this.game.units.addTemplates(player.id);
-    // LOBBY: the draft teams are re-dealt for the new roster (§9.2).
+    // LOBBY: the draft teams are re-dealt for the new roster.
     this.game.teams.rebalance();
     store.save();
     if (this.game.teams.isBenched(player)) {
@@ -145,7 +145,7 @@ export class PlayersService {
     return ok({ player: toPlayerDTO(player), apiKey: player.apiKey });
   }
 
-  /** Admin: set a new PIN. Kills web sessions, keeps the API key (§4). */
+  /** Admin: set a new PIN. Kills web sessions, keeps the API key. */
   async resetPin(playerId: string, pin: unknown): Promise<Result<{ ok: true }>> {
     const p = this.get(playerId);
     if (!p) return fail('NOT_FOUND', 'No such player.');
@@ -170,7 +170,7 @@ export class PlayersService {
   }
 
   /**
-   * Kick (§4): immediate, except during BATTLE where it takes effect when the
+   * Kick: immediate, except during BATTLE where it takes effect when the
    * battle ends (the player's units keep fighting, then the player is removed
    * from the ranking).
    */
@@ -207,11 +207,11 @@ export class PlayersService {
     this.game.auth.endSessionsOf(p.id);
     this.game.auth.revokeKey(p.apiKey);
     this.game.notifier.playerRevoked(p.id);
-    // Kick frees the Claude seat (§11.2 c); closes their live terminal.
+    // Kick frees the Claude seat; closes their live terminal.
     this.game.claudeSeats.release(p);
     if (deleteData) {
       this.purge(p.id);
-      // Kick + delete: their Open Armory entries go too (a plain kick keeps them, §9.1).
+      // Kick + delete: their Open Armory entries go too (a plain kick keeps them).
       this.game.armory.removeCreator(p.id);
     } else {
       p.kicked = true;
@@ -219,10 +219,10 @@ export class PlayersService {
       delete store.match.perPlayer[p.id];
       delete store.match.zones[p.id];
     }
-    // LOBBY: re-deal the draft teams (§9.2). In a team match teams never
+    // LOBBY: re-deal the draft teams. In a team match teams never
     // change: the kicked member's slot stays as a hole.
     this.game.teams.rebalance();
-    // Zones depend on the active player count (§9.2): re-deal them so e.g.
+    // Zones depend on the active player count: re-deal them so e.g.
     // the last 2 free-for-all players get the Duel map (team mode: the kicked
     // member's zone stays empty). Placements are zone-local, so they stay valid.
     if (store.match.phase === 'PLACEMENT') {

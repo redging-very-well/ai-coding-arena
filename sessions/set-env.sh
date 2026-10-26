@@ -1,5 +1,5 @@
 #!/bin/sh
-# Write PIXEL_CLASH_URL, SEAT_SECRET and/or AGENT into sessions/.env (plan §11.1).
+# Write PIXEL_CLASH_URL, SEAT_SECRET and/or AGENT into sessions/.env.
 #
 #   PIXEL_CLASH_URL=http://192.168.8.10:8080 SEAT_SECRET=otter-lamp-quartz-ninety \
 #     sh sessions/set-env.sh sessions/.env PIXEL_CLASH_URL SEAT_SECRET

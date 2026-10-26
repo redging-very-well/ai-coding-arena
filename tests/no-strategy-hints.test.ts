@@ -1,4 +1,4 @@
-// Players discover tactics themselves (plan §17 "No strategy hints"): the text
+// Players discover tactics themselves: the text
 // players and their AI helper read states facts only, and lists everything a
 // unit's update() can read.
 

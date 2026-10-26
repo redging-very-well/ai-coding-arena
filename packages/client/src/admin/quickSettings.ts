@@ -1,4 +1,4 @@
-// Quick settings (plan §12.3 config editor): the high-level config knobs as a
+// Quick settings: the high-level config knobs as a
 // labelled form above the full JSON editor. DOM-free and tested
 // (tests/admin-quick-settings.test.ts).
 //
@@ -124,7 +124,7 @@ export const QUICK_GROUPS: QuickGroup[] = [
       { ...money, path: 'cost.speed', label: '$ per speed', help: 'Price of each px/tick of movement speed (towers have 0).', step: 0.5 },
       { ...money, path: 'cost.size', label: '$ per px size (above 6)', help: 'Price of each pixel of body radius above 6.' },
       { path: 'cost.curveK', label: 'Max-stat steepness k (maxed stat costs 1+k ×)', help: '0 = straight-line prices. With k = 1 (the default) a maxed stat costs 2× and a half-max stat 1.25×; k = 2 makes them 3× and 1.5×.', min: 0, max: 5, step: 0.25 },
-      // M8.8 (§6 M8.8 economy): the whole-unit factors and the support prices.
+      // M8.8: the whole-unit factors and the support prices.
       {
         path: 'cost.powerFactor',
         label: 'Tough-and-strong surcharge q',
@@ -155,7 +155,7 @@ export const QUICK_GROUPS: QuickGroup[] = [
     ],
   },
   {
-    // M8.5 (§5.2, §6, §9.3): wall and factory prices, their stat ranges, the minion and the factory caps.
+    // M8.5: wall and factory prices, their stat ranges, the minion and the factory caps.
     id: 'buildings',
     title: 'Walls & factories',
     blurb: 'Wall and factory prices, health ranges and what happens to factories.',
@@ -210,7 +210,7 @@ export const QUICK_GROUPS: QuickGroup[] = [
       { path: 'factory.maxAlivePerFactory', label: 'Minions alive per factory', help: 'A factory waits while this many of its minions are alive.', min: 1, step: 1, integer: true },
       { path: 'factory.maxAlivePerPlayer', label: 'Minions alive per player', help: 'All of a player’s factories together (also limited to 40 ÷ players).', min: 1, step: 1, integer: true },
       { path: 'factory.maxAlivePerBattle', label: 'Minions alive per battle', help: 'The most minions in the whole arena at once (keeps big battles smooth).', min: 1, step: 1, integer: true },
-      // M8.6 (§5.3): the four minion kinds (each must stay within the soldier bounds; prices follow).
+      // M8.6: the four minion kinds (each must stay within the soldier bounds; prices follow).
       ...(['grunt', 'archer', 'runner', 'brute'] as const).flatMap((k) => {
         const name = k[0]!.toUpperCase() + k.slice(1);
         return [
@@ -220,7 +220,7 @@ export const QUICK_GROUPS: QuickGroup[] = [
         ];
       }),
       { path: 'factory.minions.brute.wallDamageMultiplier', label: 'Brute wall damage', help: 'Brute hits on walls deal damage × this (1-5).', unit: '×', min: 1, max: 5, step: 0.5 },
-      // M8.8 (§5.5): the medic minion (never attacks; its heal and reach must stay within the heal support bounds).
+      // M8.8: the medic minion (never attacks; its heal and reach must stay within the heal support bounds).
       { path: 'factory.minions.medic.maxHealth', label: 'Medic health', help: "HP of a factory's medics (must stay within the soldier bounds).", min: 1, step: 5 },
       { path: 'factory.minions.medic.speed', label: 'Medic speed', help: 'Pixels per tick (60 ticks = 1 s).', unit: 'px/tick', min: 0.1, step: 0.1 },
       { path: 'factory.minions.medic.heal', label: 'Medic heal', help: 'HP one medic heal restores (within the heal support bounds; the 5%-per-second heal room still caps it).', unit: 'HP', min: 1, step: 5 },
@@ -228,7 +228,7 @@ export const QUICK_GROUPS: QuickGroup[] = [
     ],
   },
   {
-    // M8.8 (§5.4, §5.5, §9.4): how strong the elements, combos, splash and heals are (prices are under Costs).
+    // M8.8: how strong the elements, combos, splash and heals are (prices are under Costs).
     id: 'effects',
     title: 'Elements & support',
     blurb: 'How strong elements, combos, splash, misses and heals are (their prices are under Unit prices).',
@@ -255,7 +255,7 @@ export const QUICK_GROUPS: QuickGroup[] = [
     fields: [
       { ...tickSeconds, path: 'suddenDeath.startTick', label: 'Sudden death starts at', help: 'Seconds into the battle when the safe circle starts shrinking. Must be before the circle finishes shrinking (normally the end of the battle).', min: 0 },
       { path: 'suddenDeath.damagePctPerSecond', label: 'Damage outside the circle (% max HP / s)', help: 'Units outside the safe circle lose this share of their max HP every second.', unit: '%/s', min: 0, max: 100, step: 0.5 },
-      // Place points are a formula (1st gets players − 1 … last 0, §9 Points), not config.
+      // Place points are a formula (1st gets players − 1 … last 0), not config.
       { path: 'scoring.damageBonusMax', label: 'Max damage bonus (at 4 players)', help: 'Extra points for the top damage dealer; others get a share. Scaled × players/4.', unit: 'pts', min: 0, step: 1, integer: true },
       { path: 'scoring.valueBonusMax', label: 'Max value-destroyed bonus (at 4 players)', help: 'Extra points for destroying the most enemy value; others get a share. Scaled × players/4.', unit: 'pts', min: 0, step: 1, integer: true },
     ],
@@ -506,7 +506,7 @@ const TEMPLATE_LOOKS: Partial<Record<PreviewUnit['key'], { name: string; color: 
   basicFactory: { name: 'Basic Factory', color: '#C0A060', shape: 'square' },
 };
 
-/** The stat fields a design of this type sets (walls and factories leave the attack stats out, §5.2). */
+/** The stat fields a design of this type sets (walls and factories leave the attack stats out). */
 function ownStats(stats: CostStats): Record<string, unknown> {
   if (!isNonCombatBuilding(stats.type)) {
     // M8.8: a support is three contract fields in a design.
@@ -567,15 +567,15 @@ export interface PreviewUnit {
   template: boolean;
 }
 
-// The $10,000 redesign: the starter templates and the plan's Huge Tank (§6 reference units).
+// The $10,000 redesign: the starter templates and the reference Huge Tank.
 export const BASIC_SOLDIER: CostStats = { type: 'soldier', maxHealth: 1400, damage: 56, range: 40, speed: 1.5, attackCooldown: 60, size: 10 };
 export const BASIC_TOWER: CostStats = { type: 'tower', maxHealth: 1200, damage: 72, range: 140, speed: 0, attackCooldown: 45, size: 14 };
 export const BIG_TANK: CostStats = { type: 'soldier', maxHealth: 3600, damage: 80, range: 40, speed: 0.8, attackCooldown: 60, size: 20 };
-/** The wall and factory templates (§11) and the plan's Swarm Factory (§6). */
+/** The wall and factory templates and the reference Swarm Factory. */
 export const BASIC_WALL: CostStats = { type: 'wall', maxHealth: 3200, damage: 0, range: 0, speed: 0, attackCooldown: 60 };
 export const BASIC_FACTORY: CostStats = { type: 'factory', maxHealth: 360, damage: 0, range: 0, speed: 0, attackCooldown: 60, productionInterval: 600 };
 export const SWARM_FACTORY: CostStats = { ...BASIC_FACTORY, productionInterval: 300 };
-/** §6 reference units: the Mortar Tower and the damage-0 support body (Field Medic, War Drummer). */
+/** The Mortar Tower and the damage-0 support body (Field Medic, War Drummer). */
 export const MORTAR_TOWER: CostStats = { type: 'tower', maxHealth: 1000, damage: 80, range: 140, speed: 0, attackCooldown: 60, size: 14, splashRadius: 40 };
 export const SUPPORT_BODY: CostStats = { type: 'soldier', maxHealth: 800, damage: 0, range: 20, speed: 1.5, attackCooldown: 60, size: 10 };
 
@@ -599,11 +599,11 @@ export function previewUnits(cfg: GameConfig): PreviewUnit[] {
     { key: 'basicWall', label: 'Basic Wall (3,200 HP)', stats: BASIC_WALL, template: true },
     { key: 'basicFactory', label: 'Basic Factory (11 minions)', stats: BASIC_FACTORY, template: true },
     { key: 'swarmFactory', label: 'Swarm Factory (12 minions)', stats: SWARM_FACTORY, template: false },
-    // M8.6 (§6 Minion kinds): the Basic Factory building each other kind.
+    // M8.6: the Basic Factory building each other kind.
     { key: 'archerFactory', label: 'Archer Factory (11 archers)', stats: { ...BASIC_FACTORY, produces: 'archer' }, template: false },
     { key: 'runnerFactory', label: 'Runner Factory (11 runners)', stats: { ...BASIC_FACTORY, produces: 'runner' }, template: false },
     { key: 'bruteFactory', label: 'Brute Factory (11 brutes)', stats: { ...BASIC_FACTORY, produces: 'brute' }, template: false },
-    // M8.8 (§6 M8.8 reference units): an element, splash and the support kinds.
+    // M8.8: an element, splash and the support kinds.
     { key: 'fireSoldier', label: 'Fire Soldier', stats: { ...BASIC_SOLDIER, element: 'fire' }, template: false },
     { key: 'mortarTower', label: 'Mortar Tower (splash 40)', stats: MORTAR_TOWER, template: false },
     { key: 'fieldMedic', label: 'Field Medic (heal 96)', stats: { ...SUPPORT_BODY, support: { kind: 'heal', power: 96, range: 120 } }, template: false },

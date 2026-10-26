@@ -1,4 +1,4 @@
-// Factories and minions in the headless sim (plan §5.2, §9.3, M8.5):
+// Factories and minions in the headless sim (M8.5):
 // production timing and caps, hold, spawn spots, rally, the factory's death,
 // disabled factories, minion ids and AI, credit, elimination and values.
 
@@ -44,7 +44,7 @@ function maxAlive(frames: FrameDTO[], factoryId: string): number {
 const farEnemy = (): FakePlayerSpec => ({ playerId: 'b', seat: 1, zone: 'BR', units: [design('t', stats({ type: 'tower', damage: 5 }))], placements: [at(5, 5, 't')], brains: { t: idleBrain } });
 const rallyHome = scripted((self) => ({ action: 'rally', destination: { x: self.x - 60, y: self.y - 60 } }));
 
-describe('factory production (§5.2, §9.3 step 9b)', () => {
+describe('factory production', () => {
   it('spawns at exactly ticks I, 2I, … and stops at E; ids are `${factory}-mN`', async () => {
     const config = cfg({ ...noSD, factory: { maxAlivePerFactory: 8, maxAlivePerPlayer: 8 } });
     const { engine, done } = run(
@@ -239,7 +239,7 @@ describe('factory production (§5.2, §9.3 step 9b)', () => {
   });
 });
 
-describe('minion AI (§5.2)', () => {
+describe('minion AI', () => {
   const cfgF = DEFAULT_CONFIG;
   const mk = (over: Partial<SimUnit>): SimUnit => ({
     id: 'x', playerId: 'a', seat: 0, teamId: 0, unitId: 'u', stats: SOLDIER, cost: 92, type: 'soldier', radius: 10,
@@ -328,7 +328,7 @@ describe('minion AI (§5.2)', () => {
   });
 });
 
-describe('minions in the sim: walls and buildings in the way (§5.2)', () => {
+describe('minions in the sim: walls and buildings in the way', () => {
   it('break into an enemy boxed in by its own walls', async () => {
     const config = cfg(noSD, 3000);
     const ring = [[1, 1], [2, 1], [3, 1], [1, 2], [3, 2], [1, 3], [2, 3], [3, 3]].map(([c, r]) => at(c!, r!, 'w'));
@@ -369,7 +369,7 @@ describe('minions in the sim: walls and buildings in the way (§5.2)', () => {
   });
 });
 
-describe('credit, values and elimination with factories (§9.3)', () => {
+describe('credit, values and elimination with factories', () => {
   it("minion kills credit the factory's owner and its design (damage, KOs, value)", async () => {
     const config = cfg(noSD, 2000);
     const weak = stats({ type: 'soldier', maxHealth: 50, damage: 5 });
@@ -442,7 +442,7 @@ describe('credit, values and elimination with factories (§9.3)', () => {
   });
 });
 
-describe('factories that never build (§9.3 canMake)', () => {
+describe('factories that never build', () => {
   it('canMake = min(minionsLeft, floor((timer + ticksLeft − 1) / interval)); a covered factory counts an empty timer', () => {
     const f = { minionsLeft: 8, timer: 0, productionInterval: 600, noSpot: false };
     expect(canMakeOf(f, 5400)).toBe(8); // = E at the start

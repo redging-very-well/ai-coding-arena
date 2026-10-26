@@ -1,9 +1,9 @@
-// §7 step 6: hard guards on the stats read from a constructed unit.
+// Hard guards on the stats read from a constructed unit.
 //
 // Input is the JSON-copied bag of own data properties produced by step 5
 // (values are `unknown`: player code can set anything). No coercion: the string
 // "100" is STAT_WRONG_TYPE, not 100. Every problem found is reported (not just
-// the first), each as a §7 error object with code/field/value/allowed/message/fix.
+// the first), each as a error object with code/field/value/allowed/message/fix.
 
 import type { StatBounds } from './config.js';
 import {
@@ -35,7 +35,7 @@ export const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f-\u009f]/;
 
 export type StatsCheckResult =
-  /** `warnings`: W_STAT_IGNORED for fields this type doesn't use (§5.2), never stored. */
+  /** `warnings`: W_STAT_IGNORED for fields this type doesn't use, never stored. */
   | { ok: true; stats: StatsSnapshot; warnings: ValidationWarning[] }
   | { ok: false; errors: ValidationError[]; warnings: ValidationWarning[] };
 
@@ -132,7 +132,7 @@ function checkNumber(
   return value;
 }
 
-/** The fields each type must set (§5.2 stats table). */
+/** The fields each type must set. */
 const REQUIRED: Readonly<Record<UnitType, readonly string[]>> = {
   soldier: ['name', 'type', 'maxHealth', 'damage', 'range', 'speed', 'attackCooldown', 'color'],
   tower: ['name', 'type', 'maxHealth', 'damage', 'range', 'speed', 'attackCooldown', 'color'],
@@ -140,7 +140,7 @@ const REQUIRED: Readonly<Record<UnitType, readonly string[]>> = {
   factory: ['name', 'type', 'maxHealth', 'productionInterval', 'color'],
 };
 
-/** Type-specific `fix` for a missing field (§7 step 5). */
+/** Type-specific `fix` for a missing field. */
 function missingFix(type: UnitType | undefined, field: string, bounds: StatBounds): string {
   // The ranges come from the live bounds; the example is clamped into them.
   const range = (r: { min: number; max: number }, eg: number) =>
@@ -171,7 +171,7 @@ function ignored(field: string, type: UnitType, value: unknown): ValidationWarni
   };
 }
 
-/** Words players and Claude might use for a minion kind (§7 near-miss fix). */
+/** Words players and Claude might use for a minion kind. */
 const KIND_ALIASES: Readonly<Record<string, MinionKind>> = {
   minion: 'grunt', soldier: 'grunt', warrior: 'grunt', footman: 'grunt', robot: 'grunt', basic: 'grunt',
   bow: 'archer', bowman: 'archer', ranger: 'archer', shooter: 'archer', sniper: 'archer', ranged: 'archer', gunner: 'archer',
@@ -193,7 +193,7 @@ export function closestMinionKind(v: string): MinionKind | undefined {
 
 const KIND_LIST = MINION_KINDS.map((k) => `'${k}'`).join(', ');
 
-/** `produces` (§5.3, §7): a string naming one of the minion kinds. */
+/** `produces`: a string naming one of the minion kinds. */
 function checkProduces(errors: ValidationError[], value: unknown): MinionKind | undefined {
   if (typeof value !== 'string') {
     errors.push(
@@ -214,7 +214,7 @@ function checkProduces(errors: ValidationError[], value: unknown): MinionKind | 
   return undefined;
 }
 
-/** Words players and Claude might use for an element (§7 M8.8 near-miss fix). */
+/** Words players and Claude might use for an element. */
 const ELEMENT_ALIASES: Readonly<Record<string, Element>> = {
   none: 'normal', plain: 'normal', physical: 'normal', default: 'normal', basic: 'normal',
   flame: 'fire', flames: 'fire', burn: 'fire', burning: 'fire', fiery: 'fire', heat: 'fire', lava: 'fire', inferno: 'fire',
@@ -222,7 +222,7 @@ const ELEMENT_ALIASES: Readonly<Record<string, Element>> = {
   lightening: 'lightning', lighting: 'lightning', electric: 'lightning', electricity: 'lightning', shock: 'lightning', thunder: 'lightning', zap: 'lightning', storm: 'lightning', spark: 'lightning',
 };
 
-/** Words players and Claude might use for a support kind (§7 M8.8 near-miss fix). */
+/** Words players and Claude might use for a support kind. */
 const SUPPORT_ALIASES: Readonly<Record<string, SupportKind>> = {
   healing: 'heal', healer: 'heal', medic: 'heal', repair: 'heal', regen: 'heal', cure: 'heal', health: 'heal',
   speed: 'haste', fast: 'haste', swift: 'haste', quick: 'haste', rush: 'haste', hasten: 'haste',
@@ -251,7 +251,7 @@ export function closestSupportKind(v: string): SupportKind | undefined {
 const ELEMENT_LIST = ELEMENTS.map((k) => `'${k}'`).join(', ');
 const SUPPORT_LIST = SUPPORT_KINDS.map((k) => `'${k}'`).join(', ');
 
-/** `element` / `minionElement` (§5.4, §7 M8.8): a string naming one of the four elements. */
+/** `element` / `minionElement`: a string naming one of the four elements. */
 function checkElement(errors: ValidationError[], field: 'element' | 'minionElement', value: unknown): Element | undefined {
   const leave = field === 'element' ? 'or leave it out for a normal unit' : 'or leave it out for normal minions';
   if (typeof value !== 'string') {
@@ -279,7 +279,7 @@ const SUPPORT_EXAMPLE: Readonly<Record<SupportKind, { power: number; range: numb
   shield: { power: 25, range: 80, says: '25% less damage taken in an 80 px aura' },
 };
 
-/** `support` (§5.5, §7 M8.8): a string naming one support kind. */
+/** `support`: a string naming one support kind. */
 function checkSupportKind(errors: ValidationError[], value: unknown): SupportKind | undefined {
   if (typeof value !== 'string') {
     errors.push(wrongType('support', value, 'string', `Set this.support to one of ${SUPPORT_LIST} (text in quotes), or leave it out.`));
@@ -299,7 +299,7 @@ function checkSupportKind(errors: ValidationError[], value: unknown): SupportKin
   return undefined;
 }
 
-/** W_STAT_IGNORED with a type-specific fix (§5.6 per-type table). */
+/** W_STAT_IGNORED with a type-specific fix. */
 function ignoredWith(field: string, type: UnitType, value: unknown, why: string): ValidationWarning {
   return {
     code: 'W_STAT_IGNORED',
@@ -310,11 +310,11 @@ function ignoredWith(field: string, type: UnitType, value: unknown, why: string)
   };
 }
 
-/** The M8.8 fields every type may carry (§5.6). */
+/** The M8.8 fields every type may carry. */
 const SUPPORT_FIELDS = ['support', 'supportPower', 'supportRange'] as const;
 
 /**
- * Run the §7 step-6 guards on raw stats, per type (§5.2). On success returns
+ * Run the step-6 guards on raw stats, per type. On success returns
  * a frozen `StatsSnapshot` with the trimmed name and the size and shape filled
  * in; walls and factories get damage, range, speed and attackCooldown 0 and
  * their fixed size (20 / 18), and only factories keep `productionInterval`.
@@ -403,7 +403,7 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
   let productionInterval: number | undefined;
   let produces: MinionKind | undefined;
   let burst: number | undefined;
-  // M8.8 (§5.6): walls and factories get 'normal', 0 and null.
+  // M8.8: walls and factories get 'normal', 0 and null.
   let element: Element | undefined = 'normal';
   let splashRadius: number | undefined = 0;
   let support: SupportSpec | null | undefined = null;
@@ -459,7 +459,7 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
           })
         : undefined;
       produces = has('produces') ? checkProduces(errors, raw.produces) : DEFAULT_MINION_KIND;
-      // M8.8 (§5.6): the minions' element; a medic factory's is ignored (medics never attack).
+      // M8.8: the minions' element; a medic factory's is ignored (medics never attack).
       if (has('minionElement')) {
         if (produces === 'medic') {
           warnings.push(ignoredWith('minionElement', t, raw.minionElement, "medics never attack, so their element does nothing and isn't priced"));
@@ -483,7 +483,7 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
       }
       if (has('minionElement')) warnings.push(ignoredWith('minionElement', t, raw.minionElement, 'only factories build minions'));
     }
-    // M8.8 (§5.6): walls and factories don't attack or support.
+    // M8.8: walls and factories don't attack or support.
     if (has('element')) {
       warnings.push(
         ignoredWith('element', t, raw.element, t === 'factory' ? "a factory can't attack: use this.minionElement to give its minions an element" : "a wall can't attack"),
@@ -537,7 +537,7 @@ export function checkStats(raw: Readonly<Record<string, unknown>>, bounds: StatB
       }
       if (has('minionElement')) warnings.push(ignoredWith('minionElement', type, raw.minionElement, 'only factories build minions; use this.element for this unit'));
     }
-    // M8.8 (§5.4, §5.5): element, splash and support.
+    // M8.8: element, splash and support.
     element = has('element') ? checkElement(errors, 'element', raw.element) : 'normal';
     splashRadius = has('splashRadius')
       ? checkNumber(errors, 'splashRadius', raw.splashRadius, bounds.splashRadius, {

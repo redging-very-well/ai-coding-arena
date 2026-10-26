@@ -1,4 +1,4 @@
-// The /setup checklist (plan §11.1, §15). DOM-free; ticks are kept per
+// The /setup checklist. DOM-free; ticks are kept per
 // browser in localStorage by the page.
 
 export interface ChecklistItem {

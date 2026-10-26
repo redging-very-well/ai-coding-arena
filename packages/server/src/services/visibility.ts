@@ -1,8 +1,8 @@
-// Per-recipient projections (plan §3 privacy). EVERY response and WS message
+// Per-recipient projections. EVERY response and WS message
 // that carries game data is built here. Before START nobody but the owner
 // (and the facilitator's overview) sees a player's units, selection,
 // placement or zone; after START the reveal carries only the fielded types.
-// Team mode (§9.2) adds one relation: while a team match runs, teammates see
+// Team mode adds one relation: while a team match runs, teammates see
 // each other's selected types (cards, never source), zones and placements
 // live (`me.team` / `private.team`, built by TeamsService.privateTeam).
 // The ranking, points of the current battle and reports are only visible once
@@ -49,7 +49,7 @@ export class VisibilityService {
       active: g.players.isActive(p),
     };
     if (g.store.match.pendingKicks.includes(p.id)) dto.leaving = true;
-    // Team membership is public (§3); in LOBBY it is the draft.
+    // Team membership is public; in LOBBY it is the draft.
     const teamId = g.teams.teamIdOf(p.id);
     if (teamId !== undefined) dto.teamId = teamId;
     if (g.teams.isBenched(p)) dto.benched = true;
@@ -57,7 +57,7 @@ export class VisibilityService {
   }
 
   /**
-   * Match standings (§9): total points, then total match damage, then a shared
+   * Match standings: total points, then total match damage, then a shared
    * place. `exclude` drops players before ranking (kicked during a battle), so
    * the places of the rest have no gaps.
    */
@@ -85,7 +85,7 @@ export class VisibilityService {
   }
 
   /**
-   * The match awards (§9 Match awards), MATCH_RESULTS only (undefined in any
+   * The match awards, MATCH_RESULTS only (undefined in any
    * other phase). A winner kicked since is left out (an award left without
    * winners goes).
    */
@@ -98,7 +98,7 @@ export class VisibilityService {
 
   /**
    * The owner-only `me` block. `team` (teammates' live selection, zones and
-   * placements, §9.2 Team privacy) is included unless `withTeam` is false: the
+   * placements) is included unless `withTeam` is false: the
    * WS `state` push leaves it out (it travels in `private`, debounced).
    */
   me(playerId: string, withTeam = true): MyStateDTO | undefined {
@@ -191,7 +191,7 @@ export class VisibilityService {
     return out;
   }
 
-  /** Facilitator overview: everything, including sources (§12.3 "show details"). */
+  /** Facilitator overview: everything, including sources. */
   adminOverview(): AdminOverviewDTO {
     const g = this.game;
     const m = g.store.match;
@@ -224,7 +224,7 @@ export class VisibilityService {
       sandboxMode: g.config.sandbox.mode,
       setup: g.teams.setupDTO(),
       armory: g.armory.adminList(),
-      // M8.8 (§6 migration): old economy overrides dropped at boot (the banner).
+      // M8.8: old economy overrides dropped at boot (the banner).
     };
   }
 }

@@ -1,8 +1,7 @@
-// Balance (plan §14 balance.test.ts, §6 "no single archetype dominates",
-// §9 sudden death) for the $10,000 redesign (2026-10-24): $10,000 archetype
+// Balance ("no single archetype dominates", sudden death) for the $10,000 redesign (2026-10-24): $10,000 archetype
 // armies (12 fighters at most, the copy ramp, the redesign's prices and
 // mechanics) with "chase nearest", focus-fire and backline-diver bots fight
-// headless battles on real §9.2 maps with the DEFAULT config. 51 archetypes: the classic six, the building,
+// headless battles on real maps with the DEFAULT config. 51 archetypes: the classic six, the building,
 // minion-kind, specialist, element/support and template armies refit to the
 // new economy ("fill" parts and padding: helpers/balance.ts), the padded
 // one-design soldiers, the combo armies (kindle, brittle, overload), five
@@ -23,8 +22,8 @@
 //     Ring 8 free-for-alls.
 //
 // 8 battles per pair by default (one seed); BALANCE_FULL=1 plays both seeds
-// (16 per pair, what docs/balance.md records). `npm run balance` checks the
-// same round-robin rules with early stopping (docs/balance.md "Fast balance runs").
+// (16 per pair). `npm run balance` checks the same round-robin rules with
+// early stopping.
 
 import { describe, expect, it } from 'vitest';
 import { checkStats, computeCost, mapFor, type MapStyle, type StatsSnapshot } from '@pixel-clash/shared';
@@ -77,7 +76,7 @@ const BATTLE_END = BALANCE_CONFIG.timers.battleTicks;
 /** The most of the free-for-all battles any one army may win (a 1st shared by k armies counts 1/k). */
 const FFA_WIN_SHARE_CAP = 0.5;
 /**
- * Known dominance in the free-for-alls, recorded in docs/balance.md (watch items),
+ * Known dominance in the free-for-alls (watch items),
  * capped at the measured number so it can only get better. No new key may be added.
  */
 const DOMINANCE_EXCEPTIONS: Record<string, { ffaWinShareCap?: number }> = {
@@ -142,7 +141,7 @@ describe('the archetypes are legal armies ($10,000 budget with the copy ramp, $3
     // armyCost prices the copy ramp (copies of one design beyond the 3rd cost more; walls never).
     expect(armyCost(a)).toBeLessThanOrEqual(caps.budget);
     expect(armyCost(a)).toBeGreaterThan(caps.budget * 0.7); // nobody is badly handicapped by leftover money
-    // §5.2 copy caps: ≤ 12 fighters, of which ≤ 5 factories, plus ≤ 16 walls; at least one fighter.
+    // ≤ 12 fighters, of which ≤ 5 factories, plus ≤ 16 walls; at least one fighter.
     expect(armyCopies(a, 'fighters')).toBeLessThanOrEqual(caps.maxCopies);
     expect(armyCopies(a, 'fighters')).toBeGreaterThan(0);
     expect(armyCopies(a, 'factories')).toBeLessThanOrEqual(caps.maxFactoryCopies);
@@ -167,7 +166,7 @@ describe('the archetypes are legal armies ($10,000 budget with the copy ramp, $3
     expect(FACTORY_KEYS.length).toBeGreaterThanOrEqual(8);
   });
 
-  it('the units are the §6 reference units at today\'s prices', () => {
+  it('the units are the reference units at today\'s prices', () => {
     expect(unitCost('soldier')).toBe(807);
     expect(unitCost('tower')).toBe(1200);
     expect(unitCost('tank')).toBe(1386);
@@ -191,14 +190,14 @@ describe('the archetypes are legal armies ($10,000 budget with the copy ramp, $3
     expect(armyCost(padded)).toBeGreaterThan(0.97 * BALANCE_CONFIG.caps.budget);
   });
 
-  it('the buildings are the §6 reference buildings', () => {
+  it('the buildings are the reference buildings', () => {
     expect(unitCost('wall')).toBe(149);
     expect(unitCost('factory')).toBe(2194);
     expect(unitCost('swarmFactory')).toBe(2371);
   });
 });
 
-describe('round robin: no archetype dominates (§6, §14)', () => {
+describe('round robin: no archetype dominates', () => {
   it(
     'the full matrix (51 archetypes): nobody beats everyone, everyone beats and loses to someone, ≤ 70% with the bricks key and one capped watch item',
     async () => {
@@ -214,7 +213,7 @@ describe('round robin: no archetype dominates (§6, §14)', () => {
       for (const w of Object.values(WATCH_ITEMS)) expect(w.roundRobinWinCap).toBeLessThanOrEqual(0.75);
       // Walls can't win on their own: no battle was won by a side with only walls left.
       expect(results.filter((r) => r.wallOnlyWins > 0).map((r) => `${r.a} vs ${r.b}`)).toEqual([]);
-      // The shape recorded in docs/balance.md: walls stop melee, range and minions break walls.
+      // The expected shape: walls stop melee, range and minions break walls.
       expect(beats(m.get('bricks')!.get('tanks')!)).toBe(true);
       expect(beats(m.get('turtle')!.get('templates')!)).toBe(true);
       expect(beats(m.get('tanks')!.get('turtle')!)).toBe(false);
@@ -396,7 +395,7 @@ describe('burst: saving runners up pays (M8.6 stated outcome)', () => {
   );
 });
 
-/** Every style at its largest arena (§14): Ring 8, Lanes 8, Islands 8 at 1200, plus the 2-4 player styles at 800. */
+/** Every style at its largest arena: Ring 8, Lanes 8, Islands 8 at 1200, plus the 2-4 player styles at 800. */
 const TOWER_SITES: Array<[MapStyle, number]> = [
   ['duel', 2],
   ['triangle', 3],
@@ -411,7 +410,7 @@ const TOWER_PAIRS: Array<[string, string]> = [
   ['snipers', 'snipers'],
 ];
 
-describe('all-tower armies interact before the 120 s end: sudden death bites (§9)', () => {
+describe('all-tower armies interact before the 120 s end: sudden death bites', () => {
   for (const [style, players] of TOWER_SITES) {
     it(
       `${style} ${players} (arena ${mapFor(style, players).width})`,
@@ -456,7 +455,7 @@ const BUILDING_PAIRS: Array<[string, string]> = [
   ['snipewall', 'bunker'],
 ];
 
-describe('factories that never build can\'t turtle (§9.3 canMake)', () => {
+describe('factories that never build can\'t turtle', () => {
   it(
     'walls + holding Fortress Factories never win and are always eliminated, even with nobody reaching them',
     async () => {
@@ -518,7 +517,7 @@ describe('all-building armies can\'t win by turtling: sudden death and eliminati
 
 describe('wall fortress vs soldier rush (stated expected outcomes, M8.5)', () => {
   it(
-    'the rush beats the open §14 fortress (a U of 10 walls) at least 3 in 4; the sealed fortress holds the rush',
+    'the rush beats the open fortress (a U of 10 walls) at least 3 in 4; the sealed fortress holds the rush',
     async () => {
       let open = 0;
       let sealed = 0;
@@ -618,7 +617,7 @@ describe('2-team Lanes with building armies (M8.5)', () => {
   });
 });
 
-describe('Ring 8 free-for-all over zone rotations (§14)', () => {
+describe('Ring 8 free-for-all over zone rotations', () => {
   it(
     'every army plays from every zone; no zone index wins far more often than the others',
     async () => {

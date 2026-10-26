@@ -1,4 +1,4 @@
-// Sandbox entry point: pick the RunnerFactory for `config.sandbox.mode` (§8).
+// Sandbox entry point: pick the RunnerFactory for `config.sandbox.mode`.
 
 import type { SandboxMode } from '@pixel-clash/shared';
 import { createInprocRunnerFactory } from './inprocRunner.js';
@@ -14,7 +14,7 @@ export { createSplitRunner, needsSplit } from './splitRunner.js';
 
 /**
  * The factory for a sandbox mode. 'inproc-unsafe' needs `unsafe: true` (the
- * server passes it only with `--unsafe`). 'process' is the §8 fallback, which
+ * server passes it only with `--unsafe`). 'process' is the fallback, which
  * is not built because isolated-vm passed the M0 check.
  */
 export function createRunnerFactory(mode: SandboxMode, opts: { unsafe?: boolean } = {}): RunnerFactory {

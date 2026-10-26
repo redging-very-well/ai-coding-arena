@@ -1,4 +1,4 @@
-// "Top damage" units of a round (plan §9 Results, §12.1, §12.2), DOM-free:
+// "Top damage" units of a round, DOM-free:
 // the text lines, the player's own highlight and the fallback look. Shared by
 // /screen (RESULTS card), /play (RESULTS and Past battles).
 

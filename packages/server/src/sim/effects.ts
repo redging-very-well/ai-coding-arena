@@ -1,5 +1,4 @@
-// Elements and splash in the sim (plan §5.4, §9.4 Hit pipeline, Fire: burn,
-// Ice: freeze, M8.8).
+// Elements and splash in the sim (M8.8).
 //
 // Every landed hit of a tick goes through `HitPipeline.land`, in the engine's
 // seat → instanceId → projectile id order (`resolveHits`). For a hit by
@@ -41,7 +40,7 @@ export function emptySplit(): DamageSplit {
 }
 
 /**
- * A body's tempo this tick (§9.4 Ice: freeze): 1 normally, × (1 − slowPct%)
+ * A body's tempo this tick (freeze): 1 normally, × (1 − slowPct%)
  * while frozen, × (1 + haste%) while hasted. It scales the move step, the
  * cooldown recovery and a factory's production timer.
  */
@@ -52,17 +51,17 @@ export function tempoOf(u: Pick<SimUnit, 'frozen' | 'aura'>, config: Pick<GameCo
   return t;
 }
 
-/** Bodies that can burn, freeze, get zapped and splashed: everything but walls (§9.4 interactions). */
+/** Bodies that can burn, freeze, get zapped and splashed: everything but walls. */
 export function takesEffects(u: Pick<SimUnit, 'type'>): boolean {
   return u.type !== 'wall';
 }
 
-/** Bodies that can be healed and get auras: soldiers, towers and minions (§5.5). */
+/** Bodies that can be healed and get auras: soldiers, towers and minions. */
 export function isSupportable(u: Pick<SimUnit, 'type'>): boolean {
   return u.type === 'soldier' || u.type === 'tower' || u.type === 'minion';
 }
 
-/** Whether a heal on this body would do something (§5 rule 4): hurt with heal room left, or burning, or frozen. */
+/** Whether a heal on this body would do something: hurt with heal room left, or burning, or frozen. */
 export function needsHealing(u: Pick<SimUnit, 'hp' | 'maxHp' | 'healRoom' | 'burns' | 'frozen'>): boolean {
   return (u.burns?.length ?? 0) > 0 || (u.frozen ?? 0) > 0 || (u.hp < u.maxHp && (u.healRoom ?? 0) > 0);
 }
@@ -76,7 +75,7 @@ export function burningTicks(u: Pick<SimUnit, 'burns'>, tick: number, pulseTicks
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 
-/** A body's `status` in the views (§5 StatusView), as of the start of the tick. */
+/** A body's `status` in the views, as of the start of the tick. */
 export function statusOf(u: SimUnit, tick: number, config: Pick<GameConfig, 'elements'>): StatusView {
   let burnLeft = 0;
   for (const b of u.burns ?? []) burnLeft += b.pool;
@@ -93,7 +92,7 @@ export function statusOf(u: SimUnit, tick: number, config: Pick<GameConfig, 'ele
   };
 }
 
-/** Above this many bodies, splash and zap queries go through a 40 px spatial hash (§9.4 Performance). */
+/** Above this many bodies, splash and zap queries go through a 40 px spatial hash. */
 export const EFFECT_HASH_MIN_BODIES = 64;
 const HASH_CELL = 40;
 
@@ -179,7 +178,7 @@ export class HitPipeline {
     private readonly index: BodyIndex,
   ) {}
 
-  /** Land one main hit (§9.4 Hit pipeline steps 1-7). */
+  /** Land one main hit. */
   land(h: LandedHit): void {
     const T = h.target;
     const A = h.attacker;
@@ -235,7 +234,7 @@ export class HitPipeline {
   }
 
   /**
-   * Redesign (§9.4 Accuracy): a missed ranged shot lands on the ground where
+   * Redesign: a missed ranged shot lands on the ground where
    * its target was at fire time. No direct hit and no lightning; its splash
    * still hits every living enemy body (the old target too) whose edge is
    * within the splash radius of that spot, with its fire or ice.
@@ -287,12 +286,12 @@ export class HitPipeline {
       ...(combo.name ? { combo: combo.name } : {}),
     });
     if (dealtAs === 'shatter') this.recorder.event({ type: 'shatter', id: T.id, amount: round2(hit.dealt) });
-    // Status from the pre-shatter damage (§9.4 step 5).
+    // Status from the pre-shatter damage.
     if (h.element === 'fire' && A) this.addBurn(T, A, (d * E.fire.burnPct) / 100);
     else if (h.element === 'ice') T.frozen = E.ice.ticks;
   }
 
-  /** A new fire hit from A's owner on T: pool += amount, pulses reset, the phase kept (§9.4 Fire: burn). */
+  /** A new fire hit from A's owner on T: pool += amount, pulses reset, the phase kept (burn). */
   private addBurn(T: SimUnit, A: SimUnit, amount: number): void {
     if (!(amount > 0)) return;
     const pulses = this.config.elements.fire.pulses;
@@ -305,7 +304,7 @@ export class HitPipeline {
       return;
     }
     const fresh: BurnRecord = { ownerId: A.playerId, seat: A.seat, pool: amount, pulsesLeft: pulses, nextPulseTick: this.tick + this.config.elements.fire.pulseTicks, source: A };
-    // Kept in seat order: pulses of different owners land in seat order (§9.4 step 7c).
+    // Kept in seat order: pulses of different owners land in seat order.
     let i = burns.length;
     while (i > 0 && burns[i - 1]!.seat > fresh.seat) i--;
     burns.splice(i, 0, fresh);
@@ -367,7 +366,7 @@ export function attackElement(u: Pick<SimUnit, 'stats'>): Element {
 }
 
 /**
- * Redesign synergies (§5.4): kindle, a burning body takes +kindlePct% from
+ * Redesign synergies: kindle, a burning body takes +kindlePct% from
  * every hit that isn't fire; brittle, a frozen body takes +brittlePct% from
  * every hit that isn't ice or fire (a fire hit shatters it instead). Burn
  * pulses never get either. Read before the hit's own status lands.

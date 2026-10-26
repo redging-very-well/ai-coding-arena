@@ -1,4 +1,4 @@
-// The sandbox Runner interface (plan §8), shared by every sandbox mode:
+// The sandbox Runner interface, shared by every sandbox mode:
 //   - ivmRunner     (isolated-vm, the default; one isolate per player per battle)
 //   - inprocRunner  (node:vm, dev/tests only, refused at startup without --unsafe)
 //   - processRunner (child_process fallback; only built if isolated-vm fails)
@@ -24,7 +24,7 @@
 // called again.
 //
 // Data crossing the boundary is plain JSON (one copy each way per tick per
-// player, §8). Never pass functions, class instances or host references.
+// player). Never pass functions, class instances or host references.
 
 import type {
   OtherView,
@@ -45,17 +45,17 @@ export interface RunnerPlayer {
   seat: number;
   /**
    * PRNG seed for the in-sandbox `Math.random` replacement:
-   * `battleSeed + seat` (§8). Must be an integer.
+   * `battleSeed + seat`. Must be an integer.
    */
   seed: number;
 }
 
 /** One validated design the player fields this battle (≤ 3 per player). */
 export interface RunnerUnitDesign {
-  /** Design id (§7). `spawn` refers to designs by this id. */
+  /** Design id. `spawn` refers to designs by this id. */
   unitId: string;
   /**
-   * The stored CJS output of the validator's transpile step (§7 step 2), i.e.
+   * The stored CJS output of the validator's transpile step, i.e.
    * `StoredUnit.compiledJs`. The runner wraps it as
    * `(function(module, exports){ … })` and reads `module.exports.default`,
    * exactly like validation step 4.
@@ -63,12 +63,12 @@ export interface RunnerUnitDesign {
   compiledJs: string;
   /**
    * The frozen stats snapshot from validation. Informational for the runner
-   * (combat stats are owned by the sim and never read back from the sandbox,
-   * §5 rule 1); useful for error messages and reports.
+   * (combat stats are owned by the sim and never read back from the sandbox);
+   * useful for error messages and reports.
    */
   stats: StatsSnapshot;
   /**
-   * Open Armory (§9.1): this design is a borrowed frozen copy of another
+   * Open Armory: this design is a borrowed frozen copy of another
    * player's unit. `createBattleRunners` runs it in its OWN sandbox (never
    * sharing globals or prototypes with the borrower's code), loaded under the
    * creator's `sourceUnitId`, and its views use the creator's id as its
@@ -89,7 +89,7 @@ export interface RunnerLimits {
    * If a tick has not returned after hardTimeoutMs + disposeGraceMs (default
    * 10 ms) of the sandbox's CPU time, the runner disposes the sandbox and
    * reports status 'crashed' (e.g. a microtask loop that the timeout didn't
-   * interrupt, §8). A sandbox process that was merely not scheduled is not
+   * interrupt). A sandbox process that was merely not scheduled is not
    * killed (see IvmSession.withDeadline).
    */
   disposeGraceMs: number;
@@ -137,7 +137,7 @@ export interface RunnerFactory {
 
 /**
  * Everything one player's sandbox needs for one tick. Built by the sim from
- * the start-of-tick state (after cooldowns were decremented, §9 tick order).
+ * the start-of-tick state (after cooldowns were decremented).
  *
  * Per-instance views: for each `self` in `selves` the harness calls
  *     unit.update(self, enemies, allies, world)
@@ -148,7 +148,7 @@ export interface RunnerFactory {
  *               (filtered by `id !== self.id`),
  *   - `world`   is a fresh copy of `world`.
  * "Fresh" means every update() call gets its own deep copies, so one unit
- * mutating its inputs can never affect another unit (§5 rule 3).
+ * mutating its inputs can never affect another unit.
  * The shared lists are sent once per tick instead of once per instance to
  * keep the JSON payload small (up to 12 own units × 36 others).
  */
@@ -157,7 +157,7 @@ export interface TickInput {
   tick: number;
   /**
    * Sim time in ms (tick * 1000 / 60). Inside the sandbox `Date.now()` returns
-   * this value, so player code is deterministic (§8).
+   * this value, so player code is deterministic.
    */
   nowMs: number;
   /**
@@ -177,7 +177,7 @@ export interface TickInput {
   /** The world view; `myCorner` is this player's zone centre this round. */
   world: WorldView;
   /**
-   * §5.3 updateMinion(): the views of the living minions whose factory is in
+   * updateMinion(): the views of the living minions whose factory is in
    * `selves` and has an updateMinion() method (SpawnResult.hasMinion), sorted
    * by instanceId. Each carries `minion` (MinionView, with its factoryId). The
    * harness runs the factory's updateMinion() once for each, in the same call
@@ -195,7 +195,7 @@ export interface TickInput {
  * from the sandbox's JSON output and is NOT validated beyond being JSON:
  * it may be `undefined` (returned nothing), a well-formed `Action`, or any
  * malformed value. The sim's action validator (sim/actions.ts) turns
- * anything that isn't a legal Action into idle (§5 rule 4).
+ * anything that isn't a legal Action into idle.
  *
  * (A returned Promise or other non-JSON value arrives as `{}` or undefined
  * after JSON serialization; the harness may also replace it with
@@ -213,7 +213,7 @@ export interface UnitActionOutput {
 
 /**
  * An instance's update() threw. The unit idles this tick and the sim adds
- * one strike to it (§8 table).
+ * one strike to it.
  */
 export interface UnitErrorOutput {
   instanceId: string;
@@ -227,12 +227,12 @@ export interface UnitErrorOutput {
 }
 
 export type UnitOutput = (UnitActionOutput | UnitErrorOutput) & {
-  /** §5.3: factories with updateMinion() only: the time its updateMinion() calls took this tick, in ms (harness-measured). */
+  /** Factories with updateMinion() only: the time its updateMinion() calls took this tick, in ms (harness-measured). */
   mms?: number;
 };
 
 /**
- * §5.3: what a factory's updateMinion() returned for one of its minions
+ * What a factory's updateMinion() returned for one of its minions
  * (`factoryId`). An action of undefined (returned nothing, null, or a
  * Promise) means "use the built-in minion logic"; an error is reported on
  * the factory and the minion also uses the built-in logic this tick.
@@ -249,12 +249,12 @@ export function isUnitError(o: UnitOutput): o is UnitErrorOutput {
  * Overall status of one player's tick.
  *  - 'ok'         `__tick` returned in time with parseable output.
  *  - 'timeout'    `__tick` exceeded hardTimeoutMs and was terminated. `outputs`
- *                 is EMPTY (all the player's units idle this tick, §8);
+ *                 is EMPTY (all the player's units idle this tick);
  *                 `culprit` names the instance that was running. The sandbox
  *                 is still usable.
  *  - 'bad-output' `__tick` returned non-JSON or a non-array (the harness was
  *                 tampered with). `outputs` is empty: the whole tick idles and
- *                 the sim records a player strike (§8 hardening).
+ *                 the sim records a player strike.
  *  - 'crashed'    out of memory, isolate died, the tick overran
  *                 hardTimeoutMs + disposeGraceMs, or the runner was already
  *                 disposed. The runner has disposed itself; every later tick()
@@ -277,7 +277,7 @@ export interface TickResult {
   /** Wall time of the whole `__tick` call as seen by the host, in ms. */
   elapsedMs: number;
   /**
-   * A slow strike for the player (§8): elapsedMs > softTimeoutMs AND the
+   * A slow strike for the player: elapsedMs > softTimeoutMs AND the
    * units' own measured time (sum of `ms`, inside the isolate) is too, so a
    * busy host alone never gives strikes.
    */
@@ -299,19 +299,19 @@ export interface TickResult {
    * status 'timeout' only: the sandbox process was frozen (not scheduled by
    * the OS or the hypervisor) for most of the tick, so the timeout is the
    * host's fault, not the player's code. The tick still idles, but nobody gets a
-   * strike and it counts toward no timeout limit (§8: "one stall can be the
-   * host").
+   * strike and it counts toward no timeout limit (one stall can be the
+   * host).
    */
   hostStall?: boolean;
   /**
    * Number of output entries dropped as forged or duplicate. > 0 means the
-   * sim records a player strike (§8 hardening rules).
+   * sim records a player strike.
    */
   forged: number;
   /** Diagnostic text for 'bad-output' / 'crashed' (e.g. "Array buffer allocation failed"). */
   detail?: string;
   /**
-   * status 'ok' only (§5.3): what the factories' updateMinion() returned, at
+   * status 'ok' only: what the factories' updateMinion() returned, at
    * most one entry per minion listed in `TickInput.minions`, sorted by
    * instanceId. Absent when no minion code ran.
    */
@@ -329,7 +329,7 @@ export interface TickResult {
 // ---------------------------------------------------------------------------
 
 export type SpawnResult =
-  /** hasMinion (§5.3): the copy has an updateMinion() method (absent = none). */
+  /** hasMinion: the copy has an updateMinion() method (absent = none). */
   | { ok: true; hasMinion?: true }
   | {
       ok: false;
@@ -357,14 +357,14 @@ export interface PlayerRunner {
 
   /**
    * Construct one copy of design `unitId` inside the sandbox and register it
-   * under `instanceId` (§8 `__spawn`). The constructed object's own stats are
+   * under `instanceId`. The constructed object's own stats are
    * ignored by combat (the sim uses the snapshot); only its update() and any
    * extra state on `this` matter. A failed spawn means the sim treats that
    * instance as disabled for the battle (it still stands and can be hit).
    */
   spawn(instanceId: string, unitId: string): Promise<SpawnResult>;
 
-  /** Run one tick for this player (§8 `__tick`). Never rejects. */
+  /** Run one tick for this player. Never rejects. */
   tick(input: TickInput): Promise<TickResult>;
 
   /** Release the sandbox. Idempotent. */

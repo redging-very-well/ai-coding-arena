@@ -1,11 +1,11 @@
-// "My Units" (plan §12.1, §12.5): the roster as cards in two sections,
+// "My Units": the roster as cards in two sections,
 // Units (soldiers) and Buildings (towers, walls, factories). In PLAN a tap
 // selects a card (up to 4 of each group; a 5th tap in a group shakes the card
 // with "4 buildings max"). Outside PLAN the cards are read-only and the status
-// line explains when Claude can submit. With Open Armory on (§9.1) a second
+// line explains when Claude can submit. With Open Armory on a second
 // tab "Armory" lists other players' units named "Ogre (Ninja Sam)", grouped
 // the same way and selectable in the same pools. With "Walls allowed" off
-// (§9.1b) wall cards are greyed with "Walls are off this match" and can't be picked.
+// wall cards are greyed with "Walls are off this match" and can't be picked.
 
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { groupOf, type Phase, type UnitCardDTO, type UnitGroup } from '@pixel-clash/shared';
@@ -94,7 +94,7 @@ export function Roster(props: { phase: Phase }) {
   const counts = pickCounts(selection, typeOf);
   const full = counts.unit >= limits.unit && counts.building >= limits.building;
   const overCap = planning ? overCapText(counts, limits) : null;
-  // "Walls allowed" (§9.1b): fixed from Start match; the LOBBY draft is not shown here.
+  // "Walls allowed": fixed from Start match; the LOBBY draft is not shown here.
   const wallsAllowed = props.phase === 'LOBBY' || st.game?.match?.wallsAllowed !== false;
   const offNote = (u: UnitCardDTO) => (isWallOff(u, wallsAllowed) ? WALLS_OFF_NOTE : undefined);
 

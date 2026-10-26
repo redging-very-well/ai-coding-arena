@@ -1,4 +1,4 @@
-// Wall steering (plan §9.3): how soldiers and minions get around walls without
+// Wall steering: how soldiers and minions get around walls without
 // pathfinding. Deterministic, no PRNG.
 //
 // A body of radius r at p moves toward dest with step L = min(speed, |dest − p|):
@@ -183,8 +183,8 @@ export interface SteerResult {
 
 /**
  * Whether a body of radius `r` can move in a straight line from `p` to `q`
- * without entering a wall square inflated by `r` (§9.3 Routing round walls:
- * line of sight for planning and path smoothing).
+ * without entering a wall square inflated by `r` (line of sight for
+ * planning and path smoothing).
  */
 export function segmentClear(p: Point, q: Point, r: number, grid: WallGrid): boolean {
   if (grid.size === 0) return true;
@@ -208,7 +208,7 @@ export interface SteerStep {
 
 /**
  * Move a soldier or minion toward `dest` by at most `speed` px, sliding along
- * walls (§9.3 Wall steering), then clamp to the arena. Updates `blockedBy`,
+ * walls, then clamp to the arena. Updates `blockedBy`,
  * `blockedTicks` and the slide memory.
  */
 export function steerToward(
@@ -240,7 +240,7 @@ export function markBlocked(u: SimUnit, wallId: string): void {
 /**
  * The steering step of `steerToward` (rules 1-5: move, slide, memory)
  * without the blocked bookkeeping, so the routing layer can decide what
- * counts as blocked (§9.3 Routing round walls).
+ * counts as blocked.
  */
 export function steerStep(
   u: SimUnit,

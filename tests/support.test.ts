@@ -1,5 +1,5 @@
-// Support (plan §5.5, §9.4 Heals, Auras, Elimination change, M8.8): the
-// heal action's rules (§5 rule 4), the 4% heal room per window shared by every
+// Support (M8.8): the
+// heal action's rules, the 4% heal room per window shared by every
 // healer, cleanse-only, no heals in sudden death, dead stays dead, auras
 // (edge-to-edge radius, strongest per kind, kinds combine, never on the
 // source, teammates count, disabled sources keep working), the medic minion's
@@ -36,7 +36,7 @@ const MEDIC = stats({ type: 'soldier', name: 'Field Medic', maxHealth: 500, dama
 const CLERIC = stats({ type: 'soldier', name: 'Cleric', damage: 40, support: { kind: 'heal', power: 40, range: 100 } });
 const SOLDIER = stats({ type: 'soldier' });
 
-describe("the heal action (§5 rule 4)", () => {
+describe("the heal action", () => {
   const lookupOf = (...units: SimUnit[]) => (id: string) => units.find((u) => u.id === id);
   const heal = (targetId: unknown) => ({ action: 'heal', targetId });
 
@@ -76,7 +76,7 @@ describe("the heal action (§5 rule 4)", () => {
   });
 });
 
-describe('heals (§9.4 step 7b)', () => {
+describe('heals', () => {
   it('heal amount = min(power, missing HP, heal room); the room is shared by every healer', () => {
     const a = body('0-0-0', MEDIC);
     const b = body('0-0-1', MEDIC);
@@ -171,7 +171,7 @@ describe('heals (§9.4 step 7b)', () => {
   });
 });
 
-describe('auras (§5.5)', () => {
+describe('auras', () => {
   const drummer = (power: number, range = 100, kind: 'haste' | 'might' | 'shield' = 'might') =>
     stats({ type: 'soldier', name: `${kind} ${power}`, damage: 0, support: { kind, power, range } });
 
@@ -228,7 +228,7 @@ describe('auras (§5.5)', () => {
   });
 });
 
-describe('the medic minion (§5.5)', () => {
+describe('the medic minion', () => {
   const config = C;
   const fac = (order: 'attack' | 'defend' | 'swarm' | 'guard' = 'attack', orderTargetId: string | null = null): SimUnit =>
     body('0-0-9', stats({ type: 'factory', produces: 'medic' }), {
@@ -282,7 +282,7 @@ describe('the medic minion (§5.5)', () => {
   });
 });
 
-describe('damage-0 sides are eliminated (§9.4 Elimination change)', () => {
+describe('damage-0 sides are eliminated', () => {
   it('a side of only damage-0 units (or a medic-only factory) is out at once and its bodies crumble', async () => {
     const config: GameConfig = deepMerge(C, { timers: { battleTicks: 600 } });
     const run = async (b: FakePlayerSpec) => {
@@ -304,7 +304,7 @@ describe('damage-0 sides are eliminated (§9.4 Elimination change)', () => {
   });
 });
 
-describe('badges: Best Medic and Combo Master (§9 Badges, M8.8)', () => {
+describe('badges: Best Medic and Combo Master (M8.8)', () => {
   const m = (playerId: string, damage: number, healing?: number, combos?: number) => ({
     playerId, damage, valueDestroyed: 0, kills: 0, livingValue: 0, ...(healing !== undefined ? { healing } : {}), ...(combos !== undefined ? { combos } : {}),
   });

@@ -1,4 +1,4 @@
-// §14 validator.test.ts (core set, M1): good units, one bad fixture per §7
+// validator.test.ts (core set, M1): good units, one bad fixture per validation
 // error code, and the core malicious fixtures. Every case runs the real
 // pipeline: esbuild + a fresh isolated-vm sandbox in a child process.
 
@@ -33,7 +33,7 @@ function expectFail(r: ValidationResult): ValidationFailure {
   return r;
 }
 /**
- * The first error with `code`, asserting the §7 error shape (message + fix),
+ * The first error with `code`, asserting the error shape (message + fix),
  * and optionally its `field` and a key fragment of its `fix`.
  */
 function errorWith(r: ValidationResult, code: string, want: { field?: string | null; fix?: string | RegExp } = {}): ValidationError {
@@ -51,8 +51,8 @@ function errorWith(r: ValidationResult, code: string, want: { field?: string | n
 
 /**
  * The good reference fixtures keep their M8.8 stats (other suites price them
- * as they are); here they are rescaled to the $10,000 units of plan §6
- * "Reference units (curve k = 1)" (HP ×1.6, damage ×0.8).
+ * as they are); here they are rescaled to the $10,000 units of
+ * tests/fixtures/economy-reference.md "Reference units (curve k = 1)" (HP ×1.6, damage ×0.8).
  */
 const RESCALE: Record<string, [string, string]> = {
   'big_tank.js': ['this.maxHealth = 2500;\n    this.damage = 100;', 'this.maxHealth = 3600;\n    this.damage = 80;'], // Huge Tank
@@ -202,7 +202,7 @@ describe('validator: good units', () => {
 });
 
 describe('validator: step 1 normalize', () => {
-  it('SOURCE_TOO_LARGE over 64 KB (§7 step 1)', async () => {
+  it('SOURCE_TOO_LARGE over 64 KB', async () => {
     const e = errorWith(await run(`// ${'x'.repeat(64 * 1024)}\n${template('basic_soldier.js')}`), 'SOURCE_TOO_LARGE', {
       field: 'source',
     });
@@ -285,7 +285,7 @@ describe('validator: bad fixtures (one per error code)', () => {
     expect(e.fix).toContain('this.damage');
   });
 
-  it('STAT_OUT_OF_RANGE: damage 999 (the §7 example)', async () => {
+  it('STAT_OUT_OF_RANGE: damage 999 (the example)', async () => {
     const r = expectFail(await run(fixture('bad/stat_out_of_range.js')));
     expect(r.errors).toEqual([
       {
@@ -348,7 +348,7 @@ describe('validator: bad fixtures (one per error code)', () => {
     expect((e.value as unknown[])[0]).not.toEqual((e.value as unknown[])[1]);
   });
 
-  it('UNIT_TOO_EXPENSIVE: Scout with cooldown 10 gives the exact §7 fix text', async () => {
+  it('UNIT_TOO_EXPENSIVE: Scout with cooldown 10 gives the exact fix text', async () => {
     const r = expectFail(await run(fixture('bad/too_expensive.js')));
     const e = errorWith(r, 'UNIT_TOO_EXPENSIVE');
     expect(e.fix).toBe(
@@ -422,7 +422,7 @@ describe('validator: bad fixtures (one per error code)', () => {
   });
 });
 
-describe('validator: warnings (§7 step 10)', () => {
+describe('validator: warnings', () => {
   const codes = (r: ValidationResult) => expectOk(r).warnings.map((w) => w.code);
 
   it('W_NEVER_ATTACKS and W_NEVER_MOVES for a soldier that always idles', async () => {
@@ -584,7 +584,7 @@ describe('validator: malicious fixtures', () => {
   });
 });
 
-describe('validator: sprites (§7 step 8b)', () => {
+describe('validator: sprites', () => {
   it('templates: the stored sprite is the normalized 16x16 spec (idle 2, walk 2, attack 1)', async () => {
     for (const file of ['basic_soldier.js', 'basic_tower.js']) {
       const r = expectOk(await run(template(file)));

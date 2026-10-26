@@ -1,4 +1,4 @@
-// /play's embedded Claude terminal (plan §11.2 c-d), DOM-free logic: seat
+// /play's embedded Claude terminal, DOM-free logic: seat
 // numbers and stripping a stale ?seat=N, the split / tabs breakpoint and
 // the divider, the first tab, the Claude pane states incl. "open in another
 // tab", the Game-tab badge reducer and the PLACEMENT nudge.
@@ -38,7 +38,7 @@ import {
 
 const term = (patch: Partial<TerminalDTO> = {}): TerminalDTO => ({ seat: 3, status: 'up', boxReady: true, live: null, ...patch });
 
-describe('seat numbers and stale ?seat=N links (§11.2 c)', () => {
+describe('seat numbers and stale ?seat=N links', () => {
   it('ignores ?seat=N from old printed seat cards: stripped from the URL, no seat taken from it', () => {
     expect(stripSeatQuery('?seat=4')).toBe('');
     expect(stripSeatQuery('?x=1&seat=8&y=2')).toBe('?x=1&y=2');
@@ -60,7 +60,7 @@ describe('seat numbers and stale ?seat=N links (§11.2 c)', () => {
   });
 });
 
-describe('layout (§11.2 d)', () => {
+describe('layout', () => {
   it('splits at 1500×760 and up, tabs on 1366×768 and smaller', () => {
     expect(layoutFor(1920, 1080)).toBe('split');
     expect(layoutFor(1500, 760)).toBe('split');
@@ -104,7 +104,7 @@ describe('layout (§11.2 d)', () => {
   });
 });
 
-describe('Claude pane states (§11.2 d)', () => {
+describe('Claude pane states', () => {
   it('builds the proxy path, with the pane id for the iframe', () => {
     expect(terminalPath(3)).toBe('/terminal/3/');
     expect(terminalPath(3, 'abc123')).toBe('/terminal/3/?pane=abc123');
@@ -183,7 +183,7 @@ describe('Claude pane states (§11.2 d)', () => {
   });
 });
 
-describe('Game tab badges (§11.2 d)', () => {
+describe('Game tab badges', () => {
   const hidden = false;
   it('collects units, invalidations and phases while the game is hidden', () => {
     let b: GameBadges = NO_BADGES;

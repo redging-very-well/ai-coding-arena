@@ -1,13 +1,12 @@
-// Balance harness (plan §14 balance.test.ts, §6 "no single archetype
-// dominates", §9 sudden death). Headless battles between $5,000 archetype
-// armies with simple "chase nearest" bots, on real §9.2 maps.
+// Balance harness ("no single archetype dominates", sudden death). Headless battles between $5,000 archetype
+// armies with simple "chase nearest" bots, on real maps.
 //
 // The runner here is a lean stand-in for the sandbox (no isolates, no deep
 // copies: the brains never mutate their inputs), so a full 5400-tick battle
 // takes tens of milliseconds and the test can afford a round robin over
 // several maps, zone pairs and seeds (M8.8: `playPairs` shares the pairs out
 // over worker processes). `npx tsx --conditions=source
-// scripts/balance-matrix.ts` prints the same matrix for docs/balance.md.
+// scripts/balance-matrix.ts` prints the same matrix.
 //
 // M8.5: the brains follow the wall-aware templates (skip walls as targets,
 // smash an enemy wall after 120 ticks blocked; factories rally on the
@@ -16,16 +15,16 @@
 // minions run the engine's built-in AI.
 //
 // M8.6: KIND_ARCHETYPES field the minion kinds (archers, runners, brutes) and
-// the squad orders and bursts (§5.3); their factories use the order brain
+// the squad orders and bursts; their factories use the order brain
 // named by `factoryBrain` (the CLAUDE.md examples: guard a tower, swarm the
 // weakest enemy, swarm the nearest enemy wall, defend).
 //
-// M8.8 (elements, splash, support, ×5 economy; plan §14 "M8.8 balance"):
+// M8.8 (elements, splash, support, ×5 economy):
 // every archetype is refit to the M8.8 prices on the DEFAULT config ($5,000
 // budget, $2,500 cap): the M8.7 armies at ×5 with copies dropped until they
-// fit, the specialist archetypes of §6 (Huge Tanks, Glass Cannons, Max
+// fit, the specialist archetypes (Huge Tanks, Glass Cannons, Max
 // Snipers, the HP-padded scout swarm) and the element and support armies of
-// §6 "M8.8 example armies". The brains follow the CLAUDE.md templates: medics
+// the M8.8 example armies. The brains follow the CLAUDE.md templates: medics
 // cleanse first, then heal the lowest hp fraction in reach; aura units follow
 // the nearest fighting ally; fire prefers frozen targets; splash picks the
 // enemy with the most other enemies round it.
@@ -74,7 +73,7 @@ export type { BalanceRunnerKind } from './brainUnits.js';
  * The lean in-process runner of the balance tooling: a sandbox stand-in that
  * runs the brains (helpers/brains.ts) as plain functions, with no isolate, no
  * IPC and no deep copies (the brains never mutate their inputs). Every
- * instance runs the brain for its type; the PRNG is seeded per player (§8),
+ * instance runs the brain for its type; the PRNG is seeded per player,
  * the same mulberry32 sequence as the sandbox's Math.random. Trusted bot code
  * only. tests/balance-parity.test.ts checks it gives the same battles,
  * bit for bit, as the real isolated-vm runner on the same brains.
@@ -117,7 +116,7 @@ function unitStats(s: UnitSpec): StatsSnapshot {
   return Object.freeze({ color: '#888888', size: s.type === 'tower' ? 14 : 10, shape: 'circle', element: 'normal', splashRadius: 0, support: null, ...s }) as StatsSnapshot;
 }
 
-/** A wall or factory as the validator snapshots it (§5.2: no attack, no move, fixed size). */
+/** A wall or factory as the validator snapshots it (no attack, no move, fixed size). */
 function buildingStats(
   s: Pick<UnitStats, 'name' | 'type' | 'maxHealth' | 'productionInterval' | 'burst'> & { produces?: MinionKind; minionElement?: Element },
 ): StatsSnapshot {
@@ -189,7 +188,7 @@ const BASIC_SOLDIER: UnitSpec = { name: 'Basic Soldier', type: 'soldier', maxHea
 const HALF_TANK: UnitSpec = { name: 'Half Tank', type: 'soldier', maxHealth: 2000, damage: 80, range: 40, speed: 0.8, attackCooldown: 60, size: 20 };
 
 /**
- * The designs the archetypes are built from (§6 reference units, walls,
+ * The designs the archetypes are built from (the reference units, walls,
  * minions and factories at the redesign scale: HP ×1.6, damage ×0.8 of M8.8).
  */
 export const UNITS = {
@@ -295,7 +294,7 @@ export interface Archetype {
   /**
    * M8.5 wall layouts (otherwise every copy goes into the front cells in army order):
    *   'seal': the walls close the zone off (`sealCells`), the fighters fill the front cells inside;
-   *   'u':    the plan §14 fortress, walls on the front row and both outer columns of rows 1-2,
+   *   'u':    the wall fortress, walls on the front row and both outer columns of rows 1-2,
    *           the fighters on rows 3-4 (`uCells`).
    */
   layout?: 'seal' | 'u' | 'nest';
@@ -314,7 +313,7 @@ export interface Archetype {
 /** The design an army fields under `k` (its own custom design, else the UNITS one). */
 export const statsOf = (a: Archetype, k: UnitKey): StatsSnapshot => a.designs?.[k] ?? UNITS[k];
 
-/** Plan §14's wall fortress: walls on row 0 and on cols 0 and 5 of rows 1-2; fighters on rows 3-4 first. */
+/** The wall fortress: walls on row 0 and on cols 0 and 5 of rows 1-2; fighters on rows 3-4 first. */
 export function uCells(facing: Facing, centred: boolean): { walls: Cell[]; fighters: Cell[] } {
   const walls: Cell[] = [];
   for (let col = 0; col < GRID_SIZE; col++) walls.push({ col, row: 0 });
@@ -483,7 +482,7 @@ function arch(key: string, title: string, parts: Part[], opts: Omit<Archetype, '
   return { key, label: `${title} (${composition(army)}${padded})`, army, ...(designs ? { designs } : {}), ...rest };
 }
 
-/** The classic six (§14), at $10,000: twice the M8.8 copies, or filled to the caps. */
+/** The classic six, at $10,000: twice the M8.8 copies, or filled to the caps. */
 export const ARCHETYPES: Archetype[] = [
   arch('bricks', 'two max-cost bricks + soldiers', [['brick', 2], ['soldier', 'fill']]),
   arch('templates', 'templates', [['soldier', 'fill'], ['tower', 4]], { pad: false }),
@@ -504,7 +503,7 @@ export const BUILDING_ARCHETYPES: Archetype[] = [
   arch('bunker', 'all-building bunker', [['tower', 'fill'], ['swarmFactory', 3]]),
 ];
 
-/** The plan §14 open fortress: 10 Basic Walls in a U (front row + both outer columns of rows 1-2), towers on rows 3-4. */
+/** The open fortress: 10 Basic Walls in a U (front row + both outer columns of rows 1-2), towers on rows 3-4. */
 export const OPEN_FORTRESS: Archetype = arch('openfort', 'open wall fortress', [['wall', 10], ['tower', 'fill']], { layout: 'u' });
 
 /** The minion-kind archetypes (M8.6): each kind with the order its CLAUDE.md example gives. */
@@ -523,7 +522,7 @@ export const SPECIALIST_ARCHETYPES: Archetype[] = [
   arch('soldiersFilled', 'padded soldiers (HP and damage)', [['soldierFilled', 'fill']]),
 ];
 
-/** Element and support archetypes (§6 example armies at $10,000), the combo armies and the exploit search's top build. */
+/** Element and support archetypes, the combo armies and the exploit search's top build. */
 export const ELEMENT_ARCHETYPES: Archetype[] = [
   arch('firesquad', 'fire squad', [['fireSoldier', 'fill'], ['tower', 4]]),
   arch('shatter', 'shatter squad', [['fireSoldier', 'fill'], ['frostArcher', 4]]),
@@ -612,7 +611,7 @@ export function armyCost(a: Archetype, config: GameConfig = BALANCE_CONFIG): num
   return a.army.reduce((sum, [k, n]) => sum + copiesCost(computeCost(statsOf(a, k), config.cost, pricingOf(config)).cost, n, statsOf(a, k).type, config.caps.copyRamp), 0);
 }
 
-/** Copies placed (`group` 'fighters' = everything but walls, §5.2 Copies). */
+/** Copies placed (`group` 'fighters' = everything but walls). */
 export function armyCopies(a: Archetype, group: 'all' | 'fighters' | 'walls' | 'factories' = 'all'): number {
   const counts = (k: UnitKey) => {
     const t = statsOf(a, k).type;
@@ -877,7 +876,7 @@ export const DUEL_SITES: Array<{ name: string; style: MapStyle; players: number;
 export const SEEDS = [11, 4242];
 /**
  * M8.8: the seeds of the big round robin. The default suite plays one seed (8
- * battles per pair); BALANCE_FULL=1 plays both (16, what docs/balance.md records).
+ * battles per pair); BALANCE_FULL=1 plays both (16).
  */
 export const MATRIX_SEEDS: number[] = process.env.BALANCE_FULL ? SEEDS : SEEDS.slice(0, 1);
 
@@ -887,7 +886,7 @@ export interface MatchupCell {
   losses: number;
 }
 
-/** Whether a side still has a fighter standing (§5.2: soldiers, towers, factories, minions; never walls). */
+/** Whether a side still has a fighter standing (soldiers, towers, factories, minions; never walls). */
 export const hasFighter = (standing: Partial<Record<string, number>>): boolean =>
   Object.entries(standing).some(([type, n]) => type !== 'wall' && (n ?? 0) > 0);
 
@@ -942,7 +941,7 @@ export interface PairResult {
   a: string;
   b: string;
   cell: MatchupCell;
-  /** Battles won by a side with only walls standing (§5.2: must be none). */
+  /** Battles won by a side with only walls standing (must be none). */
   wallOnlyWins: number;
   /** Battles with at least one heal, the most HP any body got in one 60-tick window (as a fraction of its max HP), the last frame with a heal. */
   healBattles: number;
@@ -957,7 +956,7 @@ export interface PairResult {
 const noEffects = (): EffectTotals => ({ shatters: 0, arcs: 0, overloads: 0, burnDamage: 0, healed: 0, cleanses: 0 });
 
 /**
- * The heal limits of one battle (§5.5): HP restored per body per 60-tick
+ * The heal limits of one battle: HP restored per body per 60-tick
  * window (frames come every 2 ticks, and the two ticks of a frame are always
  * in the same window) as a fraction of the body's max HP, and the last frame
  * with a heal.
@@ -995,7 +994,7 @@ export interface BattleJob {
 /** What a balance run keeps of one duel (A's side; a cache line). */
 export interface BattleRecord {
   outcome: 1 | 0 | -1;
-  /** Won by a side with only walls standing (§5.2: must never happen). */
+  /** Won by a side with only walls standing (must never happen). */
   wallOnlyWin: boolean;
   /** Battles with heals: the worst 60-tick heal window and the last heal tick (healLimits). */
   heal: { worst: number; last: number } | null;
@@ -1214,7 +1213,7 @@ export function rowRate(row: Map<string, MatchupCell>): { wins: number; battles:
   return { wins, battles, rate: battles ? wins / battles : 0 };
 }
 
-/** A 2-team Lanes battle: team 0 takes block `round % 2` (zones 0..n-1 = the top row), team 1 the other (§9.2 team blocks). */
+/** A 2-team Lanes battle: team 0 takes block `round % 2` (zones 0..n-1 = the top row), team 1 the other. */
 export async function lanesTeams(players: 4 | 8, team0: Archetype[], team1: Archetype[], round: number, seed: number, config?: GameConfig): Promise<BalanceBattle & { winner: 0 | 1 | null }> {
   const n = players / 2;
   if (team0.length !== n || team1.length !== n) throw new Error(`Lanes ${players} needs ${n} players per team`);

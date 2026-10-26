@@ -1,5 +1,5 @@
-// Round scoring (plan §9 Points, Damage metric, Value destroyed, Badges,
-// Skip / kick, Match standings; §9.2 Team scoring).
+// Round scoring: points, damage and value metrics, badges, Skip / kick,
+// match standings and team scoring.
 //
 //   round points = place points + damage bonus + value bonus
 //
@@ -45,7 +45,7 @@ export type ScoringConfig = GameConfig['scoring'];
 /** One unit's contribution to its owner's metrics. */
 export interface UnitMetricInput {
   playerId: string;
-  /** Its living value while alive (§9.3; the unit cost for soldiers and towers). */
+  /** Its living value while alive (the unit cost for soldiers and towers). */
   cost: number;
   alive: boolean;
   damageDealt: number;
@@ -90,7 +90,7 @@ export function playerMetrics(result: Pick<BattleResult, 'players' | 'units'>): 
     result.players.map((p) => p.playerId),
     result.units.map((u) => ({
       playerId: u.playerId,
-      // Living value (§9.3: walls $0, factories body + unbuilt minions); older reports: the cost.
+      // Living value (walls $0, factories body + unbuilt minions); older reports: the cost.
       cost: u.livingValue ?? u.cost,
       alive: u.survived,
       damageDealt: u.damageDealt,
@@ -151,7 +151,7 @@ export function computeRoundScore(
     if (topDamage > 0 && m.damage === topDamage) badges.push('biggestHitter');
     if (topValue > 0 && m.valueDestroyed === topValue) badges.push('giantSlayer');
     if (topLiving > 0 && m.livingValue === topLiving) badges.push('ironWall');
-    // M8.8 (§9 Badges): titles only, individual, > 0 to win, ties share.
+    // M8.8: titles only, individual, > 0 to win, ties share.
     if (topHealing > 0 && (m.healing ?? 0) === topHealing) badges.push('bestMedic');
     if (topCombos > 0 && (m.combos ?? 0) === topCombos) badges.push('comboMaster');
     return {
@@ -223,7 +223,7 @@ export interface MatchTotals {
 }
 
 /**
- * Match standings (§9): total points, then total match damage, then a shared
+ * Match standings: total points, then total match damage, then a shared
  * place. Sorted best first (seat orders equal rows); returns the 1-based place.
  */
 export function matchStandings<T extends MatchTotals>(rows: readonly T[]): Array<T & { place: number }> {
@@ -237,7 +237,7 @@ export function matchStandings<T extends MatchTotals>(rows: readonly T[]): Array
 }
 
 // ---------------------------------------------------------------------------
-// Teams (§9.2 Team scoring)
+// Teams
 // ---------------------------------------------------------------------------
 
 /**
@@ -279,7 +279,7 @@ export interface TeamTotalsInput {
 }
 
 /**
- * Team table (§9.2): team points = the average of the current members' match
+ * Team table: team points = the average of the current members' match
  * totals (one decimal), tie-break the sum of the team's place points, then a
  * shared place. Sorted best first (teamId orders equal rows). A team with no
  * current members (all kicked) is left out: it gets no row and no place.

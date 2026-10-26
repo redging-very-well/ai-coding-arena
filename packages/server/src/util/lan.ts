@@ -1,5 +1,5 @@
-// LAN addresses (plan §13 util/lan.ts): startup printout, /screen QR, and the
-// /mcp Origin allowlist (§10.4).
+// LAN addresses: startup printout, /screen QR, and the
+// /mcp Origin allowlist.
 
 import { networkInterfaces } from 'node:os';
 

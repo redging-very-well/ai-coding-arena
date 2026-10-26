@@ -1,5 +1,5 @@
-// /screen RESULTS banner (plan §12.2): "No battle this time" only when nothing
-// was fought; a battle the host skipped partway shows a normal end (§9 Skip
+// /screen RESULTS banner: "No battle this time" only when nothing
+// was fought; a battle the host skipped partway shows a normal end (Skip
 // ranks from the playback tick).
 
 import { describe, expect, it } from 'vitest';

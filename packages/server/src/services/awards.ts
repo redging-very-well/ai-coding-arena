@@ -1,4 +1,4 @@
-// Match awards (plan §9 Match awards): per-match stats accumulated round by
+// Match awards: per-match stats accumulated round by
 // round (stored in the match state, so they survive a restart; New match and
 // a wipe clear them) and the 15 awards computed from them when the match
 // reaches MATCH_RESULTS. Everything here is pure (no Game): battle.ts builds

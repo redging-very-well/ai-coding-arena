@@ -1,4 +1,4 @@
-// Drag-and-drop team setup in /admin Match setup (plan §9.2, §12.3), DOM-free
+// Drag-and-drop team setup in /admin Match setup, DOM-free
 // logic: drop results (move, same team, LAST_MEMBER, bad team), the optimistic
 // view, and the chip's move/swap fallback menu.
 

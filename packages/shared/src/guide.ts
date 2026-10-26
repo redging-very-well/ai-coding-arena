@@ -1,5 +1,5 @@
-// The unit guide (plan §10.3 GET /guide, §12.1 "📖 Unit guide"): the full
-// rulebook for units, built on the server from the LIVE config and the §5
+// The unit guide: the full
+// rulebook for units, built on the server from the LIVE config and the
 // contract, rendered by /play's overlay and the standalone /guide page.
 //
 // The shape is deliberately generic (sections of blocks) so the client only

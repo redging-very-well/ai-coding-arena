@@ -1,4 +1,4 @@
-// The Match tab (plan §12.3): in LOBBY a step-by-step "configure this match"
+// The Match tab: in LOBBY a step-by-step "configure this match"
 // flow, 1 Players & teams, 2 Map, 3 Rounds & time, 4 Armory & rules, then
 // Start match. The map, teams, team budgets, enemy names and Disable walls
 // (the server's `wallsAllowed`, inverted) are the server's LOBBY draft (saved as clicked); rounds and Open Armory go with

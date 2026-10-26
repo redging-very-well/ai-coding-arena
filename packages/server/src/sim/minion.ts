@@ -1,4 +1,4 @@
-// The built-in minion (plan §5.2): its stats, its value, and its AI.
+// The built-in minion: its stats, its value, and its AI.
 //
 // Minions are made by factories (sim/factory.ts) and run this engine logic,
 // never player code. The AI decides from the same start-of-tick state as the
@@ -20,13 +20,13 @@
 //   sits (almost) exactly on its way sidesteps instead (`sidestep`), since
 //   separation pushes it straight back along the centre line otherwise.
 //
-// M8.6 (§5.3, §9.3): every minion has a kind (grunt, archer, runner, brute;
+// M8.6: every minion has a kind (grunt, archer, runner, brute;
 // stats from `factory.minions.<kind>`) and follows its factory's squad order.
 // The rules above are the `attack` order. `defend` anchors on the factory
 // (defendRadius), `swarm` goes for one target only, `guard` anchors on an
 // ally (guardRadius). Each kind uses its own aggroRange and impatientTicks.
 //
-// M8.8 (§5.4, §5.5): minions carry their factory's minionElement (their hits
+// M8.8: minions carry their factory's minionElement (their hits
 // apply it; they never splash). The medic never attacks: it heals (cleansing
 // burning or frozen allies first, then the lowest hp fraction) within its
 // reach, walks to an ally that needs it within its aggro range, and otherwise
@@ -51,7 +51,7 @@ import {
 import { isSupportable, needsHealing } from './effects.js';
 import type { SimStats, SimUnit } from './types.js';
 
-/** The grunt's display name (the M8.6 kinds are named after their kind, §5.3). */
+/** The grunt's display name (the M8.6 kinds are named after their kind). */
 export const MINION_NAME = MINION_KIND_NAMES.grunt;
 
 /** A minion's kind (older fixtures without one are grunts). */
@@ -88,12 +88,12 @@ export function minionStats(config: Pick<GameConfig, 'factory'>, color: string, 
   });
 }
 
-/** minionValue (§6): what a factory pays per minion of that kind (and element), its timeout value and value destroyed. */
+/** minionValue: what a factory pays per minion of that kind (and element), its timeout value and value destroyed. */
 export function minionValueOf(config: Pick<GameConfig, 'cost' | 'timers' | 'factory' | 'suddenDeath'>, kind: MinionKind = 'grunt', element: Element = 'normal'): number {
   return minionPrice(config.cost, pricingOf(config), kind, element).minionValue;
 }
 
-/** `battle:reveal`'s `minion` / `minions[kind]` (§9.3 Frames). */
+/** `battle:reveal`'s `minion` / `minions[kind]`. */
 export function minionReveal(
   config: Pick<GameConfig, 'cost' | 'timers' | 'factory' | 'suddenDeath'> = DEFAULT_CONFIG,
   kind: MinionKind = 'grunt',
@@ -112,7 +112,7 @@ export function minionsReveal(
   return { minions: Object.fromEntries([...kinds].sort().map((k) => [k, minionReveal(config, k)])) };
 }
 
-/** Damage a hit by `attacker` deals to `target`: minions multiply hits on walls by their kind's wallDamageMultiplier (§5.3). */
+/** Damage a hit by `attacker` deals to `target`: minions multiply hits on walls by their kind's wallDamageMultiplier. */
 export function hitDamage(attacker: SimUnit, target: Pick<SimUnit, 'type'>, config: Pick<GameConfig, 'factory'>): number {
   if (attacker.type !== 'minion' || target.type !== 'wall') return attacker.stats.damage;
   return attacker.stats.damage * kindConfig(config, kindOf(attacker)).wallDamageMultiplier;
@@ -125,7 +125,7 @@ export interface MinionWorld {
   safeRadius: number;
   rangeTolerance: number;
   lookup: (id: string) => SimUnit | undefined;
-  /** M8.8: sudden death has started, so heals do nothing (§5.5). */
+  /** M8.8: sudden death has started, so heals do nothing. */
   healsOff?: boolean;
 }
 
@@ -144,7 +144,7 @@ function allyById(m: SimUnit, id: string | null | undefined, world: MinionWorld)
 }
 
 /**
- * The order a minion follows this tick (§5.3): its factory's, with the
+ * The order a minion follows this tick: its factory's, with the
  * fallbacks applied (a swarm without a living enemy target is an attack, a
  * guard without a living ally a defend). The engine already applies them at
  * the start of each tick; this keeps the AI safe on its own.
@@ -163,7 +163,7 @@ export function effectiveOrder(m: SimUnit, world: MinionWorld): { order: MinionO
   return { order };
 }
 
-/** Keep `p` inside the safe circle: a point outside it becomes the circle's centre (§5.2 rule 1). */
+/** Keep `p` inside the safe circle: a point outside it becomes the circle's centre. */
 function insideSafe(p: Point, world: MinionWorld): Point {
   return Math.hypot(p.x - world.safeCenter.x, p.y - world.safeCenter.y) > world.safeRadius ? world.safeCenter : p;
 }
@@ -189,7 +189,7 @@ function nearestEnemy(m: SimUnit, world: MinionWorld, near: (e: SimUnit, gap: nu
 }
 
 /**
- * The impatience rule (§5.2 rule 4): blocked by an enemy wall for the
+ * The impatience rule: blocked by an enemy wall for the
  * kind's `impatientTicks` → attack it (move to it when out of range). Null
  * when it doesn't apply, or when the wall is `skip` (the swarm target itself).
  */
@@ -250,7 +250,7 @@ export function minionAction(m: SimUnit, world: MinionWorld, config: Pick<GameCo
 }
 
 /**
- * The medic's AI (§5.5): heal the ally that needs it most within reach
+ * The medic's AI: heal the ally that needs it most within reach
  * (burning or frozen first, then the lowest hp / maxHp, then the lower
  * instanceId) when the cooldown is ready; else walk to such an ally within
  * aggro range; else move by the order. Never attacks, never smashes walls.
@@ -342,8 +342,7 @@ export function sidestep(m: SimUnit, dest: Point, world: Pick<MinionWorld, 'livi
 }
 
 /**
- * factory.crumbleRadius (§9.3 step 9a, 2026-10-25 "Only minions near the factory
- * crumble"): does a minion centred at `m` crumble with the factory centred at
+ * factory.crumbleRadius (tick step 9a): does a minion centred at `m` crumble with the factory centred at
  * `fac`? Centre-to-centre distance <= radius; radius 0 = every minion, wherever.
  */
 export function withinCrumbleRadius(m: { x: number; y: number }, fac: { x: number; y: number }, radius: number): boolean {

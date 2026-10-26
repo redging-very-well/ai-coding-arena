@@ -1,4 +1,4 @@
-// M8.8 over the API (plan §10.6, §14): a real battle with a fire tank, a
+// M8.8 over the API: a real battle with a fire tank, a
 // lightning splash soldier and a Field Medic, then the REST report, the
 // public result, the replay header and MCP get_battle_report: the damage split
 // per type, healing for Best Medic, scaleVersion 3 on everything new, and
@@ -78,12 +78,12 @@ describe('elements and support over the API (M8.8)', () => {
     }
     const cards = (await a.client.get('/units')).body as UnitCardDTO[];
     const card = (id: string) => cards.find((c) => c.unitId === id)!;
-    // The plan's Half Tank ($1,386) × fire 1.3; the Field Medic ($892).
+    // The reference Half Tank ($1,386) × fire 1.3; the Field Medic ($892).
     expect(card('fire-tank')).toMatchObject({ cost: 1802, scaleVersion: 3, stats: { element: 'fire', splashRadius: 0, support: null } });
     expect(card('patch')).toMatchObject({ cost: 892, healUsed: true, stats: { damage: 0, support: { kind: 'heal', power: 96, range: 120 } } });
     expect(card('patch').breakdown.heal?.text).toMatch(/^Heal 96 HP up to 120 px away/);
     expect(card('storm-bomber').breakdown.splash?.text).toMatch(/^Splash ×1\.49/);
-    // A medic alone is no army (§5.2 Fighters).
+    // A medic alone is no army.
     await a.client.put('/round/selection', { unitIds: ['patch'] });
     expect((await a.client.post('/round/ready', { ready: true })).body.error.code).toBe('NO_FIGHTERS');
     await a.client.put('/round/selection', { unitIds: ['fire-tank', 'storm-bomber', 'patch'] });

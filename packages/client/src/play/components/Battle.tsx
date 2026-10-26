@@ -1,4 +1,4 @@
-// BATTLE (plan §12.1): the live isometric arena (shared renderer, own units
+// BATTLE: the live isometric arena (shared renderer, own units
 // highlighted) and a list of my units with HP and status (napping 💤 / KO).
 // Also used in RESULTS to watch the replay of the last battle.
 
@@ -45,7 +45,7 @@ export function Battle() {
   const pb = st.game?.battle;
   const secondsLeft = pb ? ticksToSeconds(pb.totalTicks - pb.tick) : null;
   const mine = st.myBattle;
-  // Fighters only, like the /screen army bars (§5.2: walls don't count as standing).
+  // Fighters only, like the /screen army bars (walls don't count as standing).
   const fighters = mine.filter((u) => !u.wall);
   const alive = fighters.filter((u) => u.alive).length;
   const walls = mine.length - fighters.length;

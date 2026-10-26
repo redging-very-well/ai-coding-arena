@@ -1,4 +1,4 @@
-// The isometric battle renderer (plan §12): floor, tinted zones, edge props,
+// The isometric battle renderer: floor, tinted zones, edge props,
 // safe-zone ellipse, ground rings, depth-sorted sprite billboards, HP bars,
 // projectile arcs with trails and the napping bubble. Interpolates between
 // buffered frames at display rate (60 fps). With `fx` on (the projector) it
@@ -15,7 +15,7 @@
 //   // lobby:   arena.setMap(state.match.map);
 //   //          arena.setZones(map.zones.map((z) => ({ rect: z, seat: -1 })));
 //
-// The arena size S (800 / 1040 / 1200, §9.2) comes from the map (setMap, or
+// The arena size S (800 / 1040 / 1200) comes from the map (setMap, or
 // the reveal's `map`); the view zooms to fit it. Zones are tinted with the
 // seat colour (team colour in team mode) and carry the seat-number badge;
 // ground rings use the seat colour, or the team colour + pattern in team mode,
@@ -23,7 +23,7 @@
 //
 // The canvas should be sized by CSS; the renderer follows its box (HiDPI).
 //
-// Buildings and minions (M8.5, §12.5): walls are iso blocks (buildings.ts,
+// Buildings and minions (M8.5): walls are iso blocks (buildings.ts,
 // baked per design, seat, crack level and zoom) depth-sorted with everything
 // else and kept between the frames that list them (the FrameBuffer carries
 // them forward); factories are billboards with a production ring on the
@@ -167,7 +167,7 @@ export interface ArenaOptions {
    */
   reducedMotion?: boolean;
   /**
-   * Factory rally flags (§12.5): every factory's ('all', the projector),
+   * Factory rally flags: every factory's ('all', the projector),
    * only `highlightSeat`'s ('mine', the /play battle view) or none. Default 'all'.
    */
   rallyFlags?: 'all' | 'mine' | 'none';
@@ -253,12 +253,12 @@ export function bodyOf(info: Pick<ArenaInstance, 'body' | 'stats'>): BodyType {
   return info.body ?? info.stats.type;
 }
 
-/** Drop-in order of a reveal (§12.5): walls slam down first, then the other buildings, then soldiers. */
+/** Drop-in order of a reveal: walls slam down first, then the other buildings, then soldiers. */
 export function dropRank(body: BodyType): number {
   return body === 'wall' ? 0 : body === 'soldier' || body === 'minion' ? 2 : 1;
 }
 
-/** HP bars of walls and minions show only while damaged (§12.5); everything else always. */
+/** HP bars of walls and minions show only while damaged; everything else always. */
 export function showsHpBar(body: BodyType, hp: number, maxHp: number): boolean {
   if (body === 'wall' || body === 'minion') return hp < maxHp - 1e-6;
   return true;
@@ -326,7 +326,7 @@ export function revealMap(reveal: BattleRevealDTO): ArenaMap | null {
 type MinionBodyStats = Omit<StatsSnapshot, 'type' | 'name' | 'color' | 'shape'>;
 
 /**
- * The minion kinds' stats when a reveal doesn't carry them (§5.2, §5.3
+ * The minion kinds' stats when a reveal doesn't carry them (the
  * defaults; kept here so the screen bundle needs no config schema).
  */
 const MINION_FALLBACK: Readonly<Record<MinionKind, MinionBodyStats>> = {
@@ -360,7 +360,7 @@ export function fnv1a(text: string): string {
 
 /**
  * The resolved sprite of a revealed design and its bake-cache key. The key
- * hashes the spec's CONTENT: unitId is stable across revisions (§7), so a
+ * hashes the spec's CONTENT: unitId is stable across revisions, so a
  * redrawn sprite must not hit the old bake.
  */
 export function revealedSprite(playerId: string, u: Pick<RevealedUnitDTO, 'unitId' | 'sprite' | 'spriteHidden' | 'stats'>): {
@@ -583,7 +583,7 @@ export class ArenaRenderer {
         });
       }
     }
-    // Buildings drop first (walls slam down), then the soldiers (§12.5); reveal order within each.
+    // Buildings drop first (walls slam down), then the soldiers; reveal order within each.
     const order = [...this.instances.values()].sort((a, b) => dropRank(bodyOf(a.info)) - dropRank(bodyOf(b.info)));
     order.forEach((st, i) => (st.dropIndex = i));
     // Walls are listed only when they change: the buffer carries them between frames.
@@ -792,7 +792,7 @@ export class ArenaRenderer {
       s.anim.setTempo(animTempo(u.flags), now);
       s.anim.update(u.flags, now);
       if ((u.flags & STATUS_FLAGS) !== 0 && !s.info.ghost) this.statusStep(s, now);
-      // Pushing on a wall: a tiny dust puff now and then (§12.5).
+      // Pushing on a wall: a tiny dust puff now and then.
       if (this.options.fx && (u.flags & FRAME_FLAGS.BLOCKED) !== 0 && now - s.dustAt > 280 && !s.info.ghost) {
         s.dustAt = now;
         const p = toScreen(this.view, s.x, s.y);
@@ -1001,7 +1001,7 @@ export class ArenaRenderer {
         const t = this.instances.get(id);
         if (!t || t.info.ghost) continue;
         if (ev.factoryId) {
-          // Minions die with their factory (host option, §9.3): a small grey pop each (pooled particles).
+          // Minions die with their factory (host option): a small grey pop each (pooled particles).
           const p = toScreen(view, t.x, t.y);
           this.fx.crumblePop(p.sx, p.sy - billboardWidth(t.info.stats.size, view) * 0.3, view.zoom, [t.info.stats.color, '#8A8F98']);
         } else if (bodyOf(t.info) === 'wall') this.crumbleFx(t);
@@ -1022,7 +1022,7 @@ export class ArenaRenderer {
       const fp = toScreen(view, f.x, f.y);
       this.fx.label(fp.sx, fp.sy - billboardWidth(f.info.stats.size, view) * 1.05, '+1', seat.light, now);
     } else if (ev.type === 'release') {
-      // M8.6 (§12.5): 2+ stored minions burst out: a flash, a ring of puffs and "release!".
+      // M8.6: 2+ stored minions burst out: a flash, a ring of puffs and "release!".
       const f = this.instances.get(ev.factoryId);
       if (!f || f.info.ghost) return;
       this.releasedAt.set(ev.factoryId, now);
@@ -1119,7 +1119,7 @@ export class ArenaRenderer {
     return st;
   }
 
-  /** A minion: the built-in sprite tinted with its factory's colour, owned like the factory (§12.5). */
+  /** A minion: the built-in sprite tinted with its factory's colour, owned like the factory. */
   private adoptMinion(u: SampledUnit, factory: InstanceState, factoryId: string): InstanceState {
     const f = factory.info;
     const kind = producesOf(f.stats);
@@ -1387,7 +1387,7 @@ export class ArenaRenderer {
     }
   }
 
-  /** A factory's production ring (§12.5): an arc filling with the next minion's progress, grey while holding or done. */
+  /** A factory's production ring: an arc filling with the next minion's progress, grey while holding or done. */
   private drawProductionRing(s: InstanceState, p: ScreenPoint, rx: number, ry: number): void {
     const f = this.factories.get(s.info.instanceId);
     if (!f) return;
@@ -1408,7 +1408,7 @@ export class ArenaRenderer {
     ctx.stroke();
   }
 
-  /** Rally flags (§12.5): a small seat-coloured flag at each factory's rally point, with a faint dotted line to it. */
+  /** Rally flags: a small seat-coloured flag at each factory's rally point, with a faint dotted line to it. */
   private drawRallies(): void {
     const mode = this.options.rallyFlags ?? 'all';
     if (mode === 'none' || this.factories.size === 0) return;
@@ -1423,7 +1423,7 @@ export class ArenaRenderer {
       const color = teamLook(s.info.teamId)?.color ?? seat.color;
       const a = toScreen(view, s.x, s.y);
       const b = toScreen(view, ring.rally.x, ring.rally.y);
-      // M8.6 (§12.5): the marker shows the order. defend: a shield over the factory, no line.
+      // M8.6: the marker shows the order. defend: a shield over the factory, no line.
       if (ring.order === 'defend') {
         this.drawShield(a.sx, a.sy - billboardWidth(s.info.stats.size, view) * 1.25, color, false);
         continue;
@@ -1621,7 +1621,7 @@ export class ArenaRenderer {
     return hit;
   }
 
-  /** A wall: its iso block, fading on death/crumble, with an HP bar only while damaged (§12.5). */
+  /** A wall: its iso block, fading on death/crumble, with an HP bar only while damaged. */
   private drawWall(s: InstanceState, lift: number, now: number): void {
     const { ctx, view } = this;
     const pose = s.anim.pose(now, () => 1, true);
@@ -1717,7 +1717,7 @@ export class ArenaRenderer {
     if (body === 'factory') this.drawStoredBadge(s, feet.sx + width * 0.5, top + width * 0.15);
   }
 
-  /** M8.6 (§12.5): a round seat-coloured badge with "stored/burst" over a factory saving up a burst. */
+  /** M8.6: a round seat-coloured badge with "stored/burst" over a factory saving up a burst. */
   private drawStoredBadge(s: InstanceState, x: number, y: number): void {
     const f = this.factories.get(s.info.instanceId);
     if (!f) return;

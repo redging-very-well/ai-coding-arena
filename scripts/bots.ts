@@ -1,7 +1,6 @@
 // `npm run bots -- --players 3 [--url http://host:8080] [--strategy mixed]`
 //
-// Bot players for rehearsals and load tests ONLY (plan §14 dress rehearsal,
-// §15 "fill the rest with npm run bots"); never offered in real games. Each
+// Bot players for rehearsals and load tests ONLY; never offered in real games. Each
 // bot joins over REST like a player's browser would (POST /players, then its
 // Bearer key), and plays until MATCH_RESULTS:
 //   PLAN       submits 3 home-made designs (once per match; varied stats and
@@ -16,12 +15,12 @@
 //   BATTLE / RESULTS  waits; the facilitator (or the load test) drives phases.
 //
 // Strategies: mixed (default: each bot a different personality), brawl,
-// turtle, rush, swarm (3 cheap types × 12 copies, the §14 load shape),
+// turtle, rush, swarm (3 cheap types × 12 copies, the load shape),
 // fortress (walls shielding turrets and archers) and factory (a workshop
-// making minions behind brawlers and darts) (M8.5); M8.6 (§5.3) minion kinds,
+// making minions behind brawlers and darts) (M8.5); M8.6 minion kinds,
 // squad orders and bursts: archers (an archer nest guarding turrets behind a
 // wall), runners (a burst-4 runner pack swarming the weakest enemy) and
-// brutes (a brute smithy swarming the nearest enemy wall); M8.8 (§5.4, §5.5)
+// brutes (a brute smithy swarming the nearest enemy wall); M8.8
 // elements, splash and support: elements (fire soldiers that shatter what
 // frost archers and an ice tower freeze), storm (lightning soldiers and a
 // mortar tower that splashes the biggest clump), splash (mortars behind a
@@ -54,12 +53,12 @@ interface BotDesign {
   color: string;
   shape: 'circle' | 'square' | 'triangle' | 'diamond';
   behaviour: Behaviour;
-  /** Factories only (§5.2): ticks between two minions. */
+  /** Factories only: ticks between two minions. */
   productionInterval?: number;
-  /** Factories only (M8.6, §5.3): the minion kind and the burst. */
+  /** Factories only (M8.6): the minion kind and the burst. */
   produces?: 'grunt' | 'archer' | 'runner' | 'brute' | 'medic';
   burst?: number;
-  /** M8.8 (§5.4, §5.5): soldiers and towers: element, splash and support; factories: the minions' element. */
+  /** M8.8: soldiers and towers: element, splash and support; factories: the minions' element. */
   element?: 'fire' | 'ice' | 'lightning';
   splashRadius?: number;
   support?: { kind: 'heal' | 'haste' | 'might' | 'shield'; power: number; range: number };
@@ -73,7 +72,7 @@ const D = (role: string, type: BotDesign['type'], s: Omit<BotDesign, 'role' | 't
   ...s,
 });
 
-/** A wall or a factory (§5.2): no attack, no move, fixed size. */
+/** A wall or a factory: no attack, no move, fixed size. */
 const B = (
   role: string,
   type: 'wall' | 'factory',
@@ -104,11 +103,11 @@ export const DESIGNS = {
   // Buildings: a 2,400 HP wall and a factory making a grunt every 10 s.
   stone: B('Stone Wall', 'wall', { maxHealth: 2400, color: '#8A8F98' }),
   workshop: B('Workshop', 'factory', { maxHealth: 300, productionInterval: 600, color: '#C0A060' }),
-  // Minion kinds (§5.3, §6): archers, a burst-4 runner pack and brutes (2,000 HP bodies, a minion every 10 s).
+  // Minion kinds: archers, a burst-4 runner pack and brutes (2,000 HP bodies, a minion every 10 s).
   archerNest: B('Archer Nest', 'factory', { maxHealth: 300, productionInterval: 600, produces: 'archer', color: '#5BC0EB', behaviour: 'guard' }),
   runnerPack: B('Runner Pack', 'factory', { maxHealth: 300, productionInterval: 600, produces: 'runner', burst: 4, color: '#FFD23C', behaviour: 'swarm' }),
   smasher: B('Brute Smithy', 'factory', { maxHealth: 300, productionInterval: 600, produces: 'brute', color: '#B5651D', behaviour: 'breach' }),
-  // Elements, splash and support (§5.4, §5.5, §6): a fire soldier that hits frozen enemies
+  // Elements, splash and support: a fire soldier that hits frozen enemies
   // first, a frost archer (range 140, inside a tower's reach), an ice tower, a lightning
   // soldier, a mortar that splashes the biggest clump, a field medic, a war drummer, a shield
   // bearer and a medic tent (medics guarding a tank).
@@ -145,7 +144,7 @@ export const STRATEGIES: Record<string, DesignKey[]> = {
 const MIXED_ORDER = ['brawl', 'rush', 'turtle', 'swarm', 'fortress', 'factory', 'archers', 'runners', 'brutes', 'elements', 'storm', 'splash', 'support', 'medics'];
 
 /**
- * update() bodies. Every one loops over all enemies (the §14 load shape); soldiers step into the
+ * update() bodies. Every one loops over all enemies (the load shape); soldiers step into the
  * safe circle late on and smash an enemy wall that has blocked them for 2 s (M8.5).
  */
 const BEHAVIOURS: Record<Behaviour, string> = {
@@ -189,7 +188,7 @@ const BEHAVIOURS: Record<Behaviour, string> = {
       if (d < best) { best = d; spot = { x: e.x, y: e.y }; }
     }
     return { action: 'rally', destination: spot };`,
-  // M8.6 (§5.3): the CLAUDE.md factory examples, plus an early release when the factory is hurt.
+  // M8.6: the CLAUDE.md factory examples, plus an early release when the factory is hurt.
   guard: `
     if (self.factory.stored > 0 && self.hp < self.maxHp / 2) return { action: 'release' };
     let tower = null;
@@ -220,7 +219,7 @@ const BEHAVIOURS: Record<Behaviour, string> = {
     }
     if (wall) return { action: 'command', order: 'swarm', targetId: wall.id };
     return { action: 'command', order: 'attack' };`,
-  // M8.8 (§5.4): fire hits a frozen enemy first (SHATTER), else the nearest one.
+  // M8.8: fire hits a frozen enemy first (SHATTER), else the nearest one.
   shatter: `
     let target = null;
     for (const e of enemies) {
@@ -242,7 +241,7 @@ const BEHAVIOURS: Record<Behaviour, string> = {
       if (!best || n > best.n) best = { e, n };
     }
     return best ? { action: 'attack', targetId: best.e.id } : { action: 'idle' };`,
-  // M8.8 (§5.5, the CLAUDE.md Field Medic): cleanse burning/frozen allies first, then heal the most
+  // M8.8 (the CLAUDE.md Field Medic): cleanse burning/frozen allies first, then heal the most
   // hurt one in reach; otherwise stay with the nearest ally that fights.
   medic: `
     const need = allies.filter((a) => a.id !== self.id && a.type !== 'wall' && a.type !== 'factory' && gap(self, a) <= self.support.range
@@ -314,7 +313,7 @@ export function botSource(name: string, d: BotDesign): string {
     this.shape = ${JSON.stringify(d.shape)};${d.element ? `\n    this.element = ${JSON.stringify(d.element)};` : ''}${d.splashRadius ? `\n    this.splashRadius = ${d.splashRadius};` : ''}${
           d.support ? `\n    this.support = ${JSON.stringify(d.support.kind)};\n    this.supportPower = ${d.support.power};\n    this.supportRange = ${d.support.range};` : ''
         }`;
-  // Walls have no update() (§5.2: they never run code).
+  // Walls have no update() (they never run code).
   const update = d.type === 'wall' ? '' : `
   update(self, enemies, allies, world) {${safe}${BEHAVIOURS[d.behaviour]}
   }
@@ -388,7 +387,7 @@ export class Api {
     return { status: res.status, body: parsed as T };
   }
 
-  /** Retries 429s after the server's retryAfterMs (validate/submit rate limits, §10). */
+  /** Retries 429s after the server's retryAfterMs (validate/submit rate limits). */
   async call<T = any>(method: string, path: string, body?: unknown, tries = 6): Promise<ApiResult<T>> {
     for (let i = 0; ; i++) {
       const r = await this.req<T>(method, path, body);
@@ -541,7 +540,7 @@ export class Bot {
   }
 
   /**
-   * ≤ 4 unit + ≤ 4 building types (§5.2): the bot's own designs, plus a soldier or tower
+   * ≤ 4 unit + ≤ 4 building types: the bot's own designs, plus a soldier or tower
    * template on every other round. Walls alone can't fight, so a pick always has a fighter.
    */
   private async select(round: number): Promise<void> {
@@ -617,7 +616,7 @@ export function planPlacement(
     while (added && picked.length < maxCopies) {
       added = false;
       for (const t of types) {
-        // Redesign: the copy ramp makes the next copy of one design dearer (§6).
+        // Redesign: the copy ramp makes the next copy of one design dearer.
         const n = (copies.get(t.unitId) ?? 0) + 1;
         const cost = copyCost(t.cost, n, t.type, caps.copyRamp);
         if (picked.length >= maxCopies || spent + cost > budget) continue;

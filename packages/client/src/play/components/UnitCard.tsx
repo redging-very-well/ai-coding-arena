@@ -1,12 +1,12 @@
-// A roster card (plan §12.1): animated sprite (idle, walk on hover), name,
+// A roster card: animated sprite (idle, walk on hover), name,
 // size, stat bars, cost (a plain label; a separate "How much?" button opens
 // the breakdown), version, "new!" badge,
 // warnings, the invalid-unit error with an "Ask Claude" prompt, and the code
 // editor buttons ("✏️ Edit code" on own units, "Copy to a new unit" on starters).
-// M8.5 (§12.5): a type tag (⚔️ soldier, 🏹 tower, 🧱 wall, 🏭 factory); wall
+// M8.5: a type tag (⚔️ soldier, 🏹 tower, 🧱 wall, 🏭 factory); wall
 // cards show HP only, factory cards HP, "1 minion every 15 s", "makes 5
 // minions" and the minion's mini sprite in the factory's colour, and the
-// price breakdown its production line. M8.6 (§12.5): a minion-kind chip
+// price breakdown its production line. M8.6: a minion-kind chip
 // (icon, name, that kind's mini sprite), its burst and the orders its code gives.
 // M8.8: element / splash / support chips (a factory: its minions' element), a
 // "support only" tag for damage-0 helpers, an "old $1,000 numbers" tag on
@@ -35,13 +35,13 @@ export interface UnitCardProps {
   onSeen?: () => void;
   /** PLAN only: retire (delete) this design. */
   onRetire?: () => void;
-  /** A borrowed Open Armory unit (§9.1): the round it was added (it can't be changed). */
+  /** A borrowed Open Armory unit: the round it was added (it can't be changed). */
   borrowedRound?: number;
   /** Own units: open the code editor. */
   onEdit?: () => void;
   /** Starter templates: open the editor on a copy that becomes a new unit. */
   onCopy?: () => void;
-  /** Greyed and not pickable this match, with this note (e.g. "Walls are off this match", §9.1b). */
+  /** Greyed and not pickable this match, with this note (e.g. "Walls are off this match"). */
   offNote?: string;
 }
 

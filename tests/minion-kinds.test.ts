@@ -1,5 +1,5 @@
-// Minion kinds, squad orders and burst in the headless sim (plan §5.3,
-// §9.3 M8.6): per-kind stats and behaviour, the four orders and their
+// Minion kinds, squad orders and burst in the headless sim
+// (M8.6): per-kind stats and behaviour, the four orders and their
 // fallbacks, the store and release of a burst, caps, loss on the factory's
 // death, and determinism.
 
@@ -45,7 +45,7 @@ const farEnemy = (): FakePlayerSpec => ({ playerId: 'b', seat: 1, zone: 'BR', un
 const rallyHome = scripted((self) => ({ action: 'rally', destination: { x: self.x - 60, y: self.y - 60 } }));
 const factoryOf = (engine: BattleEngine, id: string): SimUnit => (engine as unknown as { byId: Map<string, SimUnit> }).byId.get(id)!;
 
-describe('minion kinds (§5.3)', () => {
+describe('minion kinds', () => {
   it('each kind has its config stats, its name in views and on reports, and rides on spawn events', async () => {
     const config = cfg(noSD, 700);
     const kinds: MinionKind[] = ['grunt', 'archer', 'runner', 'brute'];
@@ -152,10 +152,10 @@ describe('minion kinds (§5.3)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// The minion AI per order, on hand-built bodies (§5.3 table)
+// The minion AI per order, on hand-built bodies
 // ---------------------------------------------------------------------------
 
-describe('squad orders: the minion AI (§5.3)', () => {
+describe('squad orders: the minion AI', () => {
   const mk = (over: Partial<SimUnit>): SimUnit => ({
     id: 'x', playerId: 'a', seat: 0, teamId: 0, unitId: 'u', stats: SOLDIER, cost: 92, type: 'soldier', radius: 10,
     x: 0, y: 0, hp: 100, maxHp: 100, cooldownRemaining: 0, alive: true, disabled: false, spawned: true,
@@ -268,7 +268,7 @@ describe('squad orders: the minion AI (§5.3)', () => {
 // Orders in battle
 // ---------------------------------------------------------------------------
 
-describe('squad orders in battle (§5.3, §9.3)', () => {
+describe('squad orders in battle', () => {
   it('rally = attack; a swarm whose target dies falls back to attack on the next tick, visible in self.factory', async () => {
     const config = cfg(noSD, 2000);
     const seen: Array<{ t: number; order: string; target: string | null }> = [];
@@ -386,7 +386,7 @@ describe('squad orders in battle (§5.3, §9.3)', () => {
 // Burst
 // ---------------------------------------------------------------------------
 
-describe('burst: store and release (§5.3, §9.3)', () => {
+describe('burst: store and release', () => {
   it('burst 3 stores two minions inside and releases three together at 3I; stored ones are invisible', async () => {
     const config = cfg(noSD, 2000);
     let maxSeenMinions = 0;
@@ -520,7 +520,7 @@ describe('burst: store and release (§5.3, §9.3)', () => {
   });
 });
 
-describe('determinism with kinds, orders and bursts (§9.3)', () => {
+describe('determinism with kinds, orders and bursts', () => {
   it('shuffled placements give identical frames', async () => {
     const config = cfg({}, 2400);
     const smart = scripted((self, enemies, allies, world) => {

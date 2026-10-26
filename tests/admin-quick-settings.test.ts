@@ -46,7 +46,7 @@ describe('quick settings field table', () => {
     for (const g of QUICK_GROUPS) expect(g.blurb.length, g.id).toBeGreaterThan(0);
   });
 
-  it('has the M8.8 economy, element and support knobs (§10.6)', () => {
+  it('has the M8.8 economy, element and support knobs', () => {
     for (const path of [
       'caps.budget',
       'caps.unitCost',
@@ -287,7 +287,7 @@ describe('quick settings cost preview', () => {
     expect(by.basicSoldier!.cost).toBe(computeCost(BASIC_SOLDIER, DEFAULT_CONFIG.cost).cost);
     expect(by.basicTower!.cost).toBe(computeCost(BASIC_TOWER, DEFAULT_CONFIG.cost).cost);
     expect(by.bigTank!.cost).toBe(computeCost(BIG_TANK, DEFAULT_CONFIG.cost).cost);
-    // The $10,000 redesign templates and the Huge Tank (plan §6 reference units).
+    // The $10,000 redesign templates and the Huge Tank.
     expect(by.basicSoldier!.cost).toBe(807);
     expect(by.basicTower!.cost).toBe(1200);
     expect(by.bigTank!.cost).toBe(2868);
@@ -297,7 +297,7 @@ describe('quick settings cost preview', () => {
     // A soldier: its range stops at the soldier bound (160), not the tower bound (300).
     expect(by.allMax!.stats).toMatchObject({ maxHealth: 4000, damage: 240, range: 160, speed: 5, size: 20, attackCooldown: 10 });
     expect(p.army).toEqual({ soldiers: 5, towers: 3, total: 3 * 807 + 929 + 1050 + 3 * 1200, overBudget: false }); // copies 4 and 5 ramp (+15%, +30%)
-    // M8.8 reference units (§6): element, splash and support prices.
+    // M8.8 reference units: element, splash and support prices.
     expect(by.fireSoldier!.cost).toBe(1049);
     expect(by.mortarTower!.cost).toBe(1374);
     expect(by.fieldMedic!.cost).toBe(892);

@@ -1,4 +1,4 @@
-// Seat terminal proxy (plan §11.2 b): where a Claude seat's ttyd lives, the
+// Seat terminal proxy: where a Claude seat's ttyd lives, the
 // injected basic auth, and the request/response header rules shared by the
 // HTTP proxy, the WebSocket relay and the seat probe.
 
@@ -15,13 +15,13 @@ export type ResolveUpstream = (seat: number, boxHost: string) => Upstream;
 
 export const defaultResolveUpstream: ResolveUpstream = (seat, boxHost) => ({ host: boxHost, port: CLAUDE_SEAT_BASE_PORT + seat });
 
-/** ttyd's basic-auth user (`-c player:$TTYD_PASS`, §11.1). */
+/** ttyd's basic-auth user (`-c player:$TTYD_PASS`). */
 export const TTYD_USER = 'player';
 
 /** What the proxy answers on `/terminal/N/token` instead of ttyd's base64 `user:password`. */
 export const PLACEHOLDER_TOKEN = 'pixel-clash';
 
-// The player token (§11.2 e) lives in services/claudeSeats.ts (POST /api/seat-login checks it too).
+// The player token lives in services/claudeSeats.ts (POST /api/seat-login checks it too).
 export { seatPlayerToken };
 
 /** ttyd's WebSocket path for seat N, with the player token for the seat's player only. */

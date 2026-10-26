@@ -44,7 +44,7 @@ export function send<T>(res: Response, result: Result<T>): void {
   else sendError(res, result.error);
 }
 
-/** §7 result: 200 on success, 422 with the §7 body on validation failure. */
+/** 200 on success, 422 with the body on validation failure. */
 export function sendValidation(res: Response, result: Result<ValidationResult>): void {
   if (!result.ok) return sendError(res, result.error);
   res.status(result.data.ok ? 200 : 422).json(result.data);

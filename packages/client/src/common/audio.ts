@@ -1,4 +1,4 @@
-// WebAudio player for the synthesized effects in sfx.ts (plan §12.4): no
+// WebAudio player for the synthesized effects in sfx.ts: no
 // asset files, every sound is oscillators and filtered noise. Browsers only
 // let an AudioContext start after a user gesture, so the context is created
 // (or resumed) on the first click/tap/key; until then `state` is 'locked' and

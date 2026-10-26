@@ -1,7 +1,7 @@
-// Sudden death (plan §9, tick order step 8): from `startTick` a safe circle
+// Sudden death (tick order step 8): from `startTick` a safe circle
 // centred on the arena centre shrinks linearly from 570 to 60 px at `endTick`
 // (radii given for the 800 arena; the engine scales them by S/800 with
-// `scaleSuddenDeath`, §9.2). Units
+// `scaleSuddenDeath`). Units
 // whose centre is outside it lose `damagePctPerSecond`% of maxHP per second
 // (spread evenly over the ticks). The kill is nobody's: no damage credit.
 

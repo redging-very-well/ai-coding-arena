@@ -1,4 +1,4 @@
-// REST API (plan §14 api.test.ts): auth, phase gates (§10.2), rate limits,
+// REST API: auth, phase gates, rate limits,
 // round rules (selection, placement, ready, START), a scripted 2-player
 // 2-round match to MATCH_RESULTS, and restart recovery.
 
@@ -162,7 +162,7 @@ describe('auth and public endpoints', () => {
   }, T);
 });
 
-describe('phase gates (§10.2)', () => {
+describe('phase gates', () => {
   let srv: RunningServer;
   let dir: string;
   let a: Awaited<ReturnType<typeof newPlayer>>;
@@ -223,7 +223,7 @@ describe('phase gates (§10.2)', () => {
     const ob = await admin.post(`/admin/players/${b.id}/units`, { source: namedUnit('Helper Tank') });
     expect(ob.body).toMatchObject({ ok: true, unitId: 'helper-tank' });
     // Selection.
-    // More ids than 4 unit + 4 building types can ever hold (§5.2).
+    // More ids than 4 unit + 4 building types can ever hold.
     expect(
       (await a.client.put('/round/selection', { unitIds: ['gate-tank', 'basic-soldier', 'basic-tower', 'x1', 'x2', 'x3', 'x4', 'x5', 'x6'] })).body.error.code,
     ).toBe('TOO_MANY_TYPES');
@@ -334,8 +334,8 @@ describe('a scripted 2-player, 2-round match', () => {
     expect(s.lastBattle?.round).toBe(1);
     expect(s.lastBattle?.ranking).toHaveLength(2);
     const pts1 = s.scoreboard.reduce((sum, e) => sum + e.points, 0);
-    expect(pts1).toBeGreaterThanOrEqual(1); // 2 players: 1st gets 1 place point (§9 Points)
-    // Round points = place + damage bonus + value bonus (§9); the scoreboard adds them up.
+    expect(pts1).toBeGreaterThanOrEqual(1); // 2 players: 1st gets 1 place point
+    // Round points = place + damage bonus + value bonus; the scoreboard adds them up.
     const r1 = s.lastBattle!.ranking;
     for (const r of r1) {
       expect(r.pointsGained).toBe(r.placePoints + r.damageBonus + r.valueBonus);

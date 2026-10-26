@@ -1,9 +1,9 @@
-// The embedded Claude terminal (plan §11.2 d): the player's Claude seat's ttyd
+// The embedded Claude terminal: the player's Claude seat's ttyd
 // through the game server's proxy (/terminal/N/), in an iframe that stays
 // mounted across tab switches and breakpoints (not under the "open in another
 // tab" overlay, and not before the first `terminal` push says nobody else
 // holds the seat: loading it takes the seat over). Join / login assign a seat
-// by themselves (§11.2 c), so the picker is the fallback (no seat free; there is no
+// by themselves, so the picker is the fallback (no seat free; there is no
 // "Change seat" button: an admin moves a player). Pane states: seat picker, not
 // ready, the terminal (with a "host down" strip), and "open in another tab"
 // with "Use it here instead". "Open in new tab" opens the same terminal as its

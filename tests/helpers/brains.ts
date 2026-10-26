@@ -1,4 +1,4 @@
-// The archetype brains of the balance harness (plan §14): the CLAUDE.md
+// The archetype brains of the balance harness: the CLAUDE.md
 // templates as plain functions ("chase nearest", "shoot nearest", the factory
 // orders, medics and banners, M8.8 hold-by-the-tower, focus fire: "kill
 // the healer first, then the casters, then the weakest", and backline divers:
@@ -33,7 +33,7 @@ export type BrainFn = (self: SelfView, enemies: OtherView[], world: WorldView, r
 const gap = (a: { x: number; y: number; radius: number }, b: { x: number; y: number; radius: number }) =>
   Math.hypot(b.x - a.x, b.y - a.y) - a.radius - b.radius;
 
-/** Other non-wall enemies a splash of radius r on `t` would reach (§5.4: centre to edge). */
+/** Other non-wall enemies a splash of radius r on `t` would reach (centre to edge). */
 const clumpAround = (t: OtherView, enemies: OtherView[], r: number): number => {
   let n = 0;
   for (const e of enemies) if (e !== t && e.type !== 'wall' && Math.hypot(e.x - t.x, e.y - t.y) - e.radius <= r) n++;
@@ -266,9 +266,9 @@ const HOLD_FOCUS = holdNearTower(chaseFocus);
  */
 const CAMP_NEAREST = holdNearTower(chaseNearest, 'factory');
 
-/** A body a heal can land on (§5.5: never walls or factories). */
+/** A body a heal can land on (never walls or factories). */
 const healable = (a: OtherView): boolean => a.type !== 'wall' && a.type !== 'factory';
-/** §5.5: hurt with heal room left, or burning, or frozen. */
+/** Hurt with heal room left, or burning, or frozen. */
 const needsHeal = (a: OtherView): boolean => a.status.burning > 0 || a.status.frozen > 0 || (a.hp < a.maxHp && a.status.healRoom > 0);
 
 /**

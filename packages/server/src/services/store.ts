@@ -1,7 +1,7 @@
-// Persistence (plan §13): data/state.json (players, PIN hashes, keys, match
+// Persistence: data/state.json (players, PIN hashes, keys, match
 // state; debounced writes, atomic rename), data/units/<player>/<unit>@v<n>.js
 // (+ the compiled CJS next to it), data/armory/<armoryId>.v<n>.compiled.cjs (Open
-// Armory entries' frozen code, §9.1) and data/replays/round-N.json.
+// Armory entries' frozen code) and data/replays/round-N.json.
 //
 // The in-memory model lives here too. Services mutate it and call
 // `store.save()`; the write is debounced and atomic (tmp file + rename).
@@ -61,14 +61,14 @@ export interface PlayerRecord {
   apiKey: string;
   /** Seat 0-7 (colour, seat badge, instance-id prefix). -1 once kicked. */
   seat: number;
-  /** Join order (zones are assigned in join order, §9). */
+  /** Join order (zones are assigned in join order). */
   joinSeq: number;
   /** First round this player takes part in (joined mid-round → next round). */
   activeFromRound: number;
   kicked: boolean;
   createdAt: number;
   /**
-   * Claude seat 1-8 (the laptop's terminal container, §11.2), unique across
+   * Claude seat 1-8 (the laptop's terminal container), unique across
    * players; null/absent = none. Independent of the game `seat`.
    */
   claudeSeat?: number | null;
@@ -86,9 +86,9 @@ export interface UnitVersionRecord {
   cost: number;
   breakdown: CostBreakdown;
   warnings: ValidationWarning[];
-  /** M8.6 factories: the squad orders its update() gave in the dry run (§7), for the card. */
+  /** M8.6 factories: the squad orders its update() gave in the dry run, for the card. */
   orders?: MinionOrder[];
-  /** M8.8 heal support: whether update() healed in the dry run (§7), for the card. */
+  /** M8.8 heal support: whether update() healed in the dry run, for the card. */
   healUsed?: boolean;
   /** The economy scale it was submitted for (SCALE_VERSION; absent = 1, the $1,000 game). Kept as-is on boot (never auto-deleted). */
   scaleVersion?: number;
@@ -108,7 +108,7 @@ export interface DesignRecord {
   versions: UnitVersionRecord[];
 }
 
-/** A design locked into this round's selection (§3: latest valid version at lock time). */
+/** A design locked into this round's selection (latest valid version at lock time). */
 export interface LockedUnit {
   unitId: string;
   version: number;
@@ -119,7 +119,7 @@ export interface PlayerRoundState {
   selection: string[];
   /** The locked designs for this round (set when PLAN ends). */
   locked: LockedUnit[] | null;
-  /** The selection locked in the previous round (carry-over rule, §3). */
+  /** The selection locked in the previous round (carry-over rule). */
   prevSelection: string[] | null;
   placements: PlacementDTO[];
   /** The placement used in the previous battle ("Copy last layout", auto-place). */
@@ -148,7 +148,7 @@ export interface RoundResultRecord {
 }
 
 /**
- * An Open Armory entry (§9.1): an immutable copy of a design version that
+ * An Open Armory entry: an immutable copy of a design version that
  * fought, borrowable by everyone but its creator. `compiledJs` lives in
  * data/armory (never in state.json); the source is never copied.
  */
@@ -164,7 +164,7 @@ export interface ArmoryEntryRecord {
   sprite: SpriteSpec | null;
   spriteHidden: boolean;
   compiledJs: string;
-  /** Re-priced under the current config (§6). */
+  /** Re-priced under the current config. */
   cost: number;
   breakdown: CostBreakdown;
   roundAdded: number;
@@ -193,20 +193,20 @@ export interface MatchState {
   timer: TimerState;
   /** Total round points this match. */
   points: Record<string, number>;
-  /** Total effective damage this match (the standings tie-break, §9). */
+  /** Total effective damage this match (the standings tie-break). */
   damage: Record<string, number>;
   /** Badges won this match: playerId → badge → count. */
   badges: Record<string, Partial<Record<BadgeId, number>>>;
   /**
-   * Match setup (§9.2). In LOBBY it is the host's draft (`PUT
+   * Match setup. In LOBBY it is the host's draft (`PUT
    * /admin/match/setup`); from Start match on it is the match's own.
    * `mapStyle` null = the default for the player count. `revealNames` =
-   * "Show enemy names to units" (§5); absent = off. `wallsAllowed` =
-   * "Walls allowed" (§9.1b); absent = on.
+   * "Show enemy names to units"; absent = off. `wallsAllowed` =
+   * "Walls allowed"; absent = on.
    */
   setup: MatchSetupState;
   /**
-   * Team mode (§9.2): the teams, members in join order. LOBBY: the draft
+   * Team mode: the teams, members in join order. LOBBY: the draft
    * (auto-balanced, swaps kept until the roster or mode changes). From Start
    * match to New match: fixed; a kicked member keeps their slot (a hole, so the
    * team keeps its block shape). null = free-for-all.
@@ -222,27 +222,27 @@ export interface MatchState {
   perPlayer: Record<string, PlayerRoundState>;
   /** Released battle results of this match. */
   results: RoundResultRecord[];
-  /** Players kicked during BATTLE: removed when the battle ends (§4). */
+  /** Players kicked during BATTLE: removed when the battle ends. */
   pendingKicks: string[];
   /** The subset of pendingKicks that also deletes the player's data ("kick + delete"). */
   pendingDeletes?: string[];
-  /** Open Armory (§9.1). */
+  /** Open Armory. */
   armory: ArmoryState;
-  /** Per-match stats for the match awards, accumulated at every released round (§9 Match awards). */
+  /** Per-match stats for the match awards, accumulated at every released round. */
   stats: MatchStats;
   /** The match awards, computed when the match reaches MATCH_RESULTS; null before. */
   awards: MatchAwardDTO[] | null;
 }
 
-/** The match setup (§9.2): the LOBBY draft, fixed from Start match. */
+/** The match setup: the LOBBY draft, fixed from Start match. */
 export interface MatchSetupState {
   mapStyle: MapStyle | null;
   teamMode: TeamMode;
-  /** "Show enemy names to units" (§5); stored only when on, so older state files stay the same. */
+  /** "Show enemy names to units"; stored only when on, so older state files stay the same. */
   revealNames?: true;
-  /** "Walls allowed" (§9.1b, default on); stored only when off. */
+  /** "Walls allowed" (default on); stored only when off. */
   wallsAllowed?: false;
-  /** Budget per player per team (§9.2): teamId → budget, only the teams that differ from caps.budget; absent = none. */
+  /** Budget per player per team: teamId → budget, only the teams that differ from caps.budget; absent = none. */
   teamBudgets?: Record<string, number>;
 }
 
@@ -252,19 +252,19 @@ export type PersistedMatchState = Omit<MatchState, 'armory'> & {
 };
 
 /**
- * /setup settings as stored: the public ones plus the shared seat password
- * (§11.2 a). `seatSecret` never leaves the server except to an admin with
+ * /setup settings as stored: the public ones plus the shared seat password.
+ * `seatSecret` never leaves the server except to an admin with
  * "Show details" on.
  */
 export interface SetupRecord extends SetupSettingsDTO {
   seatSecret: string | null;
   /**
-   * AI seats the admin turned off (§11.2 c), ascending. Venue state like the AI session
+   * AI seats the admin turned off, ascending. Venue state like the AI session
    * host address, so it survives a wipe. Empty (the default) = every seat on.
    */
   disabledClaudeSeats: number[];
   /**
-   * The shared agent logins pasted in /admin (§11.2 f): venue state like the
+   * The shared agent logins pasted in /admin: venue state like the
    * seat password, so they survive a wipe and restarts. Write-only: never in
    * any payload (admins see only the last 4 characters); handed only to the
    * AI session host by POST /api/seat-login.
@@ -277,7 +277,7 @@ export type AgentCredentials = Record<AgentCredentialKind, string | null>;
 export const noAgentCredentials = (): AgentCredentials => ({ claudeToken: null, anthropicApiKey: null, openaiApiKey: null });
 
 /**
- * The shape of each shared agent login (§11.2 f; sessions/entrypoint.sh
+ * The shape of each shared agent login (sessions/entrypoint.sh
  * checks the same). Claude Code's `claude setup-token` prints sk-ant-oat01-…,
  * an Anthropic API key is sk-ant-api03-…, an OpenAI key sk-… or sk-proj-….
  */
@@ -453,10 +453,10 @@ export class Store {
       // State files from before the damage tie-break and badges.
       this.match.damage ??= {};
       this.match.badges ??= {};
-      // State files from before the match awards (§9 Match awards).
+      // State files from before the match awards.
       this.match.stats ??= {};
       this.match.awards ??= null;
-      // State files from before maps and teams (§9.2): zones were Corners of the 800 Corners map.
+      // State files from before maps and teams: zones were Corners of the 800 Corners map.
       const setup = (this.match.setup ?? {}) as Partial<MatchState['setup']>;
       this.match.setup = {
         mapStyle: isMapStyle(setup.mapStyle) ? setup.mapStyle : null,
@@ -498,7 +498,7 @@ export class Store {
         agentCredentials: normalizeAgentCredentials(data.setup.agentCredentials),
       };
     }
-    // Claude seats are unique (§11.2 c): drop duplicates and junk from an edited file, and seats that are off.
+    // Claude seats are unique: drop duplicates and junk from an edited file, and seats that are off.
     const claudeSeats = new Set<number>(this.setup.disabledClaudeSeats);
     for (const p of this.players.values()) {
       const s = p.claudeSeat;
@@ -557,7 +557,7 @@ export class Store {
     try {
       mkdirSync(this.dataDir, { recursive: true });
       const tmp = `${this.statePath}.${process.pid}.tmp`;
-      // Owner-only: it holds the seat password and the shared agent logins (§11.2 a, f).
+      // Owner-only: it holds the seat password and the shared agent logins.
       writeFileSync(tmp, JSON.stringify(data), { mode: 0o600 });
       renameSync(tmp, this.statePath);
     } catch (err) {

@@ -1,4 +1,4 @@
-// Pure view-model helpers for the projector /screen (plan §12.2). DOM-free so
+// Pure view-model helpers for the projector /screen. DOM-free so
 // tests can import them.
 
 import {
@@ -25,7 +25,7 @@ import { countdownTitle } from '../common/advance.js';
 
 /**
  * RESULTS banner over the arena. A host Skip ends the battle at the playback
- * tick and ranks from there (§9 Skip), so a skip after real fighting reads like
+ * tick and ranks from there, so a skip after real fighting reads like
  * any other end; "No battle this time" only when nothing was fought (skipped
  * before the first frame, or before anybody dealt damage).
  */
@@ -90,9 +90,9 @@ export interface ArmyValue {
   seat: number;
   /** Team mode: the player's team. */
   teamId?: number;
-  /** Living value at START (§9.3: walls count $0). */
+  /** Living value at START (walls count $0). */
   start: number;
-  /** Living value now: soldiers/towers their cost, walls $0, factories body + unmade minions, minions minionValue (§9.3). */
+  /** Living value now: soldiers/towers their cost, walls $0, factories body + unmade minions, minions minionValue. */
   living: number;
   /** Fighters (soldiers, towers, factories) still standing; walls aren't counted. */
   aliveCount: number;
@@ -116,7 +116,7 @@ function factoryOfMinion(id: string): string | null {
 }
 
 /**
- * Per-player living army value (§9.3) from the reveal and the ids alive in
+ * Per-player living army value from the reveal and the ids alive in
  * the current frame (null = START: everything fielded). Walls are worth $0,
  * a factory its body cost plus minionValue per minion it can still make, a
  * minion minionValue.
@@ -169,7 +169,7 @@ export function armyValues(reveal: BattleRevealDTO, aliveIds: ReadonlySet<string
   });
 }
 
-/** The /screen caption under the army bars in the first battle with walls (§12.5). */
+/** The /screen caption under the army bars in the first battle with walls. */
 export const WALLS_CAPTION = 'Walls protect, but only fighters count!';
 
 /** Whether a reveal fields any wall. */
@@ -189,7 +189,7 @@ export interface TeamArmy {
   members: ArmyValue[];
 }
 
-/** Team mode (§12.2): one army bar per team, split by member. Empty in free-for-all. */
+/** Team mode: one army bar per team, split by member. Empty in free-for-all. */
 export function teamArmyValues(values: readonly ArmyValue[], teams: readonly TeamDTO[] | null | undefined): TeamArmy[] {
   if (!teams || teams.length === 0) return [];
   return teams.map((team) => {
@@ -204,7 +204,7 @@ export function teamArmyValues(values: readonly ArmyValue[], teams: readonly Tea
 }
 
 // ---------------------------------------------------------------------------
-// Player tiles (status ticks only, §3: no unit data before START)
+// Player tiles (status ticks only, no unit data before START)
 // ---------------------------------------------------------------------------
 
 /** Free seats to show as empty tiles: fill up to 4 tiles (then to an even count), never past 8 seats. */
@@ -258,14 +258,14 @@ export interface ReadyBanner {
 }
 
 /**
- * The banner over the top of the arena (§12.2), from the public flags: the
+ * The banner over the top of the arena, from the public flags: the
  * countdown to the next step while one runs (even if someone un-readied
  * during a host countdown), else "time's up" (PLACEMENT timer ran out), else
  * "everyone's ready". Null otherwise.
  */
 export function readyBanner(
   state: (Pick<GameStateDTO, 'phase' | 'allReady' | 'pendingAdvance'> & Partial<Pick<GameStateDTO, 'timer'>>) | null | undefined,
-  /** The facilitator's go control (§12.2): on RESULTS it gets a small banner to sit on. */
+  /** The facilitator's go control: on RESULTS it gets a small banner to sit on. */
   goLabel?: string | null,
 ): ReadyBanner | null {
   if (!state) return null;
@@ -279,7 +279,7 @@ export function readyBanner(
   }
   // Results: only the facilitator's browser shows a banner (with the go button); everyone else sees the results.
   if (state.phase === 'RESULTS') return goLabel ? { title: 'Round over!', sub: 'Ready when you are' } : null;
-  // The PLACEMENT timer ran out (§3): placement is closed, START works without everyone Ready.
+  // The PLACEMENT timer ran out: placement is closed, START works without everyone Ready.
   if (state.phase === 'PLACEMENT' && state.timer?.expired) return { title: "Time's up!", sub: 'Waiting for the host to press START' };
   if (!state.allReady) return null;
   if (state.phase === 'PLAN') return { title: "Everyone's ready! 🎉", sub: 'Waiting for the host to start placement' };
@@ -312,7 +312,7 @@ export interface RankRow {
   valueDestroyed: number;
   valueBonus: number;
   badges: BadgeId[];
-  /** 💡 Inventor: other players who fielded this player's Armory units (§9.1). */
+  /** 💡 Inventor: other players who fielded this player's Armory units. */
   inventorUsedBy?: number;
   /** Match total after this round. */
   total: number;
@@ -367,7 +367,7 @@ export interface TeamRankRow {
 }
 
 /**
- * Team mode RESULTS (§9.2): this round's team ranking joined with the team
+ * Team mode RESULTS: this round's team ranking joined with the team
  * table and names, by round place. Empty in free-for-all.
  */
 export function teamRankRows(state: Pick<GameStateDTO, 'lastBattle' | 'players' | 'match'>): TeamRankRow[] {
@@ -406,7 +406,7 @@ export function teamStandings(table: readonly TeamTableRowDTO[] | null | undefin
 export type PodiumEntry = ScoreboardEntryDTO;
 
 /**
- * Final standings (§9 Match standings): total points, then total match damage,
+ * Final standings: total points, then total match damage,
  * then a shared place. Recomputed here so the order never depends on the
  * payload's order.
  */

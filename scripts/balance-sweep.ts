@@ -1,5 +1,4 @@
-// `npm run balance:sweep`: try one config knob at several values (plan §14,
-// docs/balance.md "Fast balance runs"). For each value it runs
+// `npm run balance:sweep`: try one config knob at several values. For each value it runs
 // `npm run balance -- --fast` on the whole archetype pool with the patch
 // (`--with` plus the value), so every rule and rate is checked, and the
 // result cache re-uses every battle the knob can't reach (a factory knob

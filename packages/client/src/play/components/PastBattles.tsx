@@ -1,4 +1,4 @@
-// "📜 Past battles" (plan §12.1): in any phase once a battle was released, a
+// "📜 Past battles": in any phase once a battle was released, a
 // panel in the Game pane (the Claude terminal stays mounted) with a round
 // picker and, for that round: the ranking with the points breakdown and
 // badges, the top damage units, the player's own unit report with the
@@ -103,7 +103,7 @@ export function PastBattles({ onClose }: { onClose: () => void }) {
       {!end && !error && <p class="dim">Loading round {round}…</p>}
       {end && (
         <>
-          {/* §6: results from before the ×5 economy carry no scaleVersion; 2 = the $5,000 game. */}
+          {/* Results from before the ×5 economy carry no scaleVersion; 2 = the $5,000 game. */}
           {end.scaleVersion === undefined && (
             <p class="dim small old-game">($1,000 game) This round was played before prices and stats went up 5×, so its numbers are smaller.</p>
           )}

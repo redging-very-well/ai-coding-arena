@@ -1,4 +1,4 @@
-// §7 steps 2-3: transpile with esbuild (TS syntax tolerated, CJS output) and
+// Transpile with esbuild (TS syntax tolerated, CJS output) and
 // reject imports.
 //
 // esbuild `transform` with loader 'ts', format 'cjs', target 'es2022'. CJS
@@ -19,7 +19,7 @@ export type TranspileResult =
   | { ok: true; code: string; compiledJs: string }
   | { ok: false; error: ValidationError };
 
-/** `require(` or `import(` anywhere in the compiled code (§7 step 3). */
+/** `require(` or `import(` anywhere in the compiled code. */
 export const IMPORT_RE = /\brequire\s*\(|\bimport\s*\(/;
 /** Where an import/require appears in the ORIGINAL source (for the line number). */
 const SOURCE_IMPORT_RE = /\bimport\b\s*(?:[\w${*\s},]*\bfrom\b\s*)?['"(]|\brequire\s*\(|\bimport\s*\(/;

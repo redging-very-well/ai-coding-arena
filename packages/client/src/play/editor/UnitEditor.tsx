@@ -1,4 +1,4 @@
-// The in-browser unit code editor (plan §12.1 "✏️ Edit code"), loaded lazily
+// The in-browser unit code editor, loaded lazily
 // by EditorHost so CodeMirror stays out of /play's first load.
 //
 // CodeMirror 6 with JavaScript highlighting, line numbers, bracket matching,

@@ -1,4 +1,4 @@
-// The army budget (plan §6 Caps and rules): what a set of placements costs.
+// The army budget: what a set of placements costs.
 //
 // Redesign (2026-10-24) "copy ramp" (config `caps.copyRamp`, off when
 // `pctPerCopy` is 0): from copy `freeCopies + 1` of one design on, every

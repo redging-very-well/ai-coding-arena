@@ -1,6 +1,6 @@
 // `npm run loadtest -- [--url http://localhost:8080] [--admin-password pw] [--players 8]`
 //
-// The §14 load test against a RUNNING server (`npm start`, the real
+// The load test against a RUNNING server (`npm start`, the real
 // isolated-vm sandbox). It drives a whole match as the facilitator:
 //   * joins N bot players (scripts/bots.ts, strategy "swarm" by default:
 //     3 types × 12 copies each, every update() loops over all enemies);
@@ -338,15 +338,15 @@ async function main(): Promise<void> {
   for (const r of results) {
     const tag = `round ${r.round} (${r.speed}x, ${r.players} players, ${r.units} units)`;
     checks.push([`${tag}: sim p99 < ${TARGETS.simP99Ms} ms/tick`, r.simP99 < TARGETS.simP99Ms, `p50 ${f2(r.simP50)} / p99 ${f2(r.simP99)} (after the 1st second ${f2(r.simP99Warm)}) / max ${f2(r.simMax)} ms over ${r.ticks} ticks, ${r.simOver8} ticks > 8 ms; sim done in ${r.simWallMs ?? '?'} ms`]);
-    // A stall (§9 Decoupling) is playback waiting for the sim ("thinking…"): counted by the server and seen by clients.
+    // A stall is playback waiting for the sim ("thinking…"): counted by the server and seen by clients.
     checks.push([`${tag}: playback never stalls`, r.serverStalls === 0 && r.clientThinking === 0, `server stalls ${r.serverStalls} (${r.serverStalledMs} ms), "thinking" seen by clients ${r.clientThinking} times`]);
     // Delivery jitter (host scheduling, network) is reported separately.
     checks.push([`${tag}: frame batches arrive smoothly (gap < ${STALL_GAP_MS} ms)`, r.clientMaxGapMs < STALL_GAP_MS, `max gap between frame batches ${Math.round(r.clientMaxGapMs)} ms (batches every 50 ms)`, true]);
     checks.push([`${tag}: WS frames reach every client`, r.clientFramesPerSecMin > 25 * r.speed * 0.8, `${r.wsClients} clients, ${f1(r.clientFramesPerSecMin)}-${f1(r.clientFramesPerSecAvg)} frames/s (expect ${30 * r.speed}), ${Math.round(r.wsKBPerClient)} KB/client`]);
     checks.push([`${tag}: server RSS < ${TARGETS.serverRssMb} MB`, r.serverRssMaxMb < TARGETS.serverRssMb, `max ${f1(r.serverRssMaxMb)} MB (JS heap ${f1(r.serverHeapAtPeakMb.used)} used / ${f1(r.serverHeapAtPeakMb.total)} total, external ${f1(r.serverHeapAtPeakMb.external)})`]);
-    // Plan §14 also asks for < 100 MB per sandbox child. A child is a whole Node
+    // The target is also < 100 MB per sandbox child. A child is a whole Node
     // process (~70 MB before any player code) plus a 32 MB isolate, so this is a
-    // warning, not a failure (docs/load.md).
+    // warning, not a failure.
     if (r.childRssMaxMb !== null) checks.push([`${tag}: each sandbox child < ${TARGETS.childRssMb} MB`, r.childRssMaxMb < TARGETS.childRssMb, `${r.children} sandbox children, max ${f1(r.childRssMaxMb)} MB`, true]);
   }
   log('');

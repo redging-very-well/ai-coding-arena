@@ -1,4 +1,4 @@
-// Fighters, living value and value destroyed per body type (plan §9.3).
+// Fighters, living value and value destroyed per body type.
 //
 //   * Fighters: soldiers, towers, minions, and factories that can still make
 //     a minion before time runs out (`canMake` > 0, sim/factory.ts
@@ -9,10 +9,10 @@
 //     time runs out); minion = minionValue.
 //   * Value destroyed (credited to the killer): a wall its full price, a
 //     factory its living value at death, everything else its cost.
-//   * M8.6 (§5.3): minions stored inside a factory count like the ones it can
+//   * M8.6: minions stored inside a factory count like the ones it can
 //     still make: they keep it a fighter and add minionValue each to its
 //     living value (so the killer of a full factory is credited them too).
-//   * M8.8 (§5.5, §9.4): a soldier or tower with damage 0 (pure support), a
+//   * M8.8: a soldier or tower with damage 0 (pure support), a
 //     medic minion and a factory that makes medics are NOT fighters; they
 //     still count their living value while alive.
 
@@ -41,20 +41,20 @@ export function livingValueOf(u: Pick<SimUnit, 'type' | 'cost' | 'factory'>): nu
   return u.cost;
 }
 
-/** What killing this body credits (§9.3 Value destroyed). */
+/** What killing this body credits. */
 export function killValueOf(u: Pick<SimUnit, 'type' | 'cost' | 'factory'>): number {
   return u.type === 'wall' ? u.cost : livingValueOf(u);
 }
 
 // ---------------------------------------------------------------------------
-// The same rules from a finished result + a recorded frame (Skip, §9 Skip)
+// The same rules from a finished result + a recorded frame (Skip)
 // ---------------------------------------------------------------------------
 
 type ReportLike = Pick<UnitReport, 'instanceId' | 'playerId' | 'cost' | 'diedAtTick'> &
   Partial<Pick<UnitReport, 'type' | 'factory' | 'spawnedAtTick' | 'nonFighter'>>;
 
 /**
- * The minions each living factory in a frame is worth (`fac`, §9.3 Frames):
+ * The minions each living factory in a frame is worth (`fac`):
  * canMake + stored (minionsLeft in frames recorded before canMake).
  */
 export function factoryLeftIn(frame: Pick<FrameDTO, 'fac'>): Map<string, number> {
@@ -63,7 +63,7 @@ export function factoryLeftIn(frame: Pick<FrameDTO, 'fac'>): Map<string, number>
 
 /**
  * Whether a body was alive in the frame at time `t`. Walls are listed only
- * when their hp changed (§9.3 Frames), so for them it follows from their
+ * when their hp changed, so for them it follows from their
  * spawn and death times; everything else is alive iff it is listed.
  */
 export function aliveInFrame(u: ReportLike, frame: Pick<FrameDTO, 't'>, listed: ReadonlySet<string>): boolean {

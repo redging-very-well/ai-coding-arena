@@ -1,4 +1,4 @@
-// Round (plan §3, §9): selection (PLAN), selection lock + fallback rules,
+// Round: selection (PLAN), selection lock + fallback rules,
 // per-round zone assignment, placement validation (PLACEMENT), Ready, and
 // auto-place at lock.
 
@@ -41,7 +41,7 @@ export interface LockedDesign extends LockedUnit {
   name: string;
   cost: number;
   type: UnitType;
-  /** M8.8 (§5.2 Fighters): can win a battle (not a wall, a damage-0 unit or a medic factory). */
+  /** M8.8: can win a battle (not a wall, a damage-0 unit or a medic factory). */
   fighter?: boolean;
 }
 
@@ -72,7 +72,7 @@ export class RoundService {
 
   /**
    * The locked designs with their (lock-time) version and current cost.
-   * Borrowed Armory units (`armory:<id>`, §9.1) resolve to their entry and are
+   * Borrowed Armory units (`armory:<id>`) resolve to their entry and are
    * named "Ogre (Ninja Sam)".
    */
   lockedDesigns(playerId: string): LockedDesign[] {
@@ -135,13 +135,13 @@ export class RoundService {
         });
       }
       const type = UnitsService.latestValid(d)!.stats.type;
-      // §9.1b: with "Walls allowed" off a wall can't be picked (un-picking is always fine).
+      // With "Walls allowed" off a wall can't be picked (un-picking is always fine).
       if (type === 'wall' && !this.game.teams.wallsAllowed && !this.stateOf(playerId).selection.includes(id)) {
         return wallsOffError(UnitsService.latest(d).stats.name, id);
       }
       types.push(type);
     }
-    // §5.2: ≤ maxUnitTypes soldiers and ≤ maxBuildingTypes buildings (towers, walls, factories).
+    // ≤ maxUnitTypes soldiers and ≤ maxBuildingTypes buildings (towers, walls, factories).
     // Un-picking is always allowed, even from a selection that a revised
     // design pushed over a cap (that is how the player fixes it).
     const unitCount = types.filter((t) => groupOf(t) === 'unit').length;
@@ -170,11 +170,11 @@ export class RoundService {
   }
 
   /**
-   * Lock every active player's selection at the end of PLAN (§3): each unitId
+   * Lock every active player's selection at the end of PLAN: each unitId
    * resolves to its latest valid version; invalid ones are dropped. Empty →
    * the previous round's selection if all still valid → the 3 most recently
    * submitted valid units → the templates. A walls-only result gets a
-   * starter fighter added (§5.2 Fighters). With "Walls allowed" off (§9.1b)
+   * starter fighter added. With "Walls allowed" off
    * walls are never locked: a picked one is dropped with a toast.
    */
   lockSelections(): void {
@@ -194,7 +194,7 @@ export class RoundService {
         };
         for (const id of ids) {
           if (isArmoryUnitId(id)) {
-            // A borrowed Armory unit: the frozen entry, if still selectable (§9.1).
+            // A borrowed Armory unit: the frozen entry, if still selectable.
             const e = this.game.armory.checkSelectable(p.id, id);
             if (e.ok) take({ unitId: id, version: e.data.version }, e.data.stats.type);
             continue;
@@ -234,7 +234,7 @@ export class RoundService {
         locked = resolve(recent);
       }
       if (locked.length === 0) locked = resolve(this.game.units.templateIds());
-      // §5.2 Fighters: walls (M8.8: and pure support) can't win on their own, so
+      // Walls (M8.8: and pure support) can't win on their own, so
       // such an army gets the first starter fighter that fits the type caps (the Basic Soldier).
       if (!locked.some((l) => this.isFighterId(p.id, l.unitId))) {
         for (const id of this.game.units.templateIds()) {
@@ -255,7 +255,7 @@ export class RoundService {
   }
 
   /**
-   * Assign this round's zones (§9.2), at the start of PLACEMENT (and again
+   * Assign this round's zones, at the start of PLACEMENT (and again
    * when a kick changes the active players).
    *   * Team mode: the map fixed at Start match; whole teams rotate as blocks
    *     and members inside their block. A kicked member's zone stays empty.
@@ -294,9 +294,9 @@ export class RoundService {
 
   /**
    * Validate a full placement list against the locked selection, cells,
-   * copies (per group, §5.2 Copies) and budget. The result counts the copies
+   * copies (per group) and budget. The result counts the copies
    * per group and warns W_TRAPPED for every soldier or factory that its walls
-   * box in (non-fatal, §9.3 Placement check).
+   * box in (non-fatal).
    */
   checkPlacements(playerId: string, input: unknown): Result<PlacementResponse> {
     if (!Array.isArray(input)) return fail('BAD_REQUEST', 'placements must be an array of {unitId, col, row}.');
@@ -347,7 +347,7 @@ export class RoundService {
         details: { group: 'walls', max: caps.maxWallCopies, count: counts.walls },
       });
     }
-    // Redesign: copies of one design beyond caps.copyRamp.freeCopies cost more (§6 copy ramp).
+    // Redesign: copies of one design beyond caps.copyRamp.freeCopies cost more.
     const spent = layoutSpent(placements.map((p) => p.unitId), (id) => designs.get(id)?.cost, (id) => designs.get(id)?.type, caps.copyRamp) ?? 0;
     const budget = this.game.teams.budgetOf(playerId);
     if (spent > budget) {
@@ -387,7 +387,7 @@ export class RoundService {
   }
 
   /**
-   * The Ready toggle (§3): in PLAN "my army is picked" (needs a non-empty
+   * The Ready toggle: in PLAN "my army is picked" (needs a non-empty
    * selection), in PLACEMENT "my army is placed". One flag, reset whenever the
    * phase changes (enterPlan, lockSelections), so PLAN Ready never carries
    * into PLACEMENT. Only active players can be ready.
@@ -406,7 +406,7 @@ export class RoundService {
         hint: `Tap up to ${this.game.config.caps.maxUnitTypes} units and ${this.game.config.caps.maxBuildingTypes} buildings in My Units first, then press Ready.`,
       });
     }
-    // §5.2 type caps: a picked design revised into the other group can push a
+    // A picked design revised into the other group can push a
     // selection over a cap after it was picked; Ready waits until it fits.
     const over = ready && this.game.store.match.phase === 'PLAN' ? this.overCap(playerId, rs.selection) : null;
     if (over) {
@@ -415,7 +415,7 @@ export class RoundService {
         details: { group: over.group === 'unit' ? 'units' : 'buildings', max: over.max, count: over.count },
       });
     }
-    // §5.2 Fighters: walls alone can't win, so Ready needs a fighter.
+    // Walls alone can't win, so Ready needs a fighter.
     if (ready && this.game.store.match.phase === 'PLAN' && !this.selectionHasFighter(playerId, rs.selection)) {
       return fail('NO_FIGHTERS', "Walls, medics and banners can't win on their own. Pick a unit that attacks.", {
         hint: 'Tap a soldier or tower that does damage, or a factory that builds fighting minions, in My Units, then press Ready.',
@@ -446,7 +446,7 @@ export class RoundService {
   }
 
   /**
-   * "Walls allowed" off (§9.1b): take wall designs out of the player's
+   * "Walls allowed" off: take wall designs out of the player's
    * selection, previous selection and last layout, with a toast naming the
    * walls left out of the selection. Callers save and push state.
    */
@@ -478,7 +478,7 @@ export class RoundService {
     return d ? UnitsService.latestValid(d)?.stats : undefined;
   }
 
-  /** §5.2 Fighters (M8.8): a selectable design that can win a battle. */
+  /** Fighters (M8.8): a selectable design that can win a battle. */
   private isFighterId(playerId: string, id: string): boolean {
     const s = this.selectedStats(playerId, id);
     return s !== undefined && isFighterDesign(s);
@@ -505,7 +505,7 @@ export class RoundService {
     return null;
   }
 
-  /** §5.2 Fighters: soldiers and towers that do damage, factories that don't build medics (M8.8). */
+  /** Soldiers and towers that do damage, factories that don't build medics (M8.8). */
   private selectionHasFighter(playerId: string, ids: readonly string[]): boolean {
     return ids.some((id) => this.isFighterId(playerId, id));
   }
@@ -532,7 +532,7 @@ export class RoundService {
     return this.game.players.active().every((p) => this.stateOf(p.id).ready);
   }
 
-  /** Public `allReady` (§10.3): PLAN or PLACEMENT, at least one active player, all of them ready. */
+  /** Public `allReady`: PLAN or PLACEMENT, at least one active player, all of them ready. */
   everyoneReady(): boolean {
     const phase = this.game.store.match.phase;
     if (phase !== 'PLAN' && phase !== 'PLACEMENT') return false;
@@ -541,7 +541,7 @@ export class RoundService {
   }
 
   /**
-   * Auto-place (§9) at lock for every active player with zero placements
+   * Auto-place at lock for every active player with zero placements
    * (or only walls: fighters are added in the free cells, the walls stay).
    * Returns the names of the auto-placed players.
    */
@@ -550,7 +550,7 @@ export class RoundService {
     const names: string[] = [];
     for (const p of this.game.players.active()) {
       const rs = this.stateOf(p.id);
-      // A layout with a fighter stays; a walls-only one gets fighters added (§9 Auto-place, M8.5).
+      // A layout with a fighter stays; a walls-only one gets fighters added (M8.5).
       if (rs.placements.length > 0 && this.placementHasFighter(p.id, rs.placements)) continue;
       const res = autoPlace({
         ...(rs.placements.length > 0 ? { existing: rs.placements } : {}),
@@ -578,7 +578,7 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((x) => b.includes(x));
 }
 
-/** "You picked 5 buildings; 4 max. Tap one to un-pick it." (TOO_MANY_TYPES after a revision, §5.2). */
+/** "You picked 5 buildings; 4 max. Tap one to un-pick it." (TOO_MANY_TYPES after a revision). */
 export function overCapMessage(over: { group: 'unit' | 'building'; count: number; max: number }): string {
   const what = over.group === 'unit' ? 'units' : 'buildings';
   return `You picked ${over.count} ${what}; ${over.max} max. Tap one to un-pick it.`;

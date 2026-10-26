@@ -1,4 +1,4 @@
-// Team modes, snake auto-balance, swaps and team looks (plan §9.2).
+// Team modes, snake auto-balance, swaps and team looks.
 
 import { describe, expect, it } from 'vitest';
 import {

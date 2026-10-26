@@ -1,4 +1,4 @@
-// Hits and homing projectiles (plan §9 Attacks, tick order steps 6-7).
+// Hits and homing projectiles (tick order steps 6-7).
 //
 // Range ≤ meleeMaxRange (50) is melee: the hit lands instantly when the unit
 // fires. Longer ranges spawn a homing projectile that flies 10 px/tick toward
@@ -6,9 +6,9 @@
 // vanishes if the target dies first. The projectile carries the damage fixed
 // at fire time and still lands if the shooter dies in the meantime.
 //
-// Credit (§9 Damage metric / Value destroyed): the attacker is credited the
+// Credit: the attacker is credited the
 // EFFECTIVE damage, min(hit, target hp before the hit), when the hit lands
-// (projectiles on impact), and on a kill the victim's value (§9.3: its full
+// (projectiles on impact), and on a kill the victim's value (its full
 // unit cost; a factory its living value at death). Hits in
 // one tick (melee swipes and projectile impacts together) resolve in attacker
 // instanceId order (= seat, then instanceId), so exactly one attacker gets
@@ -43,7 +43,7 @@ export function applyHit(attacker: SimUnit | undefined, target: SimUnit, damage:
     if (killed) {
       target.killedBy = attacker;
       attacker.kills += 1;
-      // Walls their full price, factories their living value at death (§9.3).
+      // Walls their full price, factories their living value at death.
       attacker.valueDestroyed += killValueOf(target);
     }
   }
@@ -117,7 +117,7 @@ export function moveProjectiles(
 /**
  * Land one tick's hits (melee and projectile together) in attacker order:
  * attacker instanceId (= seat, then instanceId), then projectile id, so the
- * first owner in seat order gets each kill (§9 Value destroyed). A projectile
+ * first owner in seat order gets each kill. A projectile
  * whose target an earlier hit took to ≤ 0 hp fizzles; a melee swipe still
  * lands (dealing nothing).
  */

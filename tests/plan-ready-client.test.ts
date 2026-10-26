@@ -1,4 +1,4 @@
-// PLAN Ready on the pages (plan §12.1-§12.3), DOM-free parts: the /play
+// PLAN Ready on the pages, DOM-free parts: the /play
 // "I'm ready!" button state and the "press Ready again" note, the /screen
 // tiles, banner and all-ready chime decision, and the admin quick toggle.
 

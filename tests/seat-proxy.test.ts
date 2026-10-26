@@ -1,4 +1,4 @@
-// Seat terminal proxy (plan §11.2, §14 terminal-proxy.test.ts) against a fake
+// Seat terminal proxy against a fake
 // ttyd: a node `http` + `ws` server that, like `ttyd -W -O -b /terminal/N -c
 // player:<secret>`, requires Basic auth on every request, serves only under
 // the base path, accepts only same-origin WebSockets (Origin host = Host),
@@ -456,7 +456,7 @@ describe('seat terminal proxy', () => {
     expect(conn.closed).toBe(true);
   });
 
-  it('names the seat player to ttyd with an opaque token the browser cannot set (§11.2 e)', async () => {
+  it('names the seat player to ttyd with an opaque token the browser cannot set', async () => {
     const t = seatPlayerToken(1, sam.id);
     expect(t).toMatch(/^[a-f0-9]{32}$/);
     expect(seatPlayerToken(1, sam.id)).toBe(t); // a reload resumes

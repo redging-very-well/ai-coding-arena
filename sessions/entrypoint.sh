@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pixel Clash seat entrypoint (plan §11.1).
+# Pixel Clash seat entrypoint.
 #
 #   pixel-clash-seat [serve]     render /kit, then exec ttyd (the default)
 #   pixel-clash-seat agent-loop [token]
@@ -18,18 +18,18 @@
 #                     same value as /admin -> AI seats); required for serve
 #   TTYD_USER         basic-auth user (default: player)
 #   SEAT              seat number 1-8: ttyd base path /terminal/$SEAT and the title
-#   AGENT             claude (default) or codex: which coding agent this seat runs (§11.3)
+#   AGENT             claude (default) or codex: which coding agent this seat runs
 #   SEAT_AGENT        optional per-seat override of AGENT (SEAT_AGENT_N in sessions/.env)
 #   CODEX_SANDBOX     codex only: danger-full-access (default; the container is the
 #                     boundary, see README) or workspace-write (needs user namespaces)
 #   CODEX_APPROVAL    codex only: never (default) | on-request | untrusted
 #   OPENAI_API_KEY    codex only, optional: log this seat's Codex in with an API key
 #                     on start (if it isn't logged in yet); never passed to codex.
-#                     Simpler: paste the key once in /admin -> AI seats -> Agent login
-#                     (§11.2 f), which every seat fetches on each terminal open, like
+#                     Simpler: paste the key once in /admin -> AI seats -> Agent login,
+#                     which every seat fetches on each terminal open, like
 #                     the Claude Code token (CLAUDE_CODE_OAUTH_TOKEN) or an Anthropic
 #                     API key for Claude seats
-#   CLAUDE_PERMISSION_MODE  optional: default | acceptEdits | plan (M0 spike decides)
+#   CLAUDE_PERMISSION_MODE  optional: default | acceptEdits | plan
 #   CLAUDE_CONTINUE   1 (default) = reopen the seat's last conversation after a
 #                     restart or page reload; 0 = always start fresh. A NEW player
 #                     always starts fresh, with FIRST_PROMPT.md as the first message
@@ -161,7 +161,7 @@ serve() {
   # rewrites Origin/Host to pass it), -b base path so the page, token and ws
   # all live under /terminal/N/ (behind the proxy and directly), -c basic auth,
   # -w start dir. Each browser connection gets its own agent-loop (and so its
-  # own claude or codex); the proxy keeps one live terminal per seat (plan §11.2).
+  # own claude or codex); the proxy keeps one live terminal per seat.
   # -a: a `?arg=<token>` on the WebSocket URL becomes agent-loop's argument
   # (argv, no shell). Only the proxy sets it, for the seat's player; agent-loop
   # accepts nothing but 32 hex digits (seat_start_mode).
@@ -191,7 +191,7 @@ codex_has_history() { [ -n "$(find "$CODEX_DIR/sessions" -type f -name '*.jsonl'
 claude_has_history() { compgen -G "$(project_history_dir)/*.jsonl" >/dev/null; }
 agent_has_history() { if [ "$AGENT" = codex ]; then codex_has_history; else claude_has_history; fi; }
 
-# --- Which player the seat serves (plan §11.2 e) ------------------------------
+# --- Which player the seat serves ---------------------------------------------
 # The game server's proxy adds ?arg=<token> to the ttyd WebSocket only for the
 # seat's assigned player (never for an admin rescue). ttyd -a passes it to
 # `agent-loop <token>`. The token is opaque: 32 hex digits, a hash of the seat
@@ -256,7 +256,7 @@ first_prompt() {
   sed -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" "$src"
 }
 
-# The shared agent login pasted in /admin (plan §11.2 f), set by seat_login:
+# The shared agent login pasted in /admin, set by seat_login:
 # AUTH_ENV names the variable (CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY for
 # claude, OPENAI_API_KEY for codex), AUTH_VALUE is the value. Plain shell
 # variables, never exported: only the agent process gets the value, in its
@@ -280,7 +280,7 @@ auth_ok() { # <env> <value>
   esac
 }
 
-# Log the seat in at the game server's POST /api/seat-login (plan §11.2 e, f),
+# Log the seat in at the game server's POST /api/seat-login,
 # with Basic auth with the seat password (passed to curl on stdin, never in
 # argv), on every terminal open:
 #  - with the seat's player token: the player's {name, apiKey}, written to

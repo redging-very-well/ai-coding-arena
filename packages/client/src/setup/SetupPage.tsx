@@ -1,4 +1,4 @@
-// /setup (plan §11): the big join URL + QR, the LAN addresses and the setup
+// /setup: the big join URL + QR, the LAN addresses and the setup
 // checklist. Players join in their browser; there is no kit download.
 
 import { useEffect, useState } from 'preact/hooks';

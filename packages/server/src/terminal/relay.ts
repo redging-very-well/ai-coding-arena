@@ -1,4 +1,4 @@
-// One live seat terminal (plan §11.2 b "WebSocket relay"): the browser's
+// One live seat terminal: the browser's
 // WebSocket and ttyd's, both terminated here and relayed message by message
 // (text/binary kept). The browser's first message is ttyd's JSON
 // `{AuthToken, columns, rows}`; its AuthToken is replaced with the real one,

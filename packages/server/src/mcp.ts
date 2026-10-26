@@ -1,4 +1,4 @@
-// The MCP endpoint (plan §10.4): Streamable HTTP at POST /mcp in STATELESS
+// The MCP endpoint: Streamable HTTP at POST /mcp in STATELESS
 // mode (a fresh server + transport per request, no Mcp-Session-Id), so a
 // server restart is invisible to connected Claude Code clients.
 //
@@ -82,7 +82,7 @@ function playerHintForService(code: string): string {
   }
 }
 
-/** A service error as the §7 error body (isError tool result). */
+/** A service error as the error body (isError tool result). */
 function errorBody(e: ServiceError): Record<string, unknown> {
   return {
     ok: false,
@@ -134,7 +134,7 @@ function validationResult(r: Result<ValidationResult>, verb: 'Valid' | 'Submitte
         : `unitId "${unit.unitId}", version ${unit.version}`;
     const s = `${verb}: ${unit.stats.name} (${id}) costs ${money(unit.cost)}.` +
       (v.warnings.length ? ` Warnings: ${v.warnings.map((w) => w.code).join(', ')}.` : '') +
-      // "Walls allowed" off (§9.1b): a wall can be stored, not picked this match.
+      // "Walls allowed" off: a wall can be stored, not picked this match.
       (unit.stats.type === 'wall' && !wallsAllowed ? " Walls are switched off for this match, so it can't be picked until a match with walls." : '') +
       (phase ? `\n${phase}` : '');
     return toolResult(structured as unknown as Record<string, unknown>, s);
@@ -327,14 +327,14 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
           benched: s.me?.benched === true,
           armory: s.armory,
           scoreboard: s.scoreboard,
-          // Maps and teams (§9.2). Teammates' types only in team mode (never code).
+          // Maps and teams. Teammates' types only in team mode (never code).
           mapStyle: s.match?.mapStyle ?? null,
           arena: s.match?.map ? { width: s.match.map.width, height: s.match.map.height } : null,
           players: s.players.map((x) => ({ name: x.name, seat: x.seat, ...(x.teamId !== undefined ? { teamId: x.teamId } : {}), active: x.active })),
           teamMode: s.match?.teamMode ?? 'ffa',
-          // "Show enemy names to units" (§5): bodies carry ownerName/teamName, world.players lists the players.
+          // "Show enemy names to units": bodies carry ownerName/teamName, world.players lists the players.
           revealNames: s.match?.revealNames === true,
-          // "Walls allowed" (§9.1b): false = wall designs can't be picked, placed or borrowed this match.
+          // "Walls allowed": false = wall designs can't be picked, placed or borrowed this match.
           wallsAllowed: s.match?.wallsAllowed !== false,
           myTeam: team ? { teamId: team.teamId, name: team.name, members: team.members.map((m) => m.name) } : null,
           teammates: team
@@ -346,9 +346,9 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
                 }))
             : [],
           teamTable: s.match?.teamTable ?? null,
-          // Per-team budgets (§9.2): only when the host gave the teams different budgets.
+          // Per-team budgets: only when the host gave the teams different budgets.
           ...(s.match?.teamBudgets ? { teamBudgets: s.match.teamBudgets } : {}),
-          // MATCH_RESULTS only (§9 Match awards): every award and the ones this player won, to congratulate them.
+          // MATCH_RESULTS only: every award and the ones this player won, to congratulate them.
           ...(s.matchAwards
             ? {
                 matchAwards: s.matchAwards.map((a) => ({
@@ -510,7 +510,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
   return server;
 }
 
-/** DNS-rebinding protection: reject a present, foreign Origin (§10.4). */
+/** DNS-rebinding protection: reject a present, foreign Origin. */
 function originCheck(port: () => number) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const origin = req.headers.origin;

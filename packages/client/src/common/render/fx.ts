@@ -1,4 +1,4 @@
-// Battle effects for the projector (plan §12.2/§12.4): muzzle flashes, hit
+// Battle effects for the projector: muzzle flashes, hit
 // sparks, death pops (pixel particles), floating damage numbers, screen shake
 // on big hits and the idle bob. Everything lives in fixed-size pools that are
 // reused, so a 96-unit battle allocates nothing per frame. The timing math is
@@ -283,7 +283,7 @@ export class FxLayer {
     d.small = small;
   }
 
-  /** A rising label in a colour (a factory's "+1" when it makes a minion, §12.5). */
+  /** A rising label in a colour (a factory's "+1" when it makes a minion). */
   label(x: number, y: number, text: string, color: string, now: number): void {
     const d = this.numbers.take();
     d.x = x;
@@ -373,7 +373,7 @@ export class FxLayer {
     }
   }
 
-  /** A wall crumbles: stone chunks falling off and a dust cloud (§12.5). */
+  /** A wall crumbles: stone chunks falling off and a dust cloud. */
   crumble(x: number, y: number, width: number, scale: number, colors: readonly string[]): void {
     const chunks = this.reducedMotion ? 6 : 18;
     for (let i = 0; i < chunks; i++) {

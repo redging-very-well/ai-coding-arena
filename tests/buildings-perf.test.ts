@@ -1,4 +1,4 @@
-// Timing pass (plan §9.3 Performance, §14 `test:perf` addition, M8.5): the
+// Timing pass (M8.5): the
 // buildings worst case with REAL isolates. 8 players on Ring 8 (1200 arena),
 // each with 10 soldiers + 2 Swarm Factories (12 code-running fighters) + 12
 // walls, minions up to the cap (5 per player, 40 in all), every update()
@@ -71,7 +71,7 @@ interface TimedRun {
   wallMs: number;
 }
 
-/** §9.3 Performance target: p99 of the whole tick (real isolates included) under 8 ms. */
+/** p99 of the whole tick (real isolates included) under 8 ms. */
 const TARGET_P99_MS = 8;
 /** The engine's own work per tick (the tick minus the wait for the sandboxes) must stay under half the target. */
 const ENGINE_P99_MS = TARGET_P99_MS / 2;
@@ -148,14 +148,14 @@ describe('buildings worst case (M8.5 timing)', () => {
     expect(result.units.filter((u) => u.type === 'wall')).toHaveLength(96);
     expect(minions).toBeGreaterThan(0);
     for (const p of result.players) expect(p.disabled, `${p.playerId} ${p.disabledReason}`).toBe(false);
-    // §9.3 Performance: target unchanged, sim p99 < 8 ms/tick.
+    // Target unchanged, sim p99 < 8 ms/tick.
     expect(engineP99, `engine p99 (tick minus the sandbox wait), runs ${runs.map((r) => r.toFixed(2)).join(', ')}`).toBeLessThan(ENGINE_P99_MS);
     expect(p99, `tick p99, runs ${runs.map((r) => r.toFixed(2)).join(', ')}`).toBeLessThan(TARGET_P99_MS);
   }, 180_000);
 });
 
 /**
- * M8.6 (§9.3 Performance): the same worst case with the minion kinds, every
+ * M8.6: the same worst case with the minion kinds, every
  * squad order and bursts. Each player's two factories build two kinds
  * (archer + runner, brute + grunt, …) with bursts 2-4, and their update()
  * switches between swarm (the weakest enemy), guard (a soldier), defend and
@@ -258,14 +258,14 @@ describe('buildings worst case with minion kinds, orders and bursts (M8.6 timing
     expect(releases).toBeGreaterThan(0);
     for (const p of result.players) expect(p.disabled, `${p.playerId} ${p.disabledReason}`).toBe(false);
     expect(minions).toBeLessThanOrEqual(DEFAULT_CONFIG.factory.maxAlivePerBattle);
-    // §9.3 Performance: target unchanged, sim p99 < 8 ms/tick.
+    // Target unchanged, sim p99 < 8 ms/tick.
     expect(engineP99, `engine p99 (tick minus the sandbox wait), runs ${runs.map((r) => r.toFixed(2)).join(', ')}`).toBeLessThan(ENGINE_P99_MS);
     expect(p99, `tick p99, runs ${runs.map((r) => r.toFixed(2)).join(', ')}`).toBeLessThan(TARGET_P99_MS);
   }, 180_000);
 });
 
 /**
- * M8.7 (plan §9.3 Routing round walls, §14 test:perf): the maze worst case.
+ * M8.7: the maze worst case.
  * Every player's 12 walls form a U, an L and blocks across its zone
  * (`mazePlacements`), the soldiers chase the nearest enemy (template) and the
  * two kind factories cycle through all four orders, so most moves need a
@@ -336,14 +336,14 @@ describe('maze worst case: routing round walls (M8.7 timing)', () => {
     expect(plans).toBeGreaterThan(1000);
     expect(hits).toBeGreaterThan(built);
     for (const p of result.players) expect(p.disabled, `${p.playerId} ${p.disabledReason}`).toBe(false);
-    // §9.3 Performance: target unchanged, sim p99 < 8 ms/tick.
+    // Target unchanged, sim p99 < 8 ms/tick.
     expect(engineP99, `engine p99 (tick minus the sandbox wait), runs ${runs.map((r) => r.toFixed(2)).join(', ')}`).toBeLessThan(ENGINE_P99_MS);
     expect(p99, `tick p99, runs ${runs.map((r) => r.toFixed(2)).join(', ')}`).toBeLessThan(TARGET_P99_MS);
   }, 180_000);
 });
 
 /**
- * M8.8 (plan §9.4 Performance, §14 test:perf): elements, splash and support
+ * M8.8: elements, splash and support
  * at their heaviest. Every player fields, in the M8.7 maze, 6 Storm Bombers
  * (lightning, splash 80), 1 Fire Raider (fire: burns, so lightning overloads),
  * 2 Field Medics (heal 60 / 120 px, cleansing first), 1 War Drummer (might
@@ -444,14 +444,14 @@ describe('elements and support worst case (M8.8 timing)', () => {
     expect(count((e) => e.type === 'heal') + count((e) => e.type === 'cleanse')).toBeGreaterThan(0);
     for (const p of result.players) expect(p.disabled, `${p.playerId} ${p.disabledReason}`).toBe(false);
     expect(perSecond).toBeLessThanOrEqual(600);
-    // §9.4 Performance: target unchanged, sim p99 < 8 ms/tick.
+    // Target unchanged, sim p99 < 8 ms/tick.
     expect(engineP99, `engine p99 (tick minus the sandbox wait), runs ${runs.map((r) => r.toFixed(2)).join(', ')}`).toBeLessThan(ENGINE_P99_MS);
     expect(p99, `tick p99, runs ${runs.map((r) => r.toFixed(2)).join(', ')}`).toBeLessThan(TARGET_P99_MS);
   }, 180_000);
 });
 
 /**
- * §5.3 minion code (2026-10-26, §14 test:perf): the M8.5 worst case with
+ * Minion code: the M8.5 worst case with
  * factories that steer every minion themselves. Each player's 2 factories
  * have an updateMinion() that loops over all enemies for the nearest
  * non-wall one (attack it in range, else walk at it), so up to 40 minions
@@ -481,7 +481,7 @@ const MINION_CODE_FACTORY_SRC = FACTORY_SRC.replace("this.name = 'Swarm Factory'
 }`,
 );
 
-describe('buildings worst case with minion code (§5.3 timing)', () => {
+describe('buildings worst case with minion code', () => {
   it('8p × (10 soldiers + 2 Brain Factories + 12 walls) on Ring 8, every minion steered by updateMinion(): sim p99 < 8 ms/tick', async () => {
     const config: GameConfig = deepMerge(DEFAULT_CONFIG, { timers: { battleTicks: TICKS } });
     expect(MINION_CODE_FACTORY_SRC).toContain('updateMinion(');

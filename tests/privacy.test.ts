@@ -1,4 +1,4 @@
-// Privacy (plan §3, §14): assertions on SERIALIZED payloads.
+// Privacy: assertions on SERIALIZED payloads.
 //   * Before START, no REST response or WS message to another player or the
 //     projector contains a player's unit names, stats, selection, placement or
 //     zone.
@@ -6,7 +6,7 @@
 //     unplaced design never leaks), sprites included only for fielded types.
 //   * During BATTLE, no /state, WS or MCP payload carries the ranking, the
 //     round's points or a report before playback reaches the final frame.
-//   * Open Armory (§9.1, on in this match): no entry exists or is visible
+//   * Open Armory (on in this match): no entry exists or is visible
 //     before its battle is released; afterwards only FIELDED types appear,
 //     never an unfielded design or any source.
 
@@ -23,7 +23,7 @@ const T = 60_000;
 const SECRET = ['Secret Ninja', 'secret-ninja', 'Hidden Hawk', 'hidden-hawk', 'Storm Shield', 'storm-shield'];
 
 /**
- * M8.8 (§10.6): a lightning splash soldier with a shield aura. Its element,
+ * M8.8: a lightning splash soldier with a shield aura. Its element,
  * splash and support are part of the design: hidden until START like every stat.
  * (Bob's own templates are 'normal' with no support, so these JSON values are Alice's.)
  */

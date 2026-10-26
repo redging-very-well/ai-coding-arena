@@ -1,4 +1,4 @@
-// Movement and separation (plan §9 tick order steps 4-5).
+// Movement and separation.
 
 import { ARENA, type Point } from '@pixel-clash/shared';
 import type { Rng } from './prng.js';
@@ -6,7 +6,7 @@ import type { SimUnit } from './types.js';
 import { pushOutOfWalls, type WallGrid } from './walls.js';
 
 /**
- * Keep a body inside the S×S arena (default 800, §9.2). The centre is clamped
+ * Keep a body inside the S×S arena (default 800). The centre is clamped
  * so the whole body stays on the field (cell centres are ≥ 20 px from the
  * edge, so placement is never affected).
  */
@@ -36,12 +36,12 @@ export function stepToward(u: SimUnit, dest: Point, speed: number, arena: number
   return u.x !== before.x || u.y !== before.y;
 }
 
-/** Bodies that never move: towers, factories and walls (§5.2). */
+/** Bodies that never move: towers, factories and walls. */
 export function isFixedBody(u: Pick<SimUnit, 'type'>): boolean {
   return u.type === 'tower' || u.type === 'factory' || u.type === 'wall';
 }
 
-/** Above this many circle bodies, separation checks pairs through a 40 px spatial hash (§9.3). */
+/** Above this many circle bodies, separation checks pairs through a 40 px spatial hash. */
 export const SPATIAL_HASH_MIN_BODIES = 64;
 const HASH_CELL = 40;
 
@@ -90,7 +90,7 @@ function pushPair(a: SimUnit, b: SimUnit, rng: Rng, arena: number): void {
 }
 
 /**
- * Separation (§9): `passes` relaxation passes over every overlapping pair, in
+ * Separation: `passes` relaxation passes over every overlapping pair, in
  * instanceId order. Each pair is pushed apart along the centre line until the
  * bodies just touch. Two moving bodies share the push; towers and factories
  * never move, so a soldier or minion touching one takes the full push.
@@ -98,7 +98,7 @@ function pushPair(a: SimUnit, b: SimUnit, rng: Rng, arena: number): void {
  * move). Bodies at exactly the same spot are split along a direction from the
  * seeded PRNG.
  *
- * Walls (§9.3) are not circles: leave them out of `units` and pass the wall
+ * Walls are not circles: leave them out of `units` and pass the wall
  * grid; every pass then ends by pushing the moving bodies out of the wall
  * squares (`pushOutOfWalls`), so after the last pass no body overlaps a wall.
  * With more than 64 bodies the pairs come from a 40 px spatial hash (radii

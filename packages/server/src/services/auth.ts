@@ -1,4 +1,4 @@
-// Identity (plan §4): scrypt PIN hashes, web sessions (cookie pc_session),
+// Identity: scrypt PIN hashes, web sessions (cookie pc_session),
 // API keys (`pc_<24 base32>`), and the facilitator password + admin sessions.
 
 import { randomBytes, randomInt, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
@@ -72,7 +72,7 @@ export const PASSWORD_WORDS: readonly string[] = [
   .join(' ')
   .split(' ');
 
-/** Three random words joined by '-' (plan §4). */
+/** Three random words joined by '-'. */
 export function generatePassword(): string {
   return Array.from({ length: 3 }, () => PASSWORD_WORDS[randomInt(PASSWORD_WORDS.length)]).join('-');
 }

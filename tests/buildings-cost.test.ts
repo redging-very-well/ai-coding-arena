@@ -1,5 +1,4 @@
-// Walls and factories in shared (plan §5.2, §6 Walls and factories, §7 per
-// type, §9.3 Placement check, M8.5; numbers of the $10,000 redesign): the
+// Walls and factories in shared (M8.5; numbers of the $10,000 redesign): the
 // reference price tables, the
 // production part, re-pricing inputs, per-type stat guards, config limits and
 // the W_TRAPPED flood fill.
@@ -58,7 +57,7 @@ function refTable(marker: string): string[][] {
 const dollars = (cell: string) => Number(/\$([\d,]+)/.exec(cell)![1]!.replace(/,/g, ''));
 const f2 = (n: number) => Math.round(n * 100) / 100;
 
-describe('§6 reference walls, minions and factories (curve k = 1)', () => {
+describe('reference walls, minions and factories (curve k = 1)', () => {
   it('every wall row of the reference table: linear, curve, raw and cost', () => {
     const rows = refTable('Walls, `raw =');
     expect(rows.length).toBe(8);
@@ -183,7 +182,7 @@ describe('§6 reference walls, minions and factories (curve k = 1)', () => {
   });
 });
 
-describe('§7 per-type stat guards', () => {
+describe('per-type stat guards', () => {
   const b = C.stats.bounds;
   const W = { name: 'Basic Wall', type: 'wall', maxHealth: 2000, color: '#8A8F98' };
   const F = { name: 'Basic Factory', type: 'factory', maxHealth: 360, productionInterval: 900, color: '#C0A060' };
@@ -247,7 +246,7 @@ describe('§7 per-type stat guards', () => {
   });
 });
 
-describe('config (§9.3 config additions)', () => {
+describe('config', () => {
   it('has the redesign defaults and config/default.json mirrors them', () => {
     expect(C.caps).toMatchObject({ maxUnitTypes: 4, maxBuildingTypes: 4, maxCopies: 12, maxFactoryCopies: 5, maxWallCopies: 16 });
     expect('maxTypes' in C.caps).toBe(false);
@@ -272,7 +271,7 @@ describe('config (§9.3 config additions)', () => {
   });
 });
 
-describe('W_TRAPPED: trappedCells (§9.3 Placement check)', () => {
+describe('W_TRAPPED: trappedCells', () => {
   const types: Record<string, UnitType> = { w: 'wall', s: 'soldier', t: 'tower', f: 'factory' };
   const typeOf = (id: string) => types[id];
   // Duel: zone 0 is the top-left corner zone (two of its sides are the arena edge).
@@ -326,10 +325,10 @@ describe('the built-in minion sprite', () => {
 });
 
 // ---------------------------------------------------------------------------
-// M8.6: minion kinds and burst (§5.3, §6 Minion kinds)
+// M8.6: minion kinds and burst
 // ---------------------------------------------------------------------------
 
-describe('§6 minion kinds and factory prices (M8.6)', () => {
+describe('minion kinds and factory prices (M8.6)', () => {
   const kindFactory = (hp: number, interval: number, produces?: 'grunt' | 'archer' | 'runner' | 'brute' | 'medic'): CostStats => ({
     ...factory(hp, interval),
     ...(produces ? { produces } : {}),

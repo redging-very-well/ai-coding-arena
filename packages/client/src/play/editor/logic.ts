@@ -1,6 +1,6 @@
-// The in-browser unit editor (plan §12.1 "Edit code"), DOM-free parts so
+// The in-browser unit editor, DOM-free parts so
 // tests can run them: finding the read-only sprite() method and the stat
-// assignments in the @lezer/javascript syntax tree, turning §7 validation
+// assignments in the @lezer/javascript syntax tree, turning validation
 // issues into editor diagnostics, the cost panel, the live-validation
 // scheduler (debounced, coalesced, ≤ 1 request in flight, ≤ 1 per second),
 // per-unit drafts, and the phase-change guard.
@@ -121,7 +121,7 @@ export type SpriteLocation =
   /** It seems to have one, but we can't tell where it is: whole file editable, with a warning. */
   | { kind: 'unknown' };
 
-/** Where the unit's sprite() method is (plan §12.1: it is read-only in the editor). */
+/** Where the unit's sprite() method is (it is read-only in the editor). */
 export function findSprite(source: string, tree: Tree = parseUnit(source)): SpriteLocation {
   const mentions = /\bsprite\b/.test(source.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, ''));
   const cls = unitClass(source, tree);
@@ -193,7 +193,7 @@ export function copyNameProblem(name: string, templateName: string): string | nu
 }
 
 // ---------------------------------------------------------------------------
-// Diagnostics (§7 issues → squiggles or the banner)
+// Diagnostics
 // ---------------------------------------------------------------------------
 
 export interface EditorDiagnostic extends Span {
@@ -245,7 +245,7 @@ export function spanAt(source: string, line: number, column?: number): Span {
   return { from: Math.min(end, start + indent), to: end };
 }
 
-/** Turn a §7 result into squiggles (with a place in the code) and banner items (without). */
+/** Turn a result into squiggles (with a place in the code) and banner items (without). */
 export function toDiagnostics(result: ValidationResult, source: string): { diagnostics: EditorDiagnostic[]; banner: BannerItem[] } {
   const tree = parseUnit(source);
   const diagnostics: EditorDiagnostic[] = [];
@@ -320,7 +320,7 @@ export interface CostPanel {
 export function costPanel(b: CostBreakdown, cap: number): CostPanel {
   const rows: CostRow[] = [{ label: 'Base', value: null, price: money(b.terms.base), surcharge: 0, nearMax: false }];
   let surcharge = 0;
-  // Walls and factories (§6) pay for health only; a factory adds its production up front (M8.6: named by its minion kind).
+  // Walls and factories pay for health only; a factory adds its production up front (M8.6: named by its minion kind).
   const building = b.formula === 'wall' || b.formula === 'factory';
   for (const stat of PRICED_STATS) {
     if (building && stat !== 'maxHealth') continue;
@@ -363,7 +363,7 @@ export function breakdownOf(result: ValidationResult): CostBreakdown | null {
 }
 
 // ---------------------------------------------------------------------------
-// Live validation: debounce + coalesce (plan §12.1)
+// Live validation: debounce + coalesce
 // ---------------------------------------------------------------------------
 
 export type LiveOutcome<R> =
@@ -560,7 +560,7 @@ export function draftChoice(draft: Draft | null, stored: { source: string; versi
 // Saving and phases
 // ---------------------------------------------------------------------------
 
-/** Saving is a submit, so PLAN only (§10.2); validation works in every phase. */
+/** Saving is a submit, so PLAN only; validation works in every phase. */
 export function saveBlockedReason(phase: Phase | undefined, opts: { busy?: boolean; hasErrors?: boolean; dirty?: boolean; isCopy?: boolean } = {}): string | null {
   if (phase !== 'PLAN') return 'You can save during Plan time';
   if (opts.busy) return 'Saving…';

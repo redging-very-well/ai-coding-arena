@@ -1,7 +1,7 @@
-// REST / WebSocket / MCP data-transfer types (plan §10).
+// REST / WebSocket / MCP data-transfer types.
 //
 // Everything that reaches a client is built per recipient by
-// packages/server/src/services/visibility.ts (§3 privacy). Optional fields are
+// packages/server/src/services/visibility.ts. Optional fields are
 // OMITTED, never filled with another player's data, before the reveal.
 //
 // ===========================================================================
@@ -15,15 +15,15 @@
 //   * Claude / curl: `Authorization: Bearer pc_…` (the player's apiKey).
 //
 // REST (JSON, prefix /api). Errors: HTTP 4xx/5xx with ApiErrorBody; a failed
-// unit validation is HTTP 422 with the §7 ValidationFailure body.
+// unit validation is HTTP 422 with the ValidationFailure body.
 //   GET    /health                    -> HealthDTO
 //   POST   /players      {name,pin,claudeSeat?} -> LoginResponse (+ cookie)   NAME_TAKEN GAME_FULL BAD_PIN_FORMAT BAD_NAME_FORMAT
 //   POST   /login        {name,pin,claudeSeat?} -> LoginResponse (+ cookie)   BAD_LOGIN RATE_LIMITED
 //                                        claudeSeat: 'auto' | 1-8 (this laptop's seat, preferred) = also
-//                                        auto-assign an AI seat (§11.2 c); the answer then has `claudeSeat`
-//   POST   /seat-login   {seat,token?,agent?} + Basic player:<seat password> -> SeatLoginDTO (the AI session host only, §11.2 e).
-//                        With `agent` ('claude'|'codex'): also `credential`, the shared agent login from /admin
-//                        (§11.2 f), and a missing or stale token is not an error (credential only).
+//                                        auto-assign an AI seat; the answer then has `claudeSeat`
+//   POST   /seat-login   {seat,token?,agent?} + Basic player:<seat password> -> SeatLoginDTO (the AI session host only).
+//                        With `agent` ('claude'|'codex'): also `credential`, the shared agent login from /admin,
+//                        and a missing or stale token is not an error (credential only).
 //   POST   /logout                    -> {ok:true}
 //   GET    /me                        -> MeResponse
 //   GET    /rules                     -> RulesDTO
@@ -45,7 +45,7 @@
 //   GET    /battles/:round/report     -> BattleReportDTO  (own units; after playback ends)
 //   GET    /battles/:round/replay     -> ReplayDTO        (after playback ends)
 //   GET    /setup                     -> SetupInfoDTO (no auth: LAN/play URL + QR; never the seat password)
-//   GET    /claude-seats              -> ClaudeSeatsDTO (player; the Claude seat picker, §11.2)
+//   GET    /claude-seats              -> ClaudeSeatsDTO (player; the Claude seat picker)
 //   PUT    /me/claude-seat {seat: 1-8 | null} -> {claudeSeat} (player, any phase, 1/s;
 //                                        BAD_CLAUDE_SEAT, CLAUDE_SEAT_OFF, CLAUDE_SEAT_TAKEN 409 with details {seat, takenBy})
 // Admin (cookie pc_admin):
@@ -53,10 +53,10 @@
 //   POST /admin/logout                -> {ok:true}
 //   GET  /admin/session               -> {admin: boolean}
 //   POST /admin/match {rounds?, armory?, mapStyle?, teamMode?, revealNames?, wallsAllowed?} -> GameStateDTO (LOBBY -> PLAN, needs 2-8 players;
-//                                        armory = Open Armory, §9.1; mapStyle null = default for the player count,
-//                                        omitted = the draft's; teamMode omitted = the draft's ('ffa' by default), §9.2;
+//                                        armory = Open Armory; mapStyle null = default for the player count,
+//                                        omitted = the draft's; teamMode omitted = the draft's ('ffa' by default);
 //                                        revealNames = "Show enemy names to units" (omitted = the draft's, off by default);
-//                                        wallsAllowed = "Walls allowed" (omitted = the draft's, on by default), §9.1b;
+//                                        wallsAllowed = "Walls allowed" (omitted = the draft's, on by default);
 //                                        BAD_MAP_STYLE / BAD_TEAM_MODE with details {players, valid})
 //   GET  /admin/match/setup           -> MatchSetupDTO (the LOBBY draft, or the running match's setup)
 //   PUT  /admin/match/setup {mapStyle?, teamMode?, revealNames?, wallsAllowed?, teamBudgets?} -> MatchSetupDTO (LOBBY only; re-balances the draft teams;
@@ -92,9 +92,9 @@
 //   POST /admin/claude-seats/check    -> AdminClaudeSeatsDTO (probes every seat now)
 //   PUT  /admin/agent-credentials {claudeToken?, anthropicApiKey?, openaiApiKey?} (null/"" clears)
 //                                     -> AdminClaudeSeatsDTO (write-only: only the last 4 characters come back;
-//                                        BAD_AGENT_CREDENTIAL for a value of the wrong shape, §11.2 f)
+//                                        BAD_AGENT_CREDENTIAL for a value of the wrong shape)
 //
-// Seat terminal proxy (§11.2, same origin, not under /api; cookie auth: the
+// Seat terminal proxy (same origin, not under /api; cookie auth: the
 // player assigned to Claude seat N, or the admin):
 //   GET/HEAD /terminal/<N>/…           -> the seat's ttyd (page, assets); friendly HTML error pages
 //   GET      /terminal/<N>/token       -> {"token":"pixel-clash"} (answered by the proxy)
@@ -117,10 +117,10 @@
 //   * The 'admin' role receives the same 'state' as the projector; the admin
 //     page reads details from GET /api/admin/overview (refetch on 'state').
 //   * Instance ids are `${seat}-${row}-${col}`; colour by seat (0-7).
-//   * Maps and teams (§9.2): `MapDTO` is public (no zone owners before START),
+//   * Maps and teams: `MapDTO` is public (no zone owners before START),
 //     `TeamDTO` is public; teammates' live selections/zones/placements travel
 //     only in each member's `private.team` block (`TeamPrivateDTO`).
-//   * Phase gates (§10.2): submit/retire/selection only in PLAN; placement
+//   * Phase gates: submit/retire/selection only in PLAN; placement
 //     only in PLACEMENT; ready in PLAN and PLACEMENT; validate always. A closed gate is HTTP 409
 //     PHASE_CLOSED with details {phase, opensIn, secondsLeft?}.
 // ===========================================================================
@@ -142,7 +142,7 @@ export const SESSION_COOKIE = 'pc_session';
 export const ADMIN_COOKIE = 'pc_admin';
 
 /**
- * Ready can't be spammed (§3): each change flickers every screen, can replay
+ * Ready can't be spammed: each change flickers every screen, can replay
  * the all-ready chime and restarts the auto-advance countdown. The server
  * allows one change per READY_MIN_GAP_MS and READY_MAX_PER_WINDOW changes per
  * READY_WINDOW_MS per player; /play keeps the button disabled for the gap.
@@ -162,7 +162,7 @@ export interface PlayerDTO {
   seat: number;
 }
 
-/** Public status of a player (visible to everyone, §3 privacy table). */
+/** Public status of a player (visible to everyone). */
 export interface PlayerStatusDTO extends PlayerDTO {
   connected: boolean;
   /** Submitted at least one unit during the current PLAN. */
@@ -176,9 +176,9 @@ export interface PlayerStatusDTO extends PlayerDTO {
   active: boolean;
   /** Kicked during BATTLE; removed when the battle ends. */
   leaving?: boolean;
-  /** Team mode: the player's team (team membership is public, §3). */
+  /** Team mode: the player's team (team membership is public). */
   teamId?: number;
-  /** Joined after Start match in team mode: sits out until the next match (§4). */
+  /** Joined after Start match in team mode: sits out until the next match. */
   benched?: boolean;
 }
 
@@ -186,12 +186,12 @@ export interface PlayerStatusDTO extends PlayerDTO {
 export interface LoginResponse {
   player: PlayerDTO;
   apiKey: string;
-  /** Only when the request asked for it (`claudeSeat` in the body): the AI seat auto-assigned on join/login (§11.2 c). */
+  /** Only when the request asked for it (`claudeSeat` in the body): the AI seat auto-assigned on join/login. */
   claudeSeat?: ClaudeSeatAssignDTO;
 }
 
 /**
- * How an AI seat was auto-assigned (§11.2 c): `kept` = the player's own seat,
+ * How an AI seat was auto-assigned: `kept` = the player's own seat,
  * `preferred` = this laptop's seat, `lowest` = the lowest free seat that is
  * on, `none` = no seat is free (the picker shows).
  */
@@ -203,7 +203,7 @@ export interface ClaudeSeatAssignDTO {
 }
 
 /**
- * POST /seat-login (the AI session host's agent-loop, §11.2 e): `name` + `apiKey`
+ * POST /seat-login (the AI session host's agent-loop): `name` + `apiKey`
  * go to /kit/.pixel-clash/player.json. Without a valid token (an admin
  * rescue, a stale token) and with `agent` sent, only `credential`. Key order
  * is fixed (the entrypoint matches it strictly): name, apiKey, credential.
@@ -211,7 +211,7 @@ export interface ClaudeSeatAssignDTO {
 export interface SeatLoginDTO {
   name?: string;
   apiKey?: string;
-  /** Only when the request names `agent`: the shared agent login for it, or null (§11.2 f). */
+  /** Only when the request names `agent`: the shared agent login for it, or null. */
   credential?: SeatCredentialDTO | null;
 }
 
@@ -222,7 +222,7 @@ export interface SeatCredentialDTO {
   value: string;
 }
 
-/** The shared agent logins pasted in /admin (§11.2 f). */
+/** The shared agent logins pasted in /admin. */
 export type AgentCredentialKind = 'claudeToken' | 'anthropicApiKey' | 'openaiApiKey';
 
 /** GET /me */
@@ -234,9 +234,9 @@ export interface MeResponse {
   active: boolean;
   /** Team mode: own team. */
   teamId?: number;
-  /** Joined after Start match in team mode: sits out until the next match (§4). */
+  /** Joined after Start match in team mode: sits out until the next match. */
   benched: boolean;
-  /** The player's Claude seat 1-8 (the laptop's terminal, §11.2), or null. Not the game seat. */
+  /** The player's Claude seat 1-8 (the laptop's terminal), or null. Not the game seat. */
   claudeSeat: number | null;
 }
 
@@ -251,11 +251,11 @@ export interface UnitCardDTO {
   name: string;
   version: number;
   stats: StatsSnapshot;
-  /** M8.5: 'unit' (soldiers) or 'building' (towers, walls, factories): the two pick limits (§5.2). */
+  /** M8.5: 'unit' (soldiers) or 'building' (towers, walls, factories): the two pick limits. */
   group?: UnitGroup;
-  /** M8.6 factories: the squad orders its update() gave in the dry run (§7), e.g. ['swarm', 'attack']. */
+  /** M8.6 factories: the squad orders its update() gave in the dry run, e.g. ['swarm', 'attack']. */
   orders?: MinionOrder[];
-  /** M8.8 heal support: whether update() returned { action: 'heal' } in the dry run (§7). */
+  /** M8.8 heal support: whether update() returned { action: 'heal' } in the dry run. */
   healUsed?: boolean;
   /** The economy scale the design was made for (3 = the $10,000 redesign). Older designs are kept (never auto-deleted). */
   scaleVersion?: number;
@@ -284,8 +284,8 @@ export interface UnitSourceDTO extends UnitCardDTO {
 export interface UnitBattleSummaryDTO {
   round: number;
   /**
-   * The name the unit fought under ("Ogre (Ninja Sam)" for a borrowed one,
-   * §9.1). A later Armory replacement or revision may rename the live card.
+   * The name the unit fought under ("Ogre (Ninja Sam)" for a borrowed
+   * one). A later Armory replacement or revision may rename the live card.
    */
   name?: string;
   survived: number;
@@ -307,14 +307,14 @@ export interface ValidateUnitRequest {
 }
 export type ValidateUnitResponse = ValidationResult;
 /**
- * POST /units success body (HTTP 200): the §7 success result (with the stored
+ * POST /units success body (HTTP 200): the success result (with the stored
  * unitId/version in `unit`) plus `unitId`/`version` at the top level.
- * Failures are the §7 ValidationFailure (HTTP 422) or an ApiErrorBody.
+ * Failures are the ValidationFailure (HTTP 422) or an ApiErrorBody.
  */
 export type SubmitUnitResponse = ValidationSuccess & { unitId: string; version: number };
 
 // ---------------------------------------------------------------------------
-// Open Armory (§9.1)
+// Open Armory
 // ---------------------------------------------------------------------------
 
 /** Selection ids of borrowed units: `armory:<armoryId>`. */
@@ -325,7 +325,7 @@ export function isArmoryUnitId(unitId: string): boolean {
   return unitId.startsWith(ARMORY_PREFIX);
 }
 
-/** "Ogre (Ninja Sam)": how a borrowed unit type is named everywhere (§9.1). */
+/** "Ogre (Ninja Sam)": how a borrowed unit type is named everywhere. */
 export function armoryDisplayName(unitName: string, creatorName: string): string {
   return `${unitName} (${creatorName})`;
 }
@@ -359,7 +359,7 @@ export interface ArmoryInfoDTO {
 
 export interface PlacementDTO {
   unitId: string;
-  /** Zone-local, 0-5: row 0 = the zone's front row, (0,0) = the front cell nearest the centre (§9.2). */
+  /** Zone-local, 0-5: row 0 = the zone's front row, (0,0) = the front cell nearest the centre. */
   col: number;
   row: number;
 }
@@ -370,7 +370,7 @@ export interface SelectionRequest {
 export interface PlacementRequest {
   placements: PlacementDTO[];
 }
-/** Copy counts / caps per group (M8.5, §5.2 Copies): fighters run code, walls don't. */
+/** Copy counts / caps per group (M8.5): fighters run code, walls don't. */
 export interface CopyCountsDTO {
   /** Soldiers + towers + factories. */
   fighters: number;
@@ -408,14 +408,14 @@ export interface TimerDTO {
   paused: boolean;
   /**
    * PLACEMENT only: the timer ran out. Placement is closed (empty zones were
-   * auto-placed) and the host's START works without everyone Ready (§3).
+   * auto-placed) and the host's START works without everyone Ready.
    * Adding time clears it and reopens placement.
    */
   expired?: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// Maps and teams (§9.2)
+// Maps and teams
 // ---------------------------------------------------------------------------
 
 /** One zone of a map (public: no owner before START). */
@@ -442,12 +442,12 @@ export type TeamPattern = 'solid' | 'dashed' | 'double' | 'dotted';
 
 /** A team (public). Fixed from Start match to New match. */
 export interface TeamDTO {
-  /** 0..T−1 (= `teamId` in the unit views, §5). */
+  /** 0..T−1 (= `teamId` in the unit views). */
   teamId: number;
   name: string;
   color: string;
   pattern: TeamPattern;
-  /** Player ids in join order (the block-rotation slots, §9.2). */
+  /** Player ids in join order (the block-rotation slots). */
   members: string[];
 }
 
@@ -466,7 +466,7 @@ export interface TeamRoundRankDTO {
   members: string[];
 }
 
-/** Team table row (§9.2 Team scoring). */
+/** Team table row. */
 export interface TeamTableRowDTO {
   teamId: number;
   name: string;
@@ -486,32 +486,32 @@ export interface MatchSetupDTO {
   /** The host's style override, or null for the default by player count. */
   mapStyle: MapStyle | null;
   teamMode: TeamMode;
-  /** "Show enemy names to units" (§5): views carry ownerName/teamName and world.players. Locked at Start match. */
+  /** "Show enemy names to units": views carry ownerName/teamName and world.players. Locked at Start match. */
   revealNames: boolean;
-  /** "Walls allowed" (§9.1b, default true): false = wall designs can't be picked or placed this match. Locked at Start match. */
+  /** "Walls allowed" (default true): false = wall designs can't be picked or placed this match. Locked at Start match. */
   wallsAllowed: boolean;
   map: MapDTO;
   teams: TeamDTO[] | null;
   /** The normal budget per player (config caps.budget). */
   defaultBudget: number;
-  /** Team mode: the budget per player of each team (index = teamId; §9.2 per-team budgets); null without teams. Locked at Start match. */
+  /** Team mode: the budget per player of each team (index = teamId); null without teams. Locked at Start match. */
   teamBudgets: number[] | null;
   validStyles: MapStyle[];
   validTeamModes: TeamMode[];
 }
 
-/** `/state` `match` block (§10.3). */
+/** `/state` `match` block. */
 export interface MatchInfoDTO {
   mapStyle: MapStyle;
   teamMode: TeamMode;
   /**
-   * The match setting "Show enemy names to units" (§5): in battle every body
+   * The match setting "Show enemy names to units": in battle every body
    * in a unit's view carries `ownerName` (and `teamName` in team mode) and
    * `world.players` lists the players. LOBBY: the draft; fixed from Start match.
    */
   revealNames: boolean;
   /**
-   * The match setting "Walls allowed" (§9.1b, default true). False: wall
+   * The match setting "Walls allowed" (default true). False: wall
    * designs (the Basic Wall and players' own) can't be picked, placed or
    * borrowed this match, so battles have no walls. LOBBY: the draft; fixed
    * from Start match.
@@ -521,11 +521,11 @@ export interface MatchInfoDTO {
   map: MapDTO | null;
   teams: TeamDTO[] | null;
   teamTable: TeamTableRowDTO[] | null;
-  /** Team mode with per-team budgets set (§9.2): the budget per player of each team (index = teamId). Absent when every team has the default. */
+  /** Team mode with per-team budgets set: the budget per player of each team (index = teamId). Absent when every team has the default. */
   teamBudgets?: number[];
 }
 
-/** A teammate as seen by the other members (team privacy, §9.2). */
+/** A teammate as seen by the other members (team privacy). */
 export interface TeamMemberPrivateDTO {
   playerId: string;
   name: string;
@@ -546,7 +546,7 @@ export interface TeamPrivateDTO {
   members: TeamMemberPrivateDTO[];
 }
 
-/** Match standings row (§9 Match standings). */
+/** Match standings row. */
 export interface ScoreboardEntryDTO {
   playerId: string;
   name: string;
@@ -572,7 +572,7 @@ export interface MyStateDTO {
   /** PLAN: the chosen unitIds. From PLACEMENT on: the locked selection (palette). */
   selection: string[];
   placement: PlacementDTO[];
-  /** This round's zone on the map (§9.2). Only sent to the owner, from the start of PLACEMENT. */
+  /** This round's zone on the map. Only sent to the owner, from the start of PLACEMENT. */
   myZone: MapZoneDTO | null;
   ready: boolean;
   submissionsOpen: boolean;
@@ -580,15 +580,15 @@ export interface MyStateDTO {
   active: boolean;
   /** "Copy last layout" is available (a previous layout exists). */
   hasLastLayout: boolean;
-  /** M8.5: the copy caps per group (§5.2 Copies). */
+  /** M8.5: the copy caps per group. */
   copyCaps?: CopyCountsDTO;
   /** Team mode: own team. */
   teamId?: number;
-  /** Joined after Start match in team mode: sits out until the next match (§4). */
+  /** Joined after Start match in team mode: sits out until the next match. */
   benched?: boolean;
-  /** Team mode: teammates' live selection/zone/placement (§9.2 Team privacy). */
+  /** Team mode: teammates' live selection/zone/placement. */
   team?: TeamPrivateDTO | null;
-  /** MATCH_RESULTS only: the match awards this player won (details in `GameStateDTO.matchAwards`, §9 Match awards). */
+  /** MATCH_RESULTS only: the match awards this player won (details in `GameStateDTO.matchAwards`). */
   awards?: AwardId[];
 }
 
@@ -604,7 +604,7 @@ export interface PlaybackDTO {
   totalTicks: number;
 }
 
-/** The countdown to the next step (§3 pending advance). */
+/** The countdown to the next step. */
 export interface PendingAdvanceDTO {
   /** PLAN → PLACEMENT, PLACEMENT → BATTLE, RESULTS → the next round's PLAN or (last round) MATCH_RESULTS. */
   to: 'PLACEMENT' | 'BATTLE' | 'PLAN' | 'MATCH_RESULTS';
@@ -625,15 +625,15 @@ export interface GameStateDTO {
    * added only when a battle's playback ends.
    */
   scoreboard: ScoreboardEntryDTO[];
-  /** Sandbox mode; anything but 'ivm' shows a red banner (§12.3). */
+  /** Sandbox mode; anything but 'ivm' shows a red banner. */
   sandboxMode: 'ivm' | 'process' | 'inproc-unsafe';
   /** BATTLE only: playback clock. */
   battle?: PlaybackDTO;
   /** RESULTS / MATCH_RESULTS: the released ranking of the last battle. */
   lastBattle?: BattleEndDTO;
-  /** Open Armory (§9.1): on/off for this match. */
+  /** Open Armory: on/off for this match. */
   armory: ArmoryInfoDTO;
-  /** Map, teams and team table (§9.2). */
+  /** Map, teams and team table. */
   match?: MatchInfoDTO;
   /**
    * PLAN / PLACEMENT: every active player (≥ 1) is Ready in the current phase
@@ -647,7 +647,7 @@ export interface GameStateDTO {
    */
   pendingAdvance?: PendingAdvanceDTO;
   /**
-   * MATCH_RESULTS only: the match awards in ceremony order (§9 Match awards),
+   * MATCH_RESULTS only: the match awards in ceremony order,
    * each with its winner(s), stat and best unit (fielded designs only, never
    * source). Absent in every other phase.
    */
@@ -662,7 +662,7 @@ export interface HealthDTO {
   phase: Phase;
 }
 
-/** GET /join: where players join (projector QR, §12.2). */
+/** GET /join: where players join (projector QR). */
 export interface JoinInfoDTO {
   /** `http://<lan-ip>:<port>/play` (the request's Host when it is not localhost). */
   joinUrl: string;
@@ -682,13 +682,13 @@ export interface RulesDTO {
   timers: Record<string, number>;
   budget: number;
   caps: Record<string, number>;
-  /** Redesign (§6 copy ramp): copies of one design beyond `freeCopies` cost `pctPerCopy`% more each, cumulatively (walls never; 0 = off). */
+  /** Redesign: copies of one design beyond `freeCopies` cost `pctPerCopy`% more each, cumulatively (walls never; 0 = off). */
   copyRamp?: { freeCopies: number; pctPerCopy: number; text: string };
   costFormula: string;
-  /** Cost coefficients (§6), incl. the `wall` and `factory` blocks (M8.5). */
+  /** Cost coefficients, incl. the `wall` and `factory` blocks (M8.5). */
   coefficients: Record<string, number | Record<string, number>>;
   bounds: Record<string, unknown>;
-  /** §9 Points: place points + damage bonus + value bonus, badges, standings. */
+  /** Place points + damage bonus + value bonus, badges, standings. */
   scoring: {
     /** Free-for-all place points at 4 players (3/2/1/0); the rule is the formula in `placePointsRule`. */
     placePoints: number[];
@@ -721,16 +721,16 @@ export const FRAME_FLAGS = {
   DISABLED: 4,
   OUTSIDE_SAFE_ZONE: 8,
   /**
-   * The sprite faces left on SCREEN (mirrored); sprites are drawn facing right
-   * (§5.1). Decided in isometric screen space (screenX ∝ x − y, §12), not by
+   * The sprite faces left on SCREEN (mirrored); sprites are drawn facing right.
+   * Decided in isometric screen space (screenX ∝ x − y), not by
    * the arena x axis.
    */
   FACING_LEFT: 16,
-  /** A wall stopped or turned the body's move since the last frame (it is pushing on a wall, §9.3). */
+  /** A wall stopped or turned the body's move since the last frame (it is pushing on a wall). */
   BLOCKED: 32,
-  /** A factory made a minion since the last frame (door flash, §12.5). */
+  /** A factory made a minion since the last frame (door flash). */
   PRODUCED: 64,
-  /** M8.8 (§9.4 Frames): status and auras on the body at the frame. */
+  /** M8.8: status and auras on the body at the frame. */
   BURNING: 128,
   FROZEN: 256,
   HASTED: 512,
@@ -738,10 +738,10 @@ export const FRAME_FLAGS = {
   SHIELDED: 2048,
 } as const;
 
-/** Redesign synergies: a hit made stronger by burning (kindle), frozen (brittle) or both (§5.4). */
+/** Redesign synergies: a hit made stronger by burning (kindle), frozen (brittle) or both. */
 export type SynergyName = 'kindle' | 'brittle' | 'both';
 
-/** M8.8: what kind of damage a `hit` event is (§9.4 Frames). Absent = 'hit'. */
+/** M8.8: what kind of damage a `hit` event is. Absent = 'hit'. */
 export type HitKind = 'hit' | 'splash' | 'burn' | 'zap' | 'shatter';
 
 /** [instanceId, x, y, hp, flags] */
@@ -755,11 +755,11 @@ export interface FrameProjectile {
 }
 
 /**
- * A living factory in a frame (§9.3 Frames):
+ * A living factory in a frame:
  * [factoryId, progress 0-100, minionsLeft, focusX, focusY, holding 0|1, canMake, stored, burst, order].
  * canMake = the minions it can still make before time runs out (its living
  * value counts these and the stored ones; 0 with nothing stored = no longer a
- * fighter, §9.3). M8.6: stored = minions waiting inside, burst = its burst,
+ * fighter). M8.6: stored = minions waiting inside, burst = its burst,
  * order = the index in MINION_ORDERS (0 attack, 1 defend, 2 swarm, 3 guard),
  * and (focusX, focusY) = where its minions head: the rally point (attack), the
  * factory (defend), the target (swarm) or the ally (guard). Entries from 6 on
@@ -770,12 +770,12 @@ export type FrameFactory = [string, number, number, number, number, 0 | 1, numbe
 export type FrameEvent =
   /** A body appears: every placed copy at t = 0, and minions when a factory makes them (`factoryId`, position). */
   | { type: 'spawn'; instanceId: string; factoryId?: string; x?: number; y?: number; kind?: MinionKind }
-  /** M8.6: 2+ stored minions left a factory together (the "release!" burst, §5.3). */
+  /** M8.6: 2+ stored minions left a factory together (the "release!" burst). */
   | { type: 'release'; factoryId: string; count: number }
   /** M8.6: a factory died with minions inside; they are lost. */
   | { type: 'lost'; factoryId: string; count: number }
   /**
-   * An eliminated side's walls and spent factories vanish, credited to nobody (§9.3).
+   * An eliminated side's walls and spent factories vanish, credited to nobody.
    * With `factoryId` (host option 'Minions die with their factory'): that factory was
    * destroyed this tick and these are its minions, crumbling with it.
    */
@@ -817,7 +817,7 @@ export interface FrameDTO {
 /** Stats of an engine-made body (the minion): a snapshot whose type is a BodyType. */
 export type StatsSnapshotLike = Omit<StatsSnapshot, 'type'> & { type: BodyType };
 
-/** A fielded design as revealed at START (fielded types only, §3). */
+/** A fielded design as revealed at START (fielded types only). */
 export interface RevealedUnitDTO {
   unitId: string;
   name: string;
@@ -827,12 +827,12 @@ export interface RevealedUnitDTO {
   sprite: SpriteSpec | null;
   spriteHidden: boolean;
   /**
-   * Factories: the body's price under this battle's config (§6). Its living
+   * Factories: the body's price under this battle's config. Its living
    * value is bodyCost + minion value × the minions it can still make
    * (`frame.fac` canMake), as the server counts it.
    */
   bodyCost?: number;
-  /** A borrowed Armory unit (§9.1): `name` is then "Ogre (Ninja Sam)". */
+  /** A borrowed Armory unit: `name` is then "Ogre (Ninja Sam)". */
   borrowedFrom?: { armoryId: string; creatorId: string; creatorName: string };
 }
 
@@ -845,7 +845,7 @@ export interface BattleRevealDTO {
   minions?: Partial<Record<MinionKind, { stats: StatsSnapshotLike; value: number }>>;
   /** Battle length in ticks. */
   totalTicks: number;
-  /** The battle's map (§9.2). */
+  /** The battle's map. */
   map?: MapDTO;
   /** Team mode: the teams. */
   teams?: TeamDTO[] | null;
@@ -855,7 +855,7 @@ export interface BattleRevealDTO {
     seat: number;
     /** Legacy: the corner of the 800 arena when the zone is one (Duel/Corners), else null. Use `mapZone`. */
     zone: Corner | null;
-    /** The zone on the battle's map (§9.2). */
+    /** The zone on the battle's map. */
     mapZone?: MapZoneDTO;
     teamId?: number;
     units: RevealedUnitDTO[];
@@ -864,7 +864,7 @@ export interface BattleRevealDTO {
 }
 
 // ---------------------------------------------------------------------------
-// Scoring (§9 Points, Damage metric, Value destroyed, Badges)
+// Scoring
 // ---------------------------------------------------------------------------
 
 export const BADGE_IDS = ['lastStanding', 'biggestHitter', 'giantSlayer', 'ironWall', 'inventor', 'bestMedic', 'comboMaster'] as const;
@@ -886,7 +886,7 @@ export function emptyBadgeCounts(): Record<BadgeId, number> {
   return { lastStanding: 0, biggestHitter: 0, giantSlayer: 0, ironWall: 0, inventor: 0, bestMedic: 0, comboMaster: 0 };
 }
 
-/** One player's battle metrics (§9), as of the shown final frame. */
+/** One player's battle metrics, as of the shown final frame. */
 export interface PlayerMetricsDTO {
   playerId: string;
   /** Effective damage dealt to enemy units (no overkill), rounded to a whole number. */
@@ -908,7 +908,7 @@ export interface RoundScoreDTO {
   /** Team mode: the player's team. `place` and `placePoints` are then the team's. */
   teamId?: number;
   place: number;
-  /** round((P − 1) × (T − place) / (T − 1)); free-for-all = P − place (§9 Points). */
+  /** round((P − 1) × (T − place) / (T − 1)); free-for-all = P − place. */
   placePoints: number;
   damage: number;
   /** round-half-up(damageBonusMax × P/4 × damage / top damage); 0 when the top is 0. */
@@ -918,7 +918,7 @@ export interface RoundScoreDTO {
   valueBonus: number;
   total: number;
   badges: BadgeId[];
-  /** 💡 Inventor (§9.1): how many other players fielded this player's Armory units this battle. */
+  /** 💡 Inventor: how many other players fielded this player's Armory units this battle. */
   inventorUsedBy?: number;
   /** M8.8 (💚 Best Medic, no points): HP this player's healers restored; only when > 0. */
   healing?: number;
@@ -936,7 +936,7 @@ export interface RankingEntryDTO extends Omit<RoundScoreDTO, 'total'> {
 }
 
 /**
- * A "top damage" unit of a round (§9 Results): one fielded unit type of one
+ * A "top damage" unit of a round: one fielded unit type of one
  * player, all its copies summed. Public with the released result (fielded
  * types were revealed at START); never source.
  */
@@ -963,13 +963,13 @@ export interface TopUnitDTO {
   /** null when there is none or it is hidden (draw the fallback from stats). */
   sprite: SpriteSpec | null;
   spriteHidden: boolean;
-  /** Borrowed from the Open Armory: the creator's name (§9.1). */
+  /** Borrowed from the Open Armory: the creator's name. */
   borrowedFrom?: string;
   /** The player was kicked during the battle (the damage still counts here). */
   left?: boolean;
 }
 
-/** Sent only when playback reaches the final frame (§9 Result release). */
+/** Sent only when playback reaches the final frame. */
 export interface BattleEndDTO {
   round: number;
   /** M8.8: the economy the battle was played in (2 = ×5); absent = the $1,000 game (label "($1,000 game)"). */
@@ -983,7 +983,7 @@ export interface BattleEndDTO {
   teams?: TeamRoundRankDTO[];
   teamTable?: TeamTableRowDTO[];
   /**
-   * Open Armory (§9.1): creators whose Armory units other players fielded in
+   * Open Armory: creators whose Armory units other players fielded in
    * this battle (💡 Inventor, no points), with "used by N players".
    */
   inventors?: Array<{ playerId: string; name: string; usedBy: number; units: string[] }>;
@@ -998,11 +998,11 @@ export interface BattleReportErrorDTO {
   tick: number;
   message: string;
   line?: number;
-  /** A borrowed Armory unit (§9.1): the creator's name ("borrowed from Ninja Sam"). */
+  /** A borrowed Armory unit: the creator's name ("borrowed from Ninja Sam"). */
   borrowedFrom?: string;
 }
 
-/** One fielded type in the battle report (M8.5, §10.5): own units only. */
+/** One fielded type in the battle report (M8.5): own units only. */
 export interface BattleReportTypeDTO {
   unitId: string;
   name: string;
@@ -1030,7 +1030,7 @@ export interface BattleReportTypeDTO {
   assist?: number;
 }
 
-/** M8.8: a type's damage by kind (§9.4 Scoring and reports). */
+/** M8.8: a type's damage by kind. */
 export interface DamageSplitDTO {
   hit: number;
   splash: number;
@@ -1039,7 +1039,7 @@ export interface DamageSplitDTO {
   shatter: number;
 }
 
-/** Own units only (§10.3). */
+/** Own units only. */
 export interface BattleReportDTO {
   round: number;
   /** M8.8: as BattleEndDTO.scaleVersion (absent = a report from the $1,000 game). */
@@ -1076,7 +1076,7 @@ export interface ReplayDTO {
 }
 
 // ---------------------------------------------------------------------------
-// WebSocket messages (§10.3)
+// WebSocket messages
 // ---------------------------------------------------------------------------
 
 export type ClientWsMessage = { type: 'hello'; role: ViewerRole } | { type: 'ping' };
@@ -1092,17 +1092,17 @@ export interface PrivateStateDTO {
   lastLayout: PlacementDTO[] | null;
   /** Legacy: the corner of the 800 arena when this round's zone is one (Duel/Corners), else null. Use `mapZone`. */
   zone: Corner | null;
-  /** The zone on this round's map (§9.2). */
+  /** The zone on this round's map. */
   mapZone?: MapZoneDTO | null;
   budget: number;
   spent: number;
   ready: boolean;
   active: boolean;
-  /** Team mode: own team, benched flag and teammates' live data (§9.2). */
+  /** Team mode: own team, benched flag and teammates' live data. */
   teamId?: number;
   benched?: boolean;
   team?: TeamPrivateDTO | null;
-  /** Open Armory is on for this match (§9.1). */
+  /** Open Armory is on for this match. */
   armoryEnabled: boolean;
   /** Borrowable Armory units (never your own; empty when Open Armory is off). */
   armory: ArmoryCardDTO[];
@@ -1118,8 +1118,8 @@ export interface PrivateStateDTO {
  *  - 'battle:end'    only when playback reaches the final frame (or Skip).
  *  - 'toast'         short message for the recipient.
  *  - 'kicked'        this player was removed; the session is gone.
- *  - 'screen'        a facilitator command for the projector (replay, join poster), §12.2.
- *  - 'terminal'      players: own Claude seat, its status and who holds its live terminal (§11.2).
+ *  - 'screen'        a facilitator command for the projector (replay, join poster).
+ *  - 'terminal'      players: own Claude seat, its status and who holds its live terminal.
  *                    Sent on hello and whenever any Claude seat changes (refetch /claude-seats for the picker).
  *  - 'terminals'     admins: every Claude seat (no secret, no direct URLs), on hello and on every change.
  */
@@ -1138,7 +1138,7 @@ export type ServerWsMessage =
   | { type: 'terminals'; data: AdminClaudeSeatsDTO };
 
 /**
- * POST /admin/screen → 'screen' WS message (§12.2): the facilitator drives the
+ * POST /admin/screen → 'screen' WS message: the facilitator drives the
  * projector from /admin. Carries no game data.
  *  - replay       play the last battle's replay from the start (RESULTS/MATCH_RESULTS).
  *  - replaySpeed  1x / 2x for the running replay.
@@ -1179,12 +1179,12 @@ export function parseScreenCommand(raw: unknown): ScreenCommandDTO | null {
 export interface AdminPlayerDTO extends PlayerStatusDTO {
   /** Legacy corner of this round's zone (Duel/Corners on the 800 arena), else null. */
   zone: Corner | null;
-  /** This round's zone on the map (§9.2), or null. */
+  /** This round's zone on the map, or null. */
   mapZone: MapZoneDTO | null;
   designs: number;
   strikes: number;
   activeFromRound: number;
-  /** Claude seat 1-8 (§11.2), or null. */
+  /** Claude seat 1-8, or null. */
   claudeSeat: number | null;
 }
 
@@ -1200,10 +1200,10 @@ export interface AdminOverviewDTO {
   >;
   lanUrls: string[];
   sandboxMode: GameStateDTO['sandboxMode'];
-  /** The match setup (§9.2): the LOBBY draft with its map preview and teams, or the running match's. */
+  /** The match setup: the LOBBY draft with its map preview and teams, or the running match's. */
   setup: MatchSetupDTO;
   /**
-   * Open Armory entries (§9.1) with their REAL sprites, so the facilitator can
+   * Open Armory entries with their REAL sprites, so the facilitator can
    * see and hide them, also for retired or deleted designs. Empty when off.
    */
   armory: AdminArmoryEntryDTO[];
@@ -1232,7 +1232,7 @@ export interface AdminArmoryEntryDTO {
 
 /** Facilitator settings for /setup (persisted; survive a wipe). */
 export interface SetupSettingsDTO {
-  /** AI session host host or IP (no scheme/port); seat N's ttyd is http://<host>:778N (§11.1). */
+  /** AI session host host or IP (no scheme/port); seat N's ttyd is http://<host>:778N. */
   aiSessionHost: string | null;
   /** Preferred base URL (`http://ip:port`) for the join QR when there are several interfaces. */
   preferredUrl: string | null;
@@ -1240,7 +1240,7 @@ export interface SetupSettingsDTO {
 
 /**
  * @deprecated Direct ttyd links (adults' fallback, needs the seat password).
- * Superseded by the AI helper pane in /play and the /terminal/<N>/ proxy (§11.2).
+ * Superseded by the AI helper pane in /play and the /terminal/<N>/ proxy.
  */
 export interface SeatTerminalDTO {
   /** Index 0-7 (Claude seat `seat + 1`). */
@@ -1276,7 +1276,7 @@ export interface AdminConfigResponse {
 }
 
 // ---------------------------------------------------------------------------
-// REST error body (§10.3)
+// REST error body
 // ---------------------------------------------------------------------------
 
 export interface ApiErrorBody {
@@ -1284,7 +1284,7 @@ export interface ApiErrorBody {
 }
 
 // ---------------------------------------------------------------------------
-// Claude seats and the embedded terminal (§11.2)
+// Claude seats and the embedded terminal
 // ---------------------------------------------------------------------------
 
 /** Claude seats 1-8 (containers seat1..seat8 on the AI session host, ports 7781-7788). */
@@ -1322,13 +1322,13 @@ export interface TerminalDTO {
 export interface ClaudeSeatsDTO {
   mySeat: number | null;
   boxReady: boolean;
-  /** Seats that are on (the admin can turn seats off, §11.2 c); off seats are left out. */
+  /** Seats that are on (the admin can turn seats off); off seats are left out. */
   seats: Array<{ seat: number; takenBy: string | null; mine: boolean; status: PlayerClaudeSeatStatus }>;
 }
 
 export interface AdminClaudeSeatDTO {
   seat: number;
-  /** Off = never auto-assigned or pickable (§11.2 c). Default on. */
+  /** Off = never auto-assigned or pickable. Default on. */
   enabled: boolean;
   playerId: string | null;
   playerName: string | null;
@@ -1341,7 +1341,7 @@ export interface AdminClaudeSeatDTO {
   /** `http://<ai-session-host>:778N/terminal/N/` (details=1 only). */
   directUrl?: string;
   /**
-   * The shared agent login this seat's last terminal start fetched (§11.2 f),
+   * The shared agent login this seat's last terminal start fetched,
    * or null (none fetched since the server started, or nothing was set).
    */
   sharedLogin: { env: SeatCredentialEnv; at: number } | null;
@@ -1360,7 +1360,7 @@ export interface AdminClaudeSeatsDTO {
    */
   setupCommand?: string | null;
   /**
-   * The shared agent logins (§11.2 f): "…" + the last 4 characters when set,
+   * The shared agent logins: "…" + the last 4 characters when set,
    * else null. Write-only: the value itself never leaves the server, not even
    * with `?details=1`.
    */

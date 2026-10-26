@@ -1,4 +1,4 @@
-// The round-robin rules of plan §14 / §6 ("no single archetype dominates") as
+// The round-robin rules ("no single archetype dominates") as
 // data, shared by tests/balance.test.ts (the caps and the stated outcomes) and
 // the fast balance CLI (scripts/balance.ts), which checks every rule below
 // with early stopping (helpers/balanceFast.ts). The shape checks mirror the
@@ -6,11 +6,11 @@
 
 import { ALL_ARCHETYPES } from './balance.js';
 
-/** §6 "no single archetype dominates": the most of its round-robin battles any archetype may win. */
+/** "No single archetype dominates": the most of its round-robin battles any archetype may win. */
 export const ROUND_ROBIN_WIN_CAP = 0.7;
 
 /**
- * The $10,000 redesign's full matrix (48 archetypes; docs/balance.md): the one
+ * The $10,000 redesign's full matrix (48 archetypes): the one
  * recorded exception key left from M8.8, re-recorded at the measured value
  * (both seeds; the one-seed default run measures at or under it) and never
  * above the M8.6 cap (220/256). 546-0-206 (72.6%): loses to the walled nests,
@@ -33,7 +33,7 @@ export const WATCH_ITEMS: Record<string, { roundRobinWinCap: number }> = {
   soldiersFilled: { roundRobinWinCap: 540 / 752 },
 };
 
-/** [A, B, why]: A wins most of its battles against B (≥ 9 of 16; ≥ 5 of 8 on one seed). The redesign's re-recorded list (§14). */
+/** [A, B, why]: A wins most of its battles against B (≥ 9 of 16; ≥ 5 of 8 on one seed). The redesign's re-recorded list. */
 export const STATED: Array<[string, string, string]> = [
   ['splashline', 'soldiersFilled', 'splash answers the padded one-design army'],
   ['bombard', 'soldiersFilled', 'so does fire splash from range'],
@@ -134,7 +134,7 @@ export function testRules(keys: string[]): { matrices: MatrixDef[]; rules: Rule[
   const cell = (a: string, b: string, pred: CellPred, label: string, stated = false) => {
     if (have.has(a) && have.has(b)) rules.push({ kind: 'cells', checks: [{ a, b, pred }], all: true, label, stated });
   };
-  // Shape checks (tests/balance.test.ts, the round-robin describe), re-recorded for the redesign (§14).
+  // Shape checks (tests/balance.test.ts, the round-robin describe), re-recorded for the redesign.
   cell('bricks', 'tanks', 'beats', 'shape: bricks beat tanks');
   cell('turtle', 'templates', 'beats', 'shape: turtle beats templates');
   cell('tanks', 'turtle', 'notBeats', "shape: tanks don't beat the turtle");

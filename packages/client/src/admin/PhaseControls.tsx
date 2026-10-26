@@ -1,4 +1,4 @@
-// Phase controls (plan §12.3), always above the tabs: the phase and clock,
+// Phase controls, always above the tabs: the phase and clock,
 // Next, Skip, START, Force start, Pause/Resume (timer and battle), 1x/2x,
 // timer ±1 min / set, New match, and the projector remote (join poster,
 // replay at 1x/2x). The LOBBY setup and Start match are in the Match tab

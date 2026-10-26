@@ -1,4 +1,4 @@
-// Seat probe (plan §11.2 b): `GET /terminal/N/token` on each seat's ttyd with
+// Seat probe: `GET /terminal/N/token` on each seat's ttyd with
 // the injected auth (spawns no Claude). Every tick (10 s) for seats with an
 // assigned player or a live terminal, every 60 s for the rest, and at once on
 // setup changes or "Check now" (seats turned off: only then). 200 → up, 401 → wrong-password, anything else
@@ -61,7 +61,7 @@ export class SeatProbe {
   private tick(): void {
     const now = Date.now();
     for (const seat of seatNumbers()) {
-      // A seat turned off in /admin (§11.2 c) is only probed by "Check now".
+      // A seat turned off in /admin is only probed by "Check now".
       if (!this.game.claudeSeats.enabled(seat)) continue;
       const inUse = !!this.game.claudeSeats.holder(seat) || this.isLive(seat);
       const every = inUse ? this.timeouts.probeTickMs : this.timeouts.probeIdleMs;

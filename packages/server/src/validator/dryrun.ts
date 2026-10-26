@@ -1,4 +1,4 @@
-// §7 steps 9-10: dry-run update() in the validation sandbox.
+// Dry-run update() in the validation sandbox.
 //
 // Three synthetic worlds, 5 ticks each, one fresh copy per world, each call
 // limited to `sandbox.validation.dryRunCallTimeoutMs` (20 ms):
@@ -7,16 +7,16 @@
 //   C. three enemies far away in the opposite corner (plus an enemy wall and
 //      an enemy minion, M8.5)
 // Factories (M8.5) see `self.factory` filled in and may return rally/hold;
-// walls are never dry-run (no code runs for them). M8.6 (§5.3): factories may
+// walls are never dry-run (no code runs for them). M8.6: factories may
 // also return command/release; their worlds hold a friendly tower to guard,
 // and the orders they give are recorded for the unit card.
-// M8.8 (§7 step 9): every view carries element, splashRadius, support and
+// M8.8: every view carries element, splashRadius, support and
 // status; world A's ally is hurt and burning and world B's enemy is frozen, so
 // code that reads `status` runs; soldiers and towers may return `heal` (a
 // string targetId), which only units with heal support can do.
 // update() must not throw or time out, and each return must be a valid Action
 // or undefined. The results also feed the non-fatal warnings.
-// §5.3 (2026-10-26): a factory with updateMinion() also gets two practice
+// A factory with updateMinion() also gets two practice
 // minions of its kind (one next to world B's enemy, one at the factory),
 // listed in `allies`; updateMinion() runs for each of them every practice
 // tick and must not throw, time out or return something that isn't an action
@@ -72,7 +72,7 @@ export interface DryRunResult {
   healUsed?: boolean;
 }
 
-/** Nothing on a body (§5 StatusView). */
+/** Nothing on a body. */
 export function noStatus(healRoom = 0): StatusView {
   return { burning: 0, burnLeft: 0, frozen: 0, haste: 0, might: 0, shield: 0, healRoom };
 }
@@ -84,7 +84,7 @@ const ENEMY = 'enemy';
 export const PRACTICE_ENEMY_NAME = 'Practice Enemy';
 
 /**
- * "Show enemy names to units" (§5): the practice bodies carry ownerName (and
+ * "Show enemy names to units": the practice bodies carry ownerName (and
  * teamName in team mode) and the world lists both practice players.
  */
 function withNames(input: TickInput, names: PracticeNames): TickInput {
@@ -118,7 +118,7 @@ const PRACTICE_BODY: Record<BodyType, { name: string; radius: number; hp: number
 
 function other(id: string, ownerId: string, type: BodyType, x: number, y: number, extra: Partial<OtherView> = {}): OtherView {
   const b = PRACTICE_BODY[type];
-  // Soldiers, towers and minions can be healed: 5% of max HP per second (§5.5).
+  // Soldiers, towers and minions can be healed: 5% of max HP per second.
   const healable = type === 'soldier' || type === 'tower' || type === 'minion';
   return {
     id,
@@ -187,7 +187,7 @@ function baseWorlds(stats: StatsSnapshot, self: { x: number; y: number; radius: 
         other('enemy-2', ENEMY, 'soldier', 680, 680),
         other('enemy-3', ENEMY, 'tower', 700, 620),
         other('enemy-4', ENEMY, 'soldier', 620, 700),
-        // M8.5 (§7 step 9): an enemy wall and an engine-made minion, so code
+        // M8.5: an enemy wall and an engine-made minion, so code
         // that expects every enemy to be a soldier or tower still runs.
         other('enemy-wall', ENEMY, 'wall', 660, 660),
         // Its factory is not in the list (as when the factory is already destroyed).
@@ -210,7 +210,7 @@ export function badActionReason(a: unknown): string | undefined {
     case 'attack':
       return typeof o.targetId === 'string' ? undefined : 'an attack needs targetId set to an enemy id (a string)';
     case 'heal':
-      // M8.8 (§5 rule 4): heal one ally in supportRange.
+      // M8.8: heal one ally in supportRange.
       return typeof o.targetId === 'string' ? undefined : 'a heal needs targetId set to an ALLY id (a string), e.g. targetId: friend.id';
     case 'move':
     case 'rally': {
@@ -225,7 +225,7 @@ export function badActionReason(a: unknown): string | undefined {
     case 'release':
       return undefined;
     case 'command': {
-      // M8.6 (§5.3): a squad order for a factory's minions.
+      // M8.6: a squad order for a factory's minions.
       if (!isMinionOrder(o.order)) {
         return `a command needs order set to one of ${MINION_ORDERS.map((x) => `'${x}'`).join(', ')} (got ${JSON.stringify(o.order) ?? 'nothing'})`;
       }
@@ -247,7 +247,7 @@ export function badActionReason(a: unknown): string | undefined {
   }
 }
 
-/** The right shape for a broken factory command (§7 step 9 fix). */
+/** The right shape for a broken factory command. */
 function commandFix(order: unknown): string {
   if (order === 'swarm') {
     return "swarm needs targetId: the id of an ENEMY, e.g. { action: 'command', order: 'swarm', targetId: target.id }. When there is no enemy, return { action: 'command', order: 'attack' } instead.";
@@ -264,7 +264,7 @@ const UPDATE_DEF_RE = defRe('update');
 const MINION_DEF_RE = defRe('updateMinion');
 
 /**
- * The line where update() (or updateMinion(), §5.3) is DEFINED (not merely
+ * The line where update() (or updateMinion()) is DEFINED (not merely
  * mentioned, e.g. in a comment), to point BAD_ACTION and location-less
  * errors somewhere useful.
  */
@@ -311,7 +311,7 @@ function preview(v: unknown): unknown {
   }
 }
 
-/** The two practice minions of a factory with updateMinion() (§5.3), for one practice world. */
+/** The two practice minions of a factory with updateMinion(), for one practice world. */
 function practiceMinions(stats: StatsSnapshot, factoryId: string, factory: { x: number; y: number }, world: World, config: Ctx['config']): { views: SelfView[]; others: OtherView[] } {
   const kind = producesOf(stats);
   const k = config.factory.minions[kind];
@@ -384,7 +384,7 @@ function practiceMinions(stats: StatsSnapshot, factoryId: string, factory: { x: 
   return { views, others };
 }
 
-/** The first updateMinion() problem in one practice tick (§5.3), or undefined. */
+/** The first updateMinion() problem in one practice tick, or undefined. */
 function checkMinionResults(parsed: ReturnType<typeof parseTickOutput>, views: readonly SelfView[], label: string, ctx: Ctx): ValidationError | undefined {
   for (const v of views) {
     const out = parsed.minions.find((m) => m.instanceId === v.id);
@@ -438,7 +438,7 @@ function checkMinionResults(parsed: ReturnType<typeof parseTickOutput>, views: r
   return undefined;
 }
 
-/** Why a value returned by updateMinion() is not usable (§5.3), or undefined when it is (undefined/null included). */
+/** Why a value returned by updateMinion() is not usable, or undefined when it is (undefined/null included). */
 function badMinionReason(a: unknown): string | undefined {
   if (a === null) return undefined;
   return badActionReason(a);
@@ -465,7 +465,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
 
   const { dryRunCallTimeoutMs: callMs, slowUpdateWarnMs } = ctx.config.sandbox.validation;
   const corner = zoneCenter('TL');
-  const radius = sizeOf(stats); // the unit's own size, like in battle (§9 Radii)
+  const radius = sizeOf(stats); // the unit's own size, like in battle
   const battleTicks = ctx.config.timers.battleTicks;
   let returnedNothing = false;
   let wrongTypeWarned = false;
@@ -482,7 +482,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
   // each practice world counts its MEDIAN call and the warning uses the
   // slowest world: a genuinely slow update() is slow on every call.
   let slowestMs = 0;
-  // §5.3: updateMinion() runs on the practice minions (factories only).
+  // updateMinion() runs on the practice minions (factories only).
   const minionCode = hasMinion && stats.type === 'factory';
   let minionWrongTypeWarned = false;
 
@@ -524,7 +524,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
         speed: stats.speed,
         attackCooldown: stats.attackCooldown,
         cooldownRemaining: 0,
-        // M8.8 (§5.6): element, splash, support and status.
+        // M8.8: element, splash, support and status.
         element: elementOf(stats),
         splashRadius: splashOf(stats),
         support,
@@ -532,7 +532,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
         blockedBy: null,
         blockedTicks: 0,
         pathing: 'direct',
-        // §7 step 9 (M8.5): a factory sees its production state (5 minions left, rally = centre).
+        // Step 9 (M8.5): a factory sees its production state (5 minions left, rally = centre).
         factory:
           stats.type === 'factory'
             ? {
@@ -542,7 +542,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
                 minionsLeft: 5,
                 minionsAlive: 0,
                 maxAlive: ctx.config.factory.maxAlivePerFactory,
-                // M8.6 (§5.3)
+                // M8.6
                 stored: 0,
                 burst: burstOf(stats),
                 produces: producesOf(stats),
@@ -677,7 +677,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
       }
       const rawKind = (entry.action as { action?: unknown } | undefined)?.action;
       let reason = badActionReason(entry.action);
-      // A factory's broken move/attack: say what a factory can do, not how to aim an attack (§5.2).
+      // A factory's broken move/attack: say what a factory can do, not how to aim an attack.
       if (reason && stats.type === 'factory' && (rawKind === 'move' || rawKind === 'attack')) {
         reason = `a factory can't ${rawKind}, it only tells its minions where to go`;
       }
@@ -741,7 +741,7 @@ export async function dryRun(session: SandboxSession, stats: StatsSnapshot, hasU
         }
       }
       const action = entry.action as { action?: string } | undefined;
-      // §5.2: rally/hold are factory actions; move/attack are not (the engine idles, no strike).
+      // Rally/hold are factory actions; move/attack are not (the engine idles, no strike).
       const kind = action?.action;
       const factoryAction = kind === 'rally' || kind === 'hold' || kind === 'command' || kind === 'release';
       // M8.8: heal needs support 'heal' (soldiers and towers only).

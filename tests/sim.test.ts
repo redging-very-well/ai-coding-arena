@@ -1,4 +1,4 @@
-// Headless simulation tests (plan §14 sim.test.ts), run against the fake
+// Headless simulation tests, run against the fake
 // runner. The real-isolate "< 2 s per battle" target is checked later in
 // integration with ivmRunner.
 
@@ -89,7 +89,7 @@ describe('battles', () => {
     expect(result.ranking).toHaveLength(2);
     expect(result.ranking[0]!.place).toBe(1);
     expect(result.ranking[1]!.place).toBe(2);
-    // 2 players: place points 1/0 (§9 Points: 1st gets P − 1).
+    // 2 players: place points 1/0 (1st gets P − 1).
     expect(result.ranking[0]!.placePoints).toBe(1);
     expect(result.ranking[1]!.placePoints).toBe(0);
     expect(result.ranking[0]!.badges).toContain('lastStanding');
@@ -306,7 +306,7 @@ describe('battles', () => {
 
 describe('ranking and points', () => {
   const S = DEFAULT_CONFIG.scoring;
-  /** Place points only (no metrics): the §9 formula, 1st gets P − 1 down to 0. */
+  /** Place points only (no metrics): the formula, 1st gets P − 1 down to 0. */
   const placePoints = (placings: ReturnType<typeof rankStandings>) =>
     computeRoundScore(placings, [], S).map((s) => ({ ...placings.find((p) => p.playerId === s.playerId)!, pointsGained: s.total }));
 
@@ -742,7 +742,7 @@ describe('action validation', () => {
   });
 });
 
-describe('size, facing and frame flags (§5 size, §9 Radii/Frames)', () => {
+describe('size, facing and frame flags', () => {
   it("a unit's radius is its size stat: views, range and frames use it", async () => {
     const big = stats({ type: 'soldier', name: 'Big', size: 20 });
     const small = stats({ type: 'tower', name: 'Small', size: 6 });
@@ -831,7 +831,7 @@ describe('size, facing and frame flags (§5 size, §9 Radii/Frames)', () => {
   });
 });
 
-describe('scoring metrics (§9 Damage metric, Value destroyed, Skip)', () => {
+describe('scoring metrics', () => {
   const REAPER = stats({ type: 'soldier', name: 'Reaper', maxHealth: 2500, damage: 300, speed: 5, attackCooldown: 10 });
 
   it('effective damage: a 300-damage hit on a 50-hp unit counts 50 (no overkill), plus the kill and its full cost', async () => {
@@ -1014,7 +1014,7 @@ describe('scoring metrics (§9 Damage metric, Value destroyed, Skip)', () => {
   });
 });
 
-describe('maps: variable arena (§9.2)', () => {
+describe('maps: variable arena', () => {
   it('Ring 5 on the 1040 arena: world size, centre, style, scaled safe zone and the zone centre as myCorner', async () => {
     const map = mapFor('ring', 5);
     const specs: FakePlayerSpec[] = map.zones.map((zone, seat) => ({
@@ -1068,7 +1068,7 @@ describe('maps: variable arena (§9.2)', () => {
   });
 });
 
-describe('teams (§9.2)', () => {
+describe('teams', () => {
   const REAPER = stats({ type: 'soldier', name: 'Reaper', maxHealth: 2500, damage: 300, speed: 5, attackCooldown: 10 });
   const twig = stats({ type: 'soldier', name: 'Twig', maxHealth: 50 });
   const wall = stats({ type: 'tower', name: 'Wall', maxHealth: 2500, damage: 5 });
@@ -1223,7 +1223,7 @@ describe('teams (§9.2)', () => {
   });
 });
 
-describe('auto-place on straight-facing zones (§9.2)', () => {
+describe('auto-place on straight-facing zones', () => {
   it('front cells: diag keeps the diagonal bands; N/S/E/W fill the front row first', () => {
     expect(frontCells().slice(0, 3)).toEqual([{ col: 0, row: 0 }, { col: 1, row: 0 }, { col: 0, row: 1 }]);
     expect(frontCells('S').slice(0, 7)).toEqual([

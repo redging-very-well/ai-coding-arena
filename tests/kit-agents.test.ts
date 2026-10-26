@@ -1,4 +1,4 @@
-// One kit source, two coding agents (plan §11.3): the Claude Code kit
+// One kit source, two coding agents: the Claude Code kit
 // (CLAUDE.md, .mcp.json, .claude/settings.json) and the Codex kit (AGENTS.md,
 // .codex/config.toml) are rendered from the same packages/starter-kit files,
 // by services/kit.ts (the reference) and sessions/entrypoint.sh (seat containers).
@@ -20,7 +20,7 @@ const contractBlock = () => {
   return src.slice(src.indexOf('\n', begin) + 1, src.indexOf('// --- END CONTRACT')).trimEnd();
 };
 
-describe('kit agents (§11.3)', () => {
+describe('kit agents', () => {
   it('assigns each kit file to an agent', () => {
     expect(kitFileAgent('CLAUDE.md')).toBe('claude');
     expect(kitFileAgent('.claude/settings.json')).toBe('claude');
@@ -37,7 +37,7 @@ describe('kit agents (§11.3)', () => {
     expect(kit.get('CLAUDE.md')!.split('\n')[0]).toBe('# Pixel Clash: instructions for Claude');
   });
 
-  it('the Codex kit: AGENTS.md is CLAUDE.md with only the title changed, and carries the §5 contract', () => {
+  it('the Codex kit: AGENTS.md is CLAUDE.md with only the title changed, and carries the contract', () => {
     const claude = files({}).get('CLAUDE.md')!;
     const kit = files({ agent: 'codex' });
     expect([...kit.keys()]).toEqual(expect.arrayContaining(['AGENTS.md', '.codex/config.toml', 'PROMPTS.md', 'units/basic_factory.js']));

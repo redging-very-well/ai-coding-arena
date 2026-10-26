@@ -1,5 +1,4 @@
-// Team modes, auto-balance, swaps and team colours (plan §9.2 Team modes,
-// Auto-balance). Pure data + functions shared by server and client.
+// Team modes, auto-balance, swaps and team colours. Pure data + functions shared by server and client.
 //
 //   * `teamMode`: 'ffa' (default) or 'teams2' / 'teams3' / 'teams4' (T teams).
 //     A mode is valid for P players when every team gets ≥ 1 player (P ≥ T).
@@ -8,7 +7,7 @@
 //   * `autoBalance` deals players (join order) into teams with a snake:
 //     A B B A …, so 6p 3 teams = A B C C B A.
 //   * Free-for-all is the special case "every player is their own team" with
-//     teamId = seat (§5 contract comment).
+//     teamId = seat.
 
 import type { TeamDTO, TeamPattern } from './protocol.js';
 
@@ -96,8 +95,8 @@ export function snakeTeamOf(i: number, teams: number): number {
 }
 
 /**
- * Deal players (join order) into the mode's teams with the snake (§9.2
- * Auto-balance). Returns null for free-for-all. Members stay in join order.
+ * Deal players (join order) into the mode's teams with the snake.
+ * Returns null for free-for-all. Members stay in join order.
  * Throws a RangeError when the mode isn't valid for this many players.
  */
 export function autoBalance(playerIdsInJoinOrder: readonly string[], mode: TeamMode): TeamDTO[] | null {
@@ -117,7 +116,7 @@ export function teamOf(teams: readonly TeamDTO[] | null | undefined, playerId: s
 export type SwapResult = { ok: true; teams: TeamDTO[] } | { ok: false; code: 'NO_TEAMS' | 'NOT_FOUND' | 'SAME_TEAM' };
 
 /**
- * Swap two players on different teams (§9.2 Swap; LOBBY only, the caller
+ * Swap two players on different teams (LOBBY only, the caller
  * checks the phase). Each takes the other's slot, so team sizes and block
  * order stay the same. Returns new team objects; the input is not changed.
  */
@@ -136,7 +135,7 @@ export function swapTeamPlayers(teams: readonly TeamDTO[] | null | undefined, a:
 export type MoveResult = { ok: true; teams: TeamDTO[] } | { ok: false; code: 'NO_TEAMS' | 'NOT_FOUND' | 'BAD_TEAM' | 'SAME_TEAM' | 'LAST_MEMBER' };
 
 /**
- * Move a player to another team (§9.2 Move; LOBBY only, the caller checks the
+ * Move a player to another team (LOBBY only, the caller checks the
  * phase). The player joins the end of the new team. Refused when it would
  * leave their old team empty (every team keeps ≥ 1 player). Returns new team
  * objects; the input is not changed.
@@ -168,7 +167,7 @@ export function teamIdsByPlayer(teams: readonly TeamDTO[] | null | undefined): M
 }
 
 // ---------------------------------------------------------------------------
-// Scaled round points (§9 Points, §9.2 Team scoring)
+// Scaled round points
 // ---------------------------------------------------------------------------
 
 /**
@@ -189,7 +188,7 @@ export function placePointsTable(players: number, sides: number = players): numb
   return Array.from({ length: Math.max(sides, 1) }, (_, i) => placePointsFor(i + 1, players, sides));
 }
 
-/** A bonus maximum (config value at 4 players) scaled × P/4 (§9 Points). Exact in binary (quarters). */
+/** A bonus maximum (config value at 4 players) scaled × P/4. Exact in binary (quarters). */
 export function scaledBonusMax(maxAt4: number, players: number): number {
   return (maxAt4 * players) / 4;
 }

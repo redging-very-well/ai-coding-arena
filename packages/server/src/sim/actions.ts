@@ -1,16 +1,16 @@
-// Action validation (plan §5 rule 4, §9 tick order step 3).
+// Action validation.
 //
 // A unit's update() result is only a request. Anything that is not a legal
 // action becomes idle: undefined, unknown actions, malformed objects, moves by
-// towers, attacks on allies (own units, and in team mode any teammate's,
-// §9.2) / dead / unknown targets, attacks while cooling
-// down, and attacks out of range. M8.5 (§5.2): `rally` and `hold` are factory
+// towers, attacks on allies (own units, and in team mode any teammate's)
+// / dead / unknown targets, attacks while cooling
+// down, and attacks out of range. M8.5: `rally` and `hold` are factory
 // actions; `move` is for soldiers and minions, `attack` for soldiers, towers
 // and minions; any other combination idles (no strike). Walls are valid
-// targets. M8.6 (§5.3): `command` (a squad order) and `release` are factory
+// targets. M8.6: `command` (a squad order) and `release` are factory
 // actions too; a command with an unknown order, or swarm/guard without a
 // string targetId, is malformed (the factory keeps its previous order).
-// M8.8 (§5 rule 4): `heal` needs heal support and a living ally (same teamId:
+// M8.8: `heal` needs heal support and a living ally (same teamId:
 // a soldier, tower or minion, not the healer itself) in supportRange (edge
 // to edge + 0.5 px) that needs it (hurt with heal room left, burning or
 // frozen), cooldown 0, and no sudden death yet; otherwise it idles (no
@@ -35,7 +35,7 @@ export type IdleReason =
   | 'enemy-target' // heal on an enemy (M8.8)
   | 'not-healable' // heal on itself, a wall or a factory
   | 'not-needed' // heal on an ally that is full (or out of heal room) and neither burning nor frozen
-  | 'heals-off' // heal from sudden death on (§5.5)
+  | 'heals-off' // heal from sudden death on
   | 'disabled'; // the acting unit is disabled or dead
 
 export type ResolvedAction =
@@ -58,7 +58,7 @@ const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFi
 
 /** M8.8 options of `resolveAction`. */
 export interface ResolveOptions {
-  /** Sudden death has started: heals do nothing (§5.5). */
+  /** Sudden death has started: heals do nothing. */
   healsOff?: boolean;
 }
 
@@ -124,16 +124,16 @@ export function resolveAction(
       if (typeof targetId !== 'string') return idle('malformed');
       const target = lookup(targetId);
       if (!target || !target.alive) return idle('no-target');
-      // Same side = friend: own units, and in team mode every teammate's (§9.2).
+      // Same side = friend: own units, and in team mode every teammate's.
       if (target.playerId === actor.playerId || target.teamId === actor.teamId) return idle('friendly-target');
       if (actor.cooldownRemaining > 0) return idle('cooling-down');
-      // Edge to edge with 0.5 px float tolerance (§5 rule 4).
+      // Edge to edge with 0.5 px float tolerance.
       if (edgeDistance(actor, target) > actor.stats.range + rangeTolerance) return idle('out-of-range');
       return { kind: 'attack', targetId };
     }
 
     case 'heal': {
-      // M8.8 (§5 rule 4): heal support only; the attack path with the side flipped.
+      // M8.8: heal support only; the attack path with the side flipped.
       if (actor.type === 'factory' || actor.type === 'wall') return idle('wrong-type');
       const support = supportOf(actor.stats);
       if (!support || support.kind !== 'heal') return idle('wrong-type');

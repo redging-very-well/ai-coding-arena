@@ -1,4 +1,4 @@
-// Sound design for the synthesized effects (plan §12.4): the recipes (as data,
+// Sound design for the synthesized effects: the recipes (as data,
 // played by audio.ts with WebAudio oscillators and noise; no asset files) and
 // the DOM-free decisions about WHEN to play them: countdown beeps, shot pitch
 // by unit type and range, rate limiting so 96 units don't make a wall of
@@ -22,17 +22,17 @@ export type SfxName =
   | 'siren'
   | 'victory'
   | 'badge'
-  /** M8.5 (§12.5): a hit on a wall (stone tick), a wall crumbling (low thud), a factory making a minion (pop). */
+  /** M8.5: a hit on a wall (stone tick), a wall crumbling (low thud), a factory making a minion (pop). */
   | 'wallHit'
   | 'crumble'
   | 'spawn'
-  /** M8.6 (§12.5): 2+ stored minions leave a factory together (a rising whoosh). */
+  /** M8.6: 2+ stored minions leave a factory together (a rising whoosh). */
   | 'release'
   /** M8.8: a lightning zap (crackle), a SHATTER (glass) and a heal (soft chime). */
   | 'zap'
   | 'shatter'
   | 'heal'
-  /** The awards ceremony (§12.4): a snare roll crescendo ending in a cymbal, a per-award sting and the victory tune. */
+  /** The awards ceremony: a snare roll crescendo ending in a cymbal, a per-award sting and the victory tune. */
   | 'drumroll'
   | 'sting'
   | 'fanfare';
@@ -78,7 +78,7 @@ const G5 = 783.99;
 const C6 = 1046.5;
 
 // ---------------------------------------------------------------------------
-// Awards ceremony (§12.4): drumroll, sting and victory tune
+// Awards ceremony: drumroll, sting and victory tune
 // ---------------------------------------------------------------------------
 
 export const DRUMROLL_SEC = 3.2;

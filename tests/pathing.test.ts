@@ -1,5 +1,4 @@
-// Routing round walls (plan §9.3 Routing round walls, §5 SelfView.pathing,
-// M8.7): flow fields, size classes, path smoothing, re-planning when a wall
+// Routing round walls (SelfView.pathing, M8.7): flow fields, size classes, path smoothing, re-planning when a wall
 // dies, the cheapest wall to break when there is no route, shared fields,
 // minions with every order, and determinism.
 
@@ -84,7 +83,7 @@ const row = (r: number, from: number, to: number, skip: number[] = []): Array<[n
   Array.from({ length: to - from + 1 }, (_, i) => [from + i, r] as [number, number]).filter(([c]) => !skip.includes(c));
 const col = (c: number, from: number, to: number): Array<[number, number]> => Array.from({ length: to - from + 1 }, (_, i) => [c, from + i] as [number, number]);
 
-describe('flow fields (§9.3 Routing round walls)', () => {
+describe('flow fields', () => {
   it('size classes: radius ≤ 18 routes on cells, 19-20 on 2×2 nodes', () => {
     expect([6, 10, 18].map(sizeClassOf)).toEqual([1, 1, 1]);
     expect([18.5, 19, 20].map(sizeClassOf)).toEqual([2, 2, 2]);
@@ -147,7 +146,7 @@ describe('flow fields (§9.3 Routing round walls)', () => {
   });
 });
 
-describe('routing round walls (§9.3)', () => {
+describe('routing round walls', () => {
   it('corner trap: an L between the unit and its destination: it walks round, never piling into the corner', () => {
     // The L's inside corner faces the unit (walls along col 12 rows 6-10 and row 10 cols 7-12).
     const w = world([...col(12, 6, 10), ...row(10, 7, 11)]);
@@ -421,7 +420,7 @@ function engineOf(specs: FakePlayerSpec[], config: GameConfig, seed = 5) {
 const L_WALLS = [at(3, 0, 'w'), at(3, 1, 'w'), at(3, 2, 'w'), at(0, 2, 'w'), at(1, 2, 'w'), at(2, 2, 'w')];
 const TARGET = stats({ type: 'tower', damage: 5, maxHealth: 1000 });
 
-describe('routing in battle (§9.3)', () => {
+describe('routing in battle', () => {
   it('corner trap: soldiers route round an L, kill the tower behind it and never smash a wall', async () => {
     const seen: Array<{ t: number; pathing: SelfView['pathing'] }> = [];
     const engine = engineOf(

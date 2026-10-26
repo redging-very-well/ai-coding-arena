@@ -1,5 +1,5 @@
 // /play root: join screen, or the header plus the Claude terminal and the
-// game (plan §11.2 d, §12.1): a split view with a draggable divider on wide
+// game: a split view with a draggable divider on wide
 // screens, two in-page tabs ("Claude" / "Game") on 1366×768 and smaller. Both
 // panes stay mounted in the same place in the tree, so switching tabs or
 // crossing the breakpoint never reloads the terminal (no Claude restart).
@@ -66,7 +66,7 @@ function Lobby() {
   );
 }
 
-/** Team mode, joined after Start match (§4): sits out until the next match. */
+/** Team mode, joined after Start match: sits out until the next match. */
 function Benched() {
   const st = useStore();
   if (!st.priv?.benched) return null;
@@ -287,7 +287,7 @@ function PlayShell() {
             {st.priv && !st.priv.active && !st.priv.benched && phase !== 'LOBBY' && phase !== 'PLACEMENT' && (
               <p class="note">You joined partway through a round. You're in from the next round!</p>
             )}
-            {/* The code editor (§12.1) takes the game's place; the game stays mounted underneath. */}
+            {/* The code editor takes the game's place; the game stays mounted underneath. */}
             {st.editor && <EditorHost target={st.editor} />}
             <div class="game-view" hidden={!!st.editor}>
               <PastBattlesButton open={pastOpen} onToggle={() => setPastOpen(!pastOpen)} />
@@ -296,7 +296,7 @@ function PlayShell() {
             </div>
           </main>
         </section>
-        {/* The unit guide (§12.1): over the Game column (split) or both panes (tabs); the terminal stays mounted. */}
+        {/* The unit guide: over the Game column (split) or both panes (tabs); the terminal stays mounted. */}
         <GuideOverlay />
         {/* While dragging, a shield over everything so the iframe doesn't swallow the pointer. */}
         {dragging && <div class="drag-shield" />}
@@ -306,7 +306,7 @@ function PlayShell() {
   );
 }
 
-/** "Claude" / "Game" tabs (narrow screens) with the Game tab's badges (§11.2 d). */
+/** "Claude" / "Game" tabs (narrow screens) with the Game tab's badges. */
 function PaneTabs({ tab, onChoose, claudeWarn }: { tab: PlayTab; onChoose: (t: PlayTab) => void; claudeWarn: boolean }) {
   const st = useStore();
   const store = getStore();

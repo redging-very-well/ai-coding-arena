@@ -1,4 +1,4 @@
-// "Show enemy names to units" (plan §9.1a, §5) in the sim and the sandbox:
+// "Show enemy names to units" in the sim and the sandbox:
 //   * off (the default): views are exactly as before (no ownerName, teamName
 //     or world.players keys) and the frames are identical;
 //   * on: every body carries its player's name (minions: the factory's

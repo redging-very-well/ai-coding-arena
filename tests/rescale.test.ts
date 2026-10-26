@@ -1,5 +1,4 @@
-// The ×5 rescale on its own changes no outcome (plan §9.4 Scoring and
-// reports, §14 rescale.test.ts, M8.8): HP, damage, prices and minion stats
+// The ×5 rescale on its own changes no outcome (M8.8): HP, damage, prices and minion stats
 // are all ×5, sudden death and the heal room are percentages and the geometry
 // is unchanged, so every time-to-kill is identical. Run the same battle
 // (k = 2, no elements, no support) at the ×1 scale and at ×5: identical
@@ -70,7 +69,7 @@ function shape(f: FrameDTO) {
   };
 }
 
-describe('the ×5 rescale changes no battle (§9.4)', () => {
+describe('the ×5 rescale changes no battle', () => {
   it('×1 and ×5: identical positions, flags and events; HP and damage exactly ×5; the same ranking', async () => {
     const a = await run(1);
     const b = await run(5);

@@ -1,4 +1,4 @@
-// Ready can't be spammed (plan §3): one change per READY_MIN_GAP_MS and at
+// Ready can't be spammed: one change per READY_MIN_GAP_MS and at
 // most READY_MAX_PER_WINDOW changes per READY_WINDOW_MS per player. Pressing
 // the same state again never counts. The client keeps the button disabled for
 // the gap and for any retryAfterMs it is told.

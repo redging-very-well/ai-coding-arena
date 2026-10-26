@@ -1,4 +1,4 @@
-// The fast balance tooling's logic (docs/balance.md "Fast balance runs"):
+// The fast balance tooling's logic:
 // early stopping (helpers/balanceFast.ts) must give the full matrix's
 // verdicts in 'exact' mode whatever the outcomes, and the result cache's keys
 // (helpers/balanceCache.ts, helpers/balance.ts jobKey) must change exactly

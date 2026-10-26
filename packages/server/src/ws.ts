@@ -1,16 +1,16 @@
-// WebSocket /ws (plan §10.3). Clients send `{type:'hello', role}`; identity
+// WebSocket /ws. Clients send `{type:'hello', role}`; identity
 // comes from the cookies of the upgrade request. Every message carrying game
-// data is built per recipient through VisibilityService (§3 privacy).
+// data is built per recipient through VisibilityService.
 //
 // Pushes: `state` (on change, coalesced, plus 1 Hz timer ticks), `private`
 // (own data, coalesced per player), `battle:reveal`, `battle:frames`,
 // `battle:end`, `toast`, `kicked`, `screen` (projector remote), `terminal`
-// (players: own Claude seat, §11.2) and `terminals` (admins: every seat).
+// (players: own Claude seat) and `terminals` (admins: every seat).
 //
 // The HTTP server's single 'upgrade' listener lives here: `/ws` is ours,
 // `/terminal/<N>/ws` goes to the seat terminal proxy, anything else gets 404.
 //
-// Team mode (§9.2): when a member's private data changes, every teammate's
+// Team mode: when a member's private data changes, every teammate's
 // `private` (with the `team` block) is re-sent too, at most 300 ms later. The
 // `state` push leaves `me.team` out (it can carry sprites and goes out at 1 Hz).
 
@@ -35,7 +35,7 @@ import type { Viewer } from './services/visibility.js';
 /** Skip frame batches for a client whose send buffer is this full. */
 const MAX_BUFFERED = 2 * 1024 * 1024;
 const HEARTBEAT_MS = 30_000;
-/** Teammates' `private` pushes are batched over this window (§9.2 Team privacy). */
+/** Teammates' `private` pushes are batched over this window. */
 const TEAM_PUSH_MS = 300;
 
 interface Client {
@@ -260,7 +260,7 @@ export class WsHub implements Notifier {
   }
 
   privateChanged(playerId: string): void {
-    // Teammates see this player's selection/zone/placement live (§9.2).
+    // Teammates see this player's selection/zone/placement live.
     for (const mate of this.game.teams.teammatesOf(playerId)) {
       if (!this.privatePending.has(mate)) this.teamPending.add(mate);
     }
@@ -336,7 +336,7 @@ export class WsHub implements Notifier {
   }
 
   /**
-   * A Claude seat changed (§11.2): every player gets their own `terminal`
+   * A Claude seat changed: every player gets their own `terminal`
    * (also when only another seat changed, so an open picker can refresh),
    * admins get `terminals`. Never the seat password. Coalesced.
    */
@@ -357,7 +357,7 @@ export class WsHub implements Notifier {
     });
   }
 
-  /** Projector remote (§12.2): only 'screen' sockets get it (no game data in it). */
+  /** Projector remote: only 'screen' sockets get it (no game data in it). */
   screenCommand(command: ScreenCommandDTO): number {
     const text = JSON.stringify({ type: 'screen', command } satisfies ServerWsMessage);
     let n = 0;

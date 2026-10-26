@@ -1,4 +1,4 @@
-// Loads the code editor (plan §12.1) on first use: CodeMirror is a separate
+// Loads the code editor on first use: CodeMirror is a separate
 // chunk, so /play's first load stays as light as before. Keyed by the unit,
 // so opening another unit starts a fresh editor. A failed load is retried
 // once, then explained (editorLoad.ts) with Try again and Reload: nothing is

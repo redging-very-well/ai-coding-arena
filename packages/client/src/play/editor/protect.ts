@@ -1,4 +1,4 @@
-// The read-only sprite() range of the unit editor (plan §12.1): a state field
+// The read-only sprite() range of the unit editor: a state field
 // holding the protected range (mapped through every edit) and a transaction
 // filter that drops any edit touching it. Typing right before or right after
 // the method is fine; edits inside it (or a selection that reaches into it)

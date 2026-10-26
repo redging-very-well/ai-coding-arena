@@ -1,5 +1,4 @@
-// The on-disk result cache of the balance tooling (plan §14, docs/balance.md
-// "Fast balance runs"). Battles are deterministic, so a battle's record is a
+// The on-disk result cache of the balance tooling. Battles are deterministic, so a battle's record is a
 // pure function of:
 //   * the ENGINE: every source file a battle runs through (the sim, the
 //     sandbox, the shared rules and costs, the transpile step, the balance

@@ -1,4 +1,4 @@
-// The RESULTS replay on the projector (plan §12.2/§12.4): load the stored
+// The RESULTS replay on the projector: load the stored
 // frames of the last battle, play them at 1x/2x, pause, restart at the end,
 // report progress for the progress bar and seek (scrubbing). DOM-free: the
 // arena and the fetch are passed in, so tests drive it with fakes.

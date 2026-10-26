@@ -1,9 +1,9 @@
-// /play page state (plan §12.1): one GameSocket, the latest game state, the
+// /play page state: one GameSocket, the latest game state, the
 // player's private data, rules, and the battle feed. The arena renderer for
 // the battle view lives here too (it must see the reveal and every frame even
 // before the battle panel mounts). Components subscribe with `useStore`.
-// Sounds (§12.4) are muted by default here; the header has the unmute button.
-// The embedded Claude terminal (§11.2): the player's Claude seat and its live
+// Sounds are muted by default here; the header has the unmute button.
+// The embedded Claude terminal: the player's Claude seat and its live
 // holder (`terminal` push), the seat picker, this laptop's remembered seat, the
 // "open in another tab" state and the Game-tab badges.
 
@@ -92,7 +92,7 @@ export interface MyBattleUnit {
   wall?: boolean;
 }
 
-/** What the code editor (plan §12.1) has open. */
+/** What the code editor has open. */
 export type EditorTarget =
   | { mode: 'edit'; unitId: string; name: string }
   /** A copy of a starter template: saving makes a new design. */
@@ -296,7 +296,7 @@ export class PlayStore {
   }
 
   // -------------------------------------------------------------------------
-  // Claude seat (§11.2 c)
+  // Claude seat
   // -------------------------------------------------------------------------
 
   /**
@@ -315,7 +315,7 @@ export class PlayStore {
     this.set({ laptopSeat: laptop });
   }
 
-  /** What join / login send as `claudeSeat`: this laptop's seat (preferred), else 'auto' (§11.2 c). */
+  /** What join / login send as `claudeSeat`: this laptop's seat (preferred), else 'auto'. */
   joinSeatRequest(): number | 'auto' {
     return joinSeatRequest(this.state.laptopSeat);
   }
@@ -457,7 +457,7 @@ export class PlayStore {
     this.socket.setRole('player');
   }
 
-  /** After join / login; `res` carries the auto-assigned AI seat (§11.2 c). */
+  /** After join / login; `res` carries the auto-assigned AI seat. */
   async afterJoin(res?: LoginResponse): Promise<void> {
     const me = await api.me();
     this.onLoggedIn(me, res?.claudeSeat);
@@ -610,7 +610,7 @@ export class PlayStore {
       return;
     }
     const designs = new Map(mine.units.map((u) => [u.unitId, u]));
-    // The buffer's newest frame: walls (listed only when they change) are carried in it (§9.3 Frames).
+    // The buffer's newest frame: walls (listed only when they change) are carried in it.
     const buf = this.arena.buffer;
     const newest = buf.length > 0 ? buf.all[buf.length - 1]! : this.lastFrame;
     const frameUnits = new Map((newest?.units ?? []).map((u) => [u[0], u]));

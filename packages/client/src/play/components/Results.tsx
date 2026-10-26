@@ -1,6 +1,6 @@
-// RESULTS / MATCH_RESULTS (plan §12.1): my place (my team's place in team
-// mode), my points breakdown (place + damage bonus + value bonus) and badges
-// (§9), the team table (team mode, §9.2), the scoreboard,
+// RESULTS / MATCH_RESULTS: my place (my team's place in team
+// mode), my points breakdown (place + damage bonus + value bonus) and badges,
+// the team table (team mode), the scoreboard,
 // my units' battle stats (kills, damage) and "Ask Claude" prompts with Copy
 // buttons for units with errors. Also a replay of the last battle.
 
@@ -18,7 +18,7 @@ import { MatchAwards } from './MatchAwards.js';
 import { TeamChip } from './TeamPanel.js';
 import { TopUnits } from './TopUnits.js';
 
-/** Team table (§9.2): average member total, then place points; my team highlighted. */
+/** Team table: average member total, then place points; my team highlighted. */
 function TeamTable({ rows, game, myTeamId }: { rows: readonly TeamTableRowDTO[]; game: GameStateDTO; myTeamId: number | undefined }) {
   const names = new Map(game.players.map((p) => [p.id, p.name]));
   return (
@@ -104,7 +104,7 @@ export function Results() {
   const found = last?.ranking.find((r) => r.playerId === meId);
   const mine = found ? scoreParts(found) : undefined;
   const roster = st.priv?.roster ?? [];
-  // Borrowed Open Armory units fought for me too (§9.1).
+  // Borrowed Open Armory units fought for me too.
   const fieldedCards = last ? [...roster, ...(st.priv?.armory ?? [])].filter((u) => u.lastBattle?.round === last.round) : [];
   const myInvention = last?.inventors?.find((i) => i.playerId === meId);
   const groups = report ? groupErrors(report.errors) : [];
@@ -247,7 +247,7 @@ export function Results() {
                   const lb = u.lastBattle!;
                   return (
                     <tr key={u.unitId}>
-                      {/* The name it fought under: a later Armory replacement may rename the card (§9.1). */}
+                      {/* The name it fought under: a later Armory replacement may rename the card. */}
                       <td>{lb.name ?? u.name}</td>
                       <td>
                         {lb.survived}/{lb.fielded}

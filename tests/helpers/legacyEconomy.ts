@@ -1,4 +1,4 @@
-// The $1,000-game economy rescaled ×5 ("Old ×5 (k 2)" in plan §6 M8.8): the
+// The $1,000-game economy rescaled ×5 ("Old ×5 (k 2)"): the
 // M8.7 formula (k = 2, no power factor) with every money coefficient ×5
 // (base 50, hp 0.25, damage 1.5, range 1.0, speed 60, size 2.5; walls 20 /
 // 0.06; factories 50 / 0.12), the $5,000 budget and $2,500 cap, and the

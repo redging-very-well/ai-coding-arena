@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Manual check (plan §11.3): drive the REAL Codex CLI against a running game
+// Manual check: drive the REAL Codex CLI against a running game
 // server's /mcp, offline and without an OpenAI login.
 //
 //   node scripts/codex-mcp-check.mjs --server http://127.0.0.1:8080 [--codex codex] [--name Mia --pin 2468]

@@ -1,4 +1,4 @@
-// The shared agent login (plan §11.2 f): the facilitator pastes one Claude Code
+// The shared agent login: the facilitator pastes one Claude Code
 // token (`claude setup-token`), optionally an Anthropic API key, and an OpenAI
 // key for Codex seats into /admin → AI seats. Write-only: the browser only ever
 // gets "…last 4" back; the value reaches nothing but POST /api/seat-login
@@ -45,7 +45,7 @@ describe('credential rules (pure)', () => {
   });
 });
 
-describe('shared agent login API (§11.2 f)', () => {
+describe('shared agent login API', () => {
   let dir: string;
   let srv: RunningServer;
   let admin: Client;

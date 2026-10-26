@@ -1,4 +1,4 @@
-// Reconnecting WebSocket to /ws (plan §10.3). Sends `{type:'hello', role}` on
+// Reconnecting WebSocket to /ws. Sends `{type:'hello', role}` on
 // every (re)connect, pings every 15 s, and dispatches typed ServerWsMessages.
 // A liveness watchdog drops a socket that has been silent for 2 pings (a
 // half-open TCP connection after laptop sleep or a Wi-Fi drop stays OPEN for

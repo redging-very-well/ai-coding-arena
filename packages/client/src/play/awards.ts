@@ -1,4 +1,4 @@
-// Match awards on /play (plan §12.1, §9 Match awards), DOM-free: the
+// Match awards on /play, DOM-free: the
 // player's own awards as cheers ("You won 🎯 Sharpshooter — 312 px KO!") and
 // the winners line of each award in the full list.
 

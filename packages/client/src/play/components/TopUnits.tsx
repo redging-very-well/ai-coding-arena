@@ -1,4 +1,4 @@
-// The round's "top damage" units on /play (plan §12.1): a compact list with
+// The round's "top damage" units on /play: a compact list with
 // each unit's sprite, the player who fielded it (seat badge + name) and its
 // damage; the player's own unit is highlighted with a cheer.
 

@@ -1,4 +1,4 @@
-// The §7 validation pipeline, steps 1-10.
+// The validation pipeline, steps 1-10.
 //
 //   1 normalize        (normalize.ts)   SOURCE_TOO_LARGE, EMPTY_SOURCE
 //   2 transpile        (transpile.ts)   SYNTAX_ERROR
@@ -58,7 +58,7 @@ import { spriteStep } from './sprite.js';
 import { transpile } from './transpile.js';
 
 export interface ValidateOptions {
-  /** Revise this design (§7 "Unit identity"); otherwise the id is the name's slug. */
+  /** Revise this design; otherwise the id is the name's slug. */
   unitId?: string;
   /** Version number to report (the units service knows it; default 1). */
   version?: number;
@@ -66,7 +66,7 @@ export interface ValidateOptions {
   openSession?: SessionOpener;
   /** Run the step-9 dry-run of update() (default true). */
   dryRun?: boolean;
-  /** "Show enemy names to units" is on this match (§5): the dry-run worlds carry names. */
+  /** "Show enemy names to units" is on this match: the dry-run worlds carry names. */
   names?: PracticeNames;
 }
 
@@ -97,7 +97,7 @@ export function slugify(name: string): string {
   return slug || 'unit';
 }
 
-/** Validate a unit and return the §7 result body. */
+/** Validate a unit and return the result body. */
 export async function validate(source: unknown, opts: ValidateOptions, config: GameConfig): Promise<ValidationResult> {
   return (await validateDetailed(source, opts, config)).result;
 }
@@ -200,7 +200,7 @@ async function runSandboxSteps(
   // The stat hints (e.g. W_STAT_IGNORED) come back with the errors, so every fix shows at once.
   if (!stats) return failure(errors, checked.warnings);
 
-  // 8. Cost (per type, §6; a factory's production follows the config's battle length and minion).
+  // 8. Cost (per type; a factory's production follows the config's battle length and minion).
   const pricing = pricingOf(ctx.config);
   const priced = computeCost(stats, ctx.config.cost, pricing);
   const cap = ctx.config.caps.unitCost;
@@ -215,12 +215,12 @@ async function runSandboxSteps(
   errors.push(...sp.errors);
   warnings.push(...sp.warnings);
 
-  // M8.6: the squad orders a factory's update() gave in the dry run (for its card, §12.5).
+  // M8.6: the squad orders a factory's update() gave in the dry run (for its card).
   let orders: MinionOrder[] | undefined;
   // M8.8: whether a heal-support unit's update() healed in the dry run (for its card).
   let healUsed: boolean | undefined;
   // 9-10. Dry-run update() (unless sprite() took the sandbox down). Walls have
-  // no code that runs in battle: an update() on one is ignored (§5.2).
+  // no code that runs in battle: an update() on one is ignored.
   if (stats.type === 'wall') {
     if (hasUpdate) {
       warnings.push({
@@ -231,7 +231,7 @@ async function runSandboxSteps(
       });
     }
   }
-  // §5.3: only a factory's updateMinion() ever runs.
+  // Only a factory's updateMinion() ever runs.
   if (hasMinion && stats.type !== 'factory') {
     warnings.push({
       code: 'W_MINION_IGNORED',
@@ -526,7 +526,7 @@ function displayValue(v: unknown): unknown {
 function statWarnings(stats: StatsSnapshot, config: GameConfig): ValidationWarning[] {
   const out: ValidationWarning[] = [];
   if (stats.type === 'factory') {
-    // M8.6 (§7 step 10): a burst bigger than the minions it makes never fills up.
+    // M8.6: a burst bigger than the minions it makes never fills up.
     const pricing = pricingOf(config);
     const made = expectedMinions(stats.productionInterval ?? 0, pricing);
     const burst = burstOf(stats);
@@ -541,7 +541,7 @@ function statWarnings(stats: StatsSnapshot, config: GameConfig): ValidationWarni
       });
     }
   }
-  // Walls and factories can't attack (§5.2): no damage or cooldown advice for them.
+  // Walls and factories can't attack: no damage or cooldown advice for them.
   if (stats.type === 'wall' || stats.type === 'factory') return out;
   // M8.8: a pure support unit (a medic, a banner, a healing shrine) has damage 0 on purpose.
   if (stats.damage === 0 && !supportOf(stats)) {

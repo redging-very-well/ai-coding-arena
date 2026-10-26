@@ -1,9 +1,9 @@
-// Battle orchestration (plan §9): at START the sim runs AHEAD in the sandbox
+// Battle orchestration: at START the sim runs AHEAD in the sandbox
 // runners and records frames; playback streams those frames over WS at
 // 60 ticks/s × speed (1x/2x, pausable). The sim's result is HELD here and
 // released (ranking, points, scoreboard, battle:end, reports) only when
 // playback reaches the final frame, or at once on Skip, which ranks from the
-// recorded frame at the current playback tick (§9 Skip).
+// recorded frame at the current playback tick.
 
 import { randomInt } from 'node:crypto';
 import {
@@ -56,22 +56,22 @@ const PUMP_MS = 50;
 interface SetupPlayer {
   playerId: string;
   seat: number;
-  /** This round's zone on the battle's map (§9.2). */
+  /** This round's zone on the battle's map. */
   zone: MapZone;
   /** Team mode: the player's team. */
   teamId?: number;
-  /** The player's and (team mode) the team's name, for "Show enemy names to units" (§5). */
+  /** The player's and (team mode) the team's name, for "Show enemy names to units". */
   name: string;
   teamName?: string;
   units: BattleUnitDesign[];
   runnerUnits: RunnerUnitDesign[];
   revealUnits: RevealedUnitDTO[];
   placements: BattlePlayerSetup['placements'];
-  /** Own non-template designs fielded (placed) this battle: they enter the Armory at release (§9.1). */
+  /** Own non-template designs fielded (placed) this battle: they enter the Armory at release. */
   fielded: FieldedDesign[];
   /** Borrowed Armory types fielded this battle (💡 Inventor). */
   borrowed: BorrowedUse[];
-  /** Borrowed unitId → display name and creator name (reports, §9.1). */
+  /** Borrowed unitId → display name and creator name (reports). */
   borrowedNames: Map<string, { displayName: string; creatorName: string }>;
 }
 
@@ -80,7 +80,7 @@ interface ActiveBattle {
   seed: number;
   reveal: BattleRevealDTO;
   setup: SetupPlayer[];
-  /** "Show enemy names to units" (§5), as fixed for the match at Start. */
+  /** "Show enemy names to units", as fixed for the match at Start. */
   revealNames: boolean;
   /** Recorded frames (the engine's buffer once it exists). */
   frames: FrameDTO[];
@@ -114,7 +114,7 @@ interface ActiveBattle {
   startedAt: number;
 }
 
-/** Sim and playback numbers of the running or last battle (GET /admin/metrics, `npm run loadtest`, §14). */
+/** Sim and playback numbers of the running or last battle (GET /admin/metrics, `npm run loadtest`). */
 export interface BattleMetrics {
   round: number;
   /** Players and placed units in the battle. */
@@ -146,7 +146,7 @@ export class BattleService {
   private factory: RunnerFactory | undefined;
   /** The last released battle, for the replay endpoint. */
   private lastReplay: ReplayDTO | undefined;
-  /** Metrics of the last battle that ended (kept after release, §14 load test). */
+  /** Metrics of the last battle that ended (kept after release). */
   private lastMetrics: BattleMetrics | undefined;
 
   constructor(private readonly game: Game) {}
@@ -248,11 +248,11 @@ export class BattleService {
       const used = new Set(rs.placements.map((pl) => pl.unitId));
       for (const l of rs.locked ?? []) {
         if (isArmoryUnitId(l.unitId)) {
-          // A borrowed Armory unit (§9.1): the frozen copy runs in THIS player's sandbox.
+          // A borrowed Armory unit: the frozen copy runs in THIS player's sandbox.
           const e = game.armory.forUnitId(l.unitId);
           if (!e) continue;
           units.push({ unitId: l.unitId, stats: e.stats, cost: e.cost });
-          // Its own sandbox, loaded under the creator's ids (§9.1 Source; see sandbox/splitRunner.ts).
+          // Its own sandbox, loaded under the creator's ids (see sandbox/splitRunner.ts).
           runnerUnits.push({
             unitId: l.unitId,
             compiledJs: e.compiledJs,
@@ -277,7 +277,7 @@ export class BattleService {
         if (!v) continue;
         units.push({ unitId: l.unitId, stats: v.stats, cost: v.cost });
         runnerUnits.push({ unitId: l.unitId, compiledJs: v.compiledJs, stats: v.stats });
-        // Only FIELDED types are revealed (§3 privacy).
+        // Only FIELDED types are revealed.
         if (!used.has(l.unitId)) continue;
         const design = game.store.designsOf(p.id).get(l.unitId);
         const hidden = design?.spriteHidden ?? false;
@@ -330,9 +330,9 @@ export class BattleService {
       totalTicks: game.config.timers.battleTicks,
       ...(layout ? { map: mapDTO(layout) } : {}),
       ...(game.teams.active ? { teams: game.teams.publicTeams() } : {}),
-      // M8.5: the built-in minion, when a factory is fielded (§9.3 Frames).
+      // M8.5: the built-in minion, when a factory is fielded.
       ...(setup.some((s) => s.units.some((u) => u.stats.type === 'factory')) ? { minion: minionReveal(game.config) } : {}),
-      // M8.6: every minion kind a fielded factory builds (§9.3 Frames).
+      // M8.6: every minion kind a fielded factory builds.
       ...minionsReveal(setup.flatMap((s) => s.units.map((u) => u.stats)), game.config),
       players: setup.map((s) => ({
         playerId: s.playerId,
@@ -468,7 +468,7 @@ export class BattleService {
       const rate = this.game.options.playbackRate ?? 1;
       a.playbackTick = Math.min(last.t, a.playbackTick + (dt * tps * a.speed * rate) / 1000);
     }
-    // Playback waiting for the sim ("thinking…", §9 Decoupling).
+    // Playback waiting for the sim ("thinking…").
     const stalled = !a.paused && !a.failed && now >= a.holdUntil && !a.simDone && (!last || a.playbackTick >= last.t);
     if (stalled) {
       if (!a.stalling) a.stalls++;
@@ -499,7 +499,7 @@ export class BattleService {
   // End
   // -------------------------------------------------------------------------
 
-  /** Admin Skip: end at the current playback tick and rank from that frame (§9 Skip). */
+  /** Admin Skip: end at the current playback tick and rank from that frame. */
   async skip(): Promise<void> {
     const a = this.active;
     if (!a || a.releasing) return;
@@ -528,7 +528,7 @@ export class BattleService {
     }
     // Read the kicks after the Skip awaits (an admin may kick meanwhile): no
     // await follows, so ranking, scoring and battleReleased's scoreboard all
-    // see the same set (§9 Skip / kick).
+    // see the same set.
     const kicked = new Set(game.store.match.pendingKicks);
 
     let placings;
@@ -548,14 +548,14 @@ export class BattleService {
     this.sendFrames(a, endTick);
 
     // Skip: rank, score and report from what was shown (the sim may have run
-    // far ahead): counters and living units at the playback tick, §9.
+    // far ahead): counters and living units at the playback tick.
     const shown = kind === 'skip' ? frameAt(a.frames, endTick) : undefined;
     const reported =
-      // The frame itself, not its unit ids: walls are listed only when they change (§9.3 Frames).
+      // The frame itself, not its unit ids: walls are listed only when they change.
       shown && a.engine ? resultAtTick(result, a.engine.countersAt(endTick), shown, endTick) : result;
-    // Kicked players are not in `placings`: no points or badges (§9 Skip / kick).
+    // Kicked players are not in `placings`: no points or badges.
     const ranking = scoreRanking(placings, playerMetrics(reported), scoring);
-    // 💡 Inventor (§9.1, no points): creators whose Armory units others fielded.
+    // 💡 Inventor (no points): creators whose Armory units others fielded.
     const inventors = game.armory.enabled ? game.armory.inventors(a.setup.flatMap((s) => s.borrowed), kicked) : [];
     for (const inv of inventors) {
       const entry = ranking.find((r) => r.playerId === inv.playerId);
@@ -573,7 +573,7 @@ export class BattleService {
     for (const s of a.setup) {
       // M8.8: reports and results name the economy they were played in (old ones are labelled "($1,000 game)").
       const report: BattleReportDTO = { ...buildBattleReport(reported, s.playerId, a.round, ranking), scaleVersion: SCALE_VERSION };
-      // Borrowed units are named "Ogre (Ninja Sam)" and marked "borrowed from" (§9.1).
+      // Borrowed units are named "Ogre (Ninja Sam)" and marked "borrowed from".
       for (const e of report.errors) {
         const b = s.borrowedNames.get(e.unitId);
         if (!b) continue;
@@ -600,7 +600,7 @@ export class BattleService {
         sum.valueDestroyed += u.valueDestroyed;
         // M8.8: healing (medic minions count for their factory).
         if (u.healing) sum.healing = (sum.healing ?? 0) + u.healing;
-        // Minions count for their factory's damage, KOs and value, not as fielded copies (§9.3).
+        // Minions count for their factory's damage, KOs and value, not as fielded copies.
         if (u.type === 'minion') continue;
         sum.fielded++;
         if (u.survived) sum.survived++;
@@ -615,7 +615,7 @@ export class BattleService {
     if (inventors.length > 0) end.inventors = inventors;
     end.topUnits = topUnits({ reveal: a.reveal, summaries: unitSummaries, kicked, shown: scoring.topUnitsShown });
     const record: RoundResultRecord = { round: a.round, end, reports, unitSummaries };
-    // Match awards (§9): this round's contribution to the per-match stats (before the Armory changes).
+    // Match awards: this round's contribution to the per-match stats (before the Armory changes).
     const borrowed: RoundBorrow[] = [];
     for (const b of a.setup.flatMap((s) => s.borrowed)) {
       const armoryUnitId = ArmoryService.unitIdOf(b);
@@ -632,10 +632,10 @@ export class BattleService {
       ownDesigns: Object.fromEntries(a.setup.map((s) => [s.playerId, s.fielded.map((f) => f.unitId)])),
     };
     this.active = undefined;
-    // The fielded types enter the Open Armory now that the result is public (§9.1).
+    // The fielded types enter the Open Armory now that the result is public.
     game.armory.addFielded(a.round, a.setup.flatMap((s) => s.fielded));
     game.match.battleReleased(record, roundStats); // adds points, fills end.scoreboard, adds the match stats
-    // M8.8: the replay header names the economy it was played in (§6 M8.8 migration).
+    // M8.8: the replay header names the economy it was played in.
     const replay: ReplayDTO = { round: a.round, scaleVersion: SCALE_VERSION, reveal: a.reveal, frames: a.frames.filter((f) => f.t <= endTick), end };
     this.lastReplay = replay;
     game.store.writeReplay(replay);
@@ -695,7 +695,7 @@ export class BattleService {
   }
 }
 
-/** A revealed factory carries its body price under the battle's config (the /screen army bars, §9.3). */
+/** A revealed factory carries its body price under the battle's config (the /screen army bars). */
 function withBodyCost(u: RevealedUnitDTO, config: GameConfig): RevealedUnitDTO {
   if (u.stats.type !== 'factory') return u;
   const body = computeCost(u.stats, config.cost, pricingOf(config)).breakdown.body;

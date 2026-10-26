@@ -1,4 +1,4 @@
-// Ranking and ties (plan §9 Ranking/Ties, §9.2, §4 Kick). Points are computed
+// Ranking and ties. Points are computed
 // from the places by sim/scoring.ts.
 //
 // SIDES are ranked: free-for-all every player is a side; in team mode (the
@@ -126,7 +126,7 @@ export function rankStandings(standings: readonly Standing[], excluded: Readonly
   return out.sort((a, b) => a.place - b.place || seatOf(standings, a.playerId) - seatOf(standings, b.playerId));
 }
 
-/** The ranked sides themselves (team table, §9.2). Sorted by place, then seat. */
+/** The ranked sides themselves (team table). Sorted by place, then seat. */
 export function rankSides(standings: readonly Standing[], excluded: ReadonlySet<string> = new Set()): SidePlacing[] {
   return rankSidesInternal(standings, excluded).map((s) => {
     const out: SidePlacing = { playerIds: s.members.map((m) => m.playerId), place: s.place, livingCost: s.livingCost, eliminatedAtTick: s.eliminatedAtTick };
@@ -157,8 +157,8 @@ export function standingsOf(result: Pick<BattleResult, 'players'>): Standing[] {
 }
 
 /**
- * Rank from a recorded frame, as a timeout (§9 Skip): players with fighters
- * in the frame (§9.3: not walls, not spent factories) are survivors ranked by
+ * Rank from a recorded frame, as a timeout: players with fighters
+ * in the frame (not walls, not spent factories) are survivors ranked by
  * the living value of their bodies there; the others keep their elimination
  * tick (which is ≤ frame.t by construction).
  */

@@ -1,4 +1,4 @@
-// wait_for_phase (plan §10.4): a long poll for the AI helpers. A call waits
+// wait_for_phase: a long poll for the AI helpers. A call waits
 // until the game reaches the requested phase (default PLAN, when submissions
 // open) or the phase or round changes, at most WAIT_FOR_PHASE_MAX_SEC. It
 // listens to the services' stateChanged() pushes (Game.onStateChanged): no

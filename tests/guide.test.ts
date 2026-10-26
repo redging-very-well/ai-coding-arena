@@ -1,5 +1,5 @@
-// The unit guide (plan §10.3 GET /guide, §12.1 "📖 Unit guide"): kept in
-// sync with the §5 contract (every UnitType, stat field, action, element,
+// The unit guide: kept in
+// sync with the contract (every UnitType, stat field, action, element,
 // support kind, minion kind/order and view field appears), live example
 // prices equal computeCost under the current config, a retune changes the
 // numbers, the public endpoint, and the client's search/markup helpers.

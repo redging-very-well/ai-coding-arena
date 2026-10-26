@@ -1,4 +1,4 @@
-/* Unit guide (plan §12.1 "📖 Unit guide"): the /play overlay and the
+/* Unit guide: the /play overlay and the
    standalone /guide page. Colours come from common/theme.css. Self-contained
    (no play.css), so /guide loads only theme.css + this file. */
 

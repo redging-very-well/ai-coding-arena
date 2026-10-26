@@ -1,4 +1,4 @@
-// Pure logic of the embedded Claude terminal on /play (plan §11.2 c-d),
+// Pure logic of the embedded Claude terminal on /play,
 // DOM-free so tests/claude-pane.test.ts can run it: stripping a stale
 // `?seat=N` from old links, the split / tabs layout
 // decision and the divider ratio, the first tab, which state the Claude pane
@@ -170,7 +170,7 @@ export type ClaudeView =
   | { kind: 'terminal'; seat: number; down: boolean }
   | { kind: 'elsewhere'; seat: number; by: 'player' | 'admin' };
 
-/** What the Claude pane shows (§11.2 d "Claude pane states"). */
+/** What the Claude pane shows. */
 export function claudeView(t: TerminalDTO | null, displaced: boolean, lastHolder: TerminalLiveDTO['by'] | null): ClaudeView {
   if (!t || t.seat === null) return { kind: 'picker' };
   if (!t.boxReady) return { kind: 'not-ready' };

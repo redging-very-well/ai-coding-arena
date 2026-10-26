@@ -1,4 +1,4 @@
-// The M8.5 buildings worst case (plan §9.3 Performance, §14 test:perf):
+// The M8.5 buildings worst case:
 // 8 players on Ring 8 (1200 arena), each with 10 soldiers + 2 Swarm Factories
 // (12 fighters) + 12 walls in lines with gates, minions at the cap, every
 // update() looping over all enemies. The fake-runner version is a fast smoke
@@ -36,7 +36,7 @@ export function worstCasePlacements(ids = { soldier: 's', factory: 'f', wall: 'w
 }
 
 /**
- * M8.7 maze (plan §14 test:perf): 10 soldiers, 2 factories and 12 walls
+ * M8.7 maze: 10 soldiers, 2 factories and 12 walls
  * forming a U (cols 1 and 4 of rows 0-2 with row 2 between them, a one-cell
  * gap at (3, 2)), an L at (3, 3)/(2, 4)/(3, 4) and two blocks at (5, 2) and
  * (0, 5), so most moves out of and into a zone need a route.

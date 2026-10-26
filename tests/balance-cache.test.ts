@@ -1,5 +1,5 @@
-// The relevance-aware result cache, on real battles (helpers/balanceCache.ts,
-// docs/balance.md "Fast balance runs"): a config patch that only touches
+// The relevance-aware result cache, on real battles (helpers/balanceCache.ts):
+// a config patch that only touches
 // factory (or support, or one element's) fields re-uses the cached records
 // of every battle without that feature and re-plays the rest, and the
 // records it re-uses are exactly what playing them again under the patched

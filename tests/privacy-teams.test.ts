@@ -1,4 +1,4 @@
-// Team privacy (plan §3 privacy table, §9.2 Team privacy, §14 privacy.test):
+// Team privacy:
 // assertions on SERIALIZED payloads, with 6 and 8 players.
 //   * Team mode: a teammate DOES receive the member's selected types (cards
 //     with stats and sprite), zone and placement live (WS `private.team`

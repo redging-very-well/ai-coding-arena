@@ -1,4 +1,4 @@
-// `npm start`: a tiny cross-platform launcher (plan §13) for the built server:
+// `npm start`: a tiny cross-platform launcher for the built server:
 //   UV_THREADPOOL_SIZE=16 MALLOC_ARENA_MAX=2 node --no-node-snapshot packages/server/dist/index.js
 // Extra arguments (e.g. --unsafe) are passed through.
 import { spawn } from 'node:child_process';
@@ -22,7 +22,7 @@ const child = spawn(process.execPath, ['--no-node-snapshot', entry, ...process.a
     UV_THREADPOOL_SIZE: process.env.UV_THREADPOOL_SIZE ?? '16',
     // Linux/glibc: one malloc arena per busy thread (16 pool threads) let the
     // server's RSS creep from ~360 to ~540 MB over a few 8-player matches in
-    // the M6 load test; 2 arenas kept it at ~250-300 MB (docs/load.md).
+    // the M6 load test; 2 arenas kept it at ~250-300 MB.
     // Ignored on macOS and Windows.
     MALLOC_ARENA_MAX: process.env.MALLOC_ARENA_MAX ?? '2',
   },

@@ -9,7 +9,7 @@ const load = async (file: string) => {
   return new mod.default();
 };
 
-describe('starter-kit templates (§6 stats)', () => {
+describe('starter-kit templates', () => {
   it('basic_soldier: 1400/56/40/1.5/60, size 10 → $807 (the $10,000 redesign)', async () => {
     const u = await load('basic_soldier.js');
     const r = checkStats(u, DEFAULT_CONFIG.stats.bounds);
@@ -55,7 +55,7 @@ describe('starter-kit templates (§6 stats)', () => {
   });
 });
 
-describe('starter-kit templates (§5.1 sprites)', () => {
+describe('starter-kit templates', () => {
   it.each([
     ['basic_soldier.js', ''],
     ['basic_tower.js', 'y'], // the crystal's glow sparkles float free

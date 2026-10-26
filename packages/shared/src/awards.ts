@@ -1,4 +1,4 @@
-// Match awards (plan §9 Match awards): the end-of-match titles the /screen
+// Match awards: the end-of-match titles the /screen
 // ceremony reveals one by one at MATCH_RESULTS, each with its winner(s), the
 // stat that won it and a "best unit" (sprite of a design that was revealed
 // when it was fielded; never source). Computed by the server from the

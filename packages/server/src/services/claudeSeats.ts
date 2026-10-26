@@ -1,4 +1,4 @@
-// Claude seats (plan §11.2 c): which player sits at which Claude laptop (seat
+// Claude seats: which player sits at which Claude laptop (seat
 // 1-8 = container seatN on the AI session host, port 778N, proxy path
 // /terminal/N/). Independent of the game seat (colour/zone). Unique across
 // players, persisted on the player record, freed by kick and wipe, kept across
@@ -8,9 +8,9 @@
 // own seat, this laptop's seat, the lowest free one). The admin can turn
 // seats off (`setEnabled`): never assigned or pickable; turning off a held
 // seat moves its player to the lowest free seat that is on. `seatLogin` hands
-// the seat's agent-loop the player's login (§11.2 e), so the AI helper starts
-// logged in, and the shared agent login pasted in /admin (§11.2 f:
-// `setAgentCredentials`, write-only), so no seat needs its own /login.
+// the seat's agent-loop the player's login, so the AI helper starts
+// logged in, and the shared agent login pasted in /admin
+// (`setAgentCredentials`, write-only), so no seat needs its own /login.
 //
 // The live side (who holds a seat's terminal, the seat probe) belongs to the
 // terminal proxy (src/terminal), which attaches itself as `TerminalControl`.
@@ -39,10 +39,10 @@ import { RateLimiter } from '../util/ratelimit.js';
 import type { Game } from './game.js';
 import { AGENT_CREDENTIAL_RE, type PlayerRecord } from './store.js';
 
-/** ttyd host port of Claude seat 1 (seat N → 7780 + N, §11.1). */
+/** ttyd host port of Claude seat 1 (seat N → 7780 + N). */
 export const CLAUDE_SEAT_BASE_PORT = 7780;
 
-/** The seat password (§11.2 a): no spaces or ':' (ttyd's `-c user:pass` can't take them). */
+/** The seat password: no spaces or ':' (ttyd's `-c user:pass` can't take them). */
 export const SEAT_SECRET_RE = /^[A-Za-z0-9._~-]{12,64}$/;
 
 export type LiveTerminal = TerminalLiveDTO & { playerName?: string };
@@ -80,7 +80,7 @@ export function seatNumbers(): number[] {
 }
 
 /**
- * Which player a seat's terminal serves (plan §11.2 e): 32 hex digits, a hash
+ * Which player a seat's terminal serves: 32 hex digits, a hash
  * of the seat and the player's id. The proxy appends `?arg=<token>` to the
  * ttyd WebSocket only for the seat's assigned player; ttyd (`-a`) passes it to
  * the seat's agent-loop, which starts a fresh conversation with the first
@@ -93,7 +93,7 @@ export function seatPlayerToken(seat: number, playerId: string): string {
 }
 
 /**
- * The seat auto-assignment rule (§11.2 c), pure: the player's own seat if it
+ * The seat auto-assignment rule, pure: the player's own seat if it
  * is on; else `preferred` (this laptop's seat) if it is on and free; else the
  * lowest free seat that is on; else none.
  */
@@ -148,7 +148,7 @@ export function credentialHint(v: string | null): string | null {
 }
 
 /**
- * The shared login for a seat's agent (§11.2 f): Claude seats prefer the
+ * The shared login for a seat's agent: Claude seats prefer the
  * Claude Code token (the subscription) over an Anthropic API key; Codex seats
  * get the OpenAI key. Null when nothing fitting is set.
  */
@@ -161,13 +161,13 @@ export function credentialForAgent(creds: Record<AgentCredentialKind, string | n
 
 export class ClaudeSeatsService {
   private terminals: TerminalControl | undefined;
-  /** Player seat changes: 1 per second (§10.3). */
+  /** Player seat changes: 1 per second. */
   private readonly changeLimiter = new RateLimiter(1, 1000);
   /** Failed seat logins per client address: 20 per minute. */
   private readonly seatLoginFails = new RateLimiter(20, 60_000);
   /** Every seat login per client address (one per terminal open; 8 seats share the AI session host's address): 120 per minute. */
   private readonly seatLoginCalls = new RateLimiter(120, 60_000);
-  /** Which shared login each seat last fetched (§11.2 f; memory only, for /admin). */
+  /** Which shared login each seat last fetched (memory only, for /admin). */
   private readonly sharedLogins = new Map<number, { env: SeatCredentialEnv; at: number }>();
 
   constructor(private readonly game: Game) {}
@@ -284,7 +284,7 @@ export class ClaudeSeatsService {
   }
 
   /**
-   * Join / login from /play (§11.2 c): give the player a seat with no clicks,
+   * Join / login from /play: give the player a seat with no clicks,
    * by {@link pickClaudeSeat}. Synchronous, so many players joining at once
    * can't get the same seat. `preferredIn` = this laptop's seat (1-8) or
    * anything else for none. Not rate limited (one call per login).
@@ -332,7 +332,7 @@ export class ClaudeSeatsService {
   }
 
   /**
-   * POST /api/seat-login (§11.2 e, f): a seat's agent-loop trades its player
+   * POST /api/seat-login: a seat's agent-loop trades its player
    * token for that player's login, so the AI helper starts logged in. Only
    * the AI session host can ask (Basic auth with the seat password, constant
    * time), and only for the seat's current player.
@@ -372,7 +372,7 @@ export class ClaudeSeatsService {
   }
 
   /**
-   * PUT /admin/agent-credentials (§11.2 f): set or clear the shared agent
+   * PUT /admin/agent-credentials: set or clear the shared agent
    * logins. `undefined` leaves a field, `null` or "" clears it. Whitespace is
    * removed (a long token often wraps when copied from a terminal). Each seat
    * picks the change up the next time its terminal opens.

@@ -1,4 +1,4 @@
-// Client renderer logic (plan §12, §5.1) that runs without a DOM: the 2:1
+// Client renderer logic that runs without a DOM: the 2:1
 // isometric projection and fit, depth sort, floor tile generation, edge props,
 // sprite baking (scale, outline, mirror, flash, fallbacks), the animation
 // state machine and frame interpolation.
@@ -55,7 +55,7 @@ const close = (a: number, b: number, eps = 1e-9) => expect(Math.abs(a - b)).toBe
 // Projection
 // ---------------------------------------------------------------------------
 
-describe('iso projection (§12)', () => {
+describe('iso projection', () => {
   it('maps the arena corners to a 2:1 diamond', () => {
     const k = 1;
     expect(isoProject(0, 0, k)).toEqual({ sx: 0, sy: 0 });
@@ -128,7 +128,7 @@ describe('iso projection (§12)', () => {
       const c = isoProject(400, 400, k);
       close(((p.sx - c.sx) / rx) ** 2 + ((p.sy - c.sy) / ry) ** 2, 1, 1e-9);
     }
-    // Sprite width = 2·size·zoom = the ring's width (§5.1).
+    // Sprite width = 2·size·zoom = the ring's width.
     const v = fitIso(1000, 700);
     close(billboardWidth(15, v), 2 * isoEllipse(15, v.k).rx);
   });
@@ -230,7 +230,7 @@ const DOT: SpriteSpec = {
   },
 };
 
-describe('sprite baking (§5.1)', () => {
+describe('sprite baking', () => {
   it('rasterizes palette keys and leaves "." transparent', () => {
     const img = rasterizeFrame(DOT, DOT.frames.idle[0]!);
     expect(img.width).toBe(8);

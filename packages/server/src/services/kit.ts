@@ -1,14 +1,14 @@
-// The starter kit's files (plan §11, §11.3), rendered the same way
+// The starter kit's files, rendered the same way
 // sessions/entrypoint.sh renders a seat's /kit (tests/kit-agents.test.ts
 // compares the two). There is no kit download: players join in their
-// browser and their AI helper runs in an AI seat (§11.2).
+// browser and their AI helper runs in an AI seat.
 //
 // Files in packages/starter-kit ending in `.tmpl` get their `{{HOST}}`,
 // `{{API_KEY}}`, `{{PLAYER_NAME}}` and `{{AGENT_NAME}}` placeholders filled
 // and the suffix removed. Missing templates fall back to built-in minimal
 // versions.
 //
-// One kit source, two agents (§11.3): CLAUDE.md.tmpl is the instructions for
+// One kit source, two agents: CLAUDE.md.tmpl is the instructions for
 // both. The Claude Code kit gets it as CLAUDE.md plus .mcp.json and
 // .claude/settings.json; the Codex kit gets the SAME text as AGENTS.md plus
 // .codex/config.toml. sessions/entrypoint.sh applies the same rule (kitFileAgent).
@@ -39,7 +39,7 @@ export function kitFileAgent(rel: string): KitAgent | null {
 /**
  * In packages/starter-kit but not a kit file: FIRST_PROMPT.md(.tmpl) is the
  * message a seat's agent starts with when a new player sits down (sent by
- * sessions/entrypoint.sh, plan §11.2 e). /kit doesn't get it.
+ * sessions/entrypoint.sh). /kit doesn't get it.
  */
 export const SEAT_ONLY_FILES: ReadonlySet<string> = new Set(['FIRST_PROMPT.md']);
 

@@ -1,4 +1,4 @@
-// Print the balance numbers recorded in docs/balance.md (plan §14): the
+// Print the balance numbers: the
 // archetype round robin, all-tower battles per map style, turtle vs rush and
 // the Ring 8 free-for-all rotations; M8.5: the walls-and-factories archetypes
 // in the same round robin, all-building armies per map style, fortress vs
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
   const results = await playPairs(allPairs(keys), matrixSeeds);
   const wall = performance.now() - started;
   const m = matrixOf(results, keys);
-  console.log(`\n## Round robin, ${keys.length} archetypes (row W-D-L vs column; the first six are the §14 matrix, the first 13 M8.5's, the first 17 M8.6's)\n`);
+  console.log(`\n## Round robin, ${keys.length} archetypes (row W-D-L vs column; the first six are the classic six, the first 13 M8.5's, the first 17 M8.6's)\n`);
   console.log(matrixMarkdown(m, ALL_ARCHETYPES));
   const sets: Array<[string, Set<string>]> = [
     ['the six', new Set(ARCHETYPES.map((a) => a.key))],

@@ -1,6 +1,5 @@
-// Game configuration: zod schema + defaults (plan §5 bounds, §6 economy,
-// §3 timers, §8 sandbox limits, §9 sudden death and scoring, §9.2 match size,
-// §4 rate limits).
+// Game configuration: zod schema + defaults (stat bounds, economy, timers,
+// sandbox limits, sudden death and scoring, match size, rate limits).
 //
 // `DEFAULT_CONFIG` is the single source of truth in code. `config/default.json`
 // at the repo root mirrors it for humans/ops and a test keeps them in sync.
@@ -21,7 +20,7 @@ const RangeSchema = z
 export type NumRange = z.infer<typeof RangeSchema>;
 
 /**
- * Cost coefficients (§6, M8.8). Each stat term is convex:
+ * Cost coefficients (M8.8). Each stat term is convex:
  * term = c * x * (1 + curveK * (x / max)²), so a maxed stat costs (1 + curveK)× its linear price;
  * raw = (base + Σ term + heal) * max(1, refCD / CD) * power * splash * element + aura.
  */
@@ -51,14 +50,14 @@ export const CostCoefficientsSchema = z.object({
   /** M8.8 aura prices per % (added after the factors: always on). */
   aura: z.object({ haste: nonNeg(), might: nonNeg(), shield: nonNeg() }),
   /**
-   * Walls (§6 Walls and factories): raw = base + hp·HP·(1 + curveK·(HP/1500)²).
+   * Walls: raw = base + hp·HP·(1 + curveK·(HP/12000)²).
    * No cooldown factor (walls can't attack).
    */
   wall: z.object({ base: nonNeg(), hp: nonNeg() }),
   /**
-   * Factories: ceil(base + hp·HP·(1 + curveK·(HP/1000)²)) + minionValue × E,
+   * Factories: ceil(base + hp·HP·(1 + curveK·(HP/1200)²)) + minionValue × E,
    * minionValue = ceil(minionCost × minionDiscount) where minionCost is the
-   * unit formula on the `factory.minion` stats (§6).
+   * unit formula on the `factory.minions.<kind>` stats.
    */
   factory: z.object({
     base: nonNeg(),
@@ -69,7 +68,7 @@ export const CostCoefficientsSchema = z.object({
 });
 export type CostCoefficients = z.infer<typeof CostCoefficientsSchema>;
 
-/** Stat bounds (§5 table). */
+/** Stat bounds. */
 export const StatBoundsSchema = z.object({
   nameLength: z
     .object({ min: posInt(), max: posInt() })
@@ -85,17 +84,17 @@ export const StatBoundsSchema = z.object({
   attackCooldown: RangeSchema,
   /** Optional body radius in px (hitbox and drawn size). */
   size: RangeSchema,
-  /** Wall maxHealth (§5.2). */
+  /** Wall maxHealth. */
   wallHealth: RangeSchema,
-  /** Factory maxHealth (§5.2). */
+  /** Factory maxHealth. */
   factoryHealth: RangeSchema,
-  /** Factory: integer ticks between two minions (§5.2). */
+  /** Factory: integer ticks between two minions. */
   productionInterval: RangeSchema,
-  /** Factory (M8.6): minions saved up inside before they leave together (§5.3). Whole numbers; max ≤ factory.maxAlivePerFactory. */
+  /** Factory (M8.6): minions saved up inside before they leave together. Whole numbers; max ≤ factory.maxAlivePerFactory. */
   burst: RangeSchema,
-  /** M8.8 (§5.4): splash radius in px (0 = one target). */
+  /** M8.8: splash radius in px (0 = one target). */
   splashRadius: RangeSchema,
-  /** M8.8 (§5.5): supportPower and supportRange per support kind. */
+  /** M8.8: supportPower and supportRange per support kind. */
   support: z.object({
     heal: z.object({ power: RangeSchema, range: RangeSchema }),
     haste: z.object({ power: RangeSchema, range: RangeSchema }),
@@ -106,7 +105,7 @@ export const StatBoundsSchema = z.object({
 export type StatBounds = z.infer<typeof StatBoundsSchema>;
 
 /**
- * One built-in minion kind (§5.2, §5.3): the same for everyone. Priced as a
+ * One built-in minion kind: the same for everyone. Priced as a
  * soldier, so it is kept inside the soldier bounds (refined below).
  */
 export const MinionStatsSchema = z.object({
@@ -120,16 +119,16 @@ export const MinionStatsSchema = z.object({
   aggroRange: nonNeg(),
   /** Ticks blocked by an enemy wall before a minion attacks it. */
   impatientTicks: posInt(),
-  /** Hits on walls deal damage × this (M8.6: brutes 3, the rest 1). Not priced (§5.3). */
+  /** Hits on walls deal damage × this (M8.6: brutes 3, the rest 1). Not priced. */
   wallDamageMultiplier: finite().refine((n) => n >= 1 && n <= 5, 'must be 1-5'),
-  /** M8.8 medic (§5.5): HP per heal (its heal support power); priced in its soldier formula. */
+  /** M8.8 medic: HP per heal (its heal support power); priced in its soldier formula. */
   heal: nonNeg().optional(),
   /** M8.8 medic: heal reach, edge to edge (its heal support range). */
   reach: nonNeg().optional(),
 });
 export type MinionStats = z.infer<typeof MinionStatsSchema>;
 
-/** The preset minion kinds (§5.3; medic §5.5), keyed like `MinionKind`. */
+/** The preset minion kinds, keyed like `MinionKind`. */
 export const MinionKindsSchema = z.object({
   grunt: MinionStatsSchema,
   archer: MinionStatsSchema,
@@ -140,24 +139,24 @@ export const MinionKindsSchema = z.object({
 export type MinionKindsConfig = z.infer<typeof MinionKindsSchema>;
 
 export const FactorySchema = z.object({
-  /** Most minions one factory makes in a battle (E's cap, §6). */
+  /** Most minions one factory makes in a battle (E's cap). */
   maxMinionsPerFactory: posInt(),
   /**
    * Factories build no minion that would appear at or after suddenDeath.startTick
-   * (§9.3, 2026-10-25 "Factories stop at sudden death"); E is priced over that
+   * (2026-10-25 "Factories stop at sudden death"); E is priced over that
    * window. false: they build until the end of the battle (the pre-2026-10-25 rule).
    */
   stopAtSuddenDeath: z.boolean(),
   /**
    * Every factory still standing is destroyed on the first tick of sudden death
    * (suddenDeath.startTick), credited to nobody; stored minions are lost with it
-   * as with any destroyed factory (§9.3, 2026-10-25 "factories die at sudden
-   * death", on by default). false: factories live on into sudden death.
+   * as with any destroyed factory. false (the default): factories live on into
+   * sudden death.
    */
   dieAtSuddenDeath: z.boolean(),
   /**
    * When a factory is destroyed, its living minions crumble with it in the same
-   * tick (§9.3, 2026-10-25 "Minions die with their factory"), credited to the
+   * tick (2026-10-25 "Minions die with their factory"), credited to the
    * factory's killer. false: they keep fighting (the pre-2026-10-25 rule).
    */
   minionsDieWithFactory: z.boolean(),
@@ -189,7 +188,7 @@ export const FactorySchema = z.object({
 });
 export type FactoryConfig = z.infer<typeof FactorySchema>;
 
-/** M8.8 element constants (§5.4, §9.4). */
+/** M8.8 element constants. */
 export const ElementsSchema = z.object({
   /** A fire hit adds burnPct% of its damage as a burn, over `pulses` pulses `pulseTicks` apart. */
   fire: z.object({ burnPct: nonNeg(), pulses: posInt(), pulseTicks: posInt() }),
@@ -212,7 +211,7 @@ export const ElementsSchema = z.object({
 });
 export type ElementsConfig = z.infer<typeof ElementsSchema>;
 
-/** Redesign (2026-10-24): ranged accuracy against the target's speed (§9.4 Accuracy). */
+/** Redesign (2026-10-24): ranged accuracy against the target's speed. */
 export const AccuracySchema = z.object({
   /** The miss chance of a ranged shot at a target moving at `speedRef` px/tick or faster, in %. */
   missMaxPct: finite().refine((n) => n >= 0 && n <= 100, 'must be 0-100'),
@@ -221,38 +220,38 @@ export const AccuracySchema = z.object({
 });
 export type AccuracyConfig = z.infer<typeof AccuracySchema>;
 
-/** M8.8 support constants (§5.5). */
+/** M8.8 support constants. */
 export const SupportSchema = z.object({
   /** A body can be healed this % of its max HP per 60-tick window (shared by every healer). */
   healRoomPctPerSecond: nonNeg(),
 });
 
 export const ConfigSchema = z.object({
-  /** Economy version: 3 = the $10,000 redesign (stored config patches without it are migrated, §6). */
+  /** Economy version: 3 = the $10,000 redesign (stored config patches without it are migrated). */
   economyVersion: z.literal(3),
   cost: CostCoefficientsSchema,
   stats: z.object({ bounds: StatBoundsSchema }),
   caps: z.object({
-    /** Max rounded cost of a single unit (§6). */
+    /** Max rounded cost of a single unit. */
     unitCost: posInt(),
     /** Credits per player per round; resets every round. */
     budget: posInt(),
     /** Max active designs per player (templates don't count). */
     maxDesigns: posInt(),
-    /** Max unit types (soldiers) fielded per round (§5.2). */
+    /** Max unit types (soldiers) fielded per round. */
     maxUnitTypes: posInt(),
-    /** Max building types (towers, walls, factories) fielded per round (§5.2). */
+    /** Max building types (towers, walls, factories) fielded per round. */
     maxBuildingTypes: posInt(),
     /** Max fighter copies placed per player: soldiers + towers + factories (everything that runs code). */
     maxCopies: posInt(),
-    /** Of those, max factories (§5.2). */
+    /** Of those, max factories. */
     maxFactoryCopies: z.number().int().nonnegative(),
     /** Max walls placed per player, on top of maxCopies (walls run no code). */
     maxWallCopies: z.number().int().nonnegative(),
-    /** Max unit source size in bytes (§7 step 1). */
+    /** Max unit source size in bytes. */
     maxSourceBytes: posInt(),
     /**
-     * Redesign "copy ramp" (§6): copies of one design beyond `freeCopies` cost
+     * Redesign "copy ramp": copies of one design beyond `freeCopies` cost
      * `pctPerCopy`% more each, cumulatively (walls never). 0 = off.
      */
     copyRamp: z.object({ freeCopies: z.number().int().nonnegative(), pctPerCopy: nonNeg() }),
@@ -265,16 +264,16 @@ export const ConfigSchema = z.object({
     /** Battle length in sim ticks (90 s at 60 ticks/s). */
     battleTicks: posInt(),
     ticksPerSecond: posInt(),
-    /** PLAN → PLACEMENT ~3 s after every active player is Ready (§3). Never starts the battle. */
+    /** PLAN → PLACEMENT ~3 s after every active player is Ready. Never starts the battle. */
     autoAdvanceWhenAllReady: z.boolean(),
   }),
-  /** Match size (§9.2). Arena sizes, zone tables and team colours are code (shared/maps.ts, teams.ts). */
+  /** Match size. Arena sizes, zone tables and team colours are code (shared/maps.ts, teams.ts). */
   match: z.object({
     /** Seats 0..maxPlayers−1; joining beyond it is GAME_FULL. 2-8. */
     maxPlayers: z.number().int().min(2).max(8),
   }),
   /**
-   * Round points (§9 Points): place points + damage bonus + value bonus.
+   * Round points: place points + damage bonus + value bonus.
    * Place points are a formula, not config: with P ranked players and T sides,
    * place k gets round((P − 1) × (T − k) / (T − 1)) (free-for-all: P − k).
    * Bonus = round-half-up(max × P/4 × mine / top), 0 when the top value is 0.
@@ -307,36 +306,36 @@ export const ConfigSchema = z.object({
     separationPasses: z.number().int().nonnegative(),
     /** Record a frame every N ticks. */
     frameEveryTicks: posInt(),
-    /** Wall steering: ticks without a wall hit after which the slide side is forgotten (§9.3). */
+    /** Wall steering: ticks without a wall hit after which the slide side is forgotten. */
     slideMemoryTicks: posInt(),
-    /** Routing round walls: a body re-plans its route at most every N ticks (plus on reaching its waypoint, §9.3). */
+    /** Routing round walls: a body re-plans its route at most every N ticks (plus on reaching its waypoint). */
     replanTicks: posInt(),
     /** Redesign: towers and factories are solid for routing (bodies walk round them; false = the M8.7 walls-only router). */
     routeRoundBuildings: z.boolean(),
   }),
-  /** Factories and their built-in minions (§5.2, §9.3). */
+  /** Factories and their built-in minions. */
   factory: FactorySchema,
-  /** M8.8 elements and splash (§5.4, §9.4). */
+  /** M8.8 elements and splash. */
   elements: ElementsSchema,
-  /** M8.8 support (§5.5). */
+  /** M8.8 support. */
   support: SupportSchema,
-  /** Redesign: ranged accuracy vs the target's speed (§9.4). */
+  /** Redesign: ranged accuracy vs the target's speed. */
   accuracy: AccuracySchema,
   sandbox: z.object({
     mode: z.enum(['ivm', 'process', 'inproc-unsafe']),
     memoryLimitMb: posInt(),
     validation: z.object({
       /**
-       * Total wall budget for EVALUATING the module (§7 step 4), microtasks
+       * Total wall budget for EVALUATING the module, microtasks
        * included. The later steps have their own per-call limits
        * (constructTimeoutMs per construction/stat read, dryRunCallTimeoutMs per
        * dry-run call), so one validation is bounded by about
        * evalBudgetMs + 7 × constructTimeoutMs + 15 × dryRunCallTimeoutMs.
        */
       evalBudgetMs: posInt(),
-      /** Per constructor call (§7 step 5). */
+      /** Per constructor call. */
       constructTimeoutMs: posInt(),
-      /** Per dry-run update() call (§7 step 9). */
+      /** Per dry-run update() call. */
       dryRunCallTimeoutMs: posInt(),
       /** update() slower than this gives W_SLOW. */
       slowUpdateWarnMs: z.number().positive(),
@@ -371,7 +370,7 @@ export const ConfigSchema = z.object({
     submitMinIntervalMs: posInt(),
   }),
 }).superRefine((c, ctx) => {
-  // Every minion kind is priced as a soldier (§6), so it must be a legal soldier.
+  // Every minion kind is priced as a soldier, so it must be a legal soldier.
   const b = c.stats.bounds;
   const within: Array<['maxHealth' | 'damage' | 'range' | 'speed' | 'attackCooldown' | 'size', { min: number; max: number }]> = [
     ['maxHealth', b.maxHealth],
@@ -388,7 +387,7 @@ export const ConfigSchema = z.object({
       }
     }
   }
-  // The medic (M8.8, §5.5): a pure healer (damage 0) whose heal and reach fit the heal support bounds.
+  // The medic (M8.8): a pure healer (damage 0) whose heal and reach fit the heal support bounds.
   const medic = c.factory.minions.medic;
   const hb = b.support.heal;
   if (medic.damage !== 0) ctx.addIssue({ code: 'custom', path: ['factory', 'minions', 'medic', 'damage'], message: 'medics never attack: must be 0' });
@@ -398,7 +397,7 @@ export const ConfigSchema = z.object({
   if (medic.reach === undefined || medic.reach < hb.range.min || medic.reach > hb.range.max) {
     ctx.addIssue({ code: 'custom', path: ['factory', 'minions', 'medic', 'reach'], message: `must be within the heal support bounds ${hb.range.min}-${hb.range.max}` });
   }
-  // Burst (§5.3): whole minions, at least 1, and stored minions count toward the per-factory cap.
+  // Burst: whole minions, at least 1, and stored minions count toward the per-factory cap.
   const burst = b.burst;
   if (!Number.isInteger(burst.min) || !Number.isInteger(burst.max) || burst.min < 1) {
     ctx.addIssue({ code: 'custom', path: ['stats', 'bounds', 'burst'], message: 'must be whole numbers >= 1' });
@@ -412,7 +411,7 @@ export type GameConfig = z.infer<typeof ConfigSchema>;
 export type SandboxMode = GameConfig['sandbox']['mode'];
 
 export const DEFAULT_CONFIG: GameConfig = {
-  // The $10,000 redesign (§6). Stored config patches from older economies are migrated (`migrateEconomyPatch`).
+  // The $10,000 redesign. Stored config patches from older economies are migrated (`migrateEconomyPatch`).
   economyVersion: 3,
   cost: {
     base: 50,
@@ -428,7 +427,7 @@ export const DEFAULT_CONFIG: GameConfig = {
     element: { fire: 1.3, ice: 1.75, lightning: 1.3 },
     heal: 3.5,
     aura: { haste: 9, might: 8, shield: 7 },
-    // §6 Walls and factories (×5 in M8.8).
+    // Walls and factories (×5 in M8.8).
     wall: { base: 20, hp: 0.0375 },
     factory: { base: 50, hp: 0.5, minionDiscount: 0.5 },
   },
@@ -464,7 +463,7 @@ export const DEFAULT_CONFIG: GameConfig = {
     maxCopies: 12,
     maxFactoryCopies: 5,
     maxWallCopies: 16,
-    maxSourceBytes: 64 * 1024, // §7 step 1: sprites take room
+    maxSourceBytes: 64 * 1024, // sprites take room
     copyRamp: { freeCopies: 3, pctPerCopy: 15 },
   },
   timers: {
@@ -485,8 +484,8 @@ export const DEFAULT_CONFIG: GameConfig = {
     topUnitsShown: 3,
   },
   suddenDeath: {
-    // Tuned in M6 against tests/balance.test.ts (docs/balance.md): from 50 s,
-    // 7% of max HP per second, so all-tower armies lose towers before 90 s.
+    // Checked by tests/balance.test.ts: from 75 s, 10% of max HP per second,
+    // so all-tower armies lose towers before the 120 s end.
     startTick: 4500,
     endTick: 7200,
     startRadius: 570,
@@ -506,17 +505,17 @@ export const DEFAULT_CONFIG: GameConfig = {
   factory: {
     maxMinionsPerFactory: 12,
     // Off by default: on, it nerfed attacking factory armies and broke the 70% cap
-    // without moving the factory camp (§14 "Factories stop at sudden death").
+    // without moving the factory camp.
     stopAtSuddenDeath: false,
     // Off by default (user, 2026-10-25, after the measurements: "turn it off by
     // default"): on, the factory camp got stronger (62.9% -> 66.7%), attacking
-    // factory armies collapsed and 4 rules failed (§14 "Factories die at sudden death").
+    // factory armies collapsed and 4 rules failed.
     dieAtSuddenDeath: false,
     // Off by default: on, the camp fell (62.9% -> 42.1%) but attacking factory armies
-    // collapsed and 12 rules failed (§14 "Minions die with their factory").
+    // collapsed and 12 rules failed.
     minionsDieWithFactory: false,
     // With the option on, only minions within 120 px crumble: the one radius that kept
-    // every rule (camp 62.9% -> 60.4%; §14 "Only minions near the factory crumble").
+    // every rule (camp 62.9% -> 60.4%).
     crumbleRadius: 120,
     maxAlivePerFactory: 4,
     maxAlivePerPlayer: 12,
@@ -527,13 +526,13 @@ export const DEFAULT_CONFIG: GameConfig = {
     defendArriveRadius: 48,
     guardRadius: 120,
     guardArriveGap: 16,
-    // §5.3 minion kinds (M8.6, ×5 in M8.8). grunt = the M8.5 minion; each must be a legal soldier.
+    // Minion kinds (M8.6, ×5 in M8.8). grunt = the M8.5 minion; each must be a legal soldier.
     minions: {
       grunt: { maxHealth: 360, damage: 20, range: 20, speed: 1.5, attackCooldown: 60, size: 8, aggroRange: 120, impatientTicks: 120, wallDamageMultiplier: 1 },
       archer: { maxHealth: 240, damage: 20, range: 110, speed: 1.2, attackCooldown: 60, size: 7, aggroRange: 150, impatientTicks: 120, wallDamageMultiplier: 1 },
       runner: { maxHealth: 480, damage: 24, range: 20, speed: 2.6, attackCooldown: 60, size: 6, aggroRange: 120, impatientTicks: 120, wallDamageMultiplier: 1 },
       brute: { maxHealth: 1100, damage: 32, range: 20, speed: 0.9, attackCooldown: 60, size: 11, aggroRange: 120, impatientTicks: 30, wallDamageMultiplier: 3 },
-      // M8.8 (§5.5): never attacks; heals 60 HP within 60 px, cleanses burning and frozen allies first.
+      // M8.8: never attacks; heals 60 HP within 60 px, cleanses burning and frozen allies first.
       medic: { maxHealth: 300, damage: 0, range: 20, speed: 1.4, attackCooldown: 60, size: 7, aggroRange: 150, impatientTicks: 120, wallDamageMultiplier: 1, heal: 60, reach: 60 },
     },
   },
@@ -547,7 +546,7 @@ export const DEFAULT_CONFIG: GameConfig = {
     splashPct: 50,
   },
   support: {
-    // Heals stop at suddenDeath.startTick (§5.5).
+    // Heals stop at suddenDeath.startTick.
     healRoomPctPerSecond: 4,
   },
   accuracy: {
@@ -611,7 +610,7 @@ export function deepMerge<T>(base: T, patch: unknown): T {
  * Rewrite keys of older config files/patches to the current shape. Today:
  * `factory.minion` becomes `factory.minions.grunt` (M8.6), `caps.maxTypes` is dropped (M8.5 replaced it with maxUnitTypes and
  * maxBuildingTypes, which keep their defaults), and the fixed place-points table (the top-level `points` array, later
- * `scoring.placePoints`) is gone: place points are the §9 formula, so both
+ * `scoring.placePoints`) is gone: place points are the formula, so both
  * keys are dropped. Returns a new object; anything that isn't a plain object
  * is returned unchanged.
  */
@@ -642,7 +641,7 @@ export function migrateConfigPatch<T>(patch: T): T {
 export const ECONOMY_VERSION = 3;
 
 /**
- * The keys an older-economy config patch may not keep (§6 migration): every
+ * The keys an older-economy config patch may not keep: every
  * money, HP and damage number changed scale (M8.8: ×5; the redesign: HP ×1.6,
  * damage ×0.8, a $10,000 budget, 120 s battles and new factory numbers), and an
  * old `curveK`, `cost.hp` or battle length would silently undo the retune.
@@ -691,7 +690,7 @@ function dropPath(obj: Record<string, unknown>, path: string[], at: string, drop
 }
 
 /**
- * The economy step (§6 migration) for a STORED config patch (the server's
+ * The economy step for a STORED config patch (the server's
  * `configPatch` in state.json): a patch without `economyVersion: 3` was made
  * for an older economy, so its scale-sensitive keys (`ECONOMY_DROPPED`) are
  * dropped and the rest (plan timers, map, scoring, …) is kept. Returns the

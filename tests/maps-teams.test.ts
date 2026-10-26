@@ -1,6 +1,6 @@
-// Maps, 2-8 players and teams through the real server (plan §9.2, §4 seats
-// and benching, §10.2 setup/swap gates, §10.3 admin setup, swap and Start
-// match, §10.4 get_game_state / get_rules).
+// Maps, 2-8 players and teams through the real server (seats
+// and benching, setup/swap gates, admin setup, swap and Start match,
+// get_game_state / get_rules).
 //
 //   * Seats 0-7 and GAME_FULL at 8; the LOBBY draft with BAD_MAP_STYLE /
 //     BAD_TEAM_MODE, snake auto-balance, swaps, re-balance on join; Start
@@ -96,7 +96,7 @@ describe('seats, the LOBBY draft and team setup', () => {
       [ids[2], ids[3]],
     ]);
     expect(setup.teams![0]).toMatchObject({ teamId: 0, name: 'Team 1', color: '#FFC93C', pattern: 'solid' });
-    // Team membership is public (§3), also on /state.
+    // Team membership is public, also on /state.
     const s = await state(new Client(srv.url));
     expect(s.match).toMatchObject({ mapStyle: 'islands', teamMode: 'teams3', teamTable: null });
     expect(s.match!.teams!.map((t) => t.members.length)).toEqual([2, 2, 2]);
@@ -339,7 +339,7 @@ describe('8-player matches (1200 arena)', () => {
   }, T);
 });
 
-/** Team-mode result invariants (§9.2 Team scoring). */
+/** Team-mode result invariants. */
 function checkTeamRound(end: BattleEndDTO, teamOf: Map<string, number>, teams: number): void {
   expect(end.ranking).toHaveLength(8);
   expect(end.teams).toHaveLength(teams);

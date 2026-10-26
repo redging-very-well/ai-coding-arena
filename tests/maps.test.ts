@@ -1,5 +1,5 @@
-// Map styles for 2-8 players (plan §9.2): every style × player count is
-// checked against the §9.2 zone table rules: cell-aligned, inside the arena,
+// Map styles for 2-8 players: every style × player count is
+// checked against the zone table rules: cell-aligned, inside the arena,
 // at least one cell between zones, facing, fair distances, zone-local cells
 // with row 0 at the front, rotation (free-for-all and team blocks), and the
 // scaled sudden-death circle.
@@ -192,7 +192,7 @@ describe.each(allMapLayouts().map((m) => [label(m), m] as const))('%s', (_name, 
   });
 });
 
-describe('fair distances (§9.2)', () => {
+describe('fair distances', () => {
   const spread = (m: MapLayout, zones: readonly MapZone[] = m.zones) => {
     const d = zones.map((z) => dist(zoneCenterOf(z), centreOf(m)));
     return { min: Math.min(...d), max: Math.max(...d) };
@@ -239,7 +239,7 @@ describe('fair distances (§9.2)', () => {
     }
   });
 
-  it('nearest enemy cells match the §9.2 table', () => {
+  it('nearest enemy cells match the table', () => {
     const near = (m: MapLayout) => {
       let best = Infinity;
       for (const a of m.zones) for (const b of m.zones) if (a !== b) best = Math.min(best, nearestCellDistance(a, b));

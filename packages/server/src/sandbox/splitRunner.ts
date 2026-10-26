@@ -1,4 +1,4 @@
-// One player's battle sandbox, split by trust (plan §9.1 Execution / Source).
+// One player's battle sandbox, split by trust.
 //
 // A borrowed Open Armory unit is a frozen copy of ANOTHER player's code. If it
 // shared an isolate with the borrower's own designs, the borrower's code could
@@ -120,7 +120,7 @@ class SplitRunner implements PlayerRunner {
     for (const part of this.parts) {
       const selves = input.selves.filter((s) => this.partOf.get(s.id) === part);
       if (selves.length === 0) continue;
-      // §5.3: a factory's minions go to the part that runs the factory.
+      // A factory's minions go to the part that runs the factory.
       const minions = input.minions?.filter((m) => m.minion !== undefined && this.partOf.get(m.minion.factoryId) === part);
       calls.push(part.runner.tick(partInput(part, input, selves, minions)));
     }

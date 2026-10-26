@@ -1,4 +1,4 @@
-// "📖 Unit guide" (plan §12.1): a header button that opens the full rulebook
+// "📖 Unit guide": a header button that opens the full rulebook
 // for units (GET /guide, built from the live config) as an overlay inside the
 // play shell. The Claude pane stays mounted underneath (no terminal reload);
 // Esc or ✕ closes it; "Open in new tab ↗" opens the standalone /guide page.

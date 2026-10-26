@@ -1,5 +1,5 @@
 // Redesign (2026-10-24): ranged accuracy against the target's speed and the
-// stronger element synergies (plan §5.4, §9.4 Accuracy, Synergies).
+// stronger element synergies.
 //   * accuracy: a ranged shot at a body that moved this tick misses with
 //     missMaxPct% × min(1, moved / speedRef), drawn from its own seeded
 //     stream; a miss lands where the target was (splash still hits there);
@@ -21,7 +21,7 @@ const C = DEFAULT_CONFIG;
 const at = (col: number, row: number, unitId: string): PlacementDTO => ({ unitId, col, row });
 const events = (frames: FrameDTO[]) => frames.flatMap((f) => f.events);
 
-describe('accuracy: the miss chance (§9.4 Accuracy)', () => {
+describe('accuracy: the miss chance', () => {
   it('is missMaxPct × min(1, moved / speedRef), 0 for a body standing still', () => {
     const cfg = deepMerge(C, { accuracy: { missMaxPct: 20, speedRef: 5 } });
     expect(missChance(0, cfg)).toBe(0);
@@ -165,7 +165,7 @@ const hit = (A: SimUnit, T: SimUnit, over: Partial<Parameters<HitPipeline['land'
   attackerId: A.id, attacker: A, target: T, damage: A.stats.damage, element: elementOf(A.stats), splash: splashOf(A.stats), might: 0, mightSrc: null, ...over,
 });
 
-describe('a miss lands on the ground (§9.4 Accuracy)', () => {
+describe('a miss lands on the ground', () => {
   it('no direct hit and no zap, but its splash hits every enemy near the spot (the old target too) with its element', () => {
     const A = body('0-0-0', soldier({ damage: 100, splashRadius: 40, element: 'ice' }));
     const T = body('1-0-0', dummy(), { x: 410, y: 400 }); // moved 10 px on since the shot
@@ -196,7 +196,7 @@ describe('a miss lands on the ground (§9.4 Accuracy)', () => {
   });
 });
 
-describe('synergies (§5.4): kindle and brittle', () => {
+describe('synergies: kindle and brittle', () => {
   const K = 1 + C.elements.kindlePct / 100;
   const B = 1 + C.elements.brittlePct / 100;
 

@@ -1,4 +1,4 @@
-// §7 step 8b: the unit's optional sprite() (§5.1).
+// The unit's optional sprite().
 //
 // sprite() is called twice in the validation sandbox, once on each of the two
 // copies constructed in step 5 (50 ms each). The harness JSON-copies each
@@ -18,7 +18,7 @@ import {
 import { DEFAULT_DEADLINE_SLACK_MS, asHarnessError, isMemoryCrash, parseObject, type CallOutcome, type SandboxSession } from '../sandbox/session.js';
 import { locate, type Ctx } from './context.js';
 
-/** Time limit of one sprite() call (§7 step 8b). */
+/** Time limit of one sprite() call. */
 export const SPRITE_CALL_TIMEOUT_MS = 50;
 
 export interface SpriteStepResult {

@@ -1,4 +1,4 @@
-// /play page logic (plan §12.1) that runs without a DOM: the zone grid in its
+// /play page logic that runs without a DOM: the zone grid in its
 // true orientation, placement taps (budget, copies, swap, remove), "Copy last
 // layout", selection toggling, stat bars incl. size, cost breakdown rows,
 // "Ask Claude" prompts, Claude terminal links and the join form helpers.
@@ -80,7 +80,7 @@ const rules = (costs: Record<string, number>, budget = 1000, maxCopies = 12): Pl
   maxCopies,
 });
 
-describe('zone grid orientation (§9, §12.1)', () => {
+describe('zone grid orientation', () => {
   it('lists all 36 cells once, with (0,0) in the corner nearest the centre', () => {
     for (const corner of CORNERS) {
       const g = zoneGrid(corner);
@@ -111,7 +111,7 @@ describe('zone grid orientation (§9, §12.1)', () => {
   });
 });
 
-describe('placement taps (§12.1)', () => {
+describe('placement taps', () => {
   const r = rules({ a: 300, b: 450 });
 
   it('places, removes on a second tap and removes with nothing chosen', () => {
@@ -122,7 +122,7 @@ describe('placement taps (§12.1)', () => {
     expect(tapCell(placed, 0, 0, null, r)).toMatchObject({ ok: true, placements: [], removed: true });
   });
 
-  it('tapping a placed unit removes it even when a different unit is chosen (§12.1)', () => {
+  it('tapping a placed unit removes it even when a different unit is chosen', () => {
     const res = tapCell([{ unitId: 'a', col: 1, row: 2 }], 1, 2, 'b', r);
     expect(res).toEqual({ ok: true, placements: [], removed: true });
   });
@@ -235,7 +235,7 @@ describe('stat bars and cost breakdown', () => {
     const rows = breakdownRows(breakdown);
     // M8.8: the power factor (tough AND strong) is a row of its own whenever it isn't ×1.
     expect(rows.map((r) => r.label)).toEqual(['Base', 'Health', 'Damage', 'Range', 'Speed', 'Size', 'Sum', 'Fast-attack ×', 'Tough + strong ×', 'Cost']);
-    // The Basic Soldier's sum (plan §6 worked example) at twice the attack speed: 693.32 × 2 × 1.163.
+    // The Basic Soldier's sum at twice the attack speed: 693.32 × 2 × 1.163.
     expect(rows.find((r) => r.label === 'Sum')!.value).toBe('693.32');
     expect(rows.find((r) => r.label === 'Fast-attack ×')!.value).toBe('×2');
     expect(rows.at(-1)!.value).toBe('$1,614');
@@ -279,7 +279,7 @@ describe('"Ask Claude" prompts (RESULTS)', () => {
   });
 });
 
-describe('Claude terminal direct links (§11.2 fallback)', () => {
+describe('Claude terminal direct links', () => {
   it('builds http://<box>:778N/terminal/N/ for seats 1-8 from any address form', () => {
     expect(claudeTerminalUrl('192.168.8.20', 1)).toBe('http://192.168.8.20:7781/terminal/1/');
     expect(claudeTerminalUrl('http://claude-box.local:8080/', 4)).toBe('http://claude-box.local:7784/terminal/4/');
@@ -310,7 +310,7 @@ describe('join form helpers', () => {
   });
 });
 
-describe('round score in friendly language (§9, §12.4)', () => {
+describe('round score in friendly language', () => {
   it('explains each part of the points', () => {
     const lines = scoreLines({ place: 2, placePoints: 2, damage: 411.6, damageBonus: 2, valueDestroyed: 300, valueBonus: 1 });
     expect(lines.map((l) => l.text)).toEqual([

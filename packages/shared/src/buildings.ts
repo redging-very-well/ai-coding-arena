@@ -1,4 +1,4 @@
-// Buildings on the placement grid (plan §5.2, §9.3 Placement check) and the
+// Buildings on the placement grid and the
 // built-in minion's look.
 //
 // `trappedCells`: walls block everyone, own units included, so a soldier or
@@ -18,7 +18,7 @@ export interface TrappedPlacement extends Cell {
 }
 
 /**
- * The placements (soldiers and factories) that walls box in (§9.3).
+ * The placements (soldiers and factories) that walls box in.
  * `typeOf` gives each placed design's type; `arena` is the arena side (the
  * zone's own when it is a map zone).
  */
@@ -77,7 +77,7 @@ export function trappedCells(
 export const MINION_BODY_KEY = 'b';
 
 /**
- * The built-in minion look (§5.2): 12×12, idle, 2 walk frames, 1 attack frame,
+ * The built-in minion look: 12×12, idle, 2 walk frames, 1 attack frame,
  * drawn facing right. Use `minionSprite(color)` for a factory's tint.
  */
 export const MINION_SPRITE: SpriteSpec = {
@@ -152,7 +152,7 @@ export const MINION_SPRITE: SpriteSpec = {
 /** Shared palette of the M8.6 kinds: outline, body (tinted), dark (tinted), eyes, wood, string, headband. */
 const KIND_PALETTE = { o: '#1E1A16', b: '#C0A060', d: '#7A6038', w: '#FFFFFF', k: '#000000', n: '#8B5A2B', s: '#E8E8E8', r: '#D23C3C' };
 
-/** Archer (§5.3): a hooded figure with a bow, facing right; the attack frame looses an arrow. */
+/** Archer: a hooded figure with a bow, facing right; the attack frame looses an arrow. */
 const ARCHER_SPRITE: SpriteSpec = {
   grid: 12,
   palette: KIND_PALETTE,
@@ -222,7 +222,7 @@ const ARCHER_SPRITE: SpriteSpec = {
   },
 };
 
-/** Runner (§5.3): small and lean with a red headband and speed lines. */
+/** Runner: small and lean with a red headband and speed lines. */
 const RUNNER_SPRITE: SpriteSpec = {
   grid: 12,
   palette: KIND_PALETTE,
@@ -292,7 +292,7 @@ const RUNNER_SPRITE: SpriteSpec = {
   },
 };
 
-/** Brute (§5.3): bulky, with a wooden club over its shoulder; the attack frame swings it down. */
+/** Brute: bulky, with a wooden club over its shoulder; the attack frame swings it down. */
 const BRUTE_SPRITE: SpriteSpec = {
   grid: 12,
   palette: KIND_PALETTE,
@@ -362,7 +362,7 @@ const BRUTE_SPRITE: SpriteSpec = {
   },
 };
 
-/** Medic (M8.8, §5.5): a white cap with a red cross and a satchel; the attack frame holds out a glowing hand (the heal beam). */
+/** Medic (M8.8): a white cap with a red cross and a satchel; the attack frame holds out a glowing hand (the heal beam). */
 const MEDIC_SPRITE: SpriteSpec = {
   grid: 12,
   palette: KIND_PALETTE,
@@ -432,7 +432,7 @@ const MEDIC_SPRITE: SpriteSpec = {
   },
 };
 
-/** The built-in look of every minion kind (§5.3); the grunt is the M8.5 minion. */
+/** The built-in look of every minion kind; the grunt is the M8.5 minion. */
 export const MINION_SPRITES: Readonly<Record<MinionKind, SpriteSpec>> = {
   grunt: MINION_SPRITE,
   archer: ARCHER_SPRITE,

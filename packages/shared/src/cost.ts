@@ -1,23 +1,23 @@
-// Cost formula (plan §6, M8.8 economy).
+// Cost formula. The maxima below are the default bounds (config.stats.bounds).
 //
 //   term_i  = c_i * x_i * (1 + k * r_i^2)       r_i = x_i / max_i   (the "curve", k = curveK = 1)
-//   heal    = cHeal * P * (1 + k * (P/250)^2) * reach(R/200)          support 'heal'
+//   heal    = cHeal * P * (1 + k * (P/400)^2) * reach(R/200)          support 'heal'
 //   aura    = cKind * P * (1 + k * (P/Pmax)^2) * reach(R/150)         haste/might (Pmax 50), shield (40)
 //   reach(ρ)= 0.5 + ρ(2 − ρ)
 //   core    = Base + Σ term_i + heal
 //   raw     = core * max(1, 60 / attackCooldown)                     cooldown factor (clamped at 1)
-//                  * (1 + q * HP/2500 * damage/300)                  power factor (q = powerFactor)
+//                  * (1 + q * HP/4000 * damage/240)                  power factor (q = powerFactor)
 //                  * (1 + s * ρs(2 − ρs))                            splash factor, ρs = splashRadius / 80
-//                  * e                                               element factor (normal 1, others 1.2)
+//                  * e                                               element factor (normal 1, else cost.element)
 //           + aura                                                   always on: after the factors
 //   cost    = ceil(raw - 1e-9)
 //
-// x_i are maxHealth, damage, range, speed and (size - 6). max_i are the §5
-// stat maxima at the default (×5) bounds (2500, 300, 300, 5 and 20 - 6 = 14),
+// x_i are maxHealth, damage, range, speed and (size - 6). max_i are the
+// stat maxima at the default bounds (4000, 240, 300, 5 and 20 - 6 = 14),
 // so a stat at its max costs (1 + k) times its linear price (2× with the
 // default k = 1) and a stat at half its max costs (1 + k/4) = 1.25×. The curve
 // makes every term convex, so one unit with doubled stats costs more than two
-// normal ones (once a stat reaches about 65% of its max, §6 concentration
+// normal ones (once a stat reaches about 65% of its max: the concentration
 // property); the power factor makes that dearer still for units that are both
 // tough and strong.
 //
@@ -26,11 +26,11 @@
 // faster healer heals more); the aura is added after every factor (it is
 // always on). An omitted size is priced at its type default (soldier 10, tower 14).
 //
-// Walls and factories (§6 Walls and factories) have their own formulas with
+// Walls and factories have their own formulas with
 // the same curve k and no factors (they can't attack):
 //
-//   wall:     raw = BaseW + cW·HP·(1 + k·(HP/7500)²)
-//   factory:  cost = ceil(BaseF + cF·HP·(1 + k·(HP/5000)²)) + minionValue × E
+//   wall:     raw = BaseW + cW·HP·(1 + k·(HP/12000)²)
+//   factory:  cost = ceil(BaseF + cF·HP·(1 + k·(HP/1200)²)) + minionValue × E
 //             E = min(maxMinionsPerFactory, floor((productionTicks − 1) / productionInterval))
 //             productionTicks = battleTicks, or min(battleTicks, suddenDeath.startTick)
 //             with `factory.stopAtSuddenDeath` (2026-10-25 "Factories stop at sudden
@@ -39,7 +39,7 @@
 //             minionValue = ceil(minionCost × minionDiscount), minionCost = the
 //             unit formula above on the minion kind's stats × its element factor.
 //
-// M8.6 (§6 Minion kinds): minionValue follows the factory's `produces` kind
+// M8.6: minionValue follows the factory's `produces` kind
 // (grunt, archer, runner, brute; M8.8 medic; default grunt), each priced as a
 // soldier on its `factory.minions.<kind>` stats. M8.8: the factory's
 // `minionElement` multiplies the minion price (medics ignore it, and their
@@ -69,7 +69,7 @@ import {
 } from './contract.js';
 import type { ValidationError, ValidationWarning } from './errors.js';
 
-/** Size is free up to this radius; each px above it costs `cSize` (§6). */
+/** Size is free up to this radius; each px above it costs `cSize`. */
 export const MIN_PRICED_SIZE = 6;
 
 /** Guards against float noise like 99.50000000000001 rounding up to 100 → 101. */
@@ -78,7 +78,7 @@ export const COST_EPSILON = 1e-9;
 /** A stat ratio at or above this gives the W_STAT_NEAR_MAX warning. */
 export const NEAR_MAX_RATIO = 0.8;
 
-/** A power factor at or above this gives the W_POWER_HIGH warning (§7 M8.8). */
+/** A power factor at or above this gives the W_POWER_HIGH warning. */
 export const POWER_HIGH = 1.25;
 
 /** The priced stats, in breakdown order. */
@@ -87,7 +87,7 @@ export type PricedStat = (typeof PRICED_STATS)[number];
 
 const B = DEFAULT_CONFIG.stats.bounds;
 /**
- * Where each curve ratio reaches 1: the §5 stat maxima (size counts above 6).
+ * Where each curve ratio reaches 1: the stat maxima (size counts above 6).
  * Fixed to the default bounds so a live bounds retune doesn't silently change
  * the price curve.
  */
@@ -142,7 +142,7 @@ export interface CostStatPart {
   text: string;
 }
 
-/** A factory's production part (§6): what it pays up front for its minions. */
+/** A factory's production part: what it pays up front for its minions. */
 export interface CostProduction {
   /** Ticks between two minions. */
   interval: number;
@@ -162,13 +162,13 @@ export interface CostProduction {
   text: string;
 }
 
-/** M8.8: a whole-unit multiplier of the unit formula (§6 M8.8 breakdown). */
+/** M8.8: a whole-unit multiplier of the unit formula. */
 export interface CostFactorPart {
   factor: number;
   text: string;
 }
 
-/** M8.8: the heal term or the aura term (§6 M8.8 formula). */
+/** M8.8: the heal term or the aura term. */
 export interface CostSupportPart {
   kind: SupportKind;
   /** supportPower and its ratio to the curve max (heal 250; haste/might 50; shield 40). */
@@ -189,22 +189,22 @@ export interface CostSupportPart {
 
 /** Everything shown on a unit card / returned by validate & submit. */
 export interface CostBreakdown {
-  /** Which formula priced it: 'unit' (soldier, tower), 'wall' or 'factory' (§6). */
+  /** Which formula priced it: 'unit' (soldier, tower), 'wall' or 'factory'. */
   formula: 'unit' | 'wall' | 'factory';
   terms: CostTerms;
   /** Per-stat detail: linear part and curve surcharge. */
   parts: Record<PricedStat, CostStatPart>;
   /** The curve strength k used. */
   curveK: number;
-  /** M8.8 (unit formula): Base + Σ c·x (the "Linear" column of §6). */
+  /** M8.8 (unit formula): Base + Σ c·x (the "Linear" column of the reference tables). */
   linear?: number;
-  /** M8.8 (unit formula): Σ curve surcharges (the "Curve" column of §6). */
+  /** M8.8 (unit formula): Σ curve surcharges (the "Curve" column of the reference tables). */
   curve?: number;
   /** Sum of all terms (M8.8: base + stats + heal = the "Sum" column). */
   sum: number;
   /** max(1, referenceCooldown / attackCooldown). */
   factor: number;
-  /** M8.8: × (1 + q · HP/2500 · damage/300). */
+  /** M8.8: × (1 + q · HP/HPmax · damage/damageMax). */
   power?: CostFactorPart & { hpRatio: number; damageRatio: number };
   /** M8.8: × (1 + s · ρ(2 − ρ)), ρ = splashRadius / 80. */
   splash?: CostFactorPart & { radius: number };
@@ -235,7 +235,7 @@ export function cooldownFactor(attackCooldown: number, coeffs: CostCoefficients)
   return Math.max(1, coeffs.referenceCooldown / attackCooldown);
 }
 
-/** Round a raw cost to whole credits (§6). */
+/** Round a raw cost to whole credits. */
 export function roundCost(raw: number): number {
   return Math.ceil(raw - COST_EPSILON);
 }
@@ -250,17 +250,17 @@ export function curveMultiplier(ratio: number, k: number): number {
   return 1 + k * ratio * ratio;
 }
 
-/** M8.8 reach factor 0.5 + ρ(2 − ρ): 0.5 at reach 0, 1.5 at the max (§6 M8.8 formula). */
+/** M8.8 reach factor 0.5 + ρ(2 − ρ): 0.5 at reach 0, 1.5 at the max. */
 export function reachFactor(rho: number): number {
   return 0.5 + rho * (2 - rho);
 }
 
-/** M8.8 power factor 1 + q · HP/2500 · damage/300 (§6). */
+/** M8.8 power factor 1 + q · HP/HPmax · damage/damageMax (the default bounds' maxima). */
 export function powerFactor(stats: Pick<CostStats, 'maxHealth' | 'damage'>, coeffs: Pick<CostCoefficients, 'powerFactor'>): number {
   return 1 + coeffs.powerFactor * (stats.maxHealth / CURVE_MAX.maxHealth) * (stats.damage / CURVE_MAX.damage);
 }
 
-/** M8.8 splash factor 1 + s · ρ(2 − ρ), ρ = radius / 80 (§6). */
+/** M8.8 splash factor 1 + s · ρ(2 − ρ), ρ = radius / 80. */
 export function splashFactor(radius: number, coeffs: Pick<CostCoefficients, 'splash'>): number {
   const rs = radius / SPLASH_CURVE_MAX;
   return 1 + coeffs.splash * rs * (2 - rs);
@@ -279,7 +279,7 @@ const COEFF_OF: Record<PricedStat, 'hp' | 'damage' | 'range' | 'speed' | 'size'>
   size: 'size',
 };
 
-/** One curved term, computed exactly like the §6 reference implementation (lin, lin·k·r², lin + curve). */
+/** One curved term, computed exactly like the reference implementation (lin, lin·k·r², lin + curve). */
 function curvedTerm(c: number, x: number, max: number, k: number): { linear: number; curve: number; total: number; ratio: number } {
   const linear = c * x;
   const ratio = x / max;
@@ -313,7 +313,7 @@ const ELEMENT_NOTE: Readonly<Record<Element, string>> = {
   lightning: 'Lightning (hits can zap a nearby enemy)',
 };
 
-/** The heal term or the aura term of a unit's support (§6 M8.8 formula); null without support. */
+/** The heal term or the aura term of a unit's support; null without support. */
 export function supportPart(support: SupportSpec | null, coeffs: CostCoefficients): CostSupportPart | null {
   if (!support) return null;
   const { kind, power, range } = support;
@@ -323,7 +323,7 @@ export function supportPart(support: SupportSpec | null, coeffs: CostCoefficient
   const ratio = power / max.power;
   const multiplier = 1 + k * ratio ** 2;
   const reach = reachFactor(range / max.range);
-  // Evaluated left to right like the §6 reference: c · P · (1 + k·r²) · reach.
+  // Evaluated left to right like the reference: c · P · (1 + k·r²) · reach.
   const total = c * power * multiplier * reach;
   const text =
     kind === 'heal'
@@ -332,7 +332,7 @@ export function supportPart(support: SupportSpec | null, coeffs: CostCoefficient
   return { kind, power, ratio, range, reach, linear: c * power, multiplier, total, text };
 }
 
-/** What a factory's price depends on besides `cost` (§6 Re-pricing). */
+/** What a factory's price depends on besides `cost`. */
 export interface PricingContext {
   /** The production window (`productionEndTick`): minions appear only before this tick. */
   productionTicks: number;
@@ -342,7 +342,7 @@ export interface PricingContext {
 }
 
 /**
- * The tick production stops at (§9.3): sudden death's start, or the end of the
+ * The tick production stops at: sudden death's start, or the end of the
  * battle if that comes first. A minion that would appear at or after it is
  * never built ("Factories stop at sudden death", 2026-10-25). With
  * `factory.stopAtSuddenDeath` false it is the end of the battle.
@@ -373,14 +373,14 @@ export function curveMaxFor(type: UnitType, stat: PricedStat): number {
   return CURVE_MAX[stat];
 }
 
-/** E (§6): the minions a factory with this interval can make before sudden death. */
+/** E: the minions a factory with this interval can make before sudden death. */
 export function expectedMinions(productionInterval: number, pricing: PricingContext = DEFAULT_PRICING): number {
   if (!(productionInterval > 0)) return 0;
   return Math.max(0, Math.min(pricing.factory.maxMinionsPerFactory, Math.floor((pricing.productionTicks - 1) / productionInterval)));
 }
 
 /**
- * A minion kind's stats as a soldier (for its price, §5.2, §6 Minion kinds).
+ * A minion kind's stats as a soldier (for its price).
  * M8.8: the element (medics: always normal) and, for the medic, its heal
  * support (`heal` HP, `reach` px).
  */
@@ -402,7 +402,7 @@ export function minionCostStats(pricing: PricingContext = DEFAULT_PRICING, kind:
 
 /**
  * minionCost (the soldier price of a minion of that kind and element) and
- * minionValue (what a factory pays per expected minion, §6). Medics ignore the element.
+ * minionValue (what a factory pays per expected minion). Medics ignore the element.
  */
 export function minionPrice(
   coeffs: CostCoefficients,
@@ -427,7 +427,7 @@ function freePart(stat: PricedStat): CostStatPart {
   return { value: 0, ratio: 0, linear: 0, curve: 0, total: 0, multiplier: 1, text: `${stat} costs $0 (buildings that can't attack don't pay for it)` };
 }
 
-/** Price a wall or factory (§6 Walls and factories). */
+/** Price a wall or factory. */
 function computeBuildingCost(stats: CostStats & { type: 'wall' | 'factory' }, coeffs: CostCoefficients, pricing: PricingContext): CostResult {
   const c = stats.type === 'wall' ? coeffs.wall : coeffs.factory;
   const hp = stats.maxHealth;
@@ -485,7 +485,7 @@ function computeBuildingCost(stats: CostStats & { type: 'wall' | 'factory' }, co
 }
 
 /**
- * Price a unit (§6, M8.8). Pure; callers check finiteness and the cap. Walls
+ * Price a unit (M8.8). Pure; callers check finiteness and the cap. Walls
  * and factories use their own formulas; `pricing` (default: the default
  * config's) sets the battle length and minion stats a factory's production is
  * priced on.
@@ -493,7 +493,7 @@ function computeBuildingCost(stats: CostStats & { type: 'wall' | 'factory' }, co
 export function computeCost(stats: CostStats, coeffs: CostCoefficients, pricing: PricingContext = DEFAULT_PRICING): CostResult {
   if (isNonCombatBuilding(stats.type)) return computeBuildingCost(stats as CostStats & { type: 'wall' | 'factory' }, coeffs, pricing);
   const parts = {} as Record<PricedStat, CostStatPart>;
-  // Summed in the §6 reference order (linear parts, then curve parts), so the cents match exactly.
+  // Summed in the reference order (linear parts, then curve parts), so the cents match exactly.
   let linSum = 0;
   let curveSum = 0;
   for (const stat of PRICED_STATS) {
@@ -573,7 +573,7 @@ export function fmt(n: number): string {
   return String(Math.round(n * 100) / 100);
 }
 
-/** Money with thousands separators (§12): "$2,993", "$1,043.5" (up to 2 decimals). */
+/** Money with thousands separators: "$2,993", "$1,043.5" (up to 2 decimals). */
 export function money(n: number): string {
   // By hand, not toLocaleString: every computeCost builds its breakdown texts, and Intl is slow.
   const r = Math.round(n * 100) / 100;
@@ -676,7 +676,7 @@ function leverSentence(
   const big = order[0]!;
   const part = breakdown.parts[big];
   let s =
-    // Walls and factories have no cooldown factor (§6), so "before the factor" would only confuse.
+    // Walls and factories have no cooldown factor, so "before the factor" would only confuse.
     `The most expensive stat is ${big}: ${fmt(part.value)} costs ${money(part.total)}${breakdown.formula === 'unit' ? ' before the factors' : ''} ` +
     `(${money(part.linear)} base + ${money(part.curve)} for being ${Math.round(part.ratio * 100)}% of the max).`;
   const sug = suggestLowerStat(stats, big, cap, coeffs, bounds, pricing);
@@ -692,7 +692,7 @@ function leverSentence(
 }
 
 /**
- * The factory production lever (§6 Breakdown): the smallest slower
+ * The factory production lever: the smallest slower
  * productionInterval (a multiple of 60 ticks) that fits under the cap, e.g.
  * "Raising productionInterval from 600 to 900 makes 5 minions instead of 8 and saves $441."
  */
@@ -739,7 +739,7 @@ function productionLever(
 }
 
 /**
- * The power-factor lever (§6 M8.8 levers): lower the more maxed of HP and
+ * The power-factor lever: lower the more maxed of HP and
  * damage until the power factor is POWER_HIGH, e.g. "Lowering damage from 265
  * to 175 drops the power factor from ×1.37 to ×1.25 and saves $370 ($2,123)."
  */
@@ -759,7 +759,7 @@ function powerLever(stats: CostStats, result: CostResult, coeffs: CostCoefficien
   );
 }
 
-/** The splash lever: halve the radius (§6 M8.8 levers), e.g. "Splash 80 → 40 saves $X". */
+/** The splash lever: halve the radius, e.g. "Splash 80 → 40 saves $X". */
 function splashLever(stats: CostStats, result: CostResult, coeffs: CostCoefficients, pricing: PricingContext): string | null {
   const r = splashOf(stats);
   if (r <= 0) return null;
@@ -837,8 +837,8 @@ export function tooExpensiveLevers(
 }
 
 /**
- * Build the §7 UNIT_TOO_EXPENSIVE error, with a `fix` naming the biggest
- * lever, checked in this order (§6 M8.8): a factory's production, the
+ * Build the UNIT_TOO_EXPENSIVE error, with a `fix` naming the biggest
+ * lever, checked in this order: a factory's production, the
  * cooldown factor, the power factor, splash, the element, the support, and
  * always the most expensive stat with a concrete lower value, e.g.
  * "Lowering maxHealth from 2500 to 1750 saves $640 ($2,100)."
@@ -920,7 +920,7 @@ export function nearMaxWarnings(
 }
 
 /**
- * W_POWER_HIGH (non-fatal, §7 M8.8): the power factor is ≥ 1.25, e.g. "Very
+ * W_POWER_HIGH (non-fatal): the power factor is ≥ 1.25, e.g. "Very
  * tough AND very strong costs ×1.37 here". Null below the threshold.
  */
 export function powerHighWarning(

@@ -30,7 +30,7 @@ export function ordinal(n: number): string {
 
 export const PLACE_MEDALS = ['🥇', '🥈', '🥉', '🎖️'] as const;
 
-/** Friendly language for each phase (plan §12.4): banner title and a one-line hint. */
+/** Friendly language for each phase: banner title and a one-line hint. */
 export const PHASE_TEXT: Readonly<Record<Phase, { title: string; hint: string }>> = {
   LOBBY: { title: 'Get ready!', hint: 'The game starts soon. Say hi to your AI helper!' },
   PLAN: { title: 'Plan time!', hint: 'Ask your AI helper for new units, then pick up to 4 units and 4 buildings.' },

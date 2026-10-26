@@ -1,4 +1,4 @@
-// §7 step 1: normalize the submitted source.
+// Normalize the submitted source.
 //
 //  - Reject sources over the size cap (bytes, UTF-8) -> SOURCE_TOO_LARGE.
 //  - CRLF/CR -> LF, strip a BOM.

@@ -1,4 +1,4 @@
-// The $10,000 redesign migration (plan §6 migration, §14 migration.test.ts):
+// The $10,000 redesign migration:
 // a stored config patch from an older economy loses its scale-sensitive
 // overrides at boot (the rest is kept; a log line, no banner). Player units
 // made for an older economy are NEVER deleted automatically (user, 2026-10-24:

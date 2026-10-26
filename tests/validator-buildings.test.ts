@@ -1,4 +1,4 @@
-// §7 per type (M8.5, §5.2): walls and factories through the real validation
+// Validation per type (M8.5): walls and factories through the real validation
 // pipeline (esbuild + a fresh isolated-vm sandbox), plus the practice worlds
 // with an enemy wall and minion. Prices and bounds of the $10,000 redesign.
 
@@ -81,7 +81,7 @@ describe('validator: wall and factory templates', () => {
   });
 });
 
-describe('validator: per-type required fields and guards (§5.2, §7 steps 5-6)', () => {
+describe('validator: per-type required fields and guards', () => {
   it('a wall needs only name, type, maxHealth and color (no update, no sprite → just W_NO_SPRITE)', async () => {
     const r = expectOk(await run(wall('this.maxHealth = 3200;')));
     expect(r.unit.cost).toBe(149);
@@ -164,7 +164,7 @@ describe('validator: per-type required fields and guards (§5.2, §7 steps 5-6)'
   });
 });
 
-describe('validator: dry run per type (§7 step 9)', () => {
+describe('validator: dry run per type', () => {
   it("a wall's update() is never called: W_UPDATE_IGNORED, even for an endless loop", async () => {
     const r = expectOk(await run(wall('this.maxHealth = 2000;', 'update() { while (true) {} }')));
     expect(codes(r)).toContain('W_UPDATE_IGNORED');
@@ -258,7 +258,7 @@ describe('validator: fix texts for walls and factories (real-Claude dry run, M8.
 });
 
 // ---------------------------------------------------------------------------
-// M8.6: minion kinds, squad orders and burst (§5.3, §7)
+// M8.6: minion kinds, squad orders and burst
 // ---------------------------------------------------------------------------
 
 describe('validator: produces, burst and squad orders (M8.6)', () => {

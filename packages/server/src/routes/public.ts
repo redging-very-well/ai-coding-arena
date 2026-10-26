@@ -21,7 +21,7 @@ export function publicRoutes(game: Game): Router {
     res.json(h);
   });
 
-  // Join URL + QR for the projector (§12.2). The page's own Host when it was
+  // Join URL + QR for the projector. The page's own Host when it was
   // opened by a LAN address, else this machine's first LAN address.
   r.get(
     '/join',
@@ -45,7 +45,7 @@ export function publicRoutes(game: Game): Router {
     res.json(buildContract(game.config));
   });
 
-  // The unit guide (§10.3, §12.1): the full rulebook for units from the live config. Public: nothing secret in it.
+  // The unit guide: the full rulebook for units from the live config. Public: nothing secret in it.
   r.get('/guide', (_req, res) => {
     res.json(buildGuide(game.config, game.units.guideTemplates()));
   });
@@ -81,10 +81,10 @@ export function publicRoutes(game: Game): Router {
     }),
   );
 
-  // The AI session host's agent-loop (§11.2 e): the seat's player token -> that
+  // The AI session host's agent-loop: the seat's player token -> that
   // player's login, so the AI helper starts logged in. Basic auth with the
   // seat password; never reachable with a player's or admin's cookie alone.
-  // With `agent`, also the shared agent login from /admin (§11.2 f).
+  // With `agent`, also the shared agent login from /admin.
   r.post('/seat-login', (req, res) => {
     const b = body(req);
     res.setHeader('Cache-Control', 'no-store');
@@ -105,8 +105,8 @@ export function publicRoutes(game: Game): Router {
   );
 
   // The public result of a released round (ranking, points breakdown, badges,
-  // top damage units). Past rounds stay readable for the whole match (§12.1
-  // Past battles); never a battle that is still playing.
+  // top damage units). Past rounds stay readable for the whole match
+  // (Past battles); never a battle that is still playing.
   r.get('/battles/:round/results', (req, res) => {
     const round = roundParam(req.params.round);
     if (round === undefined || Number.isNaN(round)) {
@@ -146,7 +146,7 @@ export function publicRoutes(game: Game): Router {
 
 /**
  * /play's join and login ask for an AI seat with `claudeSeat: 'auto' | 1-8`
- * (this laptop's seat, preferred): assign one right away (§11.2 c). Other
+ * (this laptop's seat, preferred): assign one right away. Other
  * callers (scripts, bots, older pages) send nothing and get no seat.
  */
 function withAutoSeat(game: Game, data: LoginResponse, b: Record<string, unknown>): Result<LoginResponse> {

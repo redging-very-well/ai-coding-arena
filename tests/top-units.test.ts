@@ -1,5 +1,5 @@
-// Top damage units of a round (plan §9 Results) and past battles (§10.3
-// /battles/:round/results, §12.1): the pure aggregation (per design per
+// Top damage units of a round and past battles
+// (/battles/:round/results): the pure aggregation (per design per
 // player, ties, borrowed names, 0 damage, kicked, teams) and, end to end,
 // release gating, Skip metrics, the report / MCP copy, persistence across a
 // restart and New match clearing old rounds.

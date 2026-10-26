@@ -1,4 +1,4 @@
-// Open Armory (plan §9.1): an optional, per-match mechanic. When a battle's
+// Open Armory: an optional, per-match mechanic. When a battle's
 // result is released (playback end or Skip), every non-template unit type
 // fielded in it gets a FROZEN entry (an immutable copy of the version that
 // fought: stats, sprite, cost and compiled code, never the source). From the
@@ -33,7 +33,7 @@ import type { Game } from './game.js';
 import type { ArmoryEntryRecord, ArmoryState } from './store.js';
 import { SCALE_VERSION, UnitsService } from './units.js';
 
-/** WALLS_OFF (§9.1b): the match setting "Walls allowed" is off. */
+/** WALLS_OFF: the match setting "Walls allowed" is off. */
 export function wallsOffError(name: string, unitId: string): Result<never> {
   return fail('WALLS_OFF', `Walls are switched off for this match, so ${name} can't be used.`, {
     hint: 'Walls are switched off for this match. Pick a soldier, tower or factory instead.',
@@ -148,7 +148,7 @@ export class ArmoryService {
     };
   }
 
-  /** Every entry for the facilitator (§9.1 Moderation): real sprites, newest first. */
+  /** Every entry for the facilitator: real sprites, newest first. */
   adminList(): AdminArmoryEntryDTO[] {
     return [...this.a.entries]
       .sort((x, y) => y.roundAdded - x.roundAdded || (x.armoryId < y.armoryId ? -1 : 1))
@@ -247,7 +247,7 @@ export class ArmoryService {
     if (changed) this.game.store.save();
   }
 
-  /** 💡 Inventor (§9.1): creators whose entries other players fielded in this battle. */
+  /** 💡 Inventor: creators whose entries other players fielded in this battle. */
   inventors(uses: readonly BorrowedUse[], exclude: ReadonlySet<string>): InventorAward[] {
     const by = new Map<string, { borrowers: Set<string>; units: Set<string> }>();
     for (const u of uses) {
@@ -272,7 +272,7 @@ export class ArmoryService {
   // Re-pricing, moderation, lifecycle
   // -------------------------------------------------------------------------
 
-  /** Re-price every entry under `config`; a retune may make an entry invalid (§6). */
+  /** Re-price every entry under `config`; a retune may make an entry invalid. */
   reprice(config: GameConfig): { repriced: string[]; invalidated: string[] } {
     const repriced: string[] = [];
     const invalidated: string[] = [];

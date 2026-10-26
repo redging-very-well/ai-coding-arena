@@ -1,4 +1,4 @@
-// The cost curve (plan §6): maxing out a stat gets progressively more
+// The cost curve: maxing out a stat gets progressively more
 // expensive, so one expensive unit is discouraged.
 //
 //   term_i = c_i × x_i × (1 + k × r_i²),  r_i = x_i / max_i,  k = cost.curveK (1)
@@ -201,7 +201,7 @@ describe('cost curve: exact multipliers', () => {
     });
   }
 
-  it('the curve maxima are the §5 default bounds', () => {
+  it('the curve maxima are the default bounds', () => {
     expect(CURVE_MAX).toEqual({
       maxHealth: bounds.maxHealth.max,
       damage: bounds.damage.max,
@@ -242,8 +242,7 @@ describe('cost curve: concentration penalty (one big unit is never cheaper than 
    * failures at 65% (20,000 seeded units per variant plus the worst-case
    * grid; worst 1.095 / 1.071) and 35 grid failures at 50% (worst 0.98). The
    * power factor only makes doubling dearer; the cooldown, splash and element
-   * factors multiply both sides equally, so the variants below hold too
-   * (plan §6 concentration property).
+   * factors multiply both sides equally, so the variants below hold too.
    */
   const THRESHOLD = 0.65;
   const bigEnough = (u: CostStats) => (['maxHealth', 'damage', 'range', 'speed'] as const).some((s) => ratio(u, s) >= THRESHOLD);
@@ -283,7 +282,7 @@ describe('cost curve: concentration penalty (one big unit is never cheaper than 
     });
   }
 
-  it('explicit (§6): max stats $13,206 > 2 × half stats $2,115; max-HP tank > 2 × Half Tank; Glass Cannon > 2 × half damage', () => {
+  it('explicit: max stats $13,206 > 2 × half stats $2,115; max-HP tank > 2 × Half Tank; Glass Cannon > 2 × half damage', () => {
     const half: CostStats = { type: 'soldier', maxHealth: 2000, damage: 120, range: 150, speed: 2.5, attackCooldown: 60, size: 13 };
     // Every priced stat at its curve max (range 300 is a tower's reach; priced the same, conc.mjs).
     const max: CostStats = { type: 'soldier', maxHealth: 4000, damage: 240, range: 300, speed: 5, attackCooldown: 60, size: 20 };

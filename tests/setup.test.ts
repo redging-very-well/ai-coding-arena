@@ -1,5 +1,5 @@
-// /setup info and the facilitator's setup settings (plan §11 /setup page,
-// §12.3 server info): join URL + QR, seat terminal links from the AI session host
+// /setup info and the facilitator's setup settings (/setup page,
+// server info): join URL + QR, seat terminal links from the AI session host
 // address (no seat cards: seats are auto-assigned), persistence across a restart,
 // and admin-only updates.
 
@@ -59,7 +59,7 @@ describe('GET /api/setup and PUT /api/admin/setup', () => {
     expect(ok.status).toBe(200);
     expect(ok.body.settings).toEqual({ aiSessionHost: '10.0.0.5', preferredUrl: 'http://10.0.0.9:8080' });
     expect(ok.body.playUrl).toBe('http://10.0.0.9:8080/play');
-    // All 8 Claude seats (ttyd runs under the /terminal/N base path, §11.1).
+    // All 8 Claude seats (ttyd runs under the /terminal/N base path).
     expect(ok.body.seatTerminals.map((t) => t.url)).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => `http://10.0.0.5:778${n}/terminal/${n}/`));
     expect(ok.body.seatTerminals[0]!.qrSvg).toContain('<svg');
 

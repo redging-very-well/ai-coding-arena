@@ -1,4 +1,4 @@
-// Drag-and-drop team setup in /admin Match setup (plan §9.2, §12.3), DOM-free:
+// Drag-and-drop team setup in /admin Match setup, DOM-free:
 // what dropping a player chip on a team box does, the move/swap choices of the
 // keyboard/click fallback menu, and the optimistic team lists shown while a
 // move is on its way to the server (POST /admin/teams/move). The server stays

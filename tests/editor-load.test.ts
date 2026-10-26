@@ -1,4 +1,4 @@
-// The code editor chunk loader (plan §12.1, packages/client/src/play/editorLoad.ts):
+// The code editor chunk loader (packages/client/src/play/editorLoad.ts):
 // one automatic retry, then offline / game updated / other.
 
 import { describe, expect, it } from 'vitest';

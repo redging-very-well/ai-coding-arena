@@ -18,7 +18,7 @@ const codes = (raw: Record<string, unknown>) => {
   return r.ok ? [] : r.errors.map((e) => `${e.code}:${e.field}`);
 };
 
-describe('checkStats (§7 step 6)', () => {
+describe('checkStats', () => {
   it('accepts the template, trims the name, fills the shape and freezes', () => {
     const r = checkStats(soldier, bounds);
     expect(r.ok).toBe(true);
@@ -28,7 +28,7 @@ describe('checkStats (§7 step 6)', () => {
     expect(Object.isFrozen(r.stats)).toBe(true);
   });
 
-  it('reports the §7 example error object for damage 999', () => {
+  it('reports the example error object for damage 999', () => {
     const r = checkStats({ ...soldier, damage: 999 }, bounds);
     expect(r.ok).toBe(false);
     if (r.ok) return;
@@ -96,7 +96,7 @@ describe('checkStats (§7 step 6)', () => {
   });
 });
 
-describe('size (§5 bounds: optional, 6-20, type default)', () => {
+describe('size (optional, 6-20, type default)', () => {
   it('fills the type default when omitted and keeps a legal size', () => {
     const s = checkStats(soldier, bounds);
     const t = checkStats({ ...soldier, type: 'tower', speed: 0 }, bounds);
@@ -140,7 +140,7 @@ describe('review regressions', () => {
     expect(!towerStr.ok && towerStr.errors[0]!.fix).toContain('Towers never move: set this.speed = 0.');
   });
 
-  it('player hints for numbers out of range are concrete (§12.4)', () => {
+  it('player hints for numbers out of range are concrete', () => {
     const hint = (stats: Record<string, unknown>) => {
       const r = checkStats({ ...soldier, ...stats }, bounds);
       return !r.ok && playerHintForIssue(r.errors[0]!);
@@ -152,7 +152,7 @@ describe('review regressions', () => {
     expect(playerHintForIssue({ code: 'UNIT_TOO_EXPENSIVE', field: 'cost', value: 612, allowed: { max: 500 }, message: '', fix: '' })).toBe(
       'Your unit costs too much! ($612, the max is $500) Ask your AI helper to make it cheaper.',
     );
-    // §12: thousands separators wherever money is shown.
+    // Thousands separators wherever money is shown.
     expect(playerHintForIssue({ code: 'UNIT_TOO_EXPENSIVE', field: 'cost', value: 5032, allowed: { max: 3000 }, message: '', fix: '' })).toBe(
       'Your unit costs too much! ($5,032, the max is $3,000) Ask your AI helper to make it cheaper.',
     );

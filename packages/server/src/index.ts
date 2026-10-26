@@ -1,4 +1,4 @@
-// Boot (plan §13 `start`): bind 0.0.0.0:${PORT:-8080}, then print every LAN
+// Boot: bind 0.0.0.0:${PORT:-8080}, then print every LAN
 // URL, a terminal QR for /play, the /setup and /admin URLs, the admin
 // password and the sandbox mode.
 //

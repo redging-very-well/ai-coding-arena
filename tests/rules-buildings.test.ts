@@ -1,5 +1,5 @@
 // get_rules / get_unit_contract / MCP text and the kit's CLAUDE.md + PROMPTS.md
-// for walls and factories (M8.5, plan §10.5, §11; numbers of the $10,000 redesign).
+// for walls and factories (M8.5; numbers of the $10,000 redesign).
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -108,7 +108,7 @@ describe('MCP instructions (M8.5)', () => {
   });
 });
 
-describe('starter kit text (M8.5, §11)', () => {
+describe('starter kit text (M8.5)', () => {
   const claudeMd = kitFile('CLAUDE.md.tmpl');
 
   it('CLAUDE.md has the 4c unit-types section with the wall and factory tips', () => {

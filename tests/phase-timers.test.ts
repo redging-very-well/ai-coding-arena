@@ -1,4 +1,4 @@
-// Phase timers running out (plan §3, bug report 2026-10-26: "/screen didn't
+// Phase timers running out (bug report 2026-10-26: "/screen didn't
 // show a START battle button once the timer had run out"). PLAN moves on by
 // itself, Ready or not (players without a pick get the auto-pick). PLACEMENT
 // stops: empty zones are auto-placed, placement closes, the battle is NOT

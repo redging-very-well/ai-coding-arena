@@ -1,4 +1,4 @@
-// Seat terminal proxy (plan §11.2): the game server reverse-proxies each
+// Seat terminal proxy: the game server reverse-proxies each
 // Claude seat's ttyd at the same-origin path /terminal/<N>/ (ttyd runs with
 // `-b /terminal/<N>`), so /play can embed it in an iframe and the terminal
 // also works as its own browser tab, with the player's session cookie and no
@@ -12,7 +12,7 @@
 //                            routes, so `/%74oken` or `//token` would reach ttyd's /token
 //   /terminal/<N>/ws       → WebSocket relay (relay.ts), one live terminal per seat; the
 //                            browser's query is dropped, and ttyd's WS URL gets
-//                            `?arg=<player token>` for the seat's own player only (§11.2 e)
+//                            `?arg=<player token>` for the seat's own player only
 //
 // Access (every request): the player whose `claudeSeat` is N (session cookie
 // `pc_session`), or the admin (`pc_admin`, any seat, for rescue). The proxy
@@ -64,7 +64,7 @@ const PANE_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const FORWARDED_PATHS = new Set(['/', '/index.html']);
 
 const PLAYER_REVOKED_TEXT = "\r\n\r\n  This AI helper terminal isn't yours any more.\r\n  Go back to the game page (or ask a grown-up).\r\n";
-/** Logout or PIN reset: the seat is still theirs (§11.2 c), only the login ended. */
+/** Logout or PIN reset: the seat is still theirs, only the login ended. */
 const PLAYER_LOGGED_OUT_TEXT = '\r\n\r\n  You were logged out.\r\n  Log in again on the game page (/play), then press Enter.\r\n';
 const ADMIN_REVOKED_TEXT = '\r\n\r\n  Your admin login ended. Log in on /admin again.\r\n';
 
@@ -355,7 +355,7 @@ export class TerminalProxy implements TerminalControl {
     const { upstream: addr, secret } = cfg;
     // The browser's query (pane id) stays here. ttyd gets only the player
     // token, and only for the seat's own player: an admin rescue has none, so
-    // it resumes the conversation instead of starting a new player's (§11.2 e).
+    // it resumes the conversation instead of starting a new player's.
     const wsPath = upstreamWsPath(seat, a.by === 'player' ? a.player.id : null);
     const upstream = new WebSocket(`ws://${addr.host}:${addr.port}${wsPath}`, 'tty', {
       headers: forwardRequestHeaders(req.headers, {

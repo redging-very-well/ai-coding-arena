@@ -1,5 +1,4 @@
-// Player-written minion code (plan §5.3 "4. Minion code: updateMinion()",
-// 2026-10-26): a factory's optional updateMinion(self, enemies, allies, world)
+// Player-written minion code: a factory's optional updateMinion(self, enemies, allies, world)
 // decides for each of its minions on the field, inside the player's ONE
 // sandbox call per tick. Returning nothing (or null), throwing, or a
 // timed-out tick falls back to the built-in minion logic.
@@ -432,7 +431,7 @@ describe('parseTickOutput: minion entries are checked like unit entries', () => 
 });
 
 // ---------------------------------------------------------------------------
-// Validation (§7 dry run)
+// Validation
 // ---------------------------------------------------------------------------
 
 describe('validation: updateMinion() is dry-run like update()', () => {

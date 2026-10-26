@@ -1,4 +1,4 @@
-// Match setup, maps and teams (plan §9.2, §4 benched, §10.3 admin setup/swap).
+// Match setup, maps and teams.
 //
 //   * LOBBY: the host keeps a DRAFT setup ({mapStyle, teamMode}, `PUT
 //     /admin/match/setup`). Its teams are dealt with the snake by join order
@@ -59,7 +59,7 @@ import type { Game } from './game.js';
 import type { PlayerRecord } from './store.js';
 import { UnitsService } from './units.js';
 
-/** What Start match resolved (§9.2). */
+/** What Start match resolved. */
 export interface ResolvedSetup {
   /** The host's override (null = default by player count). */
   mapStyle: MapStyle | null;
@@ -68,9 +68,9 @@ export interface ResolvedSetup {
   teamMode: TeamMode;
   teams: TeamDTO[] | null;
   players: number;
-  /** "Show enemy names to units" (§5). */
+  /** "Show enemy names to units". */
   revealNames: boolean;
-  /** "Walls allowed" (§9.1b). */
+  /** "Walls allowed". */
   wallsAllowed: boolean;
 }
 
@@ -82,7 +82,7 @@ function switchesOf(revealNames: boolean, wallsAllowed: boolean): { revealNames?
   return { ...(revealNames ? { revealNames: true as const } : {}), ...(wallsAllowed ? {} : { wallsAllowed: false as const }) };
 }
 
-/** Per-team budgets (§9.2): teamId → budget, only the teams that differ from caps.budget. */
+/** Per-team budgets: teamId → budget, only the teams that differ from caps.budget. */
 type TeamBudgets = Record<string, number>;
 
 /** Keep only the per-team budgets for teams 0..teamCount-1 (none in free-for-all); undefined when empty. */
@@ -106,18 +106,18 @@ export class TeamsService {
     return this.game.store.match;
   }
 
-  /** "Show enemy names to units" (§5): the draft in LOBBY, fixed from Start match. */
+  /** "Show enemy names to units": the draft in LOBBY, fixed from Start match. */
   get revealNames(): boolean {
     return this.m.setup.revealNames === true;
   }
 
-  /** "Walls allowed" (§9.1b, default on): the draft in LOBBY, fixed from Start match. */
+  /** "Walls allowed" (default on): the draft in LOBBY, fixed from Start match. */
   get wallsAllowed(): boolean {
     return this.m.setup.wallsAllowed !== false;
   }
 
   /**
-   * The budget per player of `playerId` (§9.2 per-team budgets): their team's
+   * The budget per player of `playerId`: their team's
    * budget while a team match runs and the host set one, else caps.budget.
    */
   budgetOf(playerId: string): number {
@@ -149,7 +149,7 @@ export class TeamsService {
     return this.game.players.get(id) !== undefined;
   }
 
-  /** The teams with current (not kicked) members only (public, §3: team membership is public). */
+  /** The teams with current (not kicked) members only (public, team membership is public). */
   publicTeams(): TeamDTO[] | null {
     const teams = this.m.teams;
     if (!teams) return null;
@@ -165,7 +165,7 @@ export class TeamsService {
     return this.teamOf(playerId)?.teamId;
   }
 
-  /** Joined after Start match in team mode: sits out until New match (§4). */
+  /** Joined after Start match in team mode: sits out until New match. */
   isBenched(p: Pick<PlayerRecord, 'id'>): boolean {
     return this.active && this.teamOf(p.id) === undefined;
   }
@@ -218,7 +218,7 @@ export class TeamsService {
   }
 
   /**
-   * Re-deal the draft teams with the snake (LOBBY only, §9.2 Auto-balance):
+   * Re-deal the draft teams with the snake (LOBBY only):
    * after a join, kick or delete, a draft mode change, and New match. Swaps
    * are dropped. Draft values the new roster makes invalid are reset first.
    * `quiet` skips the admin toast.
@@ -244,7 +244,7 @@ export class TeamsService {
   }
 
   /**
-   * Check a requested style / team mode against P (§10.3 BAD_MAP_STYLE /
+   * Check a requested style / team mode against P (BAD_MAP_STYLE /
    * BAD_TEAM_MODE). Only the fields the request sends are checked: an omitted
    * field uses the stored draft value, reset (as in `normalised`) when it no
    * longer fits P, so a stale draft never blocks a request.
@@ -406,7 +406,7 @@ export class TeamsService {
   }
 
   /**
-   * Start match (§10.3): check `mapStyle` (undefined = the draft's, or the
+   * Start match: check `mapStyle` (undefined = the draft's, or the
    * default when the draft's no longer fits; null = default) and `teamMode`
    * (undefined = the draft's, free-for-all when it no longer fits) against
    * the players now. Team mode uses the draft teams (with swaps) when the draft matches,
@@ -488,7 +488,7 @@ export class TeamsService {
     };
   }
 
-  /** `/state` `match` block (§10.3). The map has no zone owners. */
+  /** `/state` `match` block. The map has no zone owners. */
   matchInfo(exclude?: ReadonlySet<string>): MatchInfoDTO {
     const layout = this.currentLayout();
     return {
@@ -508,7 +508,7 @@ export class TeamsService {
   // -------------------------------------------------------------------------
 
   /**
-   * Team table (§9.2): the average of the current members' match totals, then
+   * Team table: the average of the current members' match totals, then
    * the sum of the team's place points over the released rounds, then a
    * shared place. `exclude` leaves out members leaving with this battle.
    */
@@ -529,7 +529,7 @@ export class TeamsService {
   }
 
   // -------------------------------------------------------------------------
-  // Team privacy (§9.2)
+  // Team privacy
   // -------------------------------------------------------------------------
 
   /**

@@ -1,9 +1,9 @@
-// Arena geometry (plan §9): the 800 arena and its corner zones, cell sizes,
+// Arena geometry: the 800 arena and its corner zones, cell sizes,
 // unit radii, range checks and the sudden-death safe circle.
 //
 // Map styles for 2-8 players (arena 800/1040/1200, zone tables, facing, the
-// generalized zone-local cells and rotation incl. team blocks) are in maps.ts
-// (§9.2). The Corner helpers here are the 4-player Corners map, whose zones
+// generalized zone-local cells and rotation incl. team blocks) are in maps.ts.
+// The Corner helpers here are the 4-player Corners map, whose zones
 // keep the original rule: each zone is a 6×6 grid of 40 px cells, `col` runs
 // along x and `row` along y, both away from the centre, so (0,0) is the cell
 // nearest the arena centre.
@@ -11,7 +11,7 @@
 import type { GameConfig } from './config.js';
 import { DEFAULT_SIZE, type UnitType } from './contract.js';
 
-/** The 800 arena of 2-4 players (bigger maps: `arenaSizeFor` in maps.ts, §9.2). */
+/** The 800 arena of 2-4 players (bigger maps: `arenaSizeFor` in maps.ts). */
 export const ARENA = { width: 800, height: 800 } as const;
 /** Centre of the 800 arena. An S arena's centre is (S/2, S/2). */
 export const CENTER = { x: 400, y: 400 } as const;
@@ -20,8 +20,8 @@ export const CELL_SIZE = 40;
 export const GRID_SIZE = 6; // ZONE_SIZE / CELL_SIZE
 
 /**
- * DEFAULT body radius per unit type. A unit's real radius is its `size` stat
- * (§9 Radii), which defaults to these values when the unit doesn't set it.
+ * DEFAULT body radius per unit type. A unit's real radius is its `size` stat,
+ * which defaults to these values when the unit doesn't set it.
  */
 export const UNIT_RADIUS: Readonly<Record<UnitType, number>> = DEFAULT_SIZE;
 
@@ -73,11 +73,11 @@ export function isValidCell(col: number, row: number): boolean {
 }
 
 // Zone-local cells (`cellCenter`, `cellAt`) live in maps.ts: they take a
-// `Corner` (this file's 4-corner zones) or any §9.2 map zone.
+// `Corner` (this file's 4-corner zones) or any map zone.
 
 /**
- * The Corner set used for n players on the 800 arena (Duel / Corners maps,
- * §9.2; other counts and styles: `mapFor` in maps.ts): 2 players TL+BR, 3 players
+ * The Corner set used for n players on the 800 arena (Duel / Corners maps;
+ * other counts and styles: `mapFor` in maps.ts): 2 players TL+BR, 3 players
  * TL/TR/BR (TR is the "middle" seat next to both others), 4 players all
  * (clockwise).
  */
@@ -97,7 +97,7 @@ export function zoneSetFor(playerCount: number): readonly Corner[] {
 }
 
 /**
- * Per-round zone assignment (§9): active players in join order get
+ * Per-round zone assignment: active players in join order get
  * `zoneSet[(i + round) % n]`. Returns a map playerId → corner.
  */
 export function assignZones(playerIdsInJoinOrder: readonly string[], round: number): Map<string, Corner> {
@@ -125,7 +125,7 @@ export function edgeDistance(
 
 /**
  * Engine range check: in range when the edge gap ≤ range + tolerance
- * (§5 rule 4; tolerance defaults to config `sim.rangeTolerance`, 0.5).
+ * (tolerance defaults to config `sim.rangeTolerance`, 0.5).
  */
 export function inRange(
   self: { x: number; y: number; radius: number; range: number },
@@ -144,7 +144,7 @@ export function clampToArena(p: Point, arena: number = ARENA.width): Point {
 }
 
 /**
- * Safe-circle radius at a tick (§9 sudden death): `startRadius` until
+ * Safe-circle radius at a tick: `startRadius` until
  * `startTick`, then shrinking linearly to `endRadius` at `endTick`.
  */
 export function safeZoneRadius(tick: number, sd: GameConfig['suddenDeath']): number {

@@ -1,4 +1,4 @@
-// Match awards on /play (plan §12.1): the player's own awards as cheers and
+// Match awards on /play: the player's own awards as cheers and
 // the winners line of each award in the full list (DOM-free).
 
 import { describe, expect, it } from 'vitest';

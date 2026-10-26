@@ -3,7 +3,7 @@
 // so there is always a next frame to interpolate towards; replay: free-running
 // at 1x/2x). DOM-free.
 //
-// Walls (M8.5, §9.3 Frames) are listed only in the first frame and in frames
+// Walls (M8.5) are listed only in the first frame and in frames
 // where their hp changed. The buffer is told their ids (`setSticky`, from the
 // reveal) and carries each one forward into every frame it is pushed, until a
 // `death` or `crumble` event removes it, so sampling, seeking and the death
@@ -70,7 +70,7 @@ export class FrameBuffer {
   }
 
   /**
-   * The bodies that frames list only when they change (walls, §9.3 Frames),
+   * The bodies that frames list only when they change (walls),
    * with their state at the start (reveal position, full hp). Call before
    * pushing the battle's frames (clear() forgets them).
    */
@@ -94,7 +94,7 @@ export class FrameBuffer {
       for (const u of this.sticky.values()) if (!listed.has(u[0])) carried.push(u);
     }
     // A first frame after t=0 is a late joiner's catch-up frame: the server lists every
-    // living wall in it (§9.3 Frames), so a wall it leaves out has already fallen.
+    // living wall in it, so a wall it leaves out has already fallen.
     return carried.length === 0 ? f : { ...f, units: [...f.units, ...carried] };
   }
 

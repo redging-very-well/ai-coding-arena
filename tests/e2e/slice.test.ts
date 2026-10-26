@@ -1,4 +1,4 @@
-// M3 vertical slice, end to end against the BUILT production server (plan §16 M3):
+// M3 vertical slice, end to end against the BUILT production server:
 //   `node --no-node-snapshot packages/server/dist/index.js` in a child process
 //   on a free port with a temp DATA_DIR, the built client pages, two players
 //   via REST, a custom unit WITH a sprite submitted over MCP (login + apiKey

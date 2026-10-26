@@ -1,4 +1,4 @@
-// Per-key rate limits (plan §4): login 5/min, validate 1/s, submit 1 per 3 s.
+// Per-key rate limits: login 5/min, validate 1/s, submit 1 per 3 s.
 
 /** Sliding-window limiter: at most `max` hits per `windowMs` per key. */
 export class RateLimiter {

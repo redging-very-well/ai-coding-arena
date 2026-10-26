@@ -1,4 +1,4 @@
-// M8.6 client logic without a DOM (plan §12.5): minion-kind looks, the
+// M8.6 client logic without a DOM: minion-kind looks, the
 // factory `fac` entry with stored / burst / order, the stored badge, the
 // /play factory card (kind chip, burst, orders), breakdown rows per kind,
 // the /screen army bars with per-kind minion values and stored minions, the
@@ -28,7 +28,7 @@ const factory = (extra: Partial<StatsSnapshot> = {}): StatsSnapshot => ({
   ...extra,
 });
 
-describe('factory frames (§9.3 Frames, M8.6)', () => {
+describe('factory frames (M8.6)', () => {
   it('decodes stored, burst and order; older entries read as 0 stored, burst 1, attack', () => {
     const now: FrameFactory = ['f', 40, 3, 500, 510, 0, 3, 2, 4, 2];
     expect(productionRing(now)).toMatchObject({ stored: 2, burst: 4, order: 'swarm', rally: { x: 500, y: 510 } });
@@ -47,7 +47,7 @@ describe('factory frames (§9.3 Frames, M8.6)', () => {
   });
 });
 
-describe('minion kind looks (§5.3)', () => {
+describe('minion kind looks', () => {
   it('each kind has its own tinted sprite and bake key (grunts keep the M8.5 key)', () => {
     const looks = (['grunt', 'archer', 'runner', 'brute'] as const).map((k) => minionLook('#33aa55', k));
     expect(looks.map((l) => l.key)).toEqual(['minion:#33AA55', 'minion-archer:#33AA55', 'minion-runner:#33AA55', 'minion-brute:#33AA55']);
@@ -59,7 +59,7 @@ describe('minion kind looks (§5.3)', () => {
   });
 });
 
-describe('/play factory card (§12.5 M8.6)', () => {
+describe('/play factory card', () => {
   it('shows the kind chip, the burst and the orders its code gives', () => {
     expect(factoryKindChip(factory({ produces: 'archer' }))).toEqual({ kind: 'archer', icon: '🎯', label: 'Archers' });
     expect(factoryKindChip(factory())).toEqual({ kind: 'grunt', icon: '👊', label: 'Grunts' });
@@ -82,7 +82,7 @@ describe('/play factory card (§12.5 M8.6)', () => {
   });
 });
 
-describe('/screen army bars with minion kinds (§9.3)', () => {
+describe('/screen army bars with minion kinds', () => {
   const reveal: BattleRevealDTO = {
     round: 1,
     totalTicks: 5400,

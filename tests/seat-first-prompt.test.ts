@@ -1,5 +1,5 @@
 // A new player at a seat gets a fresh conversation that starts with
-// packages/starter-kit/FIRST_PROMPT.md.tmpl (plan §11.2 e). The game server's
+// packages/starter-kit/FIRST_PROMPT.md.tmpl. The game server's
 // proxy names the seat's player to ttyd with an opaque token (seat-proxy.test.ts);
 // this file runs sessions/entrypoint.sh's agent-loop with bash in a temp dir,
 // with fake `claude` and `codex` commands that record their argv, to check the
@@ -46,7 +46,7 @@ n=$(tr -cd '\\036' <"$FAKE_LOG" | wc -c)
 exit 0
 `;
 
-// A fake curl for the seat login (§11.2 e): records argv and stdin, answers $FAKE_CURL_OUT.
+// A fake curl for the seat login: records argv and stdin, answers $FAKE_CURL_OUT.
 const FAKE_CURL = `#!/usr/bin/env bash
 printf '%s\\x1f' "$@" >"$FAKE_CURL_ARGS"
 cat >"$FAKE_CURL_STDIN"
@@ -111,7 +111,7 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-describe('first prompt for a new player (§11.2 e)', () => {
+describe('first prompt for a new player', () => {
   it('the prompt is facts and tool calls, and is not a kit file', () => {
     expect(PROMPT).toMatch(/^A new player has just sat down/);
     for (const tool of ['get_rules', 'get_unit_contract', 'get_game_state', 'login']) expect(PROMPT).toContain(tool);
@@ -208,7 +208,7 @@ describe('first prompt for a new player (§11.2 e)', () => {
   });
 });
 
-describe('the AI helper starts logged in (§11.2 e seat login)', () => {
+describe('the AI helper starts logged in', () => {
   const player = () => join(kit, '.pixel-clash/player.json');
   const env = (extra: Record<string, string> = {}) => ({
     TTYD_PASS: SECRET,
@@ -263,7 +263,7 @@ describe('the AI helper starts logged in (§11.2 e seat login)', () => {
   });
 });
 
-describe('shared agent login from /admin (§11.2 f)', () => {
+describe('shared agent login from /admin', () => {
   const TOKEN = 'sk-ant-oat01-' + 'Ab3_-'.repeat(20);
   const AKEY = 'sk-ant-api03-' + 'Zy9-_'.repeat(20);
   const OKEY = 'sk-proj-' + 'Qw7_-'.repeat(10);

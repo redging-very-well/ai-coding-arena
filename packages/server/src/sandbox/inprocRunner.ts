@@ -4,7 +4,7 @@
 // memory limit, and a prototype escape reaches the host. It exists so the sim
 // and validator can be exercised without the native addon. Creating the
 // factory throws unless the caller passes `{ unsafe: true }` explicitly, and the
-// server refuses this mode at startup unless `--unsafe` is given (§8).
+// server refuses this mode at startup unless `--unsafe` is given.
 //
 // The harness is the same as in isolated-vm. Strings are the only values the
 // host hands to the context (via the `__in` slot), so no host object (and no

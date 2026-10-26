@@ -1,7 +1,7 @@
-// Small isometric map (plan §12.1 PLACEMENT): shows the whole map as the
+// Small isometric map: shows the whole map as the
 // projector draws it, where my zone sits in it, and my placed units standing
 // in it. In team mode the teammates' zones and live placements are drawn too,
-// as see-through ghosts (read-only, §9.2 Team privacy). Uses the shared
+// as see-through ghosts (read-only). Uses the shared
 // ArenaRenderer with a reveal built from data this player may see; nothing
 // about opponents is known before START, so their zones stay neutral.
 

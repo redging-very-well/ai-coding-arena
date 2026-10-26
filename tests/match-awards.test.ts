@@ -1,4 +1,4 @@
-// Match awards (plan §9 Match awards, §14): per-match stats accumulated per
+// Match awards: per-match stats accumulated per
 // round (wins, damage, value, units, walls, minions, survivors, healing,
 // combos, Armory borrows both ways, designs, standings places, the
 // longest-range KO from the frames), the 15 awards with ties, skips, team

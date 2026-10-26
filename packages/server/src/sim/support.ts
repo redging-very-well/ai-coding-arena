@@ -1,4 +1,4 @@
-// Support in the sim (plan §5.5, §9.4 Heals, Auras, M8.8).
+// Support in the sim (M8.8).
 //
 //   * Heal room: every 60 ticks (one window) each soldier, tower and minion
 //     may be healed `healRoomPctPerSecond`% of its max HP, shared by every
@@ -23,7 +23,7 @@ import type { AuraState, SimUnit } from './types.js';
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 
-/** A body's heal room for a fresh window (§5.5): 0 for walls and factories and from sudden death. */
+/** A body's heal room for a fresh window: 0 for walls and factories and from sudden death. */
 export function freshHealRoom(u: Pick<SimUnit, 'type' | 'maxHp'>, tick: number, config: Pick<GameConfig, 'support' | 'suddenDeath'>): number {
   if (!isSupportable(u) || tick >= config.suddenDeath.startTick) return 0;
   return (u.maxHp * config.support.healRoomPctPerSecond) / 100;

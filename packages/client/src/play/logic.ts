@@ -1,9 +1,9 @@
-// Pure /play logic (plan §12.1), DOM-free so tests/play.test.ts can run it:
+// Pure /play logic, DOM-free so tests/play.test.ts can run it:
 // zone grid orientation, placement edits with budget/copy/cell rules, "Copy
 // last layout", selection toggling, stat bars, cost breakdown rows, the
 // "Ask Claude" prompts and Claude-terminal links.
 //
-// M8.5 (§5.2, §12.5): soldiers are "units", towers, walls and factories are
+// M8.5: soldiers are "units", towers, walls and factories are
 // "buildings". A round picks up to 4 of each; placement caps fighters
 // (soldiers, towers, factories), factories among them, and walls apart.
 
@@ -53,7 +53,7 @@ import { formatMoney } from '../common/ui.js';
 // Caps and unit types (M8.5)
 // ---------------------------------------------------------------------------
 
-/** Round caps (§5.2, M8.5): up to 4 unit + 4 building types; fighters, factories and walls counted apart. */
+/** Round caps (M8.5): up to 4 unit + 4 building types; fighters, factories and walls counted apart. */
 export interface PlayCaps {
   budget: number;
   /** Soldier types per round. */
@@ -66,7 +66,7 @@ export interface PlayCaps {
   maxFactoryCopies: number;
   /** Walls placed (on top of the fighters). */
   maxWallCopies: number;
-  /** Redesign (§6 copy ramp): copies of one design beyond freeCopies cost more (pctPerCopy 0 = off). */
+  /** Redesign: copies of one design beyond freeCopies cost more (pctPerCopy 0 = off). */
   copyRamp: CopyRamp;
 }
 
@@ -111,7 +111,7 @@ export const DEFAULT_PLAY_CAPS: PlayCaps = {
 };
 
 
-/** Card tag per type (§12.5). */
+/** Card tag per type. */
 export const TYPE_TAGS: Readonly<Record<UnitType, string>> = {
   soldier: '⚔️ soldier',
   tower: '🏹 tower',
@@ -148,7 +148,7 @@ export interface GridCell {
   gx: number;
   gy: number;
   /**
-   * Zone-local cell (row 0 = the front, §9.2). (0,0) is the front cell nearest
+   * Zone-local cell (row 0 = the front). (0,0) is the front cell nearest
    * the centre, except on a zone centred on the centre line, where col 0 is
    * the edge (-x / -y side) and cols 2-3 are the middle.
    */
@@ -163,7 +163,7 @@ function zoneOrigin(zone: ZoneRef): { x: number; y: number } {
 /**
  * The 36 cells of a zone in screen order (row-major, top-left first), each
  * with its zone-local col/row. The grid is drawn exactly as the zone sits in
- * the top-down arena (its true orientation, §12.1), so row 0 lands on the
+ * the top-down arena (its true orientation), so row 0 lands on the
  * front edge for every facing, and (0,0) on the front cell nearest the centre
  * (on a zone centred on the centre line: the front cell on the -x / -y edge).
  * A `Corner` means that zone of the 4-player Corners map.
@@ -258,7 +258,7 @@ export type PlaceResult =
   | { ok: true; placements: PlacementDTO[]; removed?: boolean }
   | { ok: false; code: 'OVER_BUDGET' | 'TOO_MANY_COPIES' | 'NOT_SELECTED' | 'CELL_OUT_OF_ZONE'; message: string };
 
-/** Copies placed per group (§5.2 Copies): fighters (incl. factories), factories, walls. */
+/** Copies placed per group: fighters (incl. factories), factories, walls. */
 export interface CopyCounts {
   fighters: number;
   factories: number;
@@ -278,7 +278,7 @@ export function copyCounts(placements: readonly PlacementDTO[], typeOf?: TypeOf)
   return out;
 }
 
-/** The fighter cap message, in the counter's and the server's words (§5.2 Copies). */
+/** The fighter cap message, in the counter's and the server's words. */
 export function fighterCapMessage(max: number): string {
   return `That's the most fighters you can place (${max}): soldiers, towers and factories together.`;
 }
@@ -305,7 +305,7 @@ export function copyCounterText(counts: CopyCounts, rules: Pick<PlacementRules, 
   return parts.join(' · ');
 }
 
-/** Cells ("col,row") of the soldiers and factories boxed in by walls (W_TRAPPED, §9.3), for the red outline. */
+/** Cells ("col,row") of the soldiers and factories boxed in by walls (W_TRAPPED), for the red outline. */
 export function trappedKeys(zone: ZoneRef, placements: readonly PlacementDTO[], typeOf: TypeOf): Set<string> {
   return new Set(trappedCells(zone, placements, typeOf).map((p) => `${p.col},${p.row}`));
 }
@@ -334,8 +334,8 @@ export function removeAt(placements: readonly PlacementDTO[], col: number, row: 
 /**
  * Tap a cell with `unitId` chosen in the palette (null = nothing chosen).
  *  - Empty cell + chosen unit → place it (if budget and copies allow).
- *  - Occupied cell → remove it, whatever is chosen (§12.1 "Tap a placed unit
- *    to remove it"; the hint on the page says the same).
+ *  - Occupied cell → remove it, whatever is chosen (the hint on the
+ *    page says the same).
  */
 export function tapCell(
   placements: readonly PlacementDTO[],
@@ -405,7 +405,7 @@ export function copiesOf(placements: readonly PlacementDTO[]): Map<string, numbe
   return m;
 }
 
-/** Redesign (§6 copy ramp): "Copy 4+ of one design costs +15%, +30%, … (walls never)". */
+/** Redesign: "Copy 4+ of one design costs +15%, +30%, … (walls never)". */
 export function copyRampHint(r: CopyRamp): string {
   const n = r.freeCopies + 1;
   return `Copy ${n}+ of one design costs more: +${r.pctPerCopy}%, +${2 * r.pctPerCopy}%, … (walls never).`;
@@ -440,16 +440,16 @@ export type GroupedToggleResult =
   | { ok: false; reason: 'invalid' }
   | { ok: false; reason: 'walls-off' };
 
-/** "Walls allowed" off (§9.1b): the note on greyed wall cards and the refusal text. */
+/** "Walls allowed" off: the note on greyed wall cards and the refusal text. */
 export const WALLS_OFF_NOTE = 'Walls are off this match';
 
-/** A card that can't be picked this match because walls are off (§9.1b). */
+/** A card that can't be picked this match because walls are off. */
 export function isWallOff(unit: { stats: { type: UnitType } }, wallsAllowed: boolean): boolean {
   return !wallsAllowed && unit.stats.type === 'wall';
 }
 
 /**
- * Tap a roster card (M8.5, §5.2): select/deselect with up to `limits.unit`
+ * Tap a roster card (M8.5): select/deselect with up to `limits.unit`
  * soldier types and `limits.building` tower/wall/factory types; invalid
  * units can't be picked.
  */
@@ -480,7 +480,7 @@ export function pickCounterText(counts: Record<UnitGroup, number>, limits: Recor
 }
 
 /**
- * The over-cap warning (§5.2): a picked design revised into the other group
+ * The over-cap warning: a picked design revised into the other group
  * can leave more picks in a group than its cap. Ready is refused until one is
  * un-picked (the server's TOO_MANY_TYPES says the same). null when it fits.
  */
@@ -491,7 +491,7 @@ export function overCapText(counts: Record<UnitGroup, number>, limits: Record<Un
   return null;
 }
 
-/** Only walls picked: Ready is refused with NO_FIGHTERS (walls protect, they don't win, §5.2). */
+/** Only walls picked: Ready is refused with NO_FIGHTERS (walls protect, they don't win). */
 export function onlyWallsPicked(selection: readonly string[], typeOf: TypeOf): boolean {
   return selection.length > 0 && selection.every((id) => typeOf(id) === 'wall');
 }
@@ -505,7 +505,7 @@ export function toggleSelection(selection: readonly string[], unit: Pick<UnitCar
 }
 
 // ---------------------------------------------------------------------------
-// PLAN Ready ("my army is picked", §12.1)
+// PLAN Ready ("my army is picked")
 // ---------------------------------------------------------------------------
 
 export interface PlanReadyView {
@@ -571,7 +571,7 @@ function seconds(ticks: number): string {
   return `${Number.isInteger(s) ? s : s.toFixed(1)} s`;
 }
 
-/** Factory card lines (§12.5): "1 minion every 15 s", "makes 5 minions". */
+/** Factory card lines: "1 minion every 15 s", "makes 5 minions". */
 export function factoryLines(stats: Pick<StatsSnapshot, 'type'> & { productionInterval?: number }, expected?: number): string[] {
   if (stats.type !== 'factory' || !stats.productionInterval) return [];
   const out = [`1 minion every ${seconds(stats.productionInterval)}`];
@@ -579,7 +579,7 @@ export function factoryLines(stats: Pick<StatsSnapshot, 'type'> & { productionIn
   return out;
 }
 
-/** M8.6 (§12.5): the factory card's minion-kind chip, e.g. { icon: '🎯', label: 'Archers' }. */
+/** M8.6: the factory card's minion-kind chip, e.g. { icon: '🎯', label: 'Archers' }. */
 export function factoryKindChip(stats: { produces?: MinionKind }): { kind: MinionKind; icon: string; label: string } {
   const kind = producesOf(stats);
   return { kind, icon: KIND_ICON[kind], label: kindPlural(kind) };
@@ -598,7 +598,7 @@ export function ordersText(orders: readonly MinionOrder[] | undefined): string {
 
 /**
  * Stat bars for a unit card. Attack speed is attacks per second (60 /
- * cooldown). Walls show health only; factories health and build speed (§12.5).
+ * cooldown). Walls show health only; factories health and build speed.
  */
 export function statBars(stats: StatsSnapshot, bounds: StatBounds = DEFAULT_CONFIG.stats.bounds): StatBar[] {
   if (stats.type === 'wall') {
@@ -649,7 +649,7 @@ const times = (f: number) => `×${Math.round(f * 100) / 100}`;
 
 /**
  * Rows of the "cost breakdown" pop-up: each term, the sum, the factor, the
- * total. Walls and factories (§6) only pay for health; a factory adds its
+ * total. Walls and factories only pay for health; a factory adds its
  * production line ("5 minions × $28").
  */
 export function breakdownRows(b: CostBreakdown): BreakdownRow[] {
@@ -676,7 +676,7 @@ export function breakdownRows(b: CostBreakdown): BreakdownRow[] {
     { label: 'Speed', value: money(t.speed) },
     { label: 'Size', value: money(t.size) },
   ];
-  // M8.8 (§6): the heal term sits inside the sum; power, splash and element multiply; an aura adds on after.
+  // M8.8: the heal term sits inside the sum; power, splash and element multiply; an aura adds on after.
   if (b.heal) rows.push({ label: `${SUPPORT_ICON.heal} Heal`, value: money(b.heal.total) });
   rows.push({ label: 'Sum', value: money(b.sum) });
   rows.push({ label: 'Fast-attack ×', value: b.factor === 1 ? '×1' : times(b.factor) });
@@ -705,7 +705,7 @@ export function breakdownNotes(b: CostBreakdown): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// Elements, splash and support on cards (M8.8, §12.5)
+// Elements, splash and support on cards (M8.8)
 // ---------------------------------------------------------------------------
 
 const ELEMENT_NAME: Readonly<Record<Element, string>> = { normal: 'Normal', fire: 'Fire', ice: 'Ice', lightning: 'Lightning' };
@@ -749,7 +749,7 @@ export function combatChips(stats: Pick<StatsSnapshot, 'type'> & Partial<Pick<St
   if (splash > 0) out.push({ key: 'splash', tone: 'splash', icon: '💥', label: `Splash ${splash}`, title: `Every other enemy within ${splash} px of the target takes half the hit` });
   const sup = supportOf(stats);
   if (sup) {
-    // §12.6: the heal chip shows its reach (phones and the projector never show the title).
+    // The heal chip shows its reach (phones and the projector never show the title).
     const label = sup.kind === 'heal' ? `Heal ${sup.power} · ${sup.range} px` : `${SUPPORT_NAME[sup.kind]} ${sup.power}%`;
     const title =
       sup.kind === 'heal'
@@ -766,12 +766,12 @@ export function isSupportOnly(stats: Pick<StatsSnapshot, 'type' | 'damage'> & Pa
 }
 
 // ---------------------------------------------------------------------------
-// "Ask Claude" prompts (RESULTS, §12.1)
+// "Ask Claude" prompts (RESULTS)
 // ---------------------------------------------------------------------------
 
 /**
  * One prompt per battle error: "My unit X had an error at line N: '…'. Please fix it."
- * A borrowed Open Armory unit can't be fixed (§9.1): ask for an own version instead.
+ * A borrowed Open Armory unit can't be fixed: ask for an own version instead.
  */
 export function errorPrompt(e: Pick<BattleReportErrorDTO, 'unitName' | 'line' | 'message' | 'borrowedFrom'>): string {
   const where = e.line !== undefined ? ` at line ${e.line}` : '';
@@ -810,7 +810,7 @@ export function unitPrompts(roster: readonly UnitCardDTO[], round: number, repor
   return out;
 }
 
-/** Factory lines of the battle report (§12.5): "🏭 Basic Factory made 5 minions (2 lost), 120 minion damage". */
+/** Factory lines of the battle report: "🏭 Basic Factory made 5 minions (2 lost), 120 minion damage". */
 export function factoryReportLines(report: Pick<BattleReportDTO, 'types'> | null | undefined): string[] {
   return (report?.types ?? [])
     .filter((t) => t.type === 'factory')
@@ -823,7 +823,7 @@ export function factoryReportLines(report: Pick<BattleReportDTO, 'types'> | null
 }
 
 /**
- * M8.8 report lines per unit type (§9.4 reports): how its damage was dealt
+ * M8.8 report lines per unit type: how its damage was dealt
  * (burn, splash, zaps, shatters), what it healed and cleansed, and what its
  * auras helped with ("📯 War Drummer's aura helped with 1,240 damage"). Plain hit-only types get none.
  */
@@ -853,7 +853,7 @@ export function effectReportLines(report: Pick<BattleReportDTO, 'types'> | null 
 }
 
 /**
- * "Got stuck behind walls" prompts (§12.5): a soldier type blocked for more
+ * "Got stuck behind walls" prompts: a soldier type blocked for more
  * than 30% of the battle (or the report's own hints) becomes an Ask-Claude prompt.
  */
 export function stuckPrompts(report: Pick<BattleReportDTO, 'types' | 'hints'> | null | undefined, battleTicks: number): string[] {
@@ -868,11 +868,11 @@ export function stuckPrompts(report: Pick<BattleReportDTO, 'types' | 'hints'> | 
 }
 
 // ---------------------------------------------------------------------------
-// Claude terminal: adults' direct link (§11.2 b "Fallback")
+// Claude terminal: adults' direct link
 // ---------------------------------------------------------------------------
 
 export const TTYD_BASE_PORT = 7780;
-/** Seat containers on the AI session host: seat1..seat8 on ports 7781-7788 (§11.1, §11.2). */
+/** Seat containers on the AI session host: seat1..seat8 on ports 7781-7788. */
 export const CLAUDE_SEATS = 8;
 
 /** Host part of an AI session host address ("192.168.8.20", "http://box:8080/x" → "box"). */
@@ -925,7 +925,7 @@ export function pinKey(pin: string, key: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Round score in friendly language (§9 Points, Badges; §12.4 friendly language)
+// Round score in friendly language
 // ---------------------------------------------------------------------------
 
 function pts(n: number): string {
@@ -970,7 +970,7 @@ export function scoreParts(entry: Pick<RankingEntryDTO, 'place'> & Partial<Score
 
 /**
  * One line per part of the round score: place, damage bonus, value bonus. In
- * team mode the place (and its points) are the team's (§9.2 Team scoring),
+ * team mode the place (and its points) are the team's,
  * while the bonuses stay your own.
  */
 export function scoreLines(raw: Pick<RankingEntryDTO, 'place'> & Partial<ScoreParts>, opts: { team?: boolean } = {}): ScoreLine[] {
@@ -1011,7 +1011,7 @@ export const BADGE_PLAYER_TEXT: Readonly<Record<BadgeId, string>> = {
 };
 
 // ---------------------------------------------------------------------------
-// Past battles (§12.1): the round picker and a round's ranking rows
+// Past battles: the round picker and a round's ranking rows
 // ---------------------------------------------------------------------------
 
 /**

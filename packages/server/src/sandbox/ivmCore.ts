@@ -106,8 +106,7 @@ export class IvmSession implements SandboxSession {
 
   /**
    * Create an isolate, install the harness and take References to the API
-   * object `setup` returns, BEFORE any player code is evaluated (§8 hardening
-   * rules). The API is never published on globalThis, so player code can't call it.
+   * object `setup` returns, BEFORE any player code is evaluated. The API is never published on globalThis, so player code can't call it.
    * `onCatastrophicError` is called if V8 loses control of the isolate.
    */
   static async open(opts: SessionOptions, onCatastrophicError?: (message: string) => void): Promise<IvmSession> {
@@ -278,7 +277,7 @@ export class IvmSession implements SandboxSession {
     }
   }
 
-  /** Read `__current` with a separate short call (§8). */
+  /** Read `__current` with a separate short call. */
   private probeCulprit(timeoutMs: number): string | undefined {
     try {
       const v = this.isolate.compileScriptSync(HARNESS_GLOBALS.current).runSync(this.context, { timeout: timeoutMs });

@@ -1,11 +1,11 @@
-// PLACEMENT (plan §12.1): the zone as an enlarged top-down 6×6 grid in its
+// PLACEMENT: the zone as an enlarged top-down 6×6 grid in its
 // true orientation (arrow to the centre), a palette of the selected types,
 // tap palette → tap cell, tap a placed unit to remove it, sprites at true
 // size, live budget bar, Copy last layout / Clear / READY, autosave
 // (debounced 300 ms) and an iso mini-map. Works for every zone orientation of
-// the §9.2 maps (row 0 is always the front). Team mode: the mini-map shows the
+// the maps (row 0 is always the front). Team mode: the mini-map shows the
 // teammates' zones and placements live as ghosts, and the Team panel their picks.
-// M8.5 (§12.5): the palette has a Units row and a Buildings row, counters
+// M8.5: the palette has a Units row and a Buildings row, counters
 // "Fighters 7/12 · Factories 1/2 · Walls 6/12", walls are solid squares that
 // join their neighbours, soldiers and factories boxed in by walls get a red
 // outline ("Walled in! Leave a gap."), and with a wall chosen a press-and-drag
@@ -87,7 +87,7 @@ export function Placement() {
   const [gridRef, cellPx] = useCellPx();
 
   const palette: UnitCardDTO[] = useMemo(() => {
-    // Own designs plus borrowed Open Armory units ("Ogre (Ninja Sam)", §9.1).
+    // Own designs plus borrowed Open Armory units ("Ogre (Ninja Sam)").
     const byId = new Map([...(priv?.roster ?? []), ...(priv?.armory ?? [])].map((u) => [u.unitId, u]));
     return (priv?.selection ?? []).map((id) => byId.get(id)).filter((u): u is UnitCardDTO => !!u);
   }, [priv?.roster, priv?.armory, priv?.selection]);
@@ -96,7 +96,7 @@ export function Placement() {
   const rules: PlacementRules = useMemo(
     () => ({
       costs: new Map(palette.map((u) => [u.unitId, u.cost])),
-      // The live budget (per-team budgets, §9.2) from every state push, like the copy caps.
+      // The live budget (per-team budgets) from every state push, like the copy caps.
       budget: st.game?.me?.budget ?? priv?.budget ?? st.caps.budget,
       maxCopies: st.caps.maxCopies,
       typeOf,
@@ -273,7 +273,7 @@ export function Placement() {
       holdMs = Math.max(holdMs, retryAfterMs(err));
       store.toast(err instanceof ApiError ? err.playerMessage : "Couldn't change READY. Try again!", 'error');
     } finally {
-      // No spamming (§3): the button stays off for the server's minimum gap.
+      // No spamming: the button stays off for the server's minimum gap.
       setTimeout(() => setReadyBusy(false), holdMs);
     }
   };
@@ -387,7 +387,7 @@ export function Placement() {
               <span class="palette-title">{GROUP_TITLES[group]}</span>
               <div class="palette">
                 {items.map((u) => {
-                  // Redesign (§6 copy ramp): the next copy may cost more than the card price.
+                  // Redesign: the next copy may cost more than the card price.
                   const next = nextCostOf(placements, u.unitId, rules) ?? u.cost;
                   const affordable = spent + next <= rules.budget;
                   return (

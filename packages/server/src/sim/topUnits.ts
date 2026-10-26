@@ -1,4 +1,4 @@
-// "Top damage" units of a round (plan §9 Results): per fielded unit TYPE per
+// "Top damage" units of a round: per fielded unit TYPE per
 // player (all copies of that design summed), ranked by effective damage, at
 // the released tick (a Skip uses the counters at the shown playback tick, as
 // the ranking does). Public once the result is released: fielded types were
@@ -28,7 +28,7 @@ export function topUnits({ reveal, summaries, kicked, shown }: TopUnitsInput): T
       const row: TopUnitDTO = {
         rank: 0,
         unitId,
-        // A factory's row includes its minions' damage and KOs (§9.3): "Basic Factory + minions".
+        // A factory's row includes its minions' damage and KOs: "Basic Factory + minions".
         displayName: `${type?.name ?? s.name ?? unitId}${type?.stats.type === 'factory' ? ' + minions' : ''}`,
         playerId: p.playerId,
         playerName: p.name,

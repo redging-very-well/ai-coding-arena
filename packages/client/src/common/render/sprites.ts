@@ -1,4 +1,4 @@
-// Unit sprites (plan §5.1): bake SpriteSpec frames into crisp, seat-outlined
+// Unit sprites: bake SpriteSpec frames into crisp, seat-outlined
 // bitmaps, and pick the animation pose of each unit from frame flags/events.
 //
 //   * Baking: each frame is rasterized at grid resolution, upscaled with
@@ -10,7 +10,7 @@
 //   * Animation (8 fps): `walk` while MOVING, `attack` for 250 ms after the
 //     unit fires, `hit` for 100 ms after it takes damage, `death` once and
 //     then fade. Priority death > hit > attack > walk > idle.
-//   * M8.5 (§12.5): a factory plays `attack` (door flash) when it makes a
+//   * M8.5: a factory plays `attack` (door flash) when it makes a
 //     minion (`spawn` with its factoryId), a unit with the BLOCKED flag walks
 //     in place (it is pushing on a wall), and `crumble` ends a body like a death.
 //
@@ -31,7 +31,7 @@ import { createImage, flashImage, mirrorImage, outlineImage, padImage, scaleNear
 export type AnimState = 'idle' | 'walk' | 'attack' | 'hit' | 'death';
 export const ANIM_STATES: readonly AnimState[] = ['idle', 'walk', 'attack', 'hit', 'death'];
 
-/** Sprite animation rate (plan §5.1). */
+/** Sprite animation rate. */
 export const ANIM_FPS = 8;
 export const ANIM_FRAME_MS = 1000 / ANIM_FPS;
 export const ATTACK_MS = 250;

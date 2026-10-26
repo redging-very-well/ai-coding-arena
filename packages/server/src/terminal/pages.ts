@@ -1,4 +1,4 @@
-// Friendly error pages of the seat terminal proxy (plan §10.3 table, §11.2 b).
+// Friendly error pages of the seat terminal proxy.
 // Shown inside the /play iframe or in a standalone terminal tab when the
 // request accepts HTML, else the usual JSON error body. Self-contained (inline
 // CSS and script, no game assets), never with WWW-Authenticate, and never with

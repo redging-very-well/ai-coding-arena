@@ -1,4 +1,4 @@
-// An animated unit sprite on a small canvas (plan §5.1): idle loop at 8 fps,
+// An animated unit sprite on a small canvas: idle loop at 8 fps,
 // walk while `walking` (hover). Uses the shared baker, so the look matches the
 // arena exactly (seat-coloured outline, fallback for missing/hidden sprites).
 // All SpriteViews share one requestAnimationFrame loop.

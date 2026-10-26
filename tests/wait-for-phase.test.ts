@@ -1,5 +1,4 @@
-// wait_for_phase (plan §10.4, §17 "agents check the phase after making a
-// unit"): the long poll resolves on a phase change, times out at the cap,
+// wait_for_phase ("agents check the phase after making a unit"): the long poll resolves on a phase change, times out at the cap,
 // cleans up on abort and per player; validate_unit / submit_unit end with a
 // "Game phase:" line; the kit tells the helper to wait by itself.
 

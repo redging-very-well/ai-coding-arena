@@ -1,4 +1,4 @@
-// Open Armory (plan §9.1, §14 armory.test.ts) against a booted server with the
+// Open Armory against a booted server with the
 // real validator and isolated-vm sandboxes:
 //   * toggle off → nothing enters; on → only FIELDED types enter, and only
 //     when the battle's result is released (not at START, never unfielded
@@ -308,7 +308,7 @@ describe('Open Armory: on', () => {
     const end = await waitForState(bob.client, (st) => st.phase === 'RESULTS', 30_000);
     // Bob's sandbox was created with the frozen copy (v1 code), Sam's with his own design.
     const bobRun = rec.calls.find((c) => c.playerId === bob.id)!;
-    // The borrowed copy has a sandbox of its own and is loaded under Sam's unitId (§9.1 Source).
+    // The borrowed copy has a sandbox of its own and is loaded under Sam's unitId.
     expect(bobRun.units.map((u) => u.unitId)).toEqual(['ogre']);
     expect(bobRun.units[0]!.compiledJs).toContain('OGRE-MARKER');
     expect(bobRun.units[0]!.compiledJs).toContain('25');

@@ -1,4 +1,4 @@
-// Optimistic concurrency for unit revisions (plan §10.3, §10.4): validate and
+// Optimistic concurrency for unit revisions: validate and
 // submit take an optional `baseVersion` (REST, MCP and admin on-behalf). A
 // stale one is 409 UNIT_CHANGED with the current version; without it, submits
 // keep working as before (older Claude sessions).

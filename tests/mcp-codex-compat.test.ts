@@ -1,4 +1,4 @@
-// MCP compatibility with the OpenAI Codex CLI's client (plan §11.3). The
+// MCP compatibility with the OpenAI Codex CLI's client. The
 // requests below were recorded from codex-cli 0.162.1 (the version the seat
 // image pins) talking to /mcp through a logging proxy (scripts/codex-mcp-check.mjs
 // drives the real binary the same way). Raw fetch, so the exact headers and
@@ -47,7 +47,7 @@ interface RpcReply {
   body: any;
 }
 
-describe('MCP with a Codex-style client (§11.3)', () => {
+describe('MCP with a Codex-style client', () => {
   let srv: RunningServer;
   let dir: string;
   let protocol = '';

@@ -1,4 +1,4 @@
-// Factories stop at sudden death (plan §5.2, §9.3, §17; user decision
+// Factories stop at sudden death (user decision
 // 2026-10-25: "No new minions once the safe circle starts shrinking, so camps
 // can't out-produce a standoff"): no minion appears at or after
 // suddenDeath.startTick, the timers stop and the unbuilt minions are gone;
@@ -36,7 +36,7 @@ const frameAtT = (frames: FrameDTO[], t: number) => frames.find((f) => f.t === t
 const farEnemy = (): FakePlayerSpec => ({ playerId: 'b', seat: 1, zone: 'BR', units: [design('t', stats({ type: 'tower', damage: 5 }))], placements: [at(5, 5, 't')], brains: { t: idleBrain } });
 const rallyHome = scripted((self) => ({ action: 'rally', destination: { x: self.x - 60, y: self.y - 60 } }));
 
-describe('factories stop at sudden death (§9.3)', () => {
+describe('factories stop at sudden death', () => {
   it('the production window ends at suddenDeath.startTick (or the battle end), and E counts only what fits in it', () => {
     // Off by default: factories build until the end of the battle, priced as before.
     expect(DEFAULT_CONFIG.factory.stopAtSuddenDeath).toBe(false);

@@ -1099,7 +1099,7 @@ input.pin {
   margin-top: 8px;
 }
 
-/* Claude seats panel (§11.2, §12.3) */
+/* Claude seats panel */
 .grid > .claude-seats {
   grid-column: 1 / -1;
 }
@@ -1150,7 +1150,7 @@ input.pin {
   flex-wrap: wrap;
 }
 
-/* The cancellable countdown to Next / START (§12.3). */
+/* The cancellable countdown to Next / START. */
 .countdown-row {
   display: flex;
   flex-wrap: wrap;

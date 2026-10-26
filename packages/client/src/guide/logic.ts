@@ -1,4 +1,4 @@
-// Pure helpers of the unit guide (plan §12.1 "📖 Unit guide"): inline markup
+// Pure helpers of the unit guide: inline markup
 // (`code`, **bold**), the search filter and highlighting. Shared by /play's
 // overlay and the standalone /guide page; no DOM here (tested in Node).
 

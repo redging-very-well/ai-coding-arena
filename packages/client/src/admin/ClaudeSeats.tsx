@@ -1,4 +1,4 @@
-// Claude seats panel (plan §12.3, §11.2): the AI session host address, the shared
+// Claude seats panel: the AI session host address, the shared
 // seat password (the value only with "Show details" on, since this page may be
 // on the projector), the "AI session host setup" command (`make seats
 // PIXEL_CLASH_URL=… SEAT_SECRET=…`, which writes sessions/.env on the AI
@@ -6,7 +6,7 @@
 // pickable; turning off a held seat moves its player to another free seat),
 // live status, assigned player (reassign / Unassign), who holds the live
 // terminal, and "Open terminal" (rescue: the seat's terminal through the
-// proxy, in its own tab). "Agent login" (§11.2 f): the shared Claude Code
+// proxy, in its own tab). "Agent login": the shared Claude Code
 // token / API keys every seat's agent starts with, write-only (only "…last 4"
 // ever comes back), and per seat which shared login its last start fetched.
 // "Setup wizard" opens the step-by-step first-time setup (SeatSetupWizard.tsx),
@@ -22,7 +22,7 @@ import { updateSetupSettings } from '../setup/setupApi.js';
 import { useAdmin } from './context.js';
 import { maskedSetupCommand, wizardSetupCommand, type WizardAgent } from './seatSetupSteps.js';
 
-/** Same rule as the server (§11.2 a): ttyd's `-c player:<secret>` can't take spaces or ':'. */
+/** Same rule as the server: ttyd's `-c player:<secret>` can't take spaces or ':'. */
 export const SEAT_SECRET_RE = /^[A-Za-z0-9._~-]{12,64}$/;
 
 export const STATUS_TEXT: Readonly<Record<ClaudeSeatStatus, string>> = {
@@ -43,7 +43,7 @@ function ago(ms: number | null, now: number): string {
   return m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`;
 }
 
-/** Same shapes as the server (§11.2 f). Whitespace is removed before the check (wrapped pastes). */
+/** Same shapes as the server. Whitespace is removed before the check (wrapped pastes). */
 export const AGENT_CREDENTIAL_RE: Readonly<Record<AgentCredentialKind, RegExp>> = {
   claudeToken: /^sk-ant-oat\d{2}-[A-Za-z0-9_-]{20,500}$/,
   anthropicApiKey: /^sk-ant-api\d{2}-[A-Za-z0-9_-]{20,500}$/,
@@ -321,7 +321,7 @@ function OpenTerminal({ row }: { row: AdminClaudeSeatDTO }) {
 }
 
 /**
- * The one command the AI session host needs (§11.1): run in the repo there, it
+ * The one command the AI session host needs: run in the repo there, it
  * writes PIXEL_CLASH_URL and SEAT_SECRET into sessions/.env and starts the
  * seats. It carries the seat password, so the text shows only with "Show
  * details"; Copy works either way (it fetches the details just for the copy).
@@ -463,7 +463,7 @@ const AGENT_FIELDS: ReadonlyArray<{ kind: AgentCredentialKind; label: string; pl
 ];
 
 /**
- * The shared agent logins (§11.2 f). Write-only: once saved, the page only
+ * The shared agent logins. Write-only: once saved, the page only
  * ever gets "…last 4" back, so it is safe on the projector.
  */
 export function AgentLogin({ hints, kinds, intro = true }: { hints: AdminClaudeSeatsDTO['agentCredentials'] | null; kinds?: readonly AgentCredentialKind[]; intro?: boolean }) {

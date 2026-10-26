@@ -1,5 +1,4 @@
-// Early stopping for the balance round robin (plan §14, docs/balance.md "Fast
-// balance runs"). A matchup cell is a FIXED set of n deterministic battles
+// Early stopping for the balance round robin. A matchup cell is a FIXED set of n deterministic battles
 // (every duel site, zone pair, both orders, every seed), so after k of them
 // the other n − k can only move the counts so far. Each rule (helpers/
 // balanceRules.ts: the win caps, beats someone / not everyone / loses to
@@ -16,7 +15,7 @@
 //            on win/draw/loss): exact Dirichlet-multinomial odds for one
 //            cell, a normal approximation for a row's total wins. Much
 //            faster; a heuristic (the battles of a cell are not random draws),
-//            checked against the full matrix in docs/balance.md.
+//            checked against the full matrix with --verify.
 //   'full':  every battle (the old way; still uses the cache).
 // Cells play their battles in a spread order (both maps and both zone pairs
 // first), `first` battles per cell up front, then `step` more per round for

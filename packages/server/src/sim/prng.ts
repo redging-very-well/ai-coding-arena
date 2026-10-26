@@ -1,4 +1,4 @@
-// Seeded PRNG for the engine (plan §9 Determinism). The engine never calls
+// Seeded PRNG for the engine. The engine never calls
 // Math.random; the only randomness it needs (a push direction for two bodies
 // at exactly the same spot) comes from here, so equal seeds give equal battles.
 

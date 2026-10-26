@@ -24,7 +24,7 @@ export interface AdminData {
   state: GameStateDTO | null;
   overview: AdminOverviewDTO | null;
   setup: SetupInfoDTO | null;
-  /** Claude seats (§11.2), without the secret fields (WS `terminals` + refetches). */
+  /** Claude seats, without the secret fields (WS `terminals` + refetches). */
   seats: AdminClaudeSeatsDTO | null;
   wsStatus: WsStatus;
   /** The admin session is gone (server restarted with a wipe, logged out elsewhere). */

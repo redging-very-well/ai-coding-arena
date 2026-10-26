@@ -1,4 +1,4 @@
-// The "Set up AI seats" wizard in /admin (plan §12.3, §11.1-11.3), DOM-free:
+// The "Set up AI seats" wizard in /admin, DOM-free:
 // which steps are done, from the seats DTO the server sends (live ✓), plus
 // the two things only this browser knows (the agent picked in step 1, and
 // "the seats log in on their own"). Also the troubleshooting hints for seats

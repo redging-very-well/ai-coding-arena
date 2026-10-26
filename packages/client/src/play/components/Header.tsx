@@ -1,4 +1,4 @@
-// Always-visible header (plan §12.1): name + seat colour and number badge,
+// Always-visible header: name + seat colour and number badge,
 // team chip (team mode), phase banner with countdown, round, map, points, and
 // the sound toggle (muted by default), the connection dot and Log out.
 
@@ -43,7 +43,7 @@ export function Header() {
         )}
       </div>
       <div class="phase">
-        {/* Re-keyed on a phase change while the game shows, so the banner flashes once (§11.2 d). */}
+        {/* Re-keyed on a phase change while the game shows, so the banner flashes once. */}
         <div key={st.phaseFlash} class={cx('phase-title pixel', st.phaseFlash > 0 && 'flash')}>
           {text?.title ?? '…'}
         </div>

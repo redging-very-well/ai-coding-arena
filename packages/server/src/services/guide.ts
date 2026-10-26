@@ -1,8 +1,8 @@
-// GET /guide (§10.3): the unit guide, the full rulebook for units shown by
-// /play's "📖 Unit guide" overlay and the standalone /guide page (§12.1).
+// GET /guide: the unit guide, the full rulebook for units shown by
+// /play's "📖 Unit guide" overlay and the standalone /guide page.
 //
 // Everything is built from the LIVE config (bounds, coefficients, elements,
-// support, factory, caps, timers, scoring) and the §5 contract, so an admin
+// support, factory, caps, timers, scoring) and the contract, so an admin
 // retune changes the guide's numbers at once. Example prices come from
 // `computeCost` under that config. The field / action / view tables are
 // `Record`s over the contract's own types, so a new contract field fails the
@@ -95,7 +95,7 @@ function clampTo(v: number, r: NumRange): number {
 }
 
 // ---------------------------------------------------------------------------
-// Stats (§5 bounds table, §5.2, §5.6): one entry per contract field
+// Stats: one entry per contract field
 // ---------------------------------------------------------------------------
 
 interface FieldDoc {
@@ -278,7 +278,7 @@ const TYPE_INFO: Record<UnitType, { icon: string; title: string; text: string; s
 };
 
 // ---------------------------------------------------------------------------
-// What update() sees (§5 SelfView / OtherView / WorldView / StatusView / FactoryView)
+// What update() sees
 // ---------------------------------------------------------------------------
 
 const SELF_FIELDS: Record<keyof SelfView, string> = {
@@ -386,7 +386,7 @@ const WORLD_FIELDS: Record<keyof WorldView, (c: GameConfig) => string> = {
 };
 
 // ---------------------------------------------------------------------------
-// Actions (§5 Action union)
+// Actions
 // ---------------------------------------------------------------------------
 
 type ActionName = Action['action'];

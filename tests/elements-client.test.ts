@@ -1,4 +1,4 @@
-// M8.8 client logic without a DOM (elements spec §9, plan §12): status flags,
+// M8.8 client logic without a DOM: status flags,
 // tints and the frozen animation tempo; the pooled effect layer (arcs, splash
 // rings, beams, pop text) and its caps; the first-battle legend; the status
 // icons and aura rings on a fake canvas; the reveal's combat looks; the
@@ -108,7 +108,7 @@ function fakeCanvas(): EffectCanvas & { calls: Record<string, number> } {
   };
 }
 
-describe('status flags, tints and tempo (§9)', () => {
+describe('status flags, tints and tempo', () => {
   it('decodes the five M8.8 frame flags', () => {
     const f = FRAME_FLAGS.BURNING | FRAME_FLAGS.SHIELDED | FRAME_FLAGS.MOVING;
     expect(statusOf(f)).toEqual({ burning: true, frozen: false, hasted: false, mighty: false, shielded: true });
@@ -384,7 +384,7 @@ describe('/play cards and the price breakdown (M8.8)', () => {
 
   it('prices the spec reference units and lists their new rows', () => {
     const fire = price({ ...SOLDIER, element: 'fire' });
-    // Plan §6 reference units ($10,000 scale): Fire Soldier, Mortar Tower, Field Medic, War Drummer.
+    // Reference units ($10,000 scale): Fire Soldier, Mortar Tower, Field Medic, War Drummer.
     expect(fire.cost).toBe(1049);
     const fireRows = breakdownRows(fire.breakdown);
     expect(fireRows.map((r) => r.label)).toContain('🔥 Fire ×');

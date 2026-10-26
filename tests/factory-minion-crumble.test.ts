@@ -1,4 +1,4 @@
-// Minions die with their factory (plan §5, §9.3, §17; user decision 2026-10-25:
+// Minions die with their factory (user decision 2026-10-25:
 // "Try 'minions die with their factory'"): host option
 // `factory.minionsDieWithFactory`. In step 9a, right after step 9 removed the
 // dead, the living minions of every factory removed in step 9 crumble (factory
@@ -80,10 +80,10 @@ function battle(config: GameConfig, opts: { factories?: string[][]; target?: str
   );
 }
 
-describe('minions die with their factory (§9.3)', () => {
+describe('minions die with their factory', () => {
   it('is off by default', () => {
     expect(DEFAULT_CONFIG.factory.minionsDieWithFactory).toBe(false);
-    // The radius a host gets by turning it on (§14 "Only minions near the factory crumble").
+    // The radius a host gets by turning it on.
     expect(DEFAULT_CONFIG.factory.crumbleRadius).toBe(120);
   });
 

@@ -1,4 +1,4 @@
-// Projector view (plan §12.2), laid out on a fixed 1920×1080 stage that is
+// Projector view, laid out on a fixed 1920×1080 stage that is
 // scaled to fit the window. The arena canvas is always mounted (the shared
 // ArenaRenderer draws into it); panels and overlays change by phase.
 
@@ -157,7 +157,7 @@ export function App() {
   const isAdminRef = useRef(isAdmin);
   isAdminRef.current = isAdmin;
 
-  // MATCH_RESULTS: the awards ceremony (§12.2) runs on its own clock from the
+  // MATCH_RESULTS: the awards ceremony runs on its own clock from the
   // moment this page sees the phase; the facilitator can skip, pause, replay.
   const ceremony = useRef<CeremonyClock | null>(null);
   const cued = useRef<number | null>(null);
@@ -432,7 +432,7 @@ function ArenaOverlays({
 }
 
 /**
- * RESULTS (§12.2): the round's top damage units over the bottom of the arena,
+ * RESULTS: the round's top damage units over the bottom of the arena,
  * each with its sprite, the player who fielded it (seat badge + name, team
  * chip) and a damage count-up; cards pop in one after another.
  */
@@ -550,7 +550,7 @@ function JoinPoster({ snap, onClose }: { snap: ScreenSnapshot; onClose: () => vo
           </p>
         </div>
       </div>
-      {/* The terminal lives inside /play now (§11.2): no terminal addresses on the projector. */}
+      {/* The terminal lives inside /play now: no terminal addresses on the projector. */}
       <div class="poster-seats">
         <h2 class="pixel">Your AI helper terminal is on the game page</h2>
         <p class="muted">Join on an AI seat laptop and you get a free AI seat automatically.</p>
@@ -754,7 +754,7 @@ function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController
   );
 }
 
-/** The round of the first battle this screen showed with walls in it (the caption shows only then, §12.5). */
+/** The round of the first battle this screen showed with walls in it (the caption shows only then). */
 let firstWallsRound: number | null = null;
 
 function wallsCaption(reveal: BattleRevealDTO | null | undefined): boolean {
@@ -763,7 +763,7 @@ function wallsCaption(reveal: BattleRevealDTO | null | undefined): boolean {
   return reveal.round === firstWallsRound;
 }
 
-/** Team mode (§12.2): one bar per team, split into its members' living value. */
+/** Team mode: one bar per team, split into its members' living value. */
 function TeamArmyBars({ teams, started }: { teams: ReturnType<typeof teamArmyValues>; started: boolean }) {
   const max = Math.max(1, ...teams.map((t) => t.start));
   return (
@@ -1061,7 +1061,7 @@ function TeamPodium({ table, teams, state }: { table: TeamTableRowDTO[]; teams: 
 }
 
 /**
- * The awards ceremony (§12.2): drumroll intro, each award with its winner(s)
+ * The awards ceremony: drumroll intro, each award with its winner(s)
  * and their best unit, the podium 3-2-1 with confetti, then the final board
  * with everyone's award icons. Facilitator keys show as a small hint.
  */

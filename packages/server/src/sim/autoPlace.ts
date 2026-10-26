@@ -1,4 +1,4 @@
-// Auto-place (plan §9): at lock (START or Force start) a player with zero
+// Auto-place: at lock (START or Force start) a player with zero
 // placements gets a layout so nobody has an empty corner:
 //   1. "Copy last layout" if it is still valid (only available/valid types,
 //      ≤ maxTypes types, ≤ maxCopies, distinct legal cells) and within budget;
@@ -7,12 +7,12 @@
 //      centre first: on a zone centred on the centre line that is the
 //      middle of the front row, cols 2, 3, 1, 4, 0, 5) until nothing else
 //      fits the budget.
-// Zone-local cells mean the same on every map (§9.2: row 0 = the front row),
+// Zone-local cells mean the same on every map (row 0 = the front row),
 // so a last layout stays valid when the zone rotates or the map changes
 // (it is copied cell for cell; on a zone centred on the centre line col 0 is
 // the edge rather than the centre-most column).
 //
-// M8.5 (§9 Auto-place, §5.2): walls are never auto-placed, factories are
+// M8.5: walls are never auto-placed, factories are
 // placed after the other types (≤ maxFactoryCopies), and the type caps are
 // per group (≤ maxUnitTypes soldiers, ≤ maxBuildingTypes buildings).
 // `maxCopies` counts fighters; walls in a reused last layout count against
@@ -27,7 +27,7 @@ export interface AutoPlaceUnit {
   cost: number;
   /** The design's type (default 'soldier'). */
   type?: UnitType;
-  /** M8.8 (§5.2 Fighters): can win a battle; default: anything but a wall (a damage-0 unit or a medic factory is not). */
+  /** M8.8: can win a battle; default: anything but a wall (a damage-0 unit or a medic factory is not). */
   fighter?: boolean;
 }
 
@@ -41,7 +41,7 @@ export interface AutoPlaceCaps {
   maxBuildingTypes?: number;
   maxFactoryCopies?: number;
   maxWallCopies?: number;
-  /** Redesign: copies of one design beyond `freeCopies` cost more (§6 copy ramp). */
+  /** Redesign: copies of one design beyond `freeCopies` cost more. */
   copyRamp?: CopyRamp;
 }
 
@@ -60,13 +60,13 @@ export interface AutoPlaceInput {
   /** The player's previous round layout, if any. */
   lastLayout?: readonly PlacementDTO[] | null;
   caps: AutoPlaceCaps;
-  /** The zone's facing this round (§9.2); default 'diag' (Corners/Duel). */
+  /** The zone's facing this round; default 'diag' (Corners/Duel). */
   facing?: Facing;
   /** The zone is centred on the arena's centre line (`zoneCentredOnLine`): its col 0 is an edge cell. */
   centred?: boolean;
   /**
    * Placements the player already made that have no fighter (walls only,
-   * §9 Auto-place M8.5): they stay, and fighters are added in the free cells
+   * M8.5): they stay, and fighters are added in the free cells
    * within the remaining budget. If no fighter fits, the walls are dropped and
    * the layout is built from scratch.
    */
@@ -83,7 +83,7 @@ export interface AutoPlaceResult {
  * All zone-local cells, front first. Diagonal zones (Corners, Duel, the
  * Ring 8 / Islands 8 corners): by distance band from the centre-most cell
  * (row + col), then nearer the zone's diagonal, then by row. Zones facing
- * N/S/E/W (§9.2): the front row first (lowest row, then lowest col, which is
+ * N/S/E/W: the front row first (lowest row, then lowest col, which is
  * the col nearest the centre). On a N/S/E/W zone `centred` on the centre line
  * col 0 is an edge, so each row goes from the middle out: 2, 3, 1, 4, 0, 5.
  */
@@ -127,7 +127,7 @@ export function isLayoutUsable(
   if (layout.length - walls > caps.maxCopies) return false;
   if (walls > (caps.maxWallCopies ?? Infinity)) return false;
   if (factories > (caps.maxFactoryCopies ?? Infinity)) return false;
-  // A layout of walls only (M8.8: or only pure support) has no fighter: not usable (§5.2 Fighters).
+  // A layout of walls only (M8.8: or only pure support) has no fighter: not usable.
   const fighter = new Map(available.map((u) => [u.unitId, u.fighter ?? (u.type ?? 'soldier') !== 'wall']));
   if (walls === layout.length || !layout.some((p) => fighter.get(p.unitId))) return false;
   const used = [...new Set(layout.map((p) => p.unitId))].map((id) => typeOf.get(id));

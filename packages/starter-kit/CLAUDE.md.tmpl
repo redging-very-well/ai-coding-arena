@@ -59,16 +59,16 @@ A unit file has **one default-exported class**. The constructor sets the stats a
 4. `sprite()` **last**. Keep all the pixel art (the palette, every frame and any row helpers) **inside `sprite()`**: no palette or pixel-row constants above the class, and no long comment blocks before it (put longer notes at the bottom of the file, after the class).
 
 ```ts
-export type UnitType = 'soldier' | 'tower' | 'wall' | 'factory';   // §5.2
+export type UnitType = 'soldier' | 'tower' | 'wall' | 'factory';
 export type BodyType = UnitType | 'minion'; // minions are made by factories: you see them, you never submit one
-export type MinionKind = 'grunt' | 'archer' | 'runner' | 'brute' | 'medic'; // what a factory builds (§5.3, medic §5.5)
-export type MinionOrder = 'attack' | 'defend' | 'swarm' | 'guard'; // what a factory's minions do (§5.3)
-export type Element = 'normal' | 'fire' | 'ice' | 'lightning';     // §5.4: one per unit
-export type SupportKind = 'heal' | 'haste' | 'might' | 'shield';  // §5.5: one per unit
-export type MapStyle = 'duel' | 'triangle' | 'corners' | 'ring' | 'lanes' | 'islands'; // §9.2
+export type MinionKind = 'grunt' | 'archer' | 'runner' | 'brute' | 'medic'; // what a factory builds
+export type MinionOrder = 'attack' | 'defend' | 'swarm' | 'guard'; // what a factory's minions do
+export type Element = 'normal' | 'fire' | 'ice' | 'lightning';     // one per unit
+export type SupportKind = 'heal' | 'haste' | 'might' | 'shield';  // one per unit
+export type MapStyle = 'duel' | 'triangle' | 'corners' | 'ring' | 'lanes' | 'islands';
 export type Shape = 'circle' | 'square' | 'triangle' | 'diamond';
 
-/** Fields the constructor MUST set as plain data properties on `this` (which ones depends on `type`, §5.2 table). */
+/** Fields the constructor MUST set as plain data properties on `this` (which ones depends on `type`). */
 export interface UnitStats {
   name: string;          // 1-24 chars, shown on screen
   type: UnitType;        // soldiers move; towers, walls and factories are buildings and never move
@@ -83,7 +83,7 @@ export interface UnitStats {
   supportPower?: number; // required with support. heal: HP per heal 15-400. haste/might: 5-50 (%). shield: 5-40 (%)
   supportRange?: number; // required with support, EDGE to edge. heal: 20-200 px reach. haste/might/shield: 40-150 px aura
   productionInterval?: number; // factory only, required: integer ticks between two minions, 300-1200 (5-20 s)
-  produces?: MinionKind; // factory only, optional (default 'grunt'): the minion it builds; the price follows (§6)
+  produces?: MinionKind; // factory only, optional (default 'grunt'): the minion it builds; the price follows
   minionElement?: Element; // factory only, optional (default 'normal'): the element of every minion it builds (medics ignore it)
   burst?: number;        // factory only, optional (default 1): integer 1-4; minions wait inside until this many are ready, then leave together
   color: string;         // "#RRGGBB": projectiles, particles, fallback sprite; a wall's block colour; a factory's minion colour
@@ -91,7 +91,7 @@ export interface UnitStats {
   shape?: Shape;         // optional; only used by the fallback sprite when sprite() is missing
 }
 
-/** Pixel-art look, returned by the optional sprite() method (§5.1). */
+/** Pixel-art look, returned by the optional sprite() method. */
 export type SpriteFrame = string[];       // `grid` rows, each exactly `grid` chars; '.' = transparent
 export interface SpriteSpec {
   grid: 8 | 12 | 16 | 24 | 32;            // square pixel grid per frame
@@ -131,7 +131,7 @@ export interface FactoryView {
   orderTargetId: string | null; // swarm: the enemy, guard: the ally, else null
   rally: { x: number; y: number }; // where 'attack' minions go; starts at world.center
 }
-export interface MinionView {     // self.minion, only inside a factory's updateMinion() (§5.3)
+export interface MinionView {     // self.minion, only inside a factory's updateMinion()
   kind: MinionKind;      // what this minion is
   factoryId: string;     // the id of its factory (the one running this updateMinion)
   order: MinionOrder; orderTargetId: string | null; rally: { x: number; y: number }; // its factory's order, orderTargetId and rally right now
@@ -170,12 +170,12 @@ export interface OtherView {
 // A minion's name is its kind: 'Grunt', 'Archer', 'Runner', 'Brute' or 'Medic'. Stored minions are invisible.
 // cooldownRemaining is Math.ceil of an internal float that counts down by the tempo: 0.65 frozen, ×(1 + haste%) hasted.
 export interface WorldView {
-  width: number; height: number;        // arena size this battle: 800 (2-4 players), 1040 (5-6), 1200 (7-8), §9.2
+  width: number; height: number;        // arena size this battle: 800 (2-4 players), 1040 (5-6), 1200 (7-8)
   tick: number; ticksLeft: number;
-  mapStyle: MapStyle;                   // §9.2
+  mapStyle: MapStyle;
   myCorner: { x: number; y: number };   // centre of my start zone this round (name kept from the 4-corner map; a zone need not be a corner)
   center: { x: number; y: number };     // = { x: width / 2, y: height / 2 }
-  safeZone: { x: number; y: number; radius: number }; // centred on `center`; shrinks from tick 4500 (sudden death, §9)
+  safeZone: { x: number; y: number; radius: number }; // centred on `center`; shrinks from tick 4500 (sudden death)
   players?: { id: string; name: string; teamId: number; teamName?: string }[]; // only when 'Show enemy names to units' is on: every player in this battle, you too (id = ownerId; teamName in team mode)
 }
 // teamId: free-for-all = the owner's seat (0-7), so every player is their own team.
@@ -195,8 +195,8 @@ export type Action =
 
 export interface Unit extends UnitStats {
   update?(self: SelfView, enemies: OtherView[], allies: OtherView[], world: WorldView): Action | undefined; // soldier, tower, factory: required. wall: none
-  updateMinion?(self: SelfView, enemies: OtherView[], allies: OtherView[], world: WorldView): Action | undefined; // factory only, optional: once per tick for each of its minions on the field; undefined/null = the built-in logic (§5.3)
-  sprite?(): SpriteSpec; // called ONCE at validation, never in battle (§5.1)
+  updateMinion?(self: SelfView, enemies: OtherView[], allies: OtherView[], world: WorldView): Action | undefined; // factory only, optional: once per tick for each of its minions on the field; undefined/null = the built-in logic
+  sprite?(): SpriteSpec; // called ONCE at validation, never in battle
 }
 ```
 

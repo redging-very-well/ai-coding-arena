@@ -1,4 +1,4 @@
-// Frame recording (plan §9 Frames).
+// Frame recording.
 //
 // A frame is taken every `frameEveryTicks` (2) completed ticks, plus the spawn
 // frame at t=0 and always the final frame. Format:
@@ -7,15 +7,15 @@
 // fire, hit, death, disable). Coordinates and hp are rounded to 2 decimals to
 // keep the stream small; the sim itself keeps full precision.
 //
-// M8.5 (§9.3 Frames): walls are listed only in the first frame and in frames
+// M8.5: walls are listed only in the first frame and in frames
 // where their (rounded) hp changed, `fac` lists the living factories, and the
 // flags gain BLOCKED (a wall turned the move) and PRODUCED (a factory made a
 // minion).
 //
-// M8.6 (§9.3): `fac` entries gain stored, burst and the order code, and
+// M8.6: `fac` entries gain stored, burst and the order code, and
 // their (x, y) is the order's focus (`focusOf`; default the rally point).
 //
-// M8.8 (§9.4 Frames): the flags gain BURNING, FROZEN, HASTED, MIGHTY and
+// M8.8: the flags gain BURNING, FROZEN, HASTED, MIGHTY and
 // SHIELDED (the body's state at the frame), and the events gain hit kinds
 // and elements, arc, splash, shatter, heal and cleanse (sim/effects.ts,
 // sim/support.ts). A battle without elements or support records exactly the
@@ -136,7 +136,7 @@ export function frameAt(frames: readonly FrameDTO[], t: number): FrameDTO | unde
 }
 
 /**
- * The frame at or before `t` for a late joiner (§9.3 Frames): frames list a
+ * The frame at or before `t` for a late joiner: frames list a
  * wall only when its hp changes, so a lone mid-battle frame would leave out
  * the walls that haven't been hit lately. This copy of it also lists every
  * body still alive at `t` that it doesn't (their last listed row), so the
