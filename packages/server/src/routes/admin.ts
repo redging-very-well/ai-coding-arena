@@ -218,6 +218,34 @@ export function adminRoutes(game: Game): Router {
     res.json(out);
   });
 
+  // The defaults (the boot config: config/default.json), for the /admin
+  // "changed from default" marks and the per-section resets.
+  r.get('/config/defaults', (_req, res) => {
+    const out: AdminConfigResponse = { config: game.bootConfig, repriced: [], invalidated: [] };
+    res.json(out);
+  });
+
+  // Reset to defaults: drops every live config edit (not venue settings, the
+  // match or the teams). Same phase rule as PUT /config.
+  r.post('/config/reset', (_req, res) => {
+    const phase = game.store.match.phase;
+    if (!CONFIG_PHASES.has(phase)) {
+      return sendError(res, {
+        code: 'PHASE_CLOSED',
+        message: `The config can't change during ${phase} (unit prices must stay fixed under a live placement or battle).`,
+        details: { phase, opensIn: 'RESULTS' },
+      });
+    }
+    const next = game.bootConfig;
+    game.config = next;
+    game.store.configPatch = {};
+    const { repriced, invalidated } = game.units.repriceAll(next);
+    game.store.save();
+    game.notifier.stateChanged();
+    const out: AdminConfigResponse = { config: next, repriced, invalidated };
+    res.json(out);
+  });
+
   r.put(
     '/setup',
     wrap(async (req, res) => {

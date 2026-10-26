@@ -1,14 +1,15 @@
-// Start-match setup (plan §12.3, §9.2): map style (only the styles valid for
-// the player count, the default marked "auto"), team mode (only the valid
-// modes), a top-down map preview (every valid style as a thumbnail, the chosen
-// one large with zone numbers, each player's round-1 zone, team colours and
-// "close neighbours" notes) and the auto-balanced team boxes, each with its
-// "Budget per player $" on top, where dragging a player chip onto another team
-// moves them (or the chip's ⋯ menu moves/swaps; any split, every team keeps
-// ≥ 1 player; LOBBY only, logic in teamDnd.ts), and an "uneven
-// teams" warning when the team areas differ and `rounds` isn't a multiple of
-// the team count. Every change is
-// saved as the server's draft (PUT /admin/match/setup), which Start match uses.
+// Start-match setup (plan §12.3, §9.2), as steps 1 and 2 of the Match tab
+// (MatchTab.tsx). TeamsStep: team mode (only the valid modes) and the
+// auto-balanced team boxes, each with its "Budget per player $" on top (with
+// a balance note above $15,000), where dragging a player chip onto another
+// team moves them (or the chip's ⋯ menu moves/swaps; any split, every team
+// keeps ≥ 1 player; LOBBY only, logic in teamDnd.ts). MapStep: map style
+// (only the styles valid for the player count, the default marked "auto"), a
+// top-down map preview (every valid style as a thumbnail, the chosen one large
+// with zone numbers, each player's round-1 zone, team colours and "close
+// neighbours" notes) and an "uneven teams" warning when the team areas differ
+// and `rounds` isn't a multiple of the team count. Every change is saved as
+// the server's draft (PUT /admin/match/setup), which Start match uses.
 
 import { useRef, useState } from 'preact/hooks';
 import { MAP_STYLE_INFO, teamSizesOf, validMapStyles, type MapStyle, type MatchSetupDTO, type TeamDTO, type TeamMode } from '@pixel-clash/shared';
@@ -17,6 +18,7 @@ import { floorTerrain } from '../common/render/iso.js';
 import { seatStyle, teamLook } from '../common/seats.js';
 import { cx } from '../common/ui.js';
 import { useAdmin } from './context.js';
+import { budgetBalanceWarning } from './quickSettings.js';
 import { applyMove, canDrop, dropResult, LAST_MEMBER_TEXT, menuChoices, parseChoice, teamIdOf } from './teamDnd.js';
 import { mapPreview, previewCount, selectedStyleOption, styleOptions, teamModeOptions, unevenNote, type MapPreview, type PreviewPlayer } from './mapPreview.js';
 
@@ -80,7 +82,10 @@ export function MapView({ preview, size, detail }: { preview: MapPreview; size: 
 
 /** One team's "Budget per player $" field (§9.2): Enter/blur saves, empty or the default clears it. */
 function TeamBudget({ team, budget, defaultBudget, onBudget, busy }: { team: TeamDTO; budget: number; defaultBudget: number; onBudget: (teamId: number, budget: number | null) => void; busy: boolean }) {
+  const [typed, setTyped] = useState<number | null>(null);
+  const warning = budgetBalanceWarning(typed ?? budget);
   return (
+    <>
     <label class="team-budget small">
       <span>Budget per player $</span>
       <input
@@ -98,7 +103,12 @@ function TeamBudget({ team, budget, defaultBudget, onBudget, busy }: { team: Tea
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur(); // blur fires the change (save)
         }}
+        onInput={(e) => {
+          const raw = e.currentTarget.value.trim();
+          setTyped(raw === '' || !Number.isFinite(Number(raw)) ? null : Number(raw));
+        }}
         onChange={(e) => {
+          setTyped(null);
           const raw = e.currentTarget.value.trim();
           const v = raw === '' ? null : Math.round(Number(raw));
           onBudget(team.teamId, v === null || v === defaultBudget ? null : v);
@@ -106,6 +116,8 @@ function TeamBudget({ team, budget, defaultBudget, onBudget, busy }: { team: Tea
       />
       {budget !== defaultBudget && <span class="dim"> (default ${defaultBudget.toLocaleString('en-US')})</span>}
     </label>
+    {warning && <span class="qs-balance small">⚠ {warning}</span>}
+    </>
   );
 }
 
@@ -307,7 +319,8 @@ function TeamBoard({
   );
 }
 
-export function MatchSetup({ rounds }: { rounds: number }) {
+/** What the setup steps share: the roster, the draft teams and the chosen map. */
+function useMatchModel(rounds: number) {
   const { overview, state, act, busy, notify } = useAdmin();
   const setup: MatchSetupDTO | undefined = overview?.setup;
   const roster: PreviewPlayer[] = (overview?.players ?? state?.players ?? []).map((p) => ({ id: p.id, name: p.name, seat: p.seat }));
@@ -320,46 +333,94 @@ export function MatchSetup({ rounds }: { rounds: number }) {
   const sizes = teams ? teamSizesOf(teams) : undefined;
   const styles = validMapStyles(n, mode, sizes);
   const uneven = unevenNote(chosen, mode, rounds);
-
-  const options = styleOptions(roster.length, mode, sizes);
-  const selected = selectedStyleOption(options, override);
   const save = (patch: { mapStyle?: MapStyle | null; teamMode?: TeamMode }, text?: string) => act(() => api.admin.setMatchSetup(patch), text);
+  return { setup, roster, byId, mode, override, teams, chosen, sizes, styles, uneven, save, act, busy, notify };
+}
 
+/** Step 1 (Players & teams): who joined, free-for-all or teams, and the team boxes with their budgets. */
+export function TeamsStep({ rounds }: { rounds: number }) {
+  const { setup, roster, byId, mode, teams, sizes, save, act, busy, notify } = useMatchModel(rounds);
   if (!setup) return <p class="dim">Loading the match setup…</p>;
   return (
     <div class="match-setup">
-      <div class="btn-row">
-        <label class="inline">
-          Map
-          <select value={selected} disabled={busy} onChange={(e) => void save({ mapStyle: (e.currentTarget.value || null) as MapStyle | null })}>
-            {options.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label class="inline">
-          Teams
-          <select
-            value={mode}
-            disabled={busy}
-            onChange={(e) => {
-              const teamMode = e.currentTarget.value as TeamMode;
-              void save({ teamMode }, teamMode === 'ffa' ? 'Free-for-all' : 'Teams balanced');
-            }}
-          >
-            {teamModeOptions(roster.length, mode, sizes).map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <label class="inline">
+        Teams
+        <select
+          value={mode}
+          disabled={busy}
+          onChange={(e) => {
+            const teamMode = e.currentTarget.value as TeamMode;
+            void save({ teamMode }, teamMode === 'ffa' ? 'Free-for-all' : 'Teams balanced');
+          }}
+        >
+          {teamModeOptions(roster.length, mode, sizes).map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {teams && teams.length > 0 ? (
+        <TeamBoard
+          teams={teams}
+          players={byId}
+          busy={busy}
+          onRefused={(text) => notify('warn', text)}
+          onSwap={(a, b) => void act(() => api.admin.swapTeams(a, b), `Swapped ${byId.get(a)?.name ?? a} and ${byId.get(b)?.name ?? b}`)}
+          onMove={async (id, teamId) => (await act(() => api.admin.moveTeam(id, teamId), `Moved ${byId.get(id)?.name ?? id} to ${teams.find((t) => t.teamId === teamId)?.name ?? `Team ${teamId + 1}`}`)) !== undefined}
+          budgets={setup.teamBudgets ?? []}
+          defaultBudget={setup.defaultBudget}
+          onBudget={(teamId, budget) => {
+            const next: (number | null)[] = teams.map((t) => {
+              const b = setup.teamBudgets?.[t.teamId];
+              return b === undefined || b === setup.defaultBudget ? null : b;
+            });
+            next[teamId] = budget;
+            const name = teams.find((t) => t.teamId === teamId)?.name ?? `Team ${teamId + 1}`;
+            void act(() => api.admin.setMatchSetup({ teamBudgets: next }), `${name}: $${(budget ?? setup.defaultBudget).toLocaleString('en-US')} per player`);
+          }}
+        />
+      ) : (
+        <ul class="roster-chips" aria-label="Players in the lobby">
+          {roster.map((p) => {
+            const seat = seatStyle(p.seat);
+            return (
+              <li key={p.id} class="team-chip locked">
+                <span class="seat-chip" style={{ background: seat.color, color: seat.ink }}>
+                  {seat.symbol}
+                </span>
+                <span class="chip-name">{p.name}</span>
+              </li>
+            );
+          })}
+          {roster.length === 0 && <li class="dim small">Nobody has joined yet: players open /play on their laptops.</li>}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Step 2 (Map): the map style with a large preview and a thumbnail of every valid style. */
+export function MapStep({ rounds }: { rounds: number }) {
+  const { setup, roster, mode, override, teams, chosen, sizes, styles, uneven, save, busy } = useMatchModel(rounds);
+  if (!setup) return <p class="dim">Loading the match setup…</p>;
+  const options = styleOptions(roster.length, mode, sizes);
+  const selected = selectedStyleOption(options, override);
+  return (
+    <div class="match-setup">
+      <label class="inline">
+        Map
+        <select value={selected} disabled={busy} onChange={(e) => void save({ mapStyle: (e.currentTarget.value || null) as MapStyle | null })}>
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
       <div class="map-previews">
         <div class="map-big">
-          <MapView preview={chosen} size={300} detail />
+          <MapView preview={chosen} size={260} detail />
           <div class="map-notes">
             <b>
               {MAP_STYLE_INFO[chosen.style].label} · {chosen.players} players · {chosen.width}×{chosen.width}
@@ -380,7 +441,7 @@ export function MatchSetup({ rounds }: { rounds: number }) {
               const on = st === chosen.style;
               return (
                 <button key={st} class={cx('map-thumb', on && 'on')} disabled={busy} title={MAP_STYLE_INFO[st].idea} onClick={() => !on && void save({ mapStyle: st === styles[0] ? null : st })}>
-                  <MapView preview={p} size={92} />
+                  <MapView preview={p} size={84} />
                   <span>
                     {MAP_STYLE_INFO[st].label}
                     {st === styles[0] ? ' (auto)' : ''}
@@ -391,27 +452,6 @@ export function MatchSetup({ rounds }: { rounds: number }) {
           </div>
         )}
       </div>
-      {teams && teams.length > 0 && (
-        <TeamBoard
-          teams={teams}
-          players={byId}
-          busy={busy}
-          onRefused={(text) => notify('warn', text)}
-          onSwap={(a, b) => void act(() => api.admin.swapTeams(a, b), `Swapped ${byId.get(a)?.name ?? a} and ${byId.get(b)?.name ?? b}`)}
-          onMove={async (id, teamId) => (await act(() => api.admin.moveTeam(id, teamId), `Moved ${byId.get(id)?.name ?? id} to ${teams.find((t) => t.teamId === teamId)?.name ?? `Team ${teamId + 1}`}`)) !== undefined}
-          budgets={setup.teamBudgets ?? []}
-          defaultBudget={setup.defaultBudget}
-          onBudget={(teamId, budget) => {
-            const next: (number | null)[] = teams.map((t) => {
-              const b = setup.teamBudgets?.[t.teamId];
-              return b === undefined || b === setup.defaultBudget ? null : b;
-            });
-            next[teamId] = budget;
-            const name = teams.find((t) => t.teamId === teamId)?.name ?? `Team ${teamId + 1}`;
-            void act(() => api.admin.setMatchSetup({ teamBudgets: next }), `${name}: $${(budget ?? setup.defaultBudget).toLocaleString('en-US')} per player`);
-          }}
-        />
-      )}
     </div>
   );
 }

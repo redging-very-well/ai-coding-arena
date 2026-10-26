@@ -42,7 +42,8 @@ describe('quick settings field table', () => {
       expect(f.help.length).toBeGreaterThan(0);
     }
     expect(new Set(QUICK_FIELDS.map((f) => f.path)).size).toBe(QUICK_FIELDS.length);
-    expect(QUICK_GROUPS.map((g) => g.title)).toEqual(['Match', 'Economy', 'Timers', 'Costs', 'Walls & factories', 'Elements & support', 'Movement', 'Scoring', 'Sudden death']);
+    expect(QUICK_GROUPS.map((g) => g.title)).toEqual(['Budget & limits', 'Rounds & timers', 'Unit prices', 'Walls & factories', 'Minions', 'Elements & support', 'Battle & scoring']);
+    for (const g of QUICK_GROUPS) expect(g.blurb.length, g.id).toBeGreaterThan(0);
   });
 
   it('has the M8.8 economy, element and support knobs (§10.6)', () => {

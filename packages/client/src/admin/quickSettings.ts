@@ -8,6 +8,7 @@
 // The zod ConfigSchema is checked too (validateDraft), so its bounds and
 // cross-field rules (e.g. sudden death start < end) show inline as well.
 
+import { configDiff } from './configDiff.js';
 import { ConfigSchema, checkStats, computeCost, copiesCost, isNonCombatBuilding, pricingOf, type CostStats, type GameConfig } from '@pixel-clash/shared';
 
 export interface QuickField {
@@ -39,6 +40,8 @@ export interface QuickToggle {
 export interface QuickGroup {
   id: string;
   title: string;
+  /** One line under the section title in /admin (what the section is for). */
+  blurb: string;
   fields: QuickField[];
   toggles?: QuickToggle[];
 }
@@ -61,8 +64,9 @@ const money = { unit: '$', min: 0, step: 0.05 } satisfies Partial<QuickField>;
 
 export const QUICK_GROUPS: QuickGroup[] = [
   {
-    id: 'match',
-    title: 'Match',
+    id: 'economy',
+    title: 'Budget & limits',
+    blurb: 'Seats, the budget each round and how much one player can field.',
     fields: [
       {
         path: 'match.maxPlayers',
@@ -73,12 +77,6 @@ export const QUICK_GROUPS: QuickGroup[] = [
         step: 1,
         integer: true,
       },
-    ],
-  },
-  {
-    id: 'economy',
-    title: 'Economy',
-    fields: [
       { path: 'caps.budget', label: 'Budget per round ($)', help: 'Credits each player gets to place units every round (resets each round).', unit: '$', min: 1, step: 50, integer: true },
       { path: 'caps.unitCost', label: 'Max cost of one unit ($)', help: 'A unit priced above this is rejected. The starter templates must stay under it.', unit: '$', min: 1, step: 10, integer: true },
       { path: 'caps.maxUnitTypes', label: 'Unit types per round', help: 'How many different soldier designs a player can field in one round.', min: 1, step: 1, integer: true },
@@ -91,7 +89,8 @@ export const QUICK_GROUPS: QuickGroup[] = [
   },
   {
     id: 'timers',
-    title: 'Timers',
+    title: 'Rounds & timers',
+    blurb: 'How long each phase lasts.',
     fields: [
       { path: 'timers.defaultRounds', label: 'Rounds per match', help: 'Default for the Start match box (1-10).', min: 1, max: 10, step: 1, integer: true },
       { ...minutes, path: 'timers.planFirstRoundSec', label: 'Plan time, round 1', help: 'Time to design units with the AI helper in the first round.', min: 0.5 },
@@ -115,7 +114,8 @@ export const QUICK_GROUPS: QuickGroup[] = [
   },
   {
     id: 'costs',
-    title: 'Costs',
+    title: 'Unit prices',
+    blurb: 'What each stat costs, with a live price check.',
     fields: [
       { ...money, path: 'cost.base', label: 'Base cost per unit', help: 'Every unit pays this before its stats.', step: 1 },
       { ...money, path: 'cost.hp', label: '$ per HP', help: 'Price of each point of maxHealth (before the curve).' },
@@ -158,6 +158,7 @@ export const QUICK_GROUPS: QuickGroup[] = [
     // M8.5 (§5.2, §6, §9.3): wall and factory prices, their stat ranges, the minion and the factory caps.
     id: 'buildings',
     title: 'Walls & factories',
+    blurb: 'Wall and factory prices, health ranges and what happens to factories.',
     fields: [
       { ...money, path: 'cost.wall.base', label: 'Wall base cost', help: 'Every wall pays this before its health.', step: 1 },
       { ...money, path: 'cost.wall.hp', label: 'Wall $ per HP', help: 'Price of each point of wall health (before the curve). Walls are cheap per HP: they can’t move or fight and count $0 at the end.', step: 0.01 },
@@ -180,26 +181,7 @@ export const QUICK_GROUPS: QuickGroup[] = [
       { path: 'stats.bounds.factoryHealth.max', label: 'Factory health: max', help: 'The most HP a factory can have.', min: 1, step: 50, integer: true },
       { ...tickSeconds, path: 'stats.bounds.productionInterval.min', label: 'Fastest minion every', help: 'The shortest time a factory can take to build one minion.', min: 1 },
       { ...tickSeconds, path: 'stats.bounds.productionInterval.max', label: 'Slowest minion every', help: 'The longest time a factory can take to build one minion.', min: 1 },
-      { path: 'factory.maxMinionsPerFactory', label: 'Minions per factory per battle', help: 'The most minions one factory makes in a battle (its price counts them).', min: 1, step: 1, integer: true },
-      { path: 'factory.maxAlivePerFactory', label: 'Minions alive per factory', help: 'A factory waits while this many of its minions are alive.', min: 1, step: 1, integer: true },
-      { path: 'factory.maxAlivePerPlayer', label: 'Minions alive per player', help: 'All of a player’s factories together (also limited to 40 ÷ players).', min: 1, step: 1, integer: true },
-      { path: 'factory.maxAlivePerBattle', label: 'Minions alive per battle', help: 'The most minions in the whole arena at once (keeps big battles smooth).', min: 1, step: 1, integer: true },
       { path: 'factory.crumbleRadius', label: 'Crumble distance', help: "With 'Minions die with their factory' on: only the minions within this distance of the factory (centre to centre) crumble with it; the ones further away keep fighting. 0 = all of them, wherever they are.", unit: 'px', min: 0, step: 10 },
-      // M8.6 (§5.3): the four minion kinds (each must stay within the soldier bounds; prices follow).
-      ...(['grunt', 'archer', 'runner', 'brute'] as const).flatMap((k) => {
-        const name = k[0]!.toUpperCase() + k.slice(1);
-        return [
-          { path: `factory.minions.${k}.maxHealth`, label: `${name} health`, help: `HP of a factory's ${k}s (must stay within the soldier bounds).`, min: 1, step: 5 },
-          { path: `factory.minions.${k}.damage`, label: `${name} damage`, help: `Damage per ${k} hit${k === 'archer' ? ' (a shot)' : ' (melee)'}.`, min: 0, step: 1 },
-          { path: `factory.minions.${k}.speed`, label: `${name} speed`, help: 'Pixels per tick (60 ticks = 1 s).', unit: 'px/tick', min: 0.1, step: 0.1 },
-        ];
-      }),
-      { path: 'factory.minions.brute.wallDamageMultiplier', label: 'Brute wall damage', help: 'Brute hits on walls deal damage × this (1-5).', unit: '×', min: 1, max: 5, step: 0.5 },
-      // M8.8 (§5.5): the medic minion (never attacks; its heal and reach must stay within the heal support bounds).
-      { path: 'factory.minions.medic.maxHealth', label: 'Medic health', help: "HP of a factory's medics (must stay within the soldier bounds).", min: 1, step: 5 },
-      { path: 'factory.minions.medic.speed', label: 'Medic speed', help: 'Pixels per tick (60 ticks = 1 s).', unit: 'px/tick', min: 0.1, step: 0.1 },
-      { path: 'factory.minions.medic.heal', label: 'Medic heal', help: 'HP one medic heal restores (within the heal support bounds; the 5%-per-second heal room still caps it).', unit: 'HP', min: 1, step: 5 },
-      { path: 'factory.minions.medic.reach', label: 'Medic reach', help: 'How far a medic heals, edge to edge (within the heal support bounds).', unit: 'px', min: 1, step: 5 },
     ],
     toggles: [
       {
@@ -220,9 +202,36 @@ export const QUICK_GROUPS: QuickGroup[] = [
     ],
   },
   {
+    id: 'minions',
+    title: 'Minions',
+    blurb: 'How many minions factories make and how strong each kind is.',
+    fields: [
+      { path: 'factory.maxMinionsPerFactory', label: 'Minions per factory per battle', help: 'The most minions one factory makes in a battle (its price counts them).', min: 1, step: 1, integer: true },
+      { path: 'factory.maxAlivePerFactory', label: 'Minions alive per factory', help: 'A factory waits while this many of its minions are alive.', min: 1, step: 1, integer: true },
+      { path: 'factory.maxAlivePerPlayer', label: 'Minions alive per player', help: 'All of a player’s factories together (also limited to 40 ÷ players).', min: 1, step: 1, integer: true },
+      { path: 'factory.maxAlivePerBattle', label: 'Minions alive per battle', help: 'The most minions in the whole arena at once (keeps big battles smooth).', min: 1, step: 1, integer: true },
+      // M8.6 (§5.3): the four minion kinds (each must stay within the soldier bounds; prices follow).
+      ...(['grunt', 'archer', 'runner', 'brute'] as const).flatMap((k) => {
+        const name = k[0]!.toUpperCase() + k.slice(1);
+        return [
+          { path: `factory.minions.${k}.maxHealth`, label: `${name} health`, help: `HP of a factory's ${k}s (must stay within the soldier bounds).`, min: 1, step: 5 },
+          { path: `factory.minions.${k}.damage`, label: `${name} damage`, help: `Damage per ${k} hit${k === 'archer' ? ' (a shot)' : ' (melee)'}.`, min: 0, step: 1 },
+          { path: `factory.minions.${k}.speed`, label: `${name} speed`, help: 'Pixels per tick (60 ticks = 1 s).', unit: 'px/tick', min: 0.1, step: 0.1 },
+        ];
+      }),
+      { path: 'factory.minions.brute.wallDamageMultiplier', label: 'Brute wall damage', help: 'Brute hits on walls deal damage × this (1-5).', unit: '×', min: 1, max: 5, step: 0.5 },
+      // M8.8 (§5.5): the medic minion (never attacks; its heal and reach must stay within the heal support bounds).
+      { path: 'factory.minions.medic.maxHealth', label: 'Medic health', help: "HP of a factory's medics (must stay within the soldier bounds).", min: 1, step: 5 },
+      { path: 'factory.minions.medic.speed', label: 'Medic speed', help: 'Pixels per tick (60 ticks = 1 s).', unit: 'px/tick', min: 0.1, step: 0.1 },
+      { path: 'factory.minions.medic.heal', label: 'Medic heal', help: 'HP one medic heal restores (within the heal support bounds; the 5%-per-second heal room still caps it).', unit: 'HP', min: 1, step: 5 },
+      { path: 'factory.minions.medic.reach', label: 'Medic reach', help: 'How far a medic heals, edge to edge (within the heal support bounds).', unit: 'px', min: 1, step: 5 },
+    ],
+  },
+  {
     // M8.8 (§5.4, §5.5, §9.4): how strong the elements, combos, splash and heals are (prices are under Costs).
     id: 'effects',
     title: 'Elements & support',
+    blurb: 'How strong elements, combos, splash, misses and heals are (their prices are under Unit prices).',
     fields: [
       { path: 'elements.fire.burnPct', label: 'Fire burn', help: 'A fire hit adds this % of its damage again as a burn over the next few seconds.', unit: '%', min: 0, max: 200, step: 5 },
       { path: 'elements.ice.slowPct', label: 'Ice slow', help: 'A frozen body moves, reloads and builds this % slower.', unit: '%', min: 0, max: 99, step: 5 },
@@ -240,32 +249,22 @@ export const QUICK_GROUPS: QuickGroup[] = [
     ],
   },
   {
-    id: 'sim',
-    title: 'Movement',
-    fields: [],
+    id: 'battle',
+    title: 'Battle & scoring',
+    blurb: 'Sudden death, bonus points and how units move.',
+    fields: [
+      { ...tickSeconds, path: 'suddenDeath.startTick', label: 'Sudden death starts at', help: 'Seconds into the battle when the safe circle starts shrinking. Must be before the circle finishes shrinking (normally the end of the battle).', min: 0 },
+      { path: 'suddenDeath.damagePctPerSecond', label: 'Damage outside the circle (% max HP / s)', help: 'Units outside the safe circle lose this share of their max HP every second.', unit: '%/s', min: 0, max: 100, step: 0.5 },
+      // Place points are a formula (1st gets players − 1 … last 0, §9 Points), not config.
+      { path: 'scoring.damageBonusMax', label: 'Max damage bonus (at 4 players)', help: 'Extra points for the top damage dealer; others get a share. Scaled × players/4.', unit: 'pts', min: 0, step: 1, integer: true },
+      { path: 'scoring.valueBonusMax', label: 'Max value-destroyed bonus (at 4 players)', help: 'Extra points for destroying the most enemy value; others get a share. Scaled × players/4.', unit: 'pts', min: 0, step: 1, integer: true },
+    ],
     toggles: [
       {
         path: 'sim.routeRoundBuildings',
         label: 'Units walk round towers and factories',
         help: 'Routing treats towers and factories as solid (units squeeze through a gap only when they fit). Off: only walls are routed round, buildings are just pushed past.',
       },
-    ],
-  },
-  {
-    id: 'scoring',
-    title: 'Scoring',
-    fields: [
-      // Place points are a formula (1st gets players − 1 … last 0, §9 Points), not config.
-      { path: 'scoring.damageBonusMax', label: 'Max damage bonus (at 4 players)', help: 'Extra points for the top damage dealer; others get a share. Scaled × players/4.', unit: 'pts', min: 0, step: 1, integer: true },
-      { path: 'scoring.valueBonusMax', label: 'Max value-destroyed bonus (at 4 players)', help: 'Extra points for destroying the most enemy value; others get a share. Scaled × players/4.', unit: 'pts', min: 0, step: 1, integer: true },
-    ],
-  },
-  {
-    id: 'suddenDeath',
-    title: 'Sudden death',
-    fields: [
-      { ...tickSeconds, path: 'suddenDeath.startTick', label: 'Sudden death starts at', help: 'Seconds into the battle when the safe circle starts shrinking. Must be before the circle finishes shrinking (normally the end of the battle).', min: 0 },
-      { path: 'suddenDeath.damagePctPerSecond', label: 'Damage outside the circle (% max HP / s)', help: 'Units outside the safe circle lose this share of their max HP every second.', unit: '%/s', min: 0, max: 100, step: 0.5 },
     ],
   },
 ];
@@ -642,4 +641,66 @@ export function costPreview(cfg: GameConfig): CostPreview {
   const ramp = cfg.caps.copyRamp;
   const total = copiesCost(soldier, 5, 'soldier', ramp) + copiesCost(tower, 3, 'tower', ramp);
   return { rows, cap, budget: cfg.caps.budget, army: { soldiers: 5, towers: 3, total, overBudget: total > cfg.caps.budget } };
+}
+
+// --- immediate save (each field saves on its own) -------------------------------------
+
+/** A budget per player above this (the event's tuned $10,000 economy + 50%) shifts the game balance. */
+export const BALANCE_BUDGET_LIMIT = 15_000;
+
+/** The facilitator-only note next to a budget field ('' when the budget is fine). */
+export function budgetBalanceWarning(budget: number | null | undefined): string {
+  return typeof budget === 'number' && Number.isFinite(budget) && budget > BALANCE_BUDGET_LIMIT ? 'Above $15,000 changes game balance' : '';
+}
+
+/** Every config path a section edits (its number fields and toggles). */
+export function groupPaths(g: Pick<QuickGroup, 'fields' | 'toggles'>): string[] {
+  return [...g.fields.map((f) => f.path), ...(g.toggles ?? []).map((t) => t.path)];
+}
+
+/** How many of the section's settings differ from the defaults. */
+export function changedFromDefaults(g: Pick<QuickGroup, 'fields' | 'toggles'>, cfg: unknown, defaults: unknown): number {
+  return groupPaths(g).filter((path) => fieldChanged({ path }, defaults, cfg)).length;
+}
+
+/**
+ * The PUT /admin/config patch that puts a section back to the defaults, or
+ * undefined when it already is. Resetting the battle length also resets the
+ * sudden-death end when it followed the battle length.
+ */
+export function sectionResetPatch(g: Pick<QuickGroup, 'fields' | 'toggles'>, cfg: GameConfig, defaults: GameConfig): unknown {
+  let next = cfg;
+  for (const path of groupPaths(g)) {
+    const d = getPath(defaults, path);
+    if (d !== undefined) next = typeof d === 'number' ? applyField(next, path, d) : setPath(next, path, d);
+  }
+  return configDiff(cfg, next);
+}
+
+export type FieldCheck = { ok: true; stored: number; patch: unknown; draft: GameConfig } | { ok: false; error: string };
+
+/**
+ * What typing `raw` into a quick field would save: the stored value and the
+ * minimal patch (undefined when nothing changes), or the reason it can't be
+ * saved (the field's own rules, then the schema's rules for that field, e.g.
+ * "sudden death must start before the circle finishes shrinking").
+ */
+export function checkField(field: QuickField, raw: string, cfg: GameConfig): FieldCheck {
+  const r = parseFieldInput(field, raw, cfg);
+  if (!r.ok) return r;
+  const draft = applyField(cfg, field.path, r.stored);
+  const problems = validateDraft(draft).byField[field.path];
+  if (problems?.length) return { ok: false, error: problems[0]! };
+  return { ok: true, stored: r.stored, patch: configDiff(cfg, draft), draft };
+}
+
+/** The message for one field from a refused save (its own issue, else the refusal's text). */
+export function fieldRefusal(
+  err: { code?: string; message: string; hint?: string; details?: Record<string, unknown> },
+  path: string,
+  base: unknown,
+  draft: unknown,
+): string {
+  const r = refusalIssues(err, base, draft);
+  return r.byField[path]?.[0] ?? r.other[0] ?? (err.hint && err.hint !== err.message ? `${err.message} ${err.hint}` : err.message);
 }

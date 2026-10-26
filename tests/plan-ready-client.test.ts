@@ -107,8 +107,8 @@ describe('/admin quick toggle', () => {
     // "Minions die with their factory" (2026-10-25) sits next to it.
     expect(QUICK_GROUPS.find((g) => g.id === 'buildings')?.toggles?.[2]?.path).toBe('factory.minionsDieWithFactory');
     expect(toggleValue(DEFAULT_CONFIG, 'factory.minionsDieWithFactory')).toBe(false);
-    // The redesign's building-routing toggle sits in its own group and is on by default.
-    expect(QUICK_GROUPS.find((g) => g.id === 'sim')?.toggles?.[0]?.path).toBe('sim.routeRoundBuildings');
+    // The redesign's building-routing toggle sits under Battle & scoring and is on by default.
+    expect(QUICK_GROUPS.find((g) => g.id === 'battle')?.toggles?.[0]?.path).toBe('sim.routeRoundBuildings');
     expect(toggleValue(DEFAULT_CONFIG, 'sim.routeRoundBuildings')).toBe(true);
     expect(QUICK_GROUPS.find((g) => g.id === 'timers')?.toggles?.[0]?.label).toBe('Start placement automatically when everyone is ready');
     expect(toggleValue(DEFAULT_CONFIG, 'timers.autoAdvanceWhenAllReady')).toBe(false);

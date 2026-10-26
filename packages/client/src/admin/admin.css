@@ -282,6 +282,159 @@ code,
   border-color: var(--bad);
 }
 
+/* --- console: phase controls, tabs, panes --------------------------------- */
+.console {
+  padding: 12px 16px 24px;
+  display: grid;
+  gap: 12px;
+}
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 2px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+  padding-top: 4px;
+}
+.tab {
+  background: transparent;
+  border: 2px solid transparent;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  padding: 8px 16px;
+  color: var(--text-dim);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: -2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tab:hover {
+  color: var(--text);
+}
+.tab.on {
+  color: var(--accent);
+  background: var(--panel);
+  border-color: var(--border);
+  border-bottom: 2px solid var(--panel);
+}
+.tab-count {
+  font-size: 12px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+}
+.tab-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.pane[hidden] {
+  display: none;
+}
+.pane.grid {
+  padding: 0;
+}
+
+/* Match tab: the numbered setup steps. */
+.match-flow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
+  gap: 12px;
+  align-items: start;
+}
+/* Two columns read top-down: 1 and 2 on the left, 3 and 4 on the right. */
+.flow-col {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-width: 0;
+}
+.step-wide {
+  grid-column: 1 / -1;
+}
+.step-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: var(--accent);
+}
+.step-num {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #111;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.step-hint {
+  margin: 0 0 8px;
+}
+.step-count {
+  margin: 0 0 6px;
+}
+.step-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  gap: 4px 10px;
+}
+.rule-checks {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+.rule-checks label.inline {
+  align-items: flex-start;
+}
+.rule-checks input {
+  margin-top: 4px;
+}
+.step-start {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border-color: var(--good);
+}
+.step-start p {
+  margin: 2px 0 0;
+}
+.roster-chips {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.match-summary .summary-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px 16px;
+  margin: 0 0 8px;
+}
+.summary-list dt {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.summary-list dd {
+  margin: 0;
+  font-weight: 600;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
@@ -493,41 +646,196 @@ input.pin {
   min-height: 300px;
 }
 
-/* --- quick settings (config editor) -------------------------------------- */
-.grid > .config {
-  grid-column: 1 / -1;
-}
-.qs-title {
-  margin: 4px 0 8px;
-}
+/* --- settings (Settings.tsx: save as they change) -------------------------- */
 .qs-locked {
   font-size: 16px;
 }
-.qs {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
-  gap: 12px;
-  align-items: start;
+.qs-fields[disabled] {
+  opacity: 0.75;
 }
-.qs-group {
+.qs-compact {
+  padding: 4px 6px;
+}
+.qs-compact label {
+  font-size: 14px;
+}
+.qs-compact .qs-input input {
+  width: 7em;
+}
+.qs-saving {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.qs-balance {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--warn);
+}
+.team-budget + .qs-balance {
+  display: block;
+}
+.confirm-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.section-reset {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+
+/* "Settings saved ✓": top centre, fades by itself, never blocks a click. */
+.saved-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  z-index: 20;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 2px solid var(--good);
+  background: #0f2a18;
+  color: var(--good);
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s, transform 0.4s;
+  max-width: calc(100vw - 32px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.saved-banner.on {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  transition: opacity 0.15s, transform 0.15s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .saved-banner,
+  .saved-banner.on {
+    transition: none;
+  }
+}
+
+/* Collapsible blocks (Fold): open state remembered per browser. */
+.fold {
   border: 2px solid var(--border);
   border-radius: 6px;
-  padding: 8px 12px 12px;
-  margin: 0;
+  background: var(--panel);
   min-width: 0;
 }
-.qs-group legend {
+.fold > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.fold > summary::-webkit-details-marker {
+  display: none;
+}
+.fold > summary::before {
+  content: '▸';
+  color: var(--accent);
+  width: 1em;
+}
+.fold[open] > summary::before {
+  content: '▾';
+}
+.fold-title {
   font-weight: 700;
-  font-size: 17px;
-  padding: 0 6px;
+  font-size: 16px;
   color: var(--accent);
 }
-.qs-group[disabled] {
-  opacity: 0.75;
+.fold-note {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  font-size: 13px;
+}
+.fold-badge {
+  font-size: 12px;
+  padding: 0 8px;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+.fold-body {
+  padding: 0 12px 12px;
+}
+
+/* Game rules tab: full-width sections, one under another (closed ones are one line); the fields fill the width. */
+.game-rules {
+  display: grid;
+  gap: 10px;
+}
+.rules-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px 16px;
+}
+.rules-head h2 {
+  margin: 0 0 2px;
+}
+.rules-head p {
+  margin: 0;
+}
+.rules-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.rules-cols {
+  display: grid;
+  gap: 10px;
+}
+.rules-with-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 440px);
+  gap: 12px 20px;
+  align-items: start;
+}
+.rules-with-preview .qs-preview {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+@media (max-width: 1000px) {
+  .rules-with-preview {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .qs-fields {
   display: grid;
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  gap: 6px 10px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.qs-fields > .qs-toggle {
+  grid-column: 1 / -1;
 }
 .qs-field {
   padding: 6px 8px;
@@ -536,9 +844,12 @@ input.pin {
 }
 .qs-field label {
   display: block;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   margin-bottom: 4px;
+}
+.qs-field.qs-toggle label {
+  display: inline-flex;
 }
 .qs-input {
   display: flex;
@@ -548,7 +859,7 @@ input.pin {
 }
 .qs-input input {
   width: 8em;
-  font-size: 17px;
+  font-size: 16px;
 }
 .qs-unit {
   color: var(--text-dim);
@@ -629,10 +940,7 @@ input.pin {
 .match-setup {
   display: grid;
   gap: 10px;
-  margin-bottom: 12px;
-  padding: 10px;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
+  margin-bottom: 8px;
 }
 .match-setup select {
   max-width: 340px;

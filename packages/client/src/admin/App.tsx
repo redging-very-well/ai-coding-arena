@@ -1,17 +1,22 @@
-// The facilitator page /admin (plan §12.3): login, then phase controls,
-// players, Claude seats (§11.2), details (rosters/sprites, behind a toggle),
-// config, server info.
+// The facilitator page /admin (plan §12.3): login, then the phase controls
+// (always on top) and five tabs: Match (the step-by-step match setup in
+// LOBBY, a summary after the start), Players (the table, details behind a
+// toggle), Game rules (settings that save as they change), AI seats (§11.2)
+// and Server. The chosen tab is remembered in this browser; starting a match
+// goes from Match to Players, New match back.
 
-import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api } from '../common/api.js';
 import { cx } from '../common/ui.js';
 import { AdminContext, type AdminCtx } from './context.js';
 import { ClaudeSeats } from './ClaudeSeats.js';
-import { ConfigEditor } from './ConfigEditor.js';
+import { ConfigProvider } from './configStore.js';
 import { Details } from './Details.js';
+import { MatchTab } from './MatchTab.js';
 import { PhaseControls } from './PhaseControls.js';
 import { PlayersTable } from './PlayersTable.js';
 import { ServerInfo } from './ServerInfo.js';
+import { GameRules, loadPref, savePref } from './Settings.js';
 import { errorText, useAdminData } from './useAdmin.js';
 
 export function App() {
@@ -60,11 +65,39 @@ function Login({ onDone }: { onDone: () => void }) {
   );
 }
 
+const TABS = [
+  { id: 'match', label: 'Match' },
+  { id: 'players', label: 'Players' },
+  { id: 'rules', label: 'Game rules' },
+  { id: 'seats', label: 'AI seats' },
+  { id: 'server', label: 'Server' },
+] as const;
+type TabId = (typeof TABS)[number]['id'];
+const isTab = (v: string): v is TabId => TABS.some((t) => t.id === v);
+
 function Console({ onLoggedOut }: { onLoggedOut: () => void }) {
   const data = useAdminData();
   const [busy, setBusy] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const { notify, refresh } = data;
+  const [tab, setTabState] = useState<TabId>(() => {
+    const saved = loadPref('tab', 'match');
+    return isTab(saved) ? saved : 'match';
+  });
+  const setTab = useCallback((t: TabId) => {
+    setTabState(t);
+    savePref('tab', t);
+  }, []);
+  // Start match: the setup is done, the players matter now. New match: back to the setup.
+  const phase = data.state?.phase;
+  const lastPhase = useRef(phase);
+  useEffect(() => {
+    const was = lastPhase.current;
+    lastPhase.current = phase;
+    if (!was || !phase || was === phase) return;
+    if (was === 'LOBBY') setTabState((t) => (t === 'match' ? 'players' : t));
+    else if (phase === 'LOBBY') setTabState((t) => (t === 'players' ? 'match' : t));
+  }, [phase]);
 
   const act = useCallback(
     async <T,>(fn: () => Promise<T>, okText?: string | ((r: T) => string)): Promise<T | undefined> => {
@@ -129,14 +162,45 @@ function Console({ onLoggedOut }: { onLoggedOut: () => void }) {
       {!data.state ? (
         <p class="center dim">Loading the game state…</p>
       ) : (
-        <main class="grid">
-          <PhaseControls />
-          <PlayersTable />
-          <ClaudeSeats />
-          <Details />
-          <ServerInfo />
-          <ConfigEditor />
-        </main>
+        <ConfigProvider>
+          <main class="console">
+            <PhaseControls />
+            <nav class="tabs" role="tablist" aria-label="Admin sections">
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  role="tab"
+                  id={`tab-${t.id}`}
+                  aria-selected={tab === t.id}
+                  aria-controls={`pane-${t.id}`}
+                  class={cx('tab', tab === t.id && 'on')}
+                  onClick={() => setTab(t.id)}
+                >
+                  {t.label}
+                  {t.id === 'players' && <span class="tab-count">{data.state?.players.length ?? 0}</span>}
+                  {t.id === 'match' && phase === 'LOBBY' && <span class="tab-dot" title="Set up the match here" />}
+                </button>
+              ))}
+            </nav>
+            {/* Every pane stays mounted (hidden), so half-typed input and drafts survive a tab switch. */}
+            <div class="pane" role="tabpanel" id="pane-match" aria-labelledby="tab-match" hidden={tab !== 'match'}>
+              <MatchTab onRules={() => setTab('rules')} />
+            </div>
+            <div class="pane grid" role="tabpanel" id="pane-players" aria-labelledby="tab-players" hidden={tab !== 'players'}>
+              <PlayersTable />
+              <Details />
+            </div>
+            <div class="pane" role="tabpanel" id="pane-rules" aria-labelledby="tab-rules" hidden={tab !== 'rules'}>
+              <GameRules />
+            </div>
+            <div class="pane grid" role="tabpanel" id="pane-seats" aria-labelledby="tab-seats" hidden={tab !== 'seats'}>
+              <ClaudeSeats />
+            </div>
+            <div class="pane grid" role="tabpanel" id="pane-server" aria-labelledby="tab-server" hidden={tab !== 'server'}>
+              <ServerInfo />
+            </div>
+          </main>
+        </ConfigProvider>
       )}
     </AdminContext.Provider>
   );

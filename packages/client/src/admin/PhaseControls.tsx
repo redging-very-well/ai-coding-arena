@@ -1,9 +1,8 @@
-// Phase controls (plan §12.3): Start match (rounds 1-10, Open Armory, Show
-// enemy names to units and Walls allowed (the draft's, saved as clicked), map
-// style and team mode with a map preview and team swaps), Next, Skip, START,
-// Force start, Pause/Resume (timer and battle), 1x/2x, timer ±1 min / set,
-// New match, and the projector remote (join poster, replay at 1x/2x). Buttons
-// are enabled by phase; the server enforces the gates.
+// Phase controls (plan §12.3), always above the tabs: the phase and clock,
+// Next, Skip, START, Force start, Pause/Resume (timer and battle), 1x/2x,
+// timer ±1 min / set, New match, and the projector remote (join poster,
+// replay at 1x/2x). The LOBBY setup and Start match are in the Match tab
+// (MatchTab.tsx). Buttons are enabled by phase; the server enforces the gates.
 
 import { useEffect, useState } from 'preact/hooks';
 import { teamModeLabel, type GameStateDTO, type Phase } from '@pixel-clash/shared';
@@ -12,10 +11,9 @@ import { api } from '../common/api.js';
 import { mapName } from '../common/maps.js';
 import { cx, formatClock, ordinal } from '../common/ui.js';
 import { useAdmin } from './context.js';
-import { MatchSetup } from './MatchSetup.js';
 
 const PHASE_HELP: Record<Phase, string> = {
-  LOBBY: 'Players join (up to 8). Pick the map and teams, then start the match when 2-8 players are in.',
+  LOBBY: 'Players join (up to 8). Set the match up in the Match tab below (players & teams, map, rounds, rules), then press Start match there.',
   PLAN: 'Players ask their AI helper for units, pick up to 4 units and 4 buildings and press Ready. Ends when the timer runs out, or press Next (any time: Ready never blocks you).',
   PLACEMENT: 'Players place their armies and press READY. START when everyone is ready, or Force start.',
   BATTLE: 'The battle is playing. Pause, 1x/2x, or Skip to the results.',
@@ -34,20 +32,11 @@ const SKIP_TEXT: Partial<Record<Phase, string>> = {
 };
 
 export function PhaseControls() {
-  const { state, overview, act, busy } = useAdmin();
+  const { state, act, busy } = useAdmin();
   const s = state as GameStateDTO;
-  const [rounds, setRounds] = useState(s.rounds);
-  const [armory, setArmory] = useState(false);
-  // "Show enemy names to units" (§5) lives in the server's LOBBY draft, like the map and teams.
-  const revealNames = overview?.setup?.revealNames === true;
-  // "Walls allowed" (§9.1b): on by default, also in the draft.
-  const wallsAllowed = overview?.setup?.wallsAllowed !== false;
   const [setMin, setSetMin] = useState('5');
   const [confirmForce, setConfirmForce] = useState(false);
   const [confirmNew, setConfirmNew] = useState(false);
-  useEffect(() => {
-    if (s.phase === 'LOBBY') setRounds(s.rounds);
-  }, [s.phase, s.rounds]);
   useEffect(() => {
     setConfirmForce(false);
     setConfirmNew(false);
@@ -105,47 +94,7 @@ export function PhaseControls() {
           </button>
         </div>
       )}
-      {p === 'LOBBY' && <MatchSetup rounds={Math.round(rounds)} />}
-
       <div class="btn-row">
-        {p === 'LOBBY' && (
-          <>
-            <label class="inline">
-              Rounds
-              <input type="number" min={1} max={10} value={rounds} onInput={(e) => setRounds(Number(e.currentTarget.value))} />
-            </label>
-            <label class="inline" title="Units that fought become available to every other player in later rounds (locked for the match)">
-              <input type="checkbox" checked={armory} onChange={(e) => setArmory(e.currentTarget.checked)} />
-              Open Armory
-            </label>
-            <label class="inline" title="In battle, units also see each body's player name (and team name in team mode). Off by default; locked for the match">
-              <input
-                type="checkbox"
-                checked={revealNames}
-                disabled={busy || !overview?.setup}
-                onChange={(e) => void act(() => api.admin.setMatchSetup({ revealNames: e.currentTarget.checked }))}
-              />
-              Show enemy names to units
-            </label>
-            <label class="inline" title="Players can pick and place walls (the Basic Wall and their own). Untick for a match without walls; locked for the match">
-              <input
-                type="checkbox"
-                checked={wallsAllowed}
-                disabled={busy || !overview?.setup}
-                onChange={(e) => void act(() => api.admin.setMatchSetup({ wallsAllowed: e.currentTarget.checked }))}
-              />
-              Walls allowed
-            </label>
-            <button
-              class="btn primary"
-              disabled={busy || s.players.length < 2 || !(rounds >= 1 && rounds <= 10)}
-              title={s.players.length < 2 ? 'Needs at least 2 players' : ''}
-              onClick={() => act(() => api.admin.startMatch(Math.round(rounds), armory, { revealNames, wallsAllowed }), 'Match started!')}
-            >
-              Start match
-            </button>
-          </>
-        )}
         {p === 'PLAN' && (
           <button
             class={cx('btn primary', allReady && 'big all-ready')}
