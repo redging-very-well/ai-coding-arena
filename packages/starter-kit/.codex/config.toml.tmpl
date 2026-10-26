@@ -18,3 +18,5 @@ exclude_tmpdir_env_var = true
 [mcp_servers.pixel-clash]
 url = "http://{{HOST}}/mcp"
 default_tools_approval_mode = "approve"
+# wait_for_phase waits up to 50 s per call (Codex default tool timeout: 60 s).
+tool_timeout_sec = 120

@@ -99,7 +99,7 @@ function settingsJson(opts: KitOptions): string {
 export function codexConfigToml(template: string | undefined, opts: KitOptions): string {
   const base =
     template ??
-    `project_doc_max_bytes = 131072\napproval_policy = "on-request"\nsandbox_mode = "workspace-write"\n\n[mcp_servers.pixel-clash]\nurl = "http://{{HOST}}/mcp"\ndefault_tools_approval_mode = "approve"\n`;
+    `project_doc_max_bytes = 131072\napproval_policy = "on-request"\nsandbox_mode = "workspace-write"\n\n[mcp_servers.pixel-clash]\nurl = "http://{{HOST}}/mcp"\ndefault_tools_approval_mode = "approve"\ntool_timeout_sec = 120\n`;
   let text = fill(base, opts);
   if (opts.player) {
     const header = `http_headers = { Authorization = "Bearer ${opts.player.apiKey}" }`;
@@ -119,7 +119,7 @@ A player (aged about 9-13) is playing Pixel Clash. They only talk to you: never 
 
 ${who}
 
-Workflow: call \`get_game_state\` → write or edit \`units/<name>.js\` → \`validate_unit\` → fix using each error's \`fix\` → \`submit_unit\` (only when \`submissionsOpen\`) → tell the player the cost and remind them to select and place it on the web page. When changing an existing unit (the player can also edit units on the web page), first call \`get_unit_source\` for its latest \`source\` and \`version\`, change that code, and pass \`unitId\` and \`baseVersion\` (= that version) to \`validate_unit\` and \`submit_unit\`. On \`UNIT_CHANGED\`, fetch the source again and re-apply the change.
+Workflow: call \`get_game_state\` → write or edit \`units/<name>.js\` → \`validate_unit\` → fix using each error's \`fix\` → \`submit_unit\` (Plan phase only: on \`PHASE_CLOSED\`, tell the player you'll send it as soon as the Plan phase starts, call \`wait_for_phase\` until \`submissionsOpen\` is true, then submit) → tell the player the cost and remind them to select and place it on the web page. When changing an existing unit (the player can also edit units on the web page), first call \`get_unit_source\` for its latest \`source\` and \`version\`, change that code, and pass \`unitId\` and \`baseVersion\` (= that version) to \`validate_unit\` and \`submit_unit\`. On \`UNIT_CHANGED\`, fetch the source again and re-apply the change.
 
 Four unit types: soldier, tower, wall, factory (walls block everyone and never attack; factories build minions). Call \`get_unit_contract\` for the full unit contract and templates, and \`get_rules\` for the rules.
 

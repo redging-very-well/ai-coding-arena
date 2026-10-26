@@ -19,6 +19,7 @@ import { AuthService } from './auth.js';
 import { BattleService } from './battle.js';
 import { ClaudeSeatsService } from './claudeSeats.js';
 import { MatchService } from './match.js';
+import { PhaseWaitService } from './phaseWait.js';
 import { PlayersService } from './players.js';
 import { RoundService } from './round.js';
 import { SetupService } from './setup.js';
@@ -67,6 +68,26 @@ const NOOP_NOTIFIER: Notifier = {
   isConnected: () => false,
 };
 
+/**
+ * The notifier with `after()` run after every stateChanged() (the hook for
+ * in-process listeners such as wait_for_phase); every other member is the
+ * notifier's own.
+ */
+function withStateHook(n: Notifier, after: () => void): Notifier {
+  return new Proxy(n, {
+    get(target, prop) {
+      if (prop === 'stateChanged') {
+        return () => {
+          target.stateChanged();
+          after();
+        };
+      }
+      const v: unknown = Reflect.get(target, prop, target);
+      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+    },
+  });
+}
+
 export interface GameOptions {
   dataDir: string;
   /** Config overrides on top of config/default.json (tests: short timers). */
@@ -106,7 +127,10 @@ export class Game {
   readonly visibility: VisibilityService;
   readonly setup: SetupService;
   readonly claudeSeats: ClaudeSeatsService;
-  notifier: Notifier = NOOP_NOTIFIER;
+  readonly phaseWait: PhaseWaitService;
+  /** In-process listeners for stateChanged() (onStateChanged). */
+  private readonly stateListeners = new Set<() => void>();
+  notifier: Notifier = withStateHook(NOOP_NOTIFIER, () => this.fireStateChanged());
   /** The boot config (config/default.json + options), before the admin patch. */
   readonly bootConfig: GameConfig;
   config: GameConfig;
@@ -126,6 +150,25 @@ export class Game {
     this.visibility = new VisibilityService(this);
     this.setup = new SetupService(this);
     this.claudeSeats = new ClaudeSeatsService(this);
+    this.phaseWait = new PhaseWaitService(this);
+  }
+
+  /** Run `fn` after every notifier.stateChanged(); returns the unsubscribe. */
+  onStateChanged(fn: () => void): () => void {
+    this.stateListeners.add(fn);
+    return () => {
+      this.stateListeners.delete(fn);
+    };
+  }
+
+  private fireStateChanged(): void {
+    for (const fn of [...this.stateListeners]) {
+      try {
+        fn();
+      } catch {
+        // A listener must never break the service that changed the state.
+      }
+    }
   }
 
   /** Load data/, validate the templates and recover from a restart. */
@@ -147,7 +190,7 @@ export class Game {
   }
 
   setNotifier(n: Notifier): void {
-    this.notifier = n;
+    this.notifier = withStateHook(n, () => this.fireStateChanged());
   }
 
   /** Stop timers and battle, write state. */

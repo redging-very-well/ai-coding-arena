@@ -51,7 +51,7 @@ You don't write any code. Just tell your AI helper (Claude or Codex) what you wa
 ## Remember
 
 - Send units in the **Plan** phase. Then **pick** them and **place** them on the game page.
-- If your AI helper says it can't send your unit yet, tell it **"The Plan phase started!"** when the game page says Plan.
+- If your AI helper says it can't send your unit yet, it waits and sends it by itself as soon as the **Plan** phase starts. Press **Esc** if you want to talk to it while it waits.
 - You have **$10,000** each round for up to **12 fighters**, up to **4** kinds of soldiers and **4** kinds of buildings (towers, walls, factories), and a unit can cost up to **$3,000**. The 4th copy of the same unit costs more, and the 5th more again.
 - Walls block your own units too: leave a gap! And walls (or helpers that do no damage) alone can't win: you always need a unit that attacks.
 - Battles last 2 minutes. After 75 seconds a safe circle shrinks. Units outside it get hurt!

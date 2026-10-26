@@ -23,13 +23,16 @@ Player: {{PLAYER_NAME}}
 
 ## 3. Workflow
 
-1. Call `get_game_state` to see the phase, time left and `submissionsOpen`.
+1. Call `get_game_state` to see the phase and time left. The phase changes on its own while you work (the host moves the game on, and timers run out), so **never rely on a phase you read earlier**: the `validate_unit` and `submit_unit` results end with a `Game phase:` line that is the phase right now.
 2. Write or edit `units/<short_name>.js` (one unit per file, e.g. `units/ninja.js`). To change an existing unit, first fetch its latest code with `get_unit_source` (see **Revising a unit**). To build on a starter unit, copy `units/basic_soldier.js`, `units/basic_tower.js`, `units/basic_wall.js` or `units/basic_factory.js` to a **new** file and give it a **new name** (never edit the starter files themselves).
 3. Call `validate_unit` with the file's full text as `source` (and `unitId` plus `baseVersion` when revising, see below). Nothing is stored. For a new unit, don't reuse the unitId the check mentions: submit without one.
 4. If it fails, read each error's `fix` field and change the file exactly as it says, then validate again. Warnings don't block the unit: fix the ones that point at a code problem (e.g. `W_NEVER_ATTACKS`, `W_RETURNS_NOTHING`); the price notes (`W_STAT_NEAR_MAX`, `W_POWER_HIGH`, `W_SLOW_NO_DISCOUNT`) are just information.
 
    **Don't check the file yourself with commands** (no `python`, `node`, `awk`, `wc` or scripts to count sprite rows or test the code). `validate_unit` checks everything, including every sprite row, and says exactly what to fix. Any command that isn't pre-approved pops up a permission question on the player's screen. To check or test a unit, use only the pixel-clash tools and the file read/write/edit tools (or the §9 `curl` commands if the tools are missing).
-5. When it validates: if `submissionsOpen` is true (Plan phase), call `submit_unit` with the same `source` (and `unitId` plus `baseVersion` when revising). If submissions are closed, tell the player "It's ready! When the Plan phase starts, tell me and I'll send it." (you won't be told when it starts, so wait for the player).
+5. When it validates, always call `submit_unit` with the same `source` (and `unitId` plus `baseVersion` when revising), whatever phase you saw before; it works in the Plan phase. If it fails with `PHASE_CLOSED` (or the `Game phase:` line says submissions are closed):
+   - Tell the player in one line: "It's ready! I'll send it as soon as the Plan phase starts."
+   - Call `wait_for_phase` (no `phase` argument: it waits for the Plan phase). It returns when the Plan phase starts, when the phase changes, or after at most 50 seconds, with the phase, time left and `submissionsOpen`.
+   - While `submissionsOpen` is false, call `wait_for_phase` again, and keep going without asking the player. When it is true, call `submit_unit` and tell the player it's in. The player can press Esc at any time to stop the waiting and talk to you.
 6. Tell the player the unit's name and **cost** (e.g. "Your Ninja costs $900"), and remind them to **select it and place it on the web page**.
 
 **Revising a unit:** the player may have changed the unit themselves on the web page since you last saw it, so ALWAYS do this when changing an existing unit:
@@ -43,7 +46,7 @@ Player: {{PLAYER_NAME}}
 
 **One call at a time:** call `validate_unit` and `submit_unit` for one unit at a time, never in parallel (the game allows about 1 check per second and 1 submit every 3 seconds). If you get `RATE_LIMITED`, just call it again.
 
-Other tools: `get_rules` (numbers for everything), `get_unit_contract` (the latest contract and templates), `list_my_units`, `get_battle_report`, `list_armory`.
+Other tools: `get_rules` (numbers for everything), `get_unit_contract` (the latest contract and templates), `list_my_units`, `get_battle_report`, `list_armory`, `wait_for_phase` (waits until the Plan phase starts or the phase changes).
 
 ## 4. The unit contract
 

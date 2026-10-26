@@ -116,7 +116,7 @@ describe('MCP with a Codex-style client (§11.3)', () => {
     const r = await post({ id: ++id, method: 'tools/list', params: { _meta: { progressToken: 0 } } });
     expect(r.status).toBe(200);
     const tools = r.body.result.tools as Array<{ name: string; description: string; inputSchema: any; outputSchema?: any }>;
-    expect(tools).toHaveLength(10);
+    expect(tools).toHaveLength(11);
     for (const t of tools) {
       expect(t.name).toMatch(/^[a-z_]+$/);
       expect(t.description.length).toBeGreaterThan(10);

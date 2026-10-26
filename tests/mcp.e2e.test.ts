@@ -60,6 +60,7 @@ describe('MCP (stateless Streamable HTTP)', () => {
         'login',
         'submit_unit',
         'validate_unit',
+        'wait_for_phase',
       ].sort(),
     );
     for (const t of tools) expect(t.outputSchema).toBeDefined();
@@ -110,7 +111,7 @@ describe('MCP (stateless Streamable HTTP)', () => {
     });
     expect(raw.status).toBe(200);
     const bad = await connect(srv.url, { Authorization: 'Bearer pc_wrongwrongwrongwrongwron' });
-    expect((await bad.listTools()).tools.length).toBe(10);
+    expect((await bad.listTools()).tools.length).toBe(11);
     const r = await call(bad, 'list_my_units');
     expect(r.isError).toBe(true);
     expect(r.s.errors[0].code).toBe('KEY_INVALID');

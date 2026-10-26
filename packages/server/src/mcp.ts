@@ -14,10 +14,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { BADGES, DEFAULT_CONFIG, money, type Result, type ServiceError, type SpriteSpec, type ValidationResult } from '@pixel-clash/shared';
+import { BADGES, DEFAULT_CONFIG, PHASES, money, type Result, type ServiceError, type SpriteSpec, type ValidationResult } from '@pixel-clash/shared';
 import { bearerOf } from './routes/common.js';
 import type { Game } from './services/game.js';
 import { buildContract, buildRules } from './services/rules.js';
+import { WAIT_FOR_PHASE_MAX_SEC, phaseLine, timeLeftText, type WaitReason } from './services/phaseWait.js';
 import type { PlayerRecord } from './services/store.js';
 import { keyInvalid, authRequired } from './services/auth.js';
 import { SERVER_VERSION } from './routes/public.js';
@@ -33,7 +34,7 @@ export const MCP_INSTRUCTIONS = [
   'Units can have an element (fire, ice, lightning), splash (splashRadius) and one support (heal, haste, might, shield); factories can give minions an element (this.minionElement). See get_unit_contract.',
   `The $10,000 game: by default $${DEFAULT_CONFIG.caps.budget.toLocaleString('en-US')} per army, at most ${DEFAULT_CONFIG.caps.maxCopies} fighters, up to $${DEFAULT_CONFIG.caps.unitCost.toLocaleString('en-US')} per unit, HP ${DEFAULT_CONFIG.stats.bounds.maxHealth.min}-${DEFAULT_CONFIG.stats.bounds.maxHealth.max.toLocaleString('en-US')}, damage 0-${DEFAULT_CONFIG.stats.bounds.damage.max}; get_rules has the exact numbers and the copy ramp (from the 4th copy of ONE design each copy costs more). Never reuse numbers from older games.`,
   'Always validate_unit before submit_unit, and fix problems using each error\'s "fix" text. validate_unit checks everything (sprite rows included), so never run scripts or shell commands to check a unit file.',
-  'submit_unit works only in the PLAN phase (get_game_state shows submissionsOpen). Otherwise keep the unit validated and say "we\'ll send it when Plan starts".',
+  `submit_unit works only in the PLAN phase. The phase changes while you work, so never trust a phase you read earlier: validate_unit and submit_unit results end with the game phase right now. When submissions are closed and the unit is ready, tell the player in one line "I'll send it as soon as the Plan phase starts", then call wait_for_phase (it returns when the Plan phase starts, the phase changes, or after at most ${WAIT_FOR_PHASE_MAX_SEC} s) again and again until submissionsOpen is true, then call submit_unit and tell the player.`,
   'Players can also edit their own units on the web page. So before changing an existing unit ALWAYS call get_unit_source for its latest source and version, change that code, and pass unitId plus baseVersion (that version) to validate_unit and submit_unit, even if you rename it.',
   'If a call fails with UNIT_CHANGED, the unit was saved meanwhile: call get_unit_source again and re-apply the requested change to the new code (never resubmit the old copy).',
   'After a battle, get_battle_report shows errors with unit names and line numbers: fix those units.',
@@ -58,7 +59,7 @@ const API_KEY = z.string().optional().describe('The player apiKey from login (ne
 function playerHintForService(code: string): string {
   switch (code) {
     case 'PHASE_CLOSED':
-      return "We'll send your unit when Plan time starts!";
+      return "I'll send your unit as soon as the Plan phase starts!";
     case 'AUTH_REQUIRED':
     case 'KEY_INVALID':
       return 'Tell your AI helper your player name and your 4-digit PIN.';
@@ -100,8 +101,8 @@ function toolResult(structured: Record<string, unknown>, summary: string, isErro
   };
 }
 
-function serviceError(e: ServiceError): CallToolResult {
-  return toolResult(errorBody(e), `Error ${e.code}: ${e.message}${e.hint ? ` Fix: ${e.hint}` : ''}`, true);
+function serviceError(e: ServiceError, phase = ''): CallToolResult {
+  return toolResult(errorBody(e), `Error ${e.code}: ${e.message}${e.hint ? ` Fix: ${e.hint}` : ''}${phase ? `\n${phase}` : ''}`, true);
 }
 
 function fromResult<T>(r: Result<T>, summary: (d: T) => string, shape: (d: T) => Record<string, unknown>): CallToolResult {
@@ -119,8 +120,8 @@ export function spriteSummary(sprite: SpriteSpec | null): Record<string, unknown
   return { hasSprite: true, grid: sprite.grid, frames };
 }
 
-function validationResult(r: Result<ValidationResult>, verb: 'Valid' | 'Submitted', wallsAllowed = true): CallToolResult {
-  if (!r.ok) return serviceError(r.error);
+function validationResult(r: Result<ValidationResult>, verb: 'Valid' | 'Submitted', wallsAllowed = true, phase = ''): CallToolResult {
+  if (!r.ok) return serviceError(r.error, phase);
   const v = r.data;
   if (v.ok) {
     const { sprite, ...unit } = v.unit;
@@ -134,11 +135,21 @@ function validationResult(r: Result<ValidationResult>, verb: 'Valid' | 'Submitte
     const s = `${verb}: ${unit.stats.name} (${id}) costs ${money(unit.cost)}.` +
       (v.warnings.length ? ` Warnings: ${v.warnings.map((w) => w.code).join(', ')}.` : '') +
       // "Walls allowed" off (§9.1b): a wall can be stored, not picked this match.
-      (unit.stats.type === 'wall' && !wallsAllowed ? " Walls are switched off for this match, so it can't be picked until a match with walls." : '');
+      (unit.stats.type === 'wall' && !wallsAllowed ? " Walls are switched off for this match, so it can't be picked until a match with walls." : '') +
+      (phase ? `\n${phase}` : '');
     return toolResult(structured as unknown as Record<string, unknown>, s);
   }
-  const s = `Not valid: ${v.errors.map((e) => `${e.code}${e.field ? ` (${e.field})` : ''}`).join(', ')}. Apply each "fix" and validate again.`;
+  const s = `Not valid: ${v.errors.map((e) => `${e.code}${e.field ? ` (${e.field})` : ''}`).join(', ')}. Apply each "fix" and validate again.${phase ? `\n${phase}` : ''}`;
   return toolResult(v as unknown as Record<string, unknown>, s, true);
+}
+
+/** The wait_for_phase text: the phase now, and what to do next. */
+function waitSummary(target: string, reached: boolean, reason: WaitReason, phase: string, open: boolean, secondsLeft: number | null): string {
+  const left = timeLeftText(secondsLeft);
+  const now = `Game phase: ${phase}${left ? `, ${left}` : ''}, submissions ${open ? 'open' : 'closed'}.`;
+  if (reached) return `${now}${open ? ' Submit the unit now.' : ''}`;
+  const why = reason === 'timeout' ? `Still not ${target}` : reason === 'changed' ? `The phase changed, not ${target} yet` : `Stopped waiting, not ${target} yet`;
+  return `${why}. ${now} Call wait_for_phase again to keep waiting.`;
 }
 
 /** Build the per-request MCP server; `bearer` is the request's Bearer key, if any. */
@@ -210,7 +221,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Validate a unit',
       description:
-        'Check a unit file (soldier, tower, wall or factory; dry run, nothing stored). Works in every phase. Returns the cost or errors with a "fix" for each. When revising, pass unitId and baseVersion (the version from get_unit_source).',
+        'Check a unit file (soldier, tower, wall or factory; dry run, nothing stored). Works in every phase. Returns the cost or errors with a "fix" for each, and the game phase right now. When revising, pass unitId and baseVersion (the version from get_unit_source).',
       inputSchema: {
         source: z.string().describe('The full text of the unit file'),
         unitId: z.string().optional().describe('The unitId when revising an existing unit'),
@@ -221,7 +232,10 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
       annotations: { readOnlyHint: true },
     },
     async ({ source, unitId, baseVersion, apiKey }) =>
-      withPlayer(apiKey, async (p) => validationResult(await game.units.validate(p, source, unitId, { baseVersion }), 'Valid', game.teams.wallsAllowed)),
+      withPlayer(apiKey, async (p) => {
+        const r = await game.units.validate(p, source, unitId, { baseVersion });
+        return validationResult(r, 'Valid', game.teams.wallsAllowed, phaseLine(game.phaseWait.snapshot()));
+      }),
   );
 
   server.registerTool(
@@ -229,7 +243,7 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
     {
       title: 'Submit a unit',
       description:
-        'Validate and store a unit (soldier, tower, wall or factory; new, or a revision when unitId is given). Only works in the PLAN phase. When revising, first call get_unit_source and pass its version as baseVersion; UNIT_CHANGED means the unit was saved meanwhile: fetch it again and re-apply your change.',
+        'Validate and store a unit (soldier, tower, wall or factory; new, or a revision when unitId is given). Only works in the PLAN phase (PHASE_CLOSED otherwise: call wait_for_phase, then submit again). When revising, first call get_unit_source and pass its version as baseVersion; UNIT_CHANGED means the unit was saved meanwhile: fetch it again and re-apply your change.',
       inputSchema: {
         source: z.string().describe('The full text of the unit file'),
         unitId: z.string().optional().describe('The unitId of the design to revise (from list_my_units)'),
@@ -239,7 +253,10 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
       outputSchema: OUTPUT,
     },
     async ({ source, unitId, baseVersion, apiKey }) =>
-      withPlayer(apiKey, async (p) => validationResult(await game.units.submit(p, source, unitId, { baseVersion }), 'Submitted', game.teams.wallsAllowed)),
+      withPlayer(apiKey, async (p) => {
+        const r = await game.units.submit(p, source, unitId, { baseVersion });
+        return validationResult(r, 'Submitted', game.teams.wallsAllowed, phaseLine(game.phaseWait.snapshot()));
+      }),
   );
 
   server.registerTool(
@@ -365,6 +382,48 @@ export function buildMcpServer(game: Game, bearer: string | undefined): McpServe
                   : ' Congratulate the player on a great game!')
               : ''),
         );
+      }),
+  );
+
+  server.registerTool(
+    'wait_for_phase',
+    {
+      title: 'Wait for a phase',
+      description:
+        `Waits until the game is in \`phase\` (default PLAN, when submissions open), or the phase or round changes, or at most ${WAIT_FOR_PHASE_MAX_SEC} s (maxWaitSec), then returns the phase, round, time left and submissionsOpen. Returns at once when the game is already in that phase. Use it when a unit is ready but submissions are closed: call it again until submissionsOpen is true, then call submit_unit.`,
+      inputSchema: {
+        phase: z.enum(PHASES).optional().describe('The phase to wait for (default PLAN: submissions open).'),
+        maxWaitSec: z
+          .number()
+          .int()
+          .min(1)
+          .max(WAIT_FOR_PHASE_MAX_SEC)
+          .optional()
+          .describe(`Longest wait in seconds, 1-${WAIT_FOR_PHASE_MAX_SEC} (default ${WAIT_FOR_PHASE_MAX_SEC}).`),
+        apiKey: API_KEY,
+      },
+      outputSchema: OUTPUT,
+      annotations: { readOnlyHint: true },
+    },
+    async ({ phase, maxWaitSec, apiKey }, extra) =>
+      withPlayer(apiKey, async (p) => {
+        const target = phase ?? 'PLAN';
+        const out = await game.phaseWait.wait(p.id, target, (maxWaitSec ?? WAIT_FOR_PHASE_MAX_SEC) * 1000, extra.signal);
+        const s = out.state;
+        const reached = s.phase === target;
+        const data = {
+          ok: true,
+          phase: s.phase,
+          round: s.round,
+          rounds: s.rounds,
+          secondsLeft: s.secondsLeft,
+          submissionsOpen: s.submissionsOpen,
+          waitedFor: target,
+          reached,
+          reason: out.reason,
+          waitedSec: Math.round(out.waitedMs / 1000),
+        };
+        return toolResult(data, waitSummary(target, reached, out.reason, s.phase, s.submissionsOpen, s.secondsLeft));
       }),
   );
 
