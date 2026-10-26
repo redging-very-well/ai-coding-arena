@@ -22,7 +22,7 @@ export interface ServerOptions extends GameOptions {
   publicDir?: string;
   /** Read config/default.json from the repo (default true). */
   loadConfigFile?: boolean;
-  /** Test-only: where seat N's ttyd is (a fake ttyd). Default `<claudeBoxHost>:778N`. */
+  /** Test-only: where seat N's ttyd is (a fake ttyd). Default `<aiSessionHost>:778N`. */
   terminalUpstream?: ResolveUpstream;
   /** Test-only: seat proxy timeouts (§11.2 b). */
   terminalTimeouts?: Partial<TerminalTimeouts>;

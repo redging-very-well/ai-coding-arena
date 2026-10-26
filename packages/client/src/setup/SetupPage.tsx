@@ -108,7 +108,7 @@ export function SetupPage() {
         <p class="dim small">
           Print one card per laptop and lay it next to it. The QR opens /play with that laptop's AI seat, and the player's AI helper
           terminal then shows inside /play. No terminal address or password goes on a card.
-          {info && !info.settings.claudeBoxHost && ' Set the AI session host address and the seat password in /admin (AI seats).'}
+          {info && !info.settings.aiSessionHost && ' Set the AI session host address and the seat password in /admin (AI seats).'}
         </p>
         {!info ? (
           <p class="dim">Loading…</p>

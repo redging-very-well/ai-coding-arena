@@ -876,7 +876,7 @@ export const TTYD_BASE_PORT = 7780;
 export const CLAUDE_SEATS = 8;
 
 /** Host part of an AI session host address ("192.168.8.20", "http://box:8080/x" → "box"). */
-export function claudeBoxHost(address: string | null | undefined): string | null {
+export function aiSessionHost(address: string | null | undefined): string | null {
   if (!address) return null;
   let s = address.trim();
   if (!s) return null;
@@ -895,7 +895,7 @@ export function claudeBoxHost(address: string | null | undefined): string | null
  * so it is only the grown-ups' fallback; players use /terminal/N/ inside /play.
  */
 export function claudeTerminalUrl(address: string | null | undefined, claudeSeat: number): string | null {
-  const host = claudeBoxHost(address);
+  const host = aiSessionHost(address);
   if (!host || !Number.isInteger(claudeSeat) || claudeSeat < 1 || claudeSeat > CLAUDE_SEATS) return null;
   return `http://${host}:${TTYD_BASE_PORT + claudeSeat}/terminal/${claudeSeat}/`;
 }

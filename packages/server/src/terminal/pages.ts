@@ -14,8 +14,8 @@ export type ProxyErrorCode = Extract<
   | 'CLAUDE_SEAT_NOT_YOURS'
   | 'BAD_CLAUDE_SEAT'
   | 'TERMINAL_BAD_ORIGIN'
-  | 'CLAUDE_BOX_NOT_SET'
-  | 'CLAUDE_BOX_DOWN'
+  | 'AI_SESSION_HOST_NOT_SET'
+  | 'AI_SESSION_HOST_DOWN'
   | 'SEAT_PASSWORD_WRONG'
   | 'TERMINAL_BUSY'
   | 'BAD_REQUEST'
@@ -26,8 +26,8 @@ export const PROXY_STATUS: Record<ProxyErrorCode, number> = {
   CLAUDE_SEAT_NOT_YOURS: 403,
   BAD_CLAUDE_SEAT: 404,
   TERMINAL_BAD_ORIGIN: 403,
-  CLAUDE_BOX_NOT_SET: 503,
-  CLAUDE_BOX_DOWN: 502,
+  AI_SESSION_HOST_NOT_SET: 503,
+  AI_SESSION_HOST_DOWN: 502,
   SEAT_PASSWORD_WRONG: 502,
   TERMINAL_BUSY: 503,
   BAD_REQUEST: 405,
@@ -86,14 +86,14 @@ function spec(code: ProxyErrorCode, ctx: ProxyErrorContext): PageSpec {
       };
     case 'TERMINAL_BAD_ORIGIN':
       return { heading: 'Not allowed', text: 'This terminal only opens from the game page.', message: 'Cross-site terminal connections are not allowed.' };
-    case 'CLAUDE_BOX_NOT_SET':
+    case 'AI_SESSION_HOST_NOT_SET':
       return {
         heading: 'Your AI helper is not connected yet',
         text: "The grown-ups haven't connected the AI computer yet. This page tries again by itself.",
         retryMs: 5000,
         message: "The grown-ups haven't connected the AI computer yet.",
       };
-    case 'CLAUDE_BOX_DOWN':
+    case 'AI_SESSION_HOST_DOWN':
       return {
         heading: 'Waking up your AI helper…',
         text: "Your AI computer isn't answering yet. Trying again…",

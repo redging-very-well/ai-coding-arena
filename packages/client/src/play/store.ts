@@ -401,7 +401,7 @@ export class PlayStore {
   async loadBoxHost(): Promise<void> {
     try {
       const i = await request<SetupInfoDTO>('GET', '/setup');
-      this.set({ boxHost: i.settings?.claudeBoxHost ?? null });
+      this.set({ boxHost: i.settings?.aiSessionHost ?? null });
     } catch {
       // the link just isn't shown
     }

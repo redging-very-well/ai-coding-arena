@@ -135,8 +135,8 @@ export const SERVICE_ERROR_CODES = [
   'TERMINAL_LOGIN_REQUIRED',
   'CLAUDE_SEAT_NOT_YOURS',
   'TERMINAL_BAD_ORIGIN',
-  'CLAUDE_BOX_NOT_SET',
-  'CLAUDE_BOX_DOWN',
+  'AI_SESSION_HOST_NOT_SET',
+  'AI_SESSION_HOST_DOWN',
   'SEAT_PASSWORD_WRONG',
   'TERMINAL_BUSY',
   'VALIDATION_FAILED',
@@ -266,10 +266,10 @@ export function httpStatusFor(code: ErrorCode): number {
       return 429;
     case 'INTERNAL':
       return 500;
-    case 'CLAUDE_BOX_DOWN':
+    case 'AI_SESSION_HOST_DOWN':
     case 'SEAT_PASSWORD_WRONG':
       return 502;
-    case 'CLAUDE_BOX_NOT_SET':
+    case 'AI_SESSION_HOST_NOT_SET':
     case 'TERMINAL_BUSY':
       return 503;
     default:

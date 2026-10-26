@@ -85,7 +85,7 @@
 //   DELETE /admin/config/economy-reset -> AdminConfigResponse (M8.8: dismiss the economy-reset banner)
 //   GET  /admin/overview              -> AdminOverviewDTO
 //   POST /admin/wipe {confirm:'WIPE'} -> {ok:true}
-//   PUT  /admin/setup {claudeBoxHost?, preferredUrl?, seatSecret?} (null/"" clears) -> SetupInfoDTO & {seatSecretSet}
+//   PUT  /admin/setup {aiSessionHost?, preferredUrl?, seatSecret?} (null/"" clears) -> SetupInfoDTO & {seatSecretSet}
 //                                        (BAD_SEAT_SECRET: 12-64 of A-Z a-z 0-9 . _ ~ -)
 //   GET  /admin/claude-seats[?details=1] -> AdminClaudeSeatsDTO (seatSecret, setupCommand + directUrl only with details=1)
 //   PUT  /admin/claude-seats/:seat {playerId | null} -> AdminClaudeSeatsDTO (assign/move/unassign; BAD_CLAUDE_SEAT, CLAUDE_SEAT_OFF, NOT_FOUND)
@@ -1235,7 +1235,7 @@ export interface AdminArmoryEntryDTO {
 /** Facilitator settings for /setup (persisted; survive a wipe). */
 export interface SetupSettingsDTO {
   /** AI session host host or IP (no scheme/port); seat N's ttyd is http://<host>:778N (§11.1). */
-  claudeBoxHost: string | null;
+  aiSessionHost: string | null;
   /** Preferred base URL (`http://ip:port`) for the join QR when there are several interfaces. */
   preferredUrl: string | null;
 }

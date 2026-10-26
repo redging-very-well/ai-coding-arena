@@ -363,7 +363,7 @@ export class Store {
   adminPassword: string | undefined;
   configPatch: DeepPartial<GameConfig> = {};
   /** /setup settings; kept across a wipe (they describe the venue, not the game). */
-  setup: SetupRecord = { claudeBoxHost: null, preferredUrl: null, seatSecret: null, disabledClaudeSeats: [], agentCredentials: noAgentCredentials() };
+  setup: SetupRecord = { aiSessionHost: null, preferredUrl: null, seatSecret: null, disabledClaudeSeats: [], agentCredentials: noAgentCredentials() };
   /** Monotonic counter for join order. */
   private joinSeq = 0;
 
@@ -491,7 +491,7 @@ export class Store {
     }
     if (data.setup) {
       this.setup = {
-        claudeBoxHost: data.setup.claudeBoxHost ?? null,
+        aiSessionHost: data.setup.aiSessionHost ?? null,
         preferredUrl: data.setup.preferredUrl ?? null,
         seatSecret: typeof data.setup.seatSecret === 'string' ? data.setup.seatSecret : null,
         disabledClaudeSeats: normalizeSeatList(data.setup.disabledClaudeSeats),

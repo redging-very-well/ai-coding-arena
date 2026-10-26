@@ -201,13 +201,13 @@ export class ClaudeSeatsService {
   /** The AI session host address and the seat password are both set. */
   boxReady(): boolean {
     const s = this.game.store.setup;
-    return !!s.claudeBoxHost && !!s.seatSecret;
+    return !!s.aiSessionHost && !!s.seatSecret;
   }
 
   /** Adults' status of a seat. */
   statusOf(seat: number): ClaudeSeatStatus {
     const s = this.game.store.setup;
-    if (!s.claudeBoxHost) return 'no-box';
+    if (!s.aiSessionHost) return 'no-box';
     if (!s.seatSecret) return 'no-password';
     return this.terminals?.probeStatus(seat).status ?? 'unknown';
   }
@@ -460,7 +460,7 @@ export class ClaudeSeatsService {
   }
 
   adminDTO(details: boolean): AdminClaudeSeatsDTO {
-    const { claudeBoxHost, seatSecret } = this.game.store.setup;
+    const { aiSessionHost, seatSecret } = this.game.store.setup;
     const seats = seatNumbers().map((seat): AdminClaudeSeatDTO => {
       const h = this.holder(seat);
       const probe = this.terminals?.probeStatus(seat);
@@ -476,7 +476,7 @@ export class ClaudeSeatsService {
         sharedLogin: this.sharedLogins.get(seat) ?? null,
       };
       if (status === 'down' && probe?.reason) row.reason = probe.reason;
-      if (details && claudeBoxHost) row.directUrl = directSeatUrl(claudeBoxHost, seat);
+      if (details && aiSessionHost) row.directUrl = directSeatUrl(aiSessionHost, seat);
       return row;
     });
     const creds = this.game.store.setup.agentCredentials;
@@ -485,7 +485,7 @@ export class ClaudeSeatsService {
       anthropicApiKey: credentialHint(creds.anthropicApiKey),
       openaiApiKey: credentialHint(creds.openaiApiKey),
     };
-    const out: AdminClaudeSeatsDTO = { boxHost: claudeBoxHost, seatSecretSet: !!seatSecret, agentCredentials, seats };
+    const out: AdminClaudeSeatsDTO = { boxHost: aiSessionHost, seatSecretSet: !!seatSecret, agentCredentials, seats };
     if (details) out.seatSecret = seatSecret;
     return out;
   }

@@ -250,7 +250,7 @@ export function adminRoutes(game: Game): Router {
     '/setup',
     wrap(async (req, res) => {
       const b = body(req);
-      const result = game.setup.update({ claudeBoxHost: b.claudeBoxHost, preferredUrl: b.preferredUrl, seatSecret: b.seatSecret });
+      const result = game.setup.update({ aiSessionHost: b.aiSessionHost, preferredUrl: b.preferredUrl, seatSecret: b.seatSecret });
       if (!result.ok) return sendError(res, result.error);
       res.json({ ...(await game.setup.info(req.headers.host)), seatSecretSet: game.setup.seatSecretSet });
     }),

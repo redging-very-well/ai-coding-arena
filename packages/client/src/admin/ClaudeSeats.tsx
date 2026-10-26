@@ -81,7 +81,7 @@ export function useSaveSetup() {
 export function BoxAddress() {
   const { setup, busy } = useAdmin();
   const saveSetup = useSaveSetup();
-  const savedHost = setup?.settings.claudeBoxHost ?? '';
+  const savedHost = setup?.settings.aiSessionHost ?? '';
   const [boxHost, setBoxHost] = useState(savedHost);
   // Follow the saved address when it changes (not on mount: that would wipe what was typed before the first effect).
   const lastSaved = useRef(savedHost);
@@ -96,7 +96,7 @@ export function BoxAddress() {
       onSubmit={(e) => {
         e.preventDefault();
         const v = boxHost.trim();
-        void saveSetup({ claudeBoxHost: v || null }, v ? 'AI session host address saved' : 'AI session host address cleared');
+        void saveSetup({ aiSessionHost: v || null }, v ? 'AI session host address saved' : 'AI session host address cleared');
       }}
     >
       <input

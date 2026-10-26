@@ -107,7 +107,7 @@ describe('shared agent login API (§11.2 f)', () => {
     const screenWs = await WsRecorder.open(srv.url, 'screen');
     // Changes that push state and terminals.
     await admin.put('/admin/agent-credentials', { openaiApiKey: OKEY });
-    await admin.put('/admin/setup', { claudeBoxHost: '10.0.0.5' });
+    await admin.put('/admin/setup', { aiSessionHost: '10.0.0.5' });
     await seatLogin({ seat: sam.seat, agent: 'claude' });
     await sleep(300);
 

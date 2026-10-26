@@ -80,14 +80,14 @@ export class SeatProbe {
   }
 
   private run(seat: number): Promise<void> {
-    const { claudeBoxHost, seatSecret } = this.game.store.setup;
+    const { aiSessionHost, seatSecret } = this.game.store.setup;
     this.lastProbe.set(seat, Date.now());
     // Not configured: claudeSeats reports no-box / no-password itself.
-    if (!claudeBoxHost || !seatSecret) {
+    if (!aiSessionHost || !seatSecret) {
       this.status.delete(seat);
       return Promise.resolve();
     }
-    const upstream = this.resolve(seat, claudeBoxHost);
+    const upstream = this.resolve(seat, aiSessionHost);
     return new Promise<void>((done) => {
       let settled = false;
       const finish = (status: ProbeStatus['status'], reason?: string) => {
@@ -96,7 +96,7 @@ export class SeatProbe {
         clearTimeout(timer);
         // The setup may have changed while this probe ran: drop a stale answer.
         const now = this.game.store.setup;
-        if (now.claudeBoxHost === claudeBoxHost && now.seatSecret === seatSecret) this.observe(seat, status, reason);
+        if (now.aiSessionHost === aiSessionHost && now.seatSecret === seatSecret) this.observe(seat, status, reason);
         done();
       };
       const req = request({

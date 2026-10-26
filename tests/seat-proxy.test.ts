@@ -281,7 +281,7 @@ describe('seat terminal proxy', () => {
     expect(page.headers.get('www-authenticate')).toBeNull();
     const ws = await openTerm(srv.url, 1, sam.client.cookieHeader());
     expect(ws).toMatchObject({ ok: false, status: 503 });
-    expect((ws as { body: string }).body).toContain('CLAUDE_BOX_NOT_SET');
+    expect((ws as { body: string }).body).toContain('AI_SESSION_HOST_NOT_SET');
 
     const seats = (await admin.get<AdminClaudeSeatsDTO>('/admin/claude-seats')).body;
     expect(seats.seats[0]).toMatchObject({ seat: 1, status: 'no-box', playerName: 'Sam' });
@@ -292,7 +292,7 @@ describe('seat terminal proxy', () => {
     expect((await admin.put('/admin/setup', { seatSecret: 'short' })).body.error.code).toBe('BAD_SEAT_SECRET');
     expect((await admin.put('/admin/setup', { seatSecret: 'a:b-c-d-e-f-g-h' })).body.error.code).toBe('BAD_SEAT_SECRET');
 
-    const ok = await admin.put<SetupInfoDTO & { seatSecretSet: boolean }>('/admin/setup', { claudeBoxHost: 'claude-box.test', seatSecret: SECRET });
+    const ok = await admin.put<SetupInfoDTO & { seatSecretSet: boolean }>('/admin/setup', { aiSessionHost: 'claude-box.test', seatSecret: SECRET });
     expect(ok.status).toBe(200);
     expect(ok.body.seatSecretSet).toBe(true);
     expect(ok.text).not.toContain(SECRET);
@@ -783,7 +783,7 @@ describe('Claude seat assignment', () => {
     expect(seats[4]!.playerName).toBe('Cat');
 
     // Seat password: saved, survives a wipe (venue setting), only with details.
-    await again.put('/admin/setup', { claudeBoxHost: '10.0.0.5', seatSecret: SECRET });
+    await again.put('/admin/setup', { aiSessionHost: '10.0.0.5', seatSecret: SECRET });
     expect((await again.post('/admin/wipe', { confirm: 'WIPE' })).status).toBe(200);
     const after = (await again.get<AdminClaudeSeatsDTO>('/admin/claude-seats?details=1')).body;
     expect(after.seats.every((s) => s.playerId === null)).toBe(true);

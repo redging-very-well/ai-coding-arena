@@ -24,7 +24,7 @@ const HOST_RE = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?(?:\
 const BASE_URL_RE = /^https?:\/\/[A-Za-z0-9.-]{1,253}(?::\d{1,5})?$/;
 
 /** Normalise what the facilitator typed: strips a scheme, a port and a trailing slash. */
-export function normalizeClaudeBoxHost(input: string): string | null {
+export function normalizeAiSessionHost(input: string): string | null {
   const s = input
     .trim()
     .replace(/^[a-z]+:\/\//i, '')
@@ -98,8 +98,8 @@ export class SetupService {
 
   /** The public settings (never the seat password). */
   get settings(): SetupSettingsDTO {
-    const { claudeBoxHost, preferredUrl } = this.game.store.setup;
-    return { claudeBoxHost, preferredUrl };
+    const { aiSessionHost, preferredUrl } = this.game.store.setup;
+    return { aiSessionHost, preferredUrl };
   }
 
   get seatSecretSet(): boolean {
@@ -107,20 +107,20 @@ export class SetupService {
   }
 
   /** Update settings: `null` or "" clears a field, `undefined` leaves it. */
-  update(patch: { claudeBoxHost?: unknown; preferredUrl?: unknown; seatSecret?: unknown }): Result<SetupSettingsDTO> {
+  update(patch: { aiSessionHost?: unknown; preferredUrl?: unknown; seatSecret?: unknown }): Result<SetupSettingsDTO> {
     const before = this.game.store.setup;
     const next = { ...before };
-    if (patch.claudeBoxHost !== undefined) {
-      if (patch.claudeBoxHost === null || patch.claudeBoxHost === '') next.claudeBoxHost = null;
+    if (patch.aiSessionHost !== undefined) {
+      if (patch.aiSessionHost === null || patch.aiSessionHost === '') next.aiSessionHost = null;
       else {
-        const h = typeof patch.claudeBoxHost === 'string' ? normalizeClaudeBoxHost(patch.claudeBoxHost) : null;
+        const h = typeof patch.aiSessionHost === 'string' ? normalizeAiSessionHost(patch.aiSessionHost) : null;
         if (!h) {
           return {
             ok: false,
             error: { code: 'BAD_REQUEST', message: 'The AI session host address must be a host name or IP, like 192.168.8.20.' },
           };
         }
-        next.claudeBoxHost = h;
+        next.aiSessionHost = h;
       }
     }
     if (patch.preferredUrl !== undefined) {
@@ -151,7 +151,7 @@ export class SetupService {
     this.game.store.setup = next;
     this.game.store.save();
     this.game.notifier.stateChanged();
-    if (next.claudeBoxHost !== before.claudeBoxHost || next.seatSecret !== before.seatSecret) {
+    if (next.aiSessionHost !== before.aiSessionHost || next.seatSecret !== before.seatSecret) {
       // Statuses change at once (no-box / no-password); the probe re-checks every seat.
       this.game.notifier.terminalsChanged?.();
       void this.game.claudeSeats.probeAll();
@@ -178,13 +178,13 @@ export class SetupService {
   async info(requestHost: string | undefined): Promise<SetupInfoDTO> {
     const port = this.game.visibility.port;
     const lan = lanUrls(port);
-    const { claudeBoxHost, preferredUrl } = this.game.store.setup;
+    const { aiSessionHost, preferredUrl } = this.game.store.setup;
     const baseUrl = preferredUrl ?? this.baseUrlFromHost(requestHost, lan);
     const playUrl = `${baseUrl}/play`;
     const seatTerminals: SeatTerminalDTO[] = [];
-    if (claudeBoxHost) {
+    if (aiSessionHost) {
       for (let seat = 0; seat < SEAT_COUNT; seat++) {
-        const url = seatTerminalUrl(claudeBoxHost, seat);
+        const url = seatTerminalUrl(aiSessionHost, seat);
         seatTerminals.push({ seat, url, qrSvg: await qrSvg(url) });
       }
     }

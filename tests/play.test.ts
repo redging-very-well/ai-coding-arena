@@ -19,7 +19,7 @@ import {
   breakdownRows,
   budgetText,
   cellFill,
-  claudeBoxHost,
+  aiSessionHost,
   claudeTerminalUrl,
   copiesOf,
   copyLastLayout,
@@ -288,8 +288,8 @@ describe('Claude terminal direct links (§11.2 fallback)', () => {
     expect(claudeTerminalUrl('192.168.8.20', 9)).toBeNull();
     expect(claudeTerminalUrl('192.168.8.20', 0)).toBeNull();
     expect(claudeTerminalUrl('', 1)).toBeNull();
-    expect(claudeBoxHost('javascript:alert(1)')).toBeNull();
-    expect(claudeBoxHost('bad host!')).toBeNull();
+    expect(aiSessionHost('javascript:alert(1)')).toBeNull();
+    expect(aiSessionHost('bad host!')).toBeNull();
   });
 });
 

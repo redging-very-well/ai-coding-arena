@@ -52,7 +52,7 @@ import {
 } from './upstream.js';
 
 export interface TerminalProxyOptions {
-  /** Where seat N's ttyd is (tests: a fake ttyd). Default `<claudeBoxHost>:778N`. */
+  /** Where seat N's ttyd is (tests: a fake ttyd). Default `<aiSessionHost>:778N`. */
   resolveUpstream?: ResolveUpstream;
   timeouts?: Partial<TerminalTimeouts>;
 }
@@ -206,9 +206,9 @@ export class TerminalProxy implements TerminalControl {
   }
 
   private config(seat: number): { upstream: Upstream; secret: string } | null {
-    const { claudeBoxHost, seatSecret } = this.game.store.setup;
-    if (!claudeBoxHost || !seatSecret) return null;
-    return { upstream: this.resolve(seat, claudeBoxHost), secret: seatSecret };
+    const { aiSessionHost, seatSecret } = this.game.store.setup;
+    if (!aiSessionHost || !seatSecret) return null;
+    return { upstream: this.resolve(seat, aiSessionHost), secret: seatSecret };
   }
 
   // -------------------------------------------------------------------------
@@ -234,7 +234,7 @@ export class TerminalProxy implements TerminalControl {
       return fail(a.code, { seat, ...(a.code === 'CLAUDE_SEAT_NOT_YOURS' ? { mySeat: a.mySeat ?? null } : {}) });
     }
     const cfg = this.config(seat);
-    if (!cfg) return fail('CLAUDE_BOX_NOT_SET', { seat });
+    if (!cfg) return fail('AI_SESSION_HOST_NOT_SET', { seat });
 
     if (target.rest === '/token') {
       // Never forwarded: ttyd's real token is base64("player:<secret>").
@@ -271,7 +271,7 @@ export class TerminalProxy implements TerminalControl {
       clearTimeout(responseTimer);
       up.destroy();
       this.probe.observe(seat, 'down', reason);
-      fail('CLAUDE_BOX_DOWN', { seat });
+      fail('AI_SESSION_HOST_DOWN', { seat });
     };
     // 3 s to connect, then 15 s for the response head.
     const connectTimer = setTimeout(() => boxDown('connect timeout'), this.timeouts.connectMs);
@@ -330,7 +330,7 @@ export class TerminalProxy implements TerminalControl {
       if (socket.writable) socket.write(upgradeErrorResponse(code, ctx));
       socket.destroy();
     };
-    if (this.stopped) return reject('CLAUDE_BOX_DOWN', { seat: null });
+    if (this.stopped) return reject('AI_SESSION_HOST_DOWN', { seat: null });
     const target = parseTarget(req.url);
     if (target.kind !== 'seat' || target.rest !== '/ws') {
       socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
@@ -347,7 +347,7 @@ export class TerminalProxy implements TerminalControl {
     const origin = req.headers.origin;
     if (!origin || !req.headers.host || origin !== `http://${req.headers.host}`) return reject('TERMINAL_BAD_ORIGIN', { seat });
     const cfg = this.config(seat);
-    if (!cfg) return reject('CLAUDE_BOX_NOT_SET', { seat });
+    if (!cfg) return reject('AI_SESSION_HOST_NOT_SET', { seat });
     if (this.registry.busy(seat)) return reject('TERMINAL_BUSY', { seat });
 
     const paneParam = new URLSearchParams(target.search).get('pane');
@@ -389,14 +389,14 @@ export class TerminalProxy implements TerminalControl {
         return reject('SEAT_PASSWORD_WRONG', { seat });
       }
       log.warn(`[terminal] seat ${seat}: ttyd refused the WebSocket with HTTP ${upRes.statusCode}`);
-      reject('CLAUDE_BOX_DOWN', { seat });
+      reject('AI_SESSION_HOST_DOWN', { seat });
     });
     upstream.once('error', (err) => {
       if (settled) return;
       settled = true;
       socket.off('close', browserGone);
       this.probe.observe(seat, 'down', errorReason(err));
-      reject('CLAUDE_BOX_DOWN', { seat });
+      reject('AI_SESSION_HOST_DOWN', { seat });
     });
     upstream.once('open', () => {
       if (settled) return;
@@ -408,7 +408,7 @@ export class TerminalProxy implements TerminalControl {
       const samePlayer = again.ok && (again.by === 'player' ? a.by === 'player' && a.player.id === again.player.id : a.by === 'admin');
       if (!again.ok || !samePlayer || this.stopped) {
         upstream.close(1000, 'access changed');
-        return reject(again.ok ? 'CLAUDE_BOX_DOWN' : again.code, { seat });
+        return reject(again.ok ? 'AI_SESSION_HOST_DOWN' : again.code, { seat });
       }
       this.probe.observe(seat, 'up');
       this.wss.handleUpgrade(req, socket, head, (browser) => {
