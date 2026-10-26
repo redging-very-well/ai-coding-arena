@@ -29,6 +29,8 @@ Inside every container ttyd listens on 7781; compose publishes seat N on host po
 
 All commands below run in this `sessions/` folder.
 
+**Shortcuts:** the repo root `Makefile` wraps the common commands (run `make` in the repo root to list them): `make seats-env`, `make seats` (or `make seats N=4`, `SEATS="1 2 5"`), `make seats-ps`, `make seat-login SEAT=n` (`seat-login-codex` for Codex), `make seats-restart [SEAT=n]`, `make seat-check SEAT=n`, `make new-player SEAT=n` (runs `new-player`, then restarts the seat), `make seats-logs [SEAT=n]`, `make seats-stop`, `make seats-down` and `make seats-wipe` (`down -v`). The commands below are what they run.
+
 ## 1. Set up (day before)
 
 Needs Docker with Compose v2 and BuildKit (any current Docker Engine or Docker Desktop).
@@ -74,7 +76,7 @@ docker compose up -d seat5 seat6                        # add two seats later
 docker compose stop seat5 seat6                         # park them again (volumes, login and kit are kept)
 ```
 
-A shortcut for "seats 1 to N" (here N = 6): `docker compose up -d $(seq -f seat%g 1 6)`. `docker compose ps` lists only the seats that exist. For a 3-player game run seats 1-3 and put seat cards 1-3 on those three laptops. The Claude seat number (laptop, card, container) is separate from the player's game seat (colour, zone): /play links them when the player scans the card or picks the number. You only need to log in (step 2) the seats you'll use, but logging in all 8 the day before means any seat can be started on the day.
+A shortcut for "seats 1 to N" (here N = 6): `docker compose up -d $(seq -f seat%g 1 6)`. `docker compose ps` lists only the seats that exist. For a 3-player game run seats 1-3 and put seat cards 1-3 on those three laptops. The Claude seat number (laptop, card, container) is separate from the player's game seat (colour, zone): /play links them when the player scans the card or picks the number. Seats you aren't running can also be turned off in /admin → AI seats (the **On** checkbox), so players are never given them. You only need to log in (step 2) the seats you'll use, but logging in all 8 the day before means any seat can be started on the day.
 
 On start, each seat renders `/kit` from `packages/starter-kit/` with `{{HOST}}` taken from `PIXEL_CLASH_URL`. CLAUDE.md, `.mcp.json`, `.claude/settings.json` and PROMPTS.md are re-rendered on every start, and `.claude/settings.local.json` (where Claude Code saves "Yes, and don't ask again" approvals) is deleted, so the rendered template is the only allowlist; `.pixel-clash/player.json` and existing files in `units/` are never overwritten (except that a new player sitting down removes the previous player's `player.json`, see below). `packages/starter-kit/FIRST_PROMPT.md.tmpl` is not copied into `/kit`: it is the seat's first message for a new player.
 
