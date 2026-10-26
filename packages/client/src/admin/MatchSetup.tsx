@@ -2,20 +2,22 @@
 // the player count, the default marked "auto"), team mode (only the valid
 // modes), a top-down map preview (every valid style as a thumbnail, the chosen
 // one large with zone numbers, each player's round-1 zone, team colours and
-// "close neighbours" notes) and the auto-balanced team lists, where clicking
-// two players on different teams swaps them and "Move to Team N" moves the
-// picked player (any split, every team keeps ≥ 1 player; LOBBY only), and an "uneven
+// "close neighbours" notes) and the auto-balanced team boxes, each with its
+// "Budget per player $" on top, where dragging a player chip onto another team
+// moves them (or the chip's ⋯ menu moves/swaps; any split, every team keeps
+// ≥ 1 player; LOBBY only, logic in teamDnd.ts), and an "uneven
 // teams" warning when the team areas differ and `rounds` isn't a multiple of
 // the team count. Every change is
 // saved as the server's draft (PUT /admin/match/setup), which Start match uses.
 
-import { useState } from 'preact/hooks';
+import { useRef, useState } from 'preact/hooks';
 import { MAP_STYLE_INFO, teamSizesOf, validMapStyles, type MapStyle, type MatchSetupDTO, type TeamDTO, type TeamMode } from '@pixel-clash/shared';
 import { api } from '../common/api.js';
 import { floorTerrain } from '../common/render/iso.js';
 import { seatStyle, teamLook } from '../common/seats.js';
 import { cx } from '../common/ui.js';
 import { useAdmin } from './context.js';
+import { applyMove, canDrop, dropResult, LAST_MEMBER_TEXT, menuChoices, parseChoice, teamIdOf } from './teamDnd.js';
 import { mapPreview, previewCount, selectedStyleOption, styleOptions, teamModeOptions, unevenNote, type MapPreview, type PreviewPlayer } from './mapPreview.js';
 
 /** The front edge(s) of a zone as SVG line coordinates (row 0 faces the centre, §9.2). */
@@ -76,12 +78,56 @@ export function MapView({ preview, size, detail }: { preview: MapPreview; size: 
   );
 }
 
-/** Team lists: click a player, then a player on another team to swap them, or "Move to Team N". */
-function TeamLists({
+/** One team's "Budget per player $" field (§9.2): Enter/blur saves, empty or the default clears it. */
+function TeamBudget({ team, budget, defaultBudget, onBudget, busy }: { team: TeamDTO; budget: number; defaultBudget: number; onBudget: (teamId: number, budget: number | null) => void; busy: boolean }) {
+  return (
+    <label class="team-budget small">
+      <span>Budget per player $</span>
+      <input
+        type="number"
+        min={1}
+        max={defaultBudget * 10}
+        step={500}
+        // Uncontrolled (re-keyed when the saved value changes), so a re-render
+        // from a live state update never wipes what the host is typing.
+        key={budget}
+        defaultValue={String(budget)}
+        disabled={busy}
+        aria-label={`${team.name} budget per player in dollars`}
+        title={`Default $${defaultBudget.toLocaleString('en-US')} (config budget). Locked once the match starts.`}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur(); // blur fires the change (save)
+        }}
+        onChange={(e) => {
+          const raw = e.currentTarget.value.trim();
+          const v = raw === '' ? null : Math.round(Number(raw));
+          onBudget(team.teamId, v === null || v === defaultBudget ? null : v);
+        }}
+      />
+      {budget !== defaultBudget && <span class="dim"> (default ${defaultBudget.toLocaleString('en-US')})</span>}
+    </label>
+  );
+}
+
+/** The team under a screen point (touch drags), from the boxes' `data-team-id`. */
+function teamAt(x: number, y: number): number | null {
+  const el = document.elementFromPoint(x, y)?.closest('[data-team-id]');
+  const id = el ? Number(el.getAttribute('data-team-id')) : NaN;
+  return Number.isInteger(id) ? id : null;
+}
+
+/**
+ * Team boxes with a "Budget per player $" field on top of each and draggable
+ * player chips: drop a chip on another team to move that player (mouse: HTML5
+ * drag and drop; touch/pen: pointer drag). Each chip also has a menu (keyboard
+ * and click fallback) to move to a team or swap with a player on another team.
+ */
+function TeamBoard({
   teams,
   players,
   onSwap,
   onMove,
+  onRefused,
   budgets,
   defaultBudget,
   onBudget,
@@ -90,90 +136,171 @@ function TeamLists({
   teams: TeamDTO[];
   players: Map<string, PreviewPlayer>;
   onSwap: (a: string, b: string) => void;
-  onMove: (id: string, teamId: number) => void;
+  /** Resolves true when the server accepted the move. */
+  onMove: (id: string, teamId: number) => Promise<boolean>;
+  onRefused: (text: string) => void;
   /** Budget per player of each team (index = teamId), §9.2. */
   budgets: number[];
   defaultBudget: number;
   onBudget: (teamId: number, budget: number | null) => void;
   busy: boolean;
 }) {
-  const [picked, setPicked] = useState<string | null>(null);
-  const teamOf = (id: string) => teams.find((t) => t.members.includes(id))?.teamId;
-  const click = (id: string) => {
-    if (picked === null) return setPicked(id);
-    if (picked === id) return setPicked(null);
-    if (teamOf(picked) === teamOf(id)) return setPicked(id);
-    onSwap(picked, id);
-    setPicked(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overTeam, setOverTeam] = useState<number | null>(null);
+  const [pending, setPending] = useState<{ playerId: string; teamId: number } | null>(null);
+  const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null);
+  const touch = useRef<{ id: string; pointer: number; x0: number; y0: number; moved: boolean } | null>(null);
+  const nameOf = (id: string) => players.get(id)?.name ?? id;
+  const shown = pending ? applyMove(teams, pending.playerId, pending.teamId) : teams;
+  const locked = busy || pending !== null;
+
+  const endDrag = () => {
+    setDragId(null);
+    setOverTeam(null);
+    setGhost(null);
+    touch.current = null;
   };
+  const drop = async (playerId: string, teamId: number) => {
+    endDrag();
+    const r = dropResult(teams, playerId, teamId);
+    if (r.kind === 'refused') return onRefused(r.text);
+    if (r.kind === 'none') return;
+    setPending({ playerId, teamId });
+    try {
+      await onMove(playerId, teamId); // refused by the server: the chip snaps back
+    } finally {
+      setPending(null);
+    }
+  };
+
   return (
-    <div class="team-lists">
-      {teams.map((t) => {
-        const look = teamLook(t.teamId);
-        return (
-          <div key={t.teamId} class={cx('team-list', look && `pat-${look.pattern}`)} style={{ '--team': t.color }}>
-            <div class="team-list-head">
-              {t.name} · {t.members.length} player{t.members.length === 1 ? '' : 's'} <span class="dim small">({look?.pattern} ring)</span>
-            </div>
-            <ul>
-              {t.members.map((id) => {
-                const p = players.get(id);
-                const seat = seatStyle(p?.seat);
-                return (
-                  <li key={id}>
-                    <button class={cx('btn small team-member', picked === id && 'on')} disabled={busy} onClick={() => click(id)}>
+    <div class="team-board">
+      <div class="team-lists">
+        {shown.map((t) => {
+          const look = teamLook(t.teamId);
+          const budget = budgets[t.teamId] ?? defaultBudget;
+          const target = dragId !== null && teamIdOf(teams, dragId) !== t.teamId;
+          return (
+            <div
+              key={t.teamId}
+              data-team-id={t.teamId}
+              class={cx('team-list', look && `pat-${look.pattern}`, dragId !== null && target && (canDrop(teams, dragId, t.teamId) ? 'drop-ok' : 'drop-no'), target && overTeam === t.teamId && 'drop-over')}
+              style={{ '--team': t.color }}
+              onDragOver={(e) => {
+                if (dragId === null) return;
+                e.preventDefault();
+                if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; // a refused drop still lands, to say why
+                if (overTeam !== t.teamId) setOverTeam(t.teamId);
+              }}
+              onDragLeave={(e) => {
+                const to = e.relatedTarget as Node | null;
+                if (!to || !e.currentTarget.contains(to)) setOverTeam((o) => (o === t.teamId ? null : o));
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                const id = e.dataTransfer?.getData('text/plain') || dragId;
+                if (id) void drop(id, t.teamId);
+              }}
+            >
+              <div class="team-list-top">
+                <TeamBudget team={t} budget={budget} defaultBudget={defaultBudget} onBudget={onBudget} busy={busy} />
+                <div class="team-list-head">
+                  {t.name} · {t.members.length} player{t.members.length === 1 ? '' : 's'} <span class="dim small">({look?.pattern} ring)</span>
+                </div>
+              </div>
+              <ul aria-label={`${t.name} players`}>
+                {t.members.map((id) => {
+                  const p = players.get(id);
+                  const seat = seatStyle(p?.seat);
+                  const { moves, swaps } = menuChoices(teams, id, nameOf);
+                  return (
+                    <li
+                      key={id}
+                      class={cx('team-chip', dragId === id && 'dragging', pending?.playerId === id && 'pending', locked && 'locked')}
+                      draggable={!locked}
+                      title={locked ? undefined : 'Drag onto another team to move this player'}
+                      onDragStart={(e) => {
+                        if (locked) return e.preventDefault();
+                        e.dataTransfer?.setData('text/plain', id);
+                        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+                        // Re-rendering inside dragstart can cancel the drag in Chromium: do it next tick.
+                        setTimeout(() => setDragId(id), 0);
+                      }}
+                      onDragEnd={endDrag}
+                      onPointerDown={(e) => {
+                        if (locked || e.pointerType === 'mouse' || (e.target as HTMLElement).closest('select')) return;
+                        touch.current = { id, pointer: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false };
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                      }}
+                      onPointerMove={(e) => {
+                        const tc = touch.current;
+                        if (!tc || tc.pointer !== e.pointerId) return;
+                        if (!tc.moved && Math.hypot(e.clientX - tc.x0, e.clientY - tc.y0) < 8) return;
+                        tc.moved = true;
+                        setDragId(tc.id);
+                        setGhost({ x: e.clientX, y: e.clientY });
+                        setOverTeam(teamAt(e.clientX, e.clientY));
+                      }}
+                      onPointerUp={(e) => {
+                        const tc = touch.current;
+                        if (!tc || tc.pointer !== e.pointerId) return;
+                        const over = tc.moved ? teamAt(e.clientX, e.clientY) : null;
+                        if (over !== null) void drop(tc.id, over);
+                        else endDrag();
+                      }}
+                      onPointerCancel={endDrag}
+                    >
+                      <span class="chip-grip" aria-hidden="true">
+                        ⠿
+                      </span>
                       <span class="seat-chip" style={{ background: seat.color, color: seat.ink }}>
                         {seat.symbol}
-                      </span>{' '}
-                      {p?.name ?? id}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            <label class="inline small team-budget">
-              Budget per player $
-              <input
-                type="number"
-                min={1}
-                max={defaultBudget * 10}
-                step={500}
-                value={budgets[t.teamId] ?? defaultBudget}
-                disabled={busy}
-                style={{ width: '7rem' }}
-                title={`Default $${defaultBudget.toLocaleString('en-US')} (config budget). Locked once the match starts.`}
-                onChange={(e) => {
-                  const raw = e.currentTarget.value.trim();
-                  const v = raw === '' ? null : Math.round(Number(raw));
-                  onBudget(t.teamId, v === null || v === defaultBudget ? null : v);
-                }}
-              />
-              {(budgets[t.teamId] ?? defaultBudget) !== defaultBudget && <span class="dim small"> (default ${defaultBudget.toLocaleString('en-US')})</span>}
-            </label>
-          </div>
-        );
-      })}
-      <p class="dim small">
-        {picked ? 'Now click a player on another team to swap them, or move them:' : 'Click two players on different teams to swap them, or click one player to move them to another team.'}
-      </p>
-      {picked && (
-        <div class="btn-row">
-          {teams
-            .filter((t) => t.teamId !== teamOf(picked))
-            .map((t) => (
-              <button
-                key={t.teamId}
-                class="btn small"
-                disabled={busy || (teams.find((x) => x.teamId === teamOf(picked))?.members.length ?? 0) <= 1}
-                title="Every team needs at least 1 player."
-                onClick={() => {
-                  onMove(picked, t.teamId);
-                  setPicked(null);
-                }}
-              >
-                Move {players.get(picked)?.name ?? picked} to {t.name}
-              </button>
-            ))}
+                      </span>
+                      <span class="chip-name">{p?.name ?? id}</span>
+                      <select
+                        class="chip-menu"
+                        value=""
+                        disabled={locked}
+                        aria-label={`Move or swap ${p?.name ?? id}`}
+                        title="Move or swap"
+                        onChange={(e) => {
+                          const c = parseChoice(e.currentTarget.value);
+                          e.currentTarget.value = '';
+                          if (c?.kind === 'move') void drop(id, c.teamId);
+                          else if (c?.kind === 'swap') onSwap(id, c.playerId);
+                        }}
+                      >
+                        <option value="">⋯</option>
+                        <optgroup label="Move">
+                          {moves.map((m) => (
+                            <option key={m.value} value={m.value} disabled={m.disabled}>
+                              {m.label}
+                              {m.disabled ? ' (last player)' : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                        {swaps.length > 0 && (
+                          <optgroup label="Swap">
+                            {swaps.map((m) => (
+                              <option key={m.value} value={m.value}>
+                                {m.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+      <p class="dim small">Drag a player onto another team to move them, or use the ⋯ menu on a player to move or swap. {LAST_MEMBER_TEXT}</p>
+      {ghost && dragId && (
+        <div class="team-chip drag-ghost" style={{ left: `${ghost.x}px`, top: `${ghost.y}px` }} aria-hidden="true">
+          {nameOf(dragId)}
         </div>
       )}
     </div>
@@ -181,7 +308,7 @@ function TeamLists({
 }
 
 export function MatchSetup({ rounds }: { rounds: number }) {
-  const { overview, state, act, busy } = useAdmin();
+  const { overview, state, act, busy, notify } = useAdmin();
   const setup: MatchSetupDTO | undefined = overview?.setup;
   const roster: PreviewPlayer[] = (overview?.players ?? state?.players ?? []).map((p) => ({ id: p.id, name: p.name, seat: p.seat }));
   const byId = new Map(roster.map((p) => [p.id, p]));
@@ -265,12 +392,13 @@ export function MatchSetup({ rounds }: { rounds: number }) {
         )}
       </div>
       {teams && teams.length > 0 && (
-        <TeamLists
+        <TeamBoard
           teams={teams}
           players={byId}
           busy={busy}
+          onRefused={(text) => notify('warn', text)}
           onSwap={(a, b) => void act(() => api.admin.swapTeams(a, b), `Swapped ${byId.get(a)?.name ?? a} and ${byId.get(b)?.name ?? b}`)}
-          onMove={(id, teamId) => void act(() => api.admin.moveTeam(id, teamId), `Moved ${byId.get(id)?.name ?? id} to ${teams.find((t) => t.teamId === teamId)?.name ?? `Team ${teamId + 1}`}`)}
+          onMove={async (id, teamId) => (await act(() => api.admin.moveTeam(id, teamId), `Moved ${byId.get(id)?.name ?? id} to ${teams.find((t) => t.teamId === teamId)?.name ?? `Team ${teamId + 1}`}`)) !== undefined}
           budgets={setup.teamBudgets ?? []}
           defaultBudget={setup.defaultBudget}
           onBudget={(teamId, budget) => {

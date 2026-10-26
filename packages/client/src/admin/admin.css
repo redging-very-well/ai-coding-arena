@@ -708,9 +708,80 @@ input.pin {
   display: grid;
   gap: 4px;
 }
-.team-member {
-  width: 100%;
-  text-align: left;
+/* Team boxes: drag-and-drop player chips, budget on top (teamDnd.ts) */
+.team-list {
+  min-width: 190px;
+  transition: background-color 0.1s, box-shadow 0.1s;
+}
+.team-list-top {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.team-budget {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-weight: 700;
+}
+.team-budget input {
+  width: 7rem;
+}
+.team-list.drop-ok {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.team-list.drop-no {
+  opacity: 0.6;
+}
+.team-list.drop-over.drop-ok {
+  background: color-mix(in srgb, var(--team) 18%, transparent);
+}
+.team-list ul {
+  min-height: 32px;
+}
+.team-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.team-chip.locked {
+  cursor: default;
+}
+.team-chip.dragging,
+.team-chip.pending {
+  opacity: 0.5;
+}
+.team-chip .chip-grip {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.team-chip .chip-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.team-chip .chip-menu {
+  width: 2.4rem;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.team-chip.drag-ghost {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  transform: translate(-50%, -120%);
+  cursor: grabbing;
 }
 .team-table-admin {
   display: flex;
