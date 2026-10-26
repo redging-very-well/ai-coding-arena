@@ -118,6 +118,8 @@ export const SERVICE_ERROR_CODES = [
   'BAD_TEAM_MODE',
   'NO_TEAMS',
   'SAME_TEAM',
+  // Moving the last player off a team (§9.2 Move): every team keeps ≥ 1 player.
+  'LAST_MEMBER',
   'TEMPLATE_PROTECTED',
   'TEMPLATE_WOULD_BREAK',
   // Optimistic concurrency: the unit was revised since `baseVersion` (§10.3).
@@ -249,6 +251,7 @@ export function httpStatusFor(code: ErrorCode): number {
     case 'NOT_ENOUGH_PLAYERS':
     case 'NO_TEAMS':
     case 'SAME_TEAM':
+    case 'LAST_MEMBER':
     case 'TEMPLATE_PROTECTED':
     case 'TEMPLATE_WOULD_BREAK':
     case 'UNIT_CHANGED':

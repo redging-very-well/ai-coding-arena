@@ -3,13 +3,14 @@
 // modes), a top-down map preview (every valid style as a thumbnail, the chosen
 // one large with zone numbers, each player's round-1 zone, team colours and
 // "close neighbours" notes) and the auto-balanced team lists, where clicking
-// two players on different teams swaps them (LOBBY only), and an "uneven
+// two players on different teams swaps them and "Move to Team N" moves the
+// picked player (any split, every team keeps ≥ 1 player; LOBBY only), and an "uneven
 // teams" warning when the team areas differ and `rounds` isn't a multiple of
 // the team count. Every change is
 // saved as the server's draft (PUT /admin/match/setup), which Start match uses.
 
 import { useState } from 'preact/hooks';
-import { MAP_STYLE_INFO, validMapStyles, type MapStyle, type MatchSetupDTO, type TeamDTO, type TeamMode } from '@pixel-clash/shared';
+import { MAP_STYLE_INFO, teamSizesOf, validMapStyles, type MapStyle, type MatchSetupDTO, type TeamDTO, type TeamMode } from '@pixel-clash/shared';
 import { api } from '../common/api.js';
 import { floorTerrain } from '../common/render/iso.js';
 import { seatStyle, teamLook } from '../common/seats.js';
@@ -75,8 +76,20 @@ export function MapView({ preview, size, detail }: { preview: MapPreview; size: 
   );
 }
 
-/** Team lists: click a player, then a player on another team, to swap them. */
-function TeamLists({ teams, players, onSwap, busy }: { teams: TeamDTO[]; players: Map<string, PreviewPlayer>; onSwap: (a: string, b: string) => void; busy: boolean }) {
+/** Team lists: click a player, then a player on another team to swap them, or "Move to Team N". */
+function TeamLists({
+  teams,
+  players,
+  onSwap,
+  onMove,
+  busy,
+}: {
+  teams: TeamDTO[];
+  players: Map<string, PreviewPlayer>;
+  onSwap: (a: string, b: string) => void;
+  onMove: (id: string, teamId: number) => void;
+  busy: boolean;
+}) {
   const [picked, setPicked] = useState<string | null>(null);
   const teamOf = (id: string) => teams.find((t) => t.members.includes(id))?.teamId;
   const click = (id: string) => {
@@ -93,7 +106,7 @@ function TeamLists({ teams, players, onSwap, busy }: { teams: TeamDTO[]; players
         return (
           <div key={t.teamId} class={cx('team-list', look && `pat-${look.pattern}`)} style={{ '--team': t.color }}>
             <div class="team-list-head">
-              {t.name} <span class="dim small">({look?.pattern} ring)</span>
+              {t.name} · {t.members.length} player{t.members.length === 1 ? '' : 's'} <span class="dim small">({look?.pattern} ring)</span>
             </div>
             <ul>
               {t.members.map((id) => {
@@ -114,7 +127,29 @@ function TeamLists({ teams, players, onSwap, busy }: { teams: TeamDTO[]; players
           </div>
         );
       })}
-      <p class="dim small">{picked ? 'Now click a player on another team to swap them.' : 'Click two players on different teams to swap them.'}</p>
+      <p class="dim small">
+        {picked ? 'Now click a player on another team to swap them, or move them:' : 'Click two players on different teams to swap them, or click one player to move them to another team.'}
+      </p>
+      {picked && (
+        <div class="btn-row">
+          {teams
+            .filter((t) => t.teamId !== teamOf(picked))
+            .map((t) => (
+              <button
+                key={t.teamId}
+                class="btn small"
+                disabled={busy || (teams.find((x) => x.teamId === teamOf(picked))?.members.length ?? 0) <= 1}
+                title="Every team needs at least 1 player."
+                onClick={() => {
+                  onMove(picked, t.teamId);
+                  setPicked(null);
+                }}
+              >
+                Move {players.get(picked)?.name ?? picked} to {t.name}
+              </button>
+            ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -129,10 +164,11 @@ export function MatchSetup({ rounds }: { rounds: number }) {
   const override = setup?.mapStyle ?? null;
   const teams = mode === 'ffa' ? null : (setup?.teams ?? null);
   const chosen = mapPreview(override, roster, teams, mode);
-  const styles = validMapStyles(n, mode);
+  const sizes = teams ? teamSizesOf(teams) : undefined;
+  const styles = validMapStyles(n, mode, sizes);
   const uneven = unevenNote(chosen, mode, rounds);
 
-  const options = styleOptions(roster.length, mode);
+  const options = styleOptions(roster.length, mode, sizes);
   const selected = selectedStyleOption(options, override);
   const save = (patch: { mapStyle?: MapStyle | null; teamMode?: TeamMode }, text?: string) => act(() => api.admin.setMatchSetup(patch), text);
 
@@ -160,7 +196,7 @@ export function MatchSetup({ rounds }: { rounds: number }) {
               void save({ teamMode }, teamMode === 'ffa' ? 'Free-for-all' : 'Teams balanced');
             }}
           >
-            {teamModeOptions(roster.length).map((o) => (
+            {teamModeOptions(roster.length, mode, sizes).map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -203,7 +239,13 @@ export function MatchSetup({ rounds }: { rounds: number }) {
         )}
       </div>
       {teams && teams.length > 0 && (
-        <TeamLists teams={teams} players={byId} busy={busy} onSwap={(a, b) => void act(() => api.admin.swapTeams(a, b), `Swapped ${byId.get(a)?.name ?? a} and ${byId.get(b)?.name ?? b}`)} />
+        <TeamLists
+          teams={teams}
+          players={byId}
+          busy={busy}
+          onSwap={(a, b) => void act(() => api.admin.swapTeams(a, b), `Swapped ${byId.get(a)?.name ?? a} and ${byId.get(b)?.name ?? b}`)}
+          onMove={(id, teamId) => void act(() => api.admin.moveTeam(id, teamId), `Moved ${byId.get(id)?.name ?? id} to ${teams.find((t) => t.teamId === teamId)?.name ?? `Team ${teamId + 1}`}`)}
+        />
       )}
     </div>
   );

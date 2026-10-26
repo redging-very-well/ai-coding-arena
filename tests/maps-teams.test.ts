@@ -69,13 +69,14 @@ describe('seats, the LOBBY draft and team setup', () => {
   it('the draft checks styles and team modes against the player count', async () => {
     let setup = (await admin.get('/admin/match/setup')).body as MatchSetupDTO;
     expect(setup).toMatchObject({ mapStyle: null, teamMode: 'ffa', teams: null, validStyles: ['ring', 'lanes', 'islands'] });
-    expect(setup.validTeamModes).toEqual(['ffa', 'teams2', 'teams3']);
+    // Unequal teams are allowed (every team ≥ 1 player): 6 players, 4 teams = 2v2v1v1.
+    expect(setup.validTeamModes).toEqual(['ffa', 'teams2', 'teams3', 'teams4']);
     expect(setup.map).toMatchObject({ style: 'ring', players: 6, width: 1040, height: 1040 });
     expect(setup.map.zones).toHaveLength(6);
 
-    let r = await admin.put('/admin/match/setup', { teamMode: 'teams4' });
+    let r = await admin.put('/admin/match/setup', { teamMode: 'teams5' });
     expect(r.status).toBe(400);
-    expect(r.body.error).toMatchObject({ code: 'BAD_TEAM_MODE', details: { players: 6, valid: ['ffa', 'teams2', 'teams3'] } });
+    expect(r.body.error).toMatchObject({ code: 'BAD_TEAM_MODE', details: { players: 6, valid: ['ffa', 'teams2', 'teams3', 'teams4'] } });
     r = await admin.put('/admin/match/setup', { mapStyle: 'triangle' });
     expect(r.body.error).toMatchObject({ code: 'BAD_MAP_STYLE', details: { players: 6, valid: ['ring', 'lanes', 'islands'] } });
     expect((await admin.put('/admin/match/setup', { mapStyle: 'volcano' })).body.error.code).toBe('BAD_MAP_STYLE');
@@ -113,15 +114,17 @@ describe('seats, the LOBBY draft and team setup', () => {
     expect(r.body.teams[0].members).toEqual([ids[1], ids[5]]);
     expect(r.body.teams[1].members).toEqual([ids[0], ids[4]]);
 
-    // 2 more players join (8: teams3 no longer fits, so the draft resets to
-    // free-for-all and the style to auto; then teams2 by snake).
+    // 2 more players join (8: teams3 still fits as 3v3v2 and is re-dealt by
+    // snake, dropping the swap; Islands didn't fit the 7th join, so auto).
     const late = await players(srv.url, 2, 6);
     ps.push(...late);
     let setup = (await admin.get('/admin/match/setup')).body as MatchSetupDTO;
-    expect(setup.teamMode).toBe('ffa');
+    expect(setup.teamMode).toBe('teams3');
     expect(setup.mapStyle).toBeNull(); // Islands didn't fit the 7th join
+    expect(setup.teams!.map((t) => t.members.length)).toEqual([3, 3, 2]);
+    expect(setup.validTeamModes).toEqual(['ffa', 'teams2', 'teams3', 'teams4']);
+    setup = (await admin.put('/admin/match/setup', { teamMode: 'ffa' })).body as MatchSetupDTO;
     expect(setup.teams).toBeNull();
-    expect(setup.validTeamModes).toEqual(['ffa', 'teams2', 'teams4']);
     expect((await admin.post('/admin/teams/swap', { playerA: ids[0], playerB: ids[1] })).body.error.code).toBe('NO_TEAMS');
     setup = (await admin.put('/admin/match/setup', { mapStyle: 'lanes', teamMode: 'teams2' })).body as MatchSetupDTO;
     const all = ps.map((p) => p.id);
@@ -141,7 +144,7 @@ describe('seats, the LOBBY draft and team setup', () => {
   }, T);
 
   it('Start match validates its own body and then fixes teams and map for the match', async () => {
-    let r = await admin.post('/admin/match', { rounds: 2, teamMode: 'teams3' });
+    let r = await admin.post('/admin/match', { rounds: 2, teamMode: 'teams5' });
     expect(r.body.error).toMatchObject({ code: 'BAD_TEAM_MODE', details: { players: 8 } });
     r = await admin.post('/admin/match', { rounds: 2, mapStyle: 'duel' });
     expect(r.body.error).toMatchObject({ code: 'BAD_MAP_STYLE', details: { players: 8, valid: ['ring', 'lanes', 'islands'] } });
@@ -293,7 +296,13 @@ describe('8-player matches (1200 arena)', () => {
     expect(gs.players).toHaveLength(8);
     expect(rules.maps.arenaSizes).toMatchObject({ 2: 800, 4: 800, 5: 1040, 6: 1040, 7: 1200, 8: 1200 });
     expect(rules.maps.defaults).toMatchObject({ 2: 'duel', 3: 'triangle', 4: 'corners', 5: 'ring', 8: 'ring' });
-    expect(rules.teams.modes.find((m: { mode: string }) => m.mode === 'teams4').validFor).toEqual([{ players: 8, label: '4 teams / teams of 2 (2v2v2v2)' }]);
+    expect(rules.teams.modes.find((m: { mode: string }) => m.mode === 'teams4').validFor).toEqual([
+      { players: 4, label: '4 teams (1v1v1v1)' },
+      { players: 5, label: '4 teams (2v1v1v1)' },
+      { players: 6, label: '4 teams (2v2v1v1)' },
+      { players: 7, label: '4 teams (2v2v2v1)' },
+      { players: 8, label: '4 teams / teams of 2 (2v2v2v2)' },
+    ]);
     expect(rules.thisMatch).toMatchObject({ mapStyle: 'ring', teamMode: 'ffa', arena: { width: 1200 } });
   }, T);
 
@@ -437,6 +446,62 @@ describe('restart', () => {
   }, T);
 });
 
+describe('unequal teams (move, 3v2)', () => {
+  it('move: any split in LOBBY, last member refused, Lanes falls back; a 3v2 battle ranks and scores by team', async () => {
+    const dir = tempDataDir();
+    const srv = await bootServer({ dataDir: dir });
+    try {
+      const admin = await adminClient(srv.url);
+      let ps = await players(srv.url, 6);
+      let setup = (await admin.put('/admin/match/setup', { mapStyle: 'lanes', teamMode: 'teams2' })).body as MatchSetupDTO;
+      expect(setup.teams!.map((t) => t.members.length)).toEqual([3, 3]);
+      const t1 = setup.teams![1]!.members;
+      // Move one player from Team 2 to Team 1: 4v2, and Lanes (equal teams only) falls back to Ring.
+      let r = await admin.post('/admin/teams/move', { playerId: t1[0], teamId: 0 });
+      expect(r.status).toBe(200);
+      expect(r.body.teams.map((t: { members: string[] }) => t.members.length)).toEqual([4, 2]);
+      setup = (await admin.get('/admin/match/setup')).body as MatchSetupDTO;
+      expect(setup).toMatchObject({ mapStyle: null, map: { style: 'ring' }, validStyles: ['ring'] });
+      expect(srv.game.store.match.teams!.map((t) => t.members.length)).toEqual([4, 2]); // persisted in the store
+      r = await admin.post('/admin/teams/move', { playerId: t1[1], teamId: 0 });
+      expect(r.status).toBe(200);
+      r = await admin.post('/admin/teams/move', { playerId: t1[2], teamId: 0 });
+      expect(r.status).toBe(409);
+      expect(r.body.error.code).toBe('LAST_MEMBER');
+      expect((await admin.post('/admin/teams/move', { playerId: t1[2], teamId: 7 })).body.error.code).toBe('BAD_REQUEST');
+      expect((await ps[0]!.client.post('/admin/teams/move', { playerId: t1[2], teamId: 0 })).status).toBe(403);
+      // Kicking a player re-deals: 5 players, 2 teams = 3v2 by snake.
+      await admin.post(`/admin/players/${ps[5]!.id}/kick`, {});
+      ps = ps.slice(0, 5);
+      setup = (await admin.get('/admin/match/setup')).body as MatchSetupDTO;
+      expect(setup.teams!.map((t) => t.members.length)).toEqual([3, 2]);
+
+      const s = (await admin.post('/admin/match', { rounds: 2 })).body as GameStateDTO;
+      expect(s.match).toMatchObject({ teamMode: 'teams2', map: { style: 'ring', players: 5 } });
+      expect((await admin.post('/admin/teams/move', { playerId: ps[0]!.id, teamId: 1 })).body.error.code).toBe('PHASE_CLOSED');
+      await admin.post('/admin/phase/next'); // → PLACEMENT
+      const zoned = new Set<number>();
+      for (const p of ps) zoned.add((await state(p.client)).me!.myZone!.index);
+      expect(zoned.size).toBe(5);
+      await admin.post('/admin/start', { force: true });
+      const end = (await waitForState(admin, (x) => x.phase === 'RESULTS', 60_000)).lastBattle!;
+      expect(end.ranking).toHaveLength(5);
+      expect(end.teams!.map((t) => t.members.length).sort()).toEqual([2, 3]);
+      for (const t of end.teams!) {
+        expect(t.placePoints).toBe(placePointsFor(t.place, 5, 2));
+        for (const id of t.members) expect(end.ranking.find((x) => x.playerId === id)).toMatchObject({ teamId: t.teamId, place: t.place, placePoints: t.placePoints });
+      }
+      for (const row of end.teamTable!) {
+        const totals = row.members.map((id) => end.scoreboard.find((e) => e.playerId === id)!.points);
+        expect(row.points).toBe(Math.round((totals.reduce((a, b) => a + b, 0) / totals.length) * 10) / 10);
+      }
+    } finally {
+      await srv.close();
+      removeDir(dir);
+    }
+  }, T);
+});
+
 describe('the LOBBY draft never gets stuck (fixes)', () => {
   it('a join that makes both draft values invalid resets them with a toast; Start match works', async () => {
     const dir = tempDataDir();
@@ -452,10 +517,11 @@ describe('the LOBBY draft never gets stuck (fixes)', () => {
         toasts.push(text);
         return (orig as (...a: unknown[]) => unknown)(to, kind, text, ...rest);
       }) as typeof notifier.toast;
-      await players(srv.url, 1, 4); // a 5th player joins: lanes and teams2 both stop fitting
+      await players(srv.url, 1, 4); // a 5th player joins: lanes stops fitting, teams2 becomes 3v2
       const setup = (await admin.get('/admin/match/setup')).body as MatchSetupDTO;
-      expect(setup).toMatchObject({ mapStyle: null, teamMode: 'ffa', teams: null, map: { style: 'ring', players: 5 } });
-      expect(toasts).toContain('Team mode reset to free-for-all and map reset to auto (Ring) for 5 players');
+      expect(setup).toMatchObject({ mapStyle: null, teamMode: 'teams2', map: { style: 'ring', players: 5 } });
+      expect(setup.teams!.map((t) => t.members.length)).toEqual([3, 2]);
+      expect(toasts).toContain('Map reset to auto (Ring) for 5 players');
       expect(toasts).not.toContain('Teams re-balanced');
       // Single-field requests work again.
       expect((await admin.put('/admin/match/setup', { teamMode: 'ffa' })).status).toBe(200);
@@ -472,24 +538,24 @@ describe('the LOBBY draft never gets stuck (fixes)', () => {
     const srv = await bootServer({ dataDir: dir });
     try {
       const admin = await adminClient(srv.url);
-      await players(srv.url, 7);
-      // A stored draft that doesn't fit 7 players (e.g. from an older save).
-      srv.game.store.match.setup = { mapStyle: 'lanes', teamMode: 'teams2' };
+      await players(srv.url, 3);
+      // A stored draft that doesn't fit 3 players (e.g. from an older save).
+      srv.game.store.match.setup = { mapStyle: 'lanes', teamMode: 'teams4' };
       let r = await admin.put('/admin/match/setup', { teamMode: 'ffa' });
       expect(r.status).toBe(200);
       expect(r.body).toMatchObject({ teamMode: 'ffa', mapStyle: null });
-      srv.game.store.match.setup = { mapStyle: 'lanes', teamMode: 'teams2' };
+      srv.game.store.match.setup = { mapStyle: 'lanes', teamMode: 'teams4' };
       r = await admin.put('/admin/match/setup', { mapStyle: null });
       expect(r.status).toBe(200);
       expect(r.body).toMatchObject({ teamMode: 'ffa', mapStyle: null });
       // An explicitly named bad value still fails.
       expect((await admin.put('/admin/match/setup', { mapStyle: 'lanes' })).body.error.code).toBe('BAD_MAP_STYLE');
-      expect((await admin.put('/admin/match/setup', { teamMode: 'teams2' })).body.error.code).toBe('BAD_TEAM_MODE');
+      expect((await admin.put('/admin/match/setup', { teamMode: 'teams4' })).body.error.code).toBe('BAD_TEAM_MODE');
       // Start match (no setup in the body) falls back to free-for-all on the default.
-      srv.game.store.match.setup = { mapStyle: 'lanes', teamMode: 'teams2' };
+      srv.game.store.match.setup = { mapStyle: 'lanes', teamMode: 'teams4' };
       r = await admin.post('/admin/match', { rounds: 1 });
       expect(r.status).toBe(200);
-      expect((r.body as GameStateDTO).match).toMatchObject({ teamMode: 'ffa', mapStyle: 'ring', teams: null });
+      expect((r.body as GameStateDTO).match).toMatchObject({ teamMode: 'ffa', mapStyle: 'triangle', teams: null });
     } finally {
       await srv.close();
       removeDir(dir);

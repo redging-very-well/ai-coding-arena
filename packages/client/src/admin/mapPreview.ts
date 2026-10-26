@@ -17,6 +17,7 @@ import {
   mapFor,
   teamCountOf,
   teamModeLabel,
+  teamSizesOf,
   unevenTeamBlocks,
   validMapStyles,
   validTeamModes,
@@ -71,12 +72,12 @@ export function previewCount(players: number): number {
  * default first as "auto" (''), then the other styles. The default is not
  * listed again, so choosing it never pins an override.
  */
-export function styleOptions(players: number, mode: TeamMode = 'ffa'): Array<{ value: MapStyle | ''; label: string }> {
+export function styleOptions(players: number, mode: TeamMode = 'ffa', teamSizes?: readonly number[]): Array<{ value: MapStyle | ''; label: string }> {
   const n = previewCount(players);
   const def = defaultMapStyle(n);
   return [
     { value: '', label: `${MAP_STYLE_INFO[def].label} (auto for ${n} players)` },
-    ...validMapStyles(n, mode)
+    ...validMapStyles(n, mode, teamSizes)
       .filter((s) => s !== def)
       .map((s) => ({ value: s, label: `${MAP_STYLE_INFO[s].label}: ${MAP_STYLE_INFO[s].idea}` })),
   ];
@@ -91,19 +92,22 @@ export function selectedStyleOption(options: ReadonlyArray<{ value: MapStyle | '
   return override !== null && options.some((o) => o.value === override) ? override : '';
 }
 
-/** Team mode choices for the dropdown ("Free-for-all", "2 teams (3v3)"…). */
-export function teamModeOptions(players: number): Array<{ value: TeamMode; label: string }> {
+/**
+ * Team mode choices for the dropdown ("Free-for-all", "2 teams (3v3)",
+ * "2 teams (3v2)"…). The current mode shows its actual sizes (after moves).
+ */
+export function teamModeOptions(players: number, current?: TeamMode, currentSizes?: readonly number[]): Array<{ value: TeamMode; label: string }> {
   const n = previewCount(players);
-  return validTeamModes(n).map((m) => ({ value: m, label: teamModeLabel(m, n) }));
+  return validTeamModes(n).map((m) => ({ value: m, label: teamModeLabel(m, n, m === current ? currentSizes : undefined) }));
 }
 
 /** The tip for a team mode and style, or null. */
-export function styleTip(style: MapStyle, mode: TeamMode, players: number): string | null {
+export function styleTip(style: MapStyle, mode: TeamMode, players: number, teamSizes?: readonly number[]): string | null {
   const T = teamCountOf(mode);
   if (T === 0) return null;
   const n = previewCount(players);
-  if (T === 2 && style !== 'lanes' && isValidMapSetup('lanes', mode, n)) return 'Tip: Lanes suits 2 teams (one row each).';
-  if (n / T === 2 && style !== 'islands' && isValidMapSetup('islands', mode, n)) return 'Tip: Islands suits teams of 2 (one cluster per team).';
+  if (T === 2 && style !== 'lanes' && isValidMapSetup('lanes', mode, n, teamSizes)) return 'Tip: Lanes suits 2 teams (one row each).';
+  if (n / T === 2 && style !== 'islands' && isValidMapSetup('islands', mode, n, teamSizes)) return 'Tip: Islands suits teams of 2 (one cluster per team).';
   return null;
 }
 
@@ -145,7 +149,8 @@ export function roundOneOwners(zones: readonly MapZone[], players: readonly Prev
 /** The preview model of `style` for the roster (an invalid style falls back to the default). */
 export function mapPreview(style: MapStyle | null, players: readonly PreviewPlayer[], teams: readonly TeamDTO[] | null, mode: TeamMode = 'ffa'): MapPreview {
   const n = previewCount(players.length);
-  const chosen = style && isValidMapSetup(style, mode, n) ? style : defaultMapStyle(n);
+  const sizes = teams && teams.length > 0 && mode !== 'ffa' ? teamSizesOf(teams) : undefined;
+  const chosen = style && isValidMapSetup(style, mode, n, sizes) ? style : defaultMapStyle(n);
   const layout = mapFor(chosen, n);
   const teamOf = new Map<string, number>();
   for (const t of teams ?? []) for (const m of t.members) teamOf.set(m, t.teamId);
@@ -162,7 +167,7 @@ export function mapPreview(style: MapStyle | null, players: readonly PreviewPlay
     width: layout.width,
     zones,
     closeNeighbours: mode === 'ffa' && CLOSE_NEIGHBOUR_STYLES.includes(chosen),
-    tip: styleTip(chosen, mode, n),
+    tip: styleTip(chosen, mode, n, sizes),
     uneven: unevenTeamBlocks(chosen, mode, n),
   };
 }

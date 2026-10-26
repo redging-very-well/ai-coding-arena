@@ -25,7 +25,7 @@
 import type { GameConfig } from './config.js';
 import type { MapStyle } from './contract.js';
 import type { MapDTO, MapZoneDTO } from './protocol.js';
-import { teamCountOf, type TeamMode } from './teams.js';
+import { equalTeamSizes, teamCountOf, type TeamMode } from './teams.js';
 import {
   CELL_SIZE,
   GRID_SIZE,
@@ -108,15 +108,36 @@ export function isValidMapStyle(style: MapStyle, players: number): boolean {
  */
 export const REFUSED_TEAM_SETUPS: readonly string[] = ['islands:6:teams2'];
 
-/** Whether `style` works for P players in team mode `mode` (free-for-all: any valid style). */
-export function isValidMapSetup(style: MapStyle, mode: TeamMode, players: number): boolean {
-  return isValidMapStyle(style, players) && !REFUSED_TEAM_SETUPS.includes(`${style}:${players}:${mode}`);
+/**
+ * Styles whose layout only works for equal teams (rows / clusters): unequal
+ * teams (e.g. 3v2, or 4v2 after a move) fall back to the default style.
+ */
+export const EQUAL_TEAMS_ONLY_STYLES: readonly MapStyle[] = ['lanes', 'islands'];
+
+/**
+ * Whether the teams are equal: `sizes` when given, else whether T splits P
+ * evenly (the snake deal). Free-for-all: true.
+ */
+function teamsEqual(mode: TeamMode, players: number, sizes?: readonly number[]): boolean {
+  const T = teamCountOf(mode);
+  if (T < 2) return true;
+  return sizes && sizes.length === T ? equalTeamSizes(sizes) : players % T === 0;
 }
 
-/** The styles valid for a player count (and team mode), the default first. */
-export function validMapStyles(players: number, mode: TeamMode = 'ffa'): MapStyle[] {
+/**
+ * Whether `style` works for P players in team mode `mode` (free-for-all: any
+ * valid style). `teamSizes` (the draft/match team sizes) defaults to the
+ * snake deal; Lanes and Islands need equal teams.
+ */
+export function isValidMapSetup(style: MapStyle, mode: TeamMode, players: number, teamSizes?: readonly number[]): boolean {
+  if (!isValidMapStyle(style, players) || REFUSED_TEAM_SETUPS.includes(`${style}:${players}:${mode}`)) return false;
+  return !EQUAL_TEAMS_ONLY_STYLES.includes(style) || teamsEqual(mode, players, teamSizes);
+}
+
+/** The styles valid for a player count (and team mode / sizes), the default first. */
+export function validMapStyles(players: number, mode: TeamMode = 'ffa', teamSizes?: readonly number[]): MapStyle[] {
   const def = defaultMapStyle(players);
-  return [def, ...MAP_STYLES.filter((s) => s !== def && isValidMapSetup(s, mode, players))];
+  return [def, ...MAP_STYLES.filter((s) => s !== def && isValidMapSetup(s, mode, players, teamSizes))];
 }
 
 /**
@@ -129,8 +150,9 @@ export function resolveMapStyle(
   requested: MapStyle | null | undefined,
   players: number,
   mode: TeamMode = 'ffa',
+  teamSizes?: readonly number[],
 ): { style: MapStyle; fellBack: boolean } {
-  if (requested && isValidMapSetup(requested, mode, players)) return { style: requested, fellBack: false };
+  if (requested && isValidMapSetup(requested, mode, players, teamSizes)) return { style: requested, fellBack: false };
   return { style: defaultMapStyle(players), fellBack: requested !== null && requested !== undefined };
 }
 
@@ -359,10 +381,12 @@ export interface TeamSlots {
 }
 
 /**
- * Team mode (§9.2): the zone list is cut into T blocks of n = zones/T
- * consecutive indices. In round r team t takes block `(t + r) % T`, and its
- * member m takes block zone `(m + r) % n`. Kicked members (null or in
- * `inactive`) get no zone, and their zone stays empty.
+ * Team mode (§9.2): the zone list is cut into T blocks of consecutive
+ * indices, one per team, sized to the team (n_t = its slots). In round r the
+ * blocks are laid out from zone 0 in team order starting with team
+ * `(−r) mod T`, so with equal teams team t takes block `(t + r) % T` (blocks
+ * of n = zones/T); member m takes block zone `(m + r) % n_t`. Kicked members
+ * (null or in `inactive`) get no zone, and their zone stays empty.
  */
 export function assignTeamZones(
   layout: MapLayout,
@@ -371,17 +395,21 @@ export function assignTeamZones(
   inactive: ReadonlySet<string> = new Set(),
 ): Map<string, MapZone> {
   const T = teams.length;
-  if (T < 1 || layout.zones.length % T !== 0) throw new RangeError(`${layout.zones.length} zones can't be split into ${T} team blocks`);
-  const n = layout.zones.length / T;
+  const total = teams.reduce((sum, t) => sum + t.members.length, 0);
+  if (T < 1 || total !== layout.zones.length || teams.some((t) => t.members.length < 1)) {
+    throw new RangeError(`${layout.zones.length} zones can't be split into team blocks of ${teams.map((t) => t.members.length).join('+')}`);
+  }
   const out = new Map<string, MapZone>();
-  teams.forEach((team, t) => {
-    if (team.members.length !== n) throw new RangeError(`team ${t} has ${team.members.length} slots, its block has ${n} zones`);
-    const block = mod(t + round, T);
+  let start = 0;
+  for (let k = 0; k < T; k++) {
+    const team = teams[mod(k - round, T)]!;
+    const n = team.members.length;
     team.members.forEach((id, m) => {
       if (id === null || inactive.has(id)) return;
-      out.set(id, layout.zones[block * n + mod(m + round, n)]!);
+      out.set(id, layout.zones[start + mod(m + round, n)]!);
     });
-  });
+    start += n;
+  }
   return out;
 }
 

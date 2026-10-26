@@ -352,7 +352,8 @@ describe('zone rotation per round', () => {
     // Corners 2v2 = {TL, TR} vs {BR, BL}.
     expect(['a', 'd'].map((id) => full.get(id)!.index).sort()).toEqual([0, 1]);
     expect(['b', 'c'].map((id) => full.get(id)!.index).sort()).toEqual([2, 3]);
-    expect(() => assignTeamZones(m, [{ members: ['a', 'b', 'c'] }, { members: ['d'] }], 0)).toThrow(RangeError);
+    expect(() => assignTeamZones(m, [{ members: ['a', 'b', 'c'] }, { members: ['d', 'e'] }], 0)).toThrow(RangeError);
+    expect(() => assignTeamZones(m, [{ members: ['a', 'b', 'c', 'd'] }, { members: [] }], 0)).toThrow(RangeError);
   });
 
   it('over T rounds every team plays from every block, for every valid style × team mode', () => {
@@ -368,6 +369,45 @@ describe('zone rotation per round', () => {
         });
       }
     }
+  });
+
+  it('unequal teams: contiguous blocks sized to each team, no overlap, rotating; Lanes/Islands fall back', () => {
+    for (const [style, P, sizes] of [
+      ['ring', 5, [3, 2]],
+      ['ring', 6, [4, 2]],
+      ['ring', 7, [3, 2, 2]],
+      ['ring', 8, [5, 3]],
+      ['corners', 4, [3, 1]],
+      ['triangle', 3, [2, 1]],
+    ] as const) {
+      const m = mapFor(style, P);
+      let k = 0;
+      const teams = sizes.map((n) => ({ members: Array.from({ length: n }, () => `p${k++}`) }));
+      for (let round = 0; round < 4; round++) {
+        const z = assignTeamZones(m, teams, round);
+        expect(new Set([...z.values()].map((x) => x.index)).size).toBe(P);
+        for (const t of teams) {
+          const idx = t.members.map((id) => z.get(id)!.index).sort((a, b) => a - b);
+          // Contiguous on the cyclic zone list (index order).
+          const gaps = idx.map((v, i) => (idx[(i + 1) % idx.length]! - v + P) % P).filter((g) => g !== 1);
+          expect(gaps.length, `${style}${P} ${sizes} r${round}`).toBeLessThanOrEqual(1);
+          for (const id of t.members) {
+            const zz = z.get(id)!;
+            expect(zz.x >= 0 && zz.y >= 0 && zz.x + zz.width <= m.width && zz.y + zz.height <= m.height).toBe(true);
+          }
+        }
+      }
+    }
+    // Lanes and Islands need equal teams.
+    expect(isValidMapSetup('lanes', 'teams2', 6, [4, 2])).toBe(false);
+    expect(isValidMapSetup('lanes', 'teams2', 6, [3, 3])).toBe(true);
+    expect(isValidMapSetup('islands', 'teams4', 8, [3, 2, 2, 1])).toBe(false);
+    expect(isValidMapSetup('lanes', 'teams3', 4)).toBe(false); // 2v1v1
+    expect(resolveMapStyle('lanes', 6, 'teams2', [4, 2])).toEqual({ style: 'ring', fellBack: true });
+    // Equal teams behave exactly as before: team t takes block (t + r) % T.
+    const lanes = mapFor('lanes', 8);
+    const even = autoBalance(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'], 'teams2')!;
+    for (let r = 0; r < 3; r++) expect(Math.floor(assignTeamZones(lanes, even, r).get('a')!.index / 4)).toBe(r % 2);
   });
 
   it('Islands teams of 2: one cluster per team', () => {
@@ -397,7 +437,7 @@ describe('team blocks are fair, or refused, or flagged uneven (fixes)', () => {
   // rotations / mirror images of each other, or explicitly uneven (fair only
   // over a multiple of T rounds; the Start-match preview warns). A new layout
   // that lands here unclassified fails this test.
-  const UNEVEN = ['ring:6:teams3', 'lanes:6:teams3', 'islands:6:teams3'];
+  const UNEVEN = ['ring:6:teams3', 'lanes:6:teams3', 'islands:6:teams3', 'triangle:3:teams3'];
 
   it('Islands 6 is refused for 2 teams: it would split a cluster between the teams', () => {
     expect(isValidMapSetup('islands', 'teams2', 6)).toBe(false);

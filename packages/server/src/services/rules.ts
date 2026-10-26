@@ -115,6 +115,7 @@ export function teamRules(): Record<string, unknown> {
     rules: [
       'Free-for-all is the default: every player is their own team (teamId = your seat).',
       'Team mode (2v2, 3v3, 2v2v2, 4v4, 2v2v2v2) is chosen at Start match; teams are fixed for the whole match. Late joiners sit out until the next match.',
+      'Teams can be unequal (e.g. 3v2, or 4v2 if the host moves players); every team has at least 1 player.',
       "Same teamId = friend, different = enemy. allies are your own other units AND all your teammates' units; enemies are every other team's units.",
       "There is no friendly fire: attacking a teammate's unit just idles.",
       "A team is out when its last unit dies; the battle ends when one team (or nobody) is left. At the time limit teams are ranked by the total cost of all their members' living units.",

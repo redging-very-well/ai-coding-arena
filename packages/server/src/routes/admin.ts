@@ -58,6 +58,12 @@ export function adminRoutes(game: Game): Router {
     send(res, game.teams.swap(b.playerA, b.playerB));
   });
 
+  // Move a player to another draft team (§9.2, LOBBY only; every team keeps ≥ 1 player).
+  r.post('/teams/move', (req, res) => {
+    const b = body(req);
+    send(res, game.teams.move(b.playerId, b.teamId));
+  });
+
   r.post(
     '/match/new',
     wrap(async (_req, res) => {

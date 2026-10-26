@@ -58,6 +58,7 @@
 //   GET  /admin/match/setup           -> MatchSetupDTO (the LOBBY draft, or the running match's setup)
 //   PUT  /admin/match/setup {mapStyle?, teamMode?, revealNames?, wallsAllowed?} -> MatchSetupDTO (LOBBY only; re-balances the draft teams)
 //   POST /admin/teams/swap {playerA, playerB} -> {teams: TeamDTO[]} (LOBBY, team-mode draft only; SAME_TEAM, NO_TEAMS)
+//   POST /admin/teams/move {playerId, teamId} -> {teams: TeamDTO[]} (LOBBY, team-mode draft only; every team keeps ≥ 1 player: LAST_MEMBER; SAME_TEAM, BAD_TEAM, NO_TEAMS)
 //   POST /admin/match/new             -> GameStateDTO (MATCH_RESULTS -> LOBBY)
 //   POST /admin/phase/next            -> GameStateDTO
 //   POST /admin/phase/skip            -> GameStateDTO

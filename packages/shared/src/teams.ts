@@ -2,8 +2,9 @@
 // Auto-balance). Pure data + functions shared by server and client.
 //
 //   * `teamMode`: 'ffa' (default) or 'teams2' / 'teams3' / 'teams4' (T teams).
-//     A mode is valid for P players when P is divisible by T and every team
-//     has ≥ 2 players: 4 → 2v2; 6 → 3v3, 2v2v2; 8 → 4v4, 2v2v2v2.
+//     A mode is valid for P players when every team gets ≥ 1 player (P ≥ T).
+//     Teams may be unequal: 5 → 3v2; the host can also move players between
+//     teams in LOBBY (e.g. 4v2), as long as no team is left empty.
 //   * `autoBalance` deals players (join order) into teams with a snake:
 //     A B B A …, so 6p 3 teams = A B C C B A.
 //   * Free-for-all is the special case "every player is their own team" with
@@ -34,7 +35,24 @@ export function teamModeFor(teams: number): TeamMode {
 export function isValidTeamMode(mode: TeamMode, players: number): boolean {
   if (mode === 'ffa') return true;
   const T = teamCountOf(mode);
-  return players % T === 0 && players / T >= 2;
+  return players >= T;
+}
+
+/** The snake team sizes for P players in T teams, e.g. 5p 2 teams → [3, 2]. */
+export function snakeTeamSizes(players: number, teams: number): number[] {
+  const sizes = Array.from({ length: teams }, () => 0);
+  for (let i = 0; i < players; i++) sizes[snakeTeamOf(i, teams)]!++;
+  return sizes;
+}
+
+/** The member counts of teams (in team order). */
+export function teamSizesOf(teams: readonly { members: readonly unknown[] }[]): number[] {
+  return teams.map((t) => t.members.length);
+}
+
+/** Whether all team sizes are equal. */
+export function equalTeamSizes(sizes: readonly number[]): boolean {
+  return sizes.every((n) => n === sizes[0]);
 }
 
 /** The modes valid for P players, free-for-all first. */
@@ -42,13 +60,16 @@ export function validTeamModes(players: number): TeamMode[] {
   return TEAM_MODES.filter((m) => isValidTeamMode(m, players));
 }
 
-/** UI label, e.g. "2 teams (3v3)", "3 teams / teams of 2 (2v2v2)". */
-export function teamModeLabel(mode: TeamMode, players: number): string {
+/**
+ * UI label, e.g. "2 teams (3v3)", "3 teams / teams of 2 (2v2v2)", "2 teams
+ * (3v2)". `sizes` (the actual team sizes) defaults to the snake deal.
+ */
+export function teamModeLabel(mode: TeamMode, players: number, sizes?: readonly number[]): string {
   if (mode === 'ffa') return 'Free-for-all';
   const T = teamCountOf(mode);
-  const n = Math.max(1, Math.floor(players / T));
-  const vs = Array.from({ length: T }, () => String(n)).join('v');
-  return n === 2 && T > 2 ? `${T} teams / teams of 2 (${vs})` : `${T} teams (${vs})`;
+  const s = sizes && sizes.length === T ? sizes : snakeTeamSizes(Math.max(players, T), T);
+  const vs = [...s].sort((a, b) => b - a).join('v');
+  return s[0] === 2 && T > 2 && equalTeamSizes(s) ? `${T} teams / teams of 2 (${vs})` : `${T} teams (${vs})`;
 }
 
 /** The four team looks: ground-ring colour + pattern, so teams never rely on colour alone. */
@@ -109,6 +130,33 @@ export function swapTeamPlayers(teams: readonly TeamDTO[] | null | undefined, a:
   return {
     ok: true,
     teams: teams.map((t) => ({ ...t, members: t.members.map((m) => (m === a ? b : m === b ? a : m)) })),
+  };
+}
+
+export type MoveResult = { ok: true; teams: TeamDTO[] } | { ok: false; code: 'NO_TEAMS' | 'NOT_FOUND' | 'BAD_TEAM' | 'SAME_TEAM' | 'LAST_MEMBER' };
+
+/**
+ * Move a player to another team (§9.2 Move; LOBBY only, the caller checks the
+ * phase). The player joins the end of the new team. Refused when it would
+ * leave their old team empty (every team keeps ≥ 1 player). Returns new team
+ * objects; the input is not changed.
+ */
+export function moveTeamPlayer(teams: readonly TeamDTO[] | null | undefined, playerId: string, teamId: number): MoveResult {
+  if (!teams || teams.length === 0) return { ok: false, code: 'NO_TEAMS' };
+  const from = teamOf(teams, playerId);
+  if (!from) return { ok: false, code: 'NOT_FOUND' };
+  if (!teams.some((t) => t.teamId === teamId)) return { ok: false, code: 'BAD_TEAM' };
+  if (from.teamId === teamId) return { ok: false, code: 'SAME_TEAM' };
+  if (from.members.length <= 1) return { ok: false, code: 'LAST_MEMBER' };
+  return {
+    ok: true,
+    teams: teams.map((t) =>
+      t.teamId === from.teamId
+        ? { ...t, members: t.members.filter((m) => m !== playerId) }
+        : t.teamId === teamId
+          ? { ...t, members: [...t.members, playerId] }
+          : { ...t, members: [...t.members] },
+    ),
   };
 }
 

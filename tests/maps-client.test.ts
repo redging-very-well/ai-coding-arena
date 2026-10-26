@@ -277,8 +277,9 @@ describe('admin map preview (§12.3)', () => {
     expect(styleOptions(6, 'teams2').map((o) => o.value)).toEqual(['', 'lanes']);
     expect(styleOptions(6)[0]!.label).toBe('Ring (auto for 6 players)');
     expect(styleOptions(1)[0]!.label).toBe('Duel (auto for 2 players)');
-    expect(teamModeOptions(8).map((o) => o.label)).toEqual(['Free-for-all', '2 teams (4v4)', '4 teams / teams of 2 (2v2v2v2)']);
-    expect(teamModeOptions(5).map((o) => o.value)).toEqual(['ffa']);
+    expect(teamModeOptions(8).map((o) => o.label)).toEqual(['Free-for-all', '2 teams (4v4)', '3 teams (3v3v2)', '4 teams / teams of 2 (2v2v2v2)']);
+    expect(teamModeOptions(5).map((o) => o.label)).toEqual(['Free-for-all', '2 teams (3v2)', '3 teams (2v2v1)', '4 teams (2v1v1v1)']);
+    expect(teamModeOptions(6, 'teams2', [4, 2]).map((o) => o.label)[1]).toBe('2 teams (4v2)');
   });
 
   it('shows a draft override equal to the default (or no longer valid) as "auto", not a blank select', () => {

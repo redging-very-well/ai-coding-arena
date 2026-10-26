@@ -8,6 +8,8 @@ import {
   emptyTeams,
   isTeamMode,
   isValidTeamMode,
+  moveTeamPlayer,
+  snakeTeamSizes,
   snakeTeamOf,
   swapTeamPlayers,
   teamCountOf,
@@ -35,16 +37,31 @@ describe('team modes', () => {
     expect(isTeamMode('teams5')).toBe(false);
   });
 
-  it('valid when P is divisible by T and every team has ≥ 2 players', () => {
-    expect(validTeamModes(2)).toEqual(['ffa']);
-    expect(validTeamModes(3)).toEqual(['ffa']);
-    expect(validTeamModes(4)).toEqual(['ffa', 'teams2']);
-    expect(validTeamModes(5)).toEqual(['ffa']);
-    expect(validTeamModes(6)).toEqual(['ffa', 'teams2', 'teams3']);
-    expect(validTeamModes(7)).toEqual(['ffa']);
-    expect(validTeamModes(8)).toEqual(['ffa', 'teams2', 'teams4']);
-    expect(isValidTeamMode('teams4', 4)).toBe(false); // teams of 1
-    expect(isValidTeamMode('teams3', 8)).toBe(false); // not divisible
+  it('valid whenever every team gets ≥ 1 player (teams may be unequal)', () => {
+    expect(validTeamModes(2)).toEqual(['ffa', 'teams2']);
+    expect(validTeamModes(3)).toEqual(['ffa', 'teams2', 'teams3']);
+    expect(validTeamModes(4)).toEqual(['ffa', 'teams2', 'teams3', 'teams4']);
+    expect(validTeamModes(5)).toEqual(['ffa', 'teams2', 'teams3', 'teams4']);
+    expect(validTeamModes(7)).toEqual(['ffa', 'teams2', 'teams3', 'teams4']);
+    expect(isValidTeamMode('teams4', 3)).toBe(false);
+    expect(isValidTeamMode('teams3', 8)).toBe(true); // 3v3v2
+    // Snake deal sizes: as even as possible.
+    expect(snakeTeamSizes(5, 2)).toEqual([3, 2]);
+    expect(snakeTeamSizes(7, 3)).toEqual([3, 2, 2]);
+    expect(teamModeLabel('teams2', 5)).toBe('2 teams (3v2)');
+    expect(teamModeLabel('teams2', 6, [4, 2])).toBe('2 teams (4v2)');
+  });
+
+  it('move: any split, but every team keeps ≥ 1 player', () => {
+    const teams = autoBalance(['a', 'b', 'c', 'd', 'e'], 'teams2')!; // [a d e] [b c]
+    const r = moveTeamPlayer(teams, 'b', 0);
+    expect(r.ok && r.teams.map((t) => t.members)).toEqual([['a', 'd', 'e', 'b'], ['c']]);
+    if (!r.ok) throw new Error('move failed');
+    expect(moveTeamPlayer(r.teams, 'c', 0)).toEqual({ ok: false, code: 'LAST_MEMBER' });
+    expect(moveTeamPlayer(teams, 'a', 0)).toEqual({ ok: false, code: 'SAME_TEAM' });
+    expect(moveTeamPlayer(teams, 'a', 5)).toEqual({ ok: false, code: 'BAD_TEAM' });
+    expect(moveTeamPlayer(null, 'a', 1)).toEqual({ ok: false, code: 'NO_TEAMS' });
+    expect(teams[1]!.members).toEqual(['b', 'c']); // input unchanged
   });
 
   it('UI labels', () => {
@@ -83,7 +100,7 @@ describe('auto-balance: a snake by join order', () => {
 
   it('free-for-all has no teams; an invalid mode throws', () => {
     expect(autoBalance(ids(5), 'ffa')).toBeNull();
-    expect(() => autoBalance(ids(5), 'teams2')).toThrow(RangeError);
+    expect(() => autoBalance(ids(3), 'teams4')).toThrow(RangeError);
   });
 
   it('four distinct team looks: gold solid, cyan dashed, magenta double, lime dotted', () => {

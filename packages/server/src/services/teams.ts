@@ -3,7 +3,9 @@
 //   * LOBBY: the host keeps a DRAFT setup ({mapStyle, teamMode}, `PUT
 //     /admin/match/setup`). Its teams are dealt with the snake by join order
 //     and re-dealt whenever the roster or the draft mode changes (that drops
-//     manual swaps: toast "Teams re-balanced"). Swaps happen in LOBBY only.
+//     manual swaps/moves: toast "Teams re-balanced"). Swaps and moves happen
+//     in LOBBY only; a move can make teams unequal (every team keeps ≥ 1
+//     player), and Lanes / Islands then fall back to the default map.
 //     A roster change that makes a stored draft value invalid resets it (team
 //     mode → free-for-all, style → auto) with an admin toast, and requests
 //     only check the fields they send, so the draft can never get stuck.
@@ -30,10 +32,12 @@ import {
   mapDTO,
   mapFor,
   mapZoneDTO,
+  moveTeamPlayer,
   ok,
   resolveMapStyle,
   swapTeamPlayers,
   teamModeLabel,
+  teamSizesOf,
   validMapStyles,
   validTeamModes,
   type MapDTO,
@@ -156,6 +160,15 @@ export class TeamsService {
   }
 
   /**
+   * The draft team sizes when `mode` is the draft's mode (a move can make
+   * them unequal); undefined means the snake deal for P.
+   */
+  private draftSizes(mode: TeamMode = this.m.setup.teamMode): number[] | undefined {
+    const teams = this.m.teams;
+    return teams && mode !== 'ffa' && mode === this.m.setup.teamMode ? teamSizesOf(teams) : undefined;
+  }
+
+  /**
    * The stored draft made valid for P players: a team mode that no longer
    * splits P becomes free-for-all, a style that no longer fits (P, mode)
    * becomes null (auto). `notes` says what was reset, for the admin toast.
@@ -168,7 +181,7 @@ export class TeamsService {
       teamMode = 'ffa';
       notes.push('team mode reset to free-for-all');
     }
-    if (mapStyle !== null && !isValidMapSetup(mapStyle, teamMode, n)) {
+    if (mapStyle !== null && !isValidMapSetup(mapStyle, teamMode, n, this.draftSizes(teamMode))) {
       mapStyle = null;
       notes.push(`map reset to auto (${MAP_STYLE_INFO[resolveMapStyle(null, n).style].label})`);
     }
@@ -222,7 +235,7 @@ export class TeamsService {
       if (!isValidTeamMode(teamModeIn, players)) {
         return fail(
           'BAD_TEAM_MODE',
-          `${teamModeIn} doesn't work for ${players} players: the players must split into equal teams of at least 2.`,
+          `${teamModeIn} doesn't work for ${players} players: every team needs at least 1 player.`,
           { hint: `Pick one of: ${validTeamModes(players).join(', ')}.`, details: { players, valid: validTeamModes(players) } },
         );
       }
@@ -230,12 +243,13 @@ export class TeamsService {
     }
     if (mapStyleIn === undefined) {
       // The stored style, or auto when it doesn't suit the (possibly new) team mode.
-      const mapStyle = stored.mapStyle !== null && isValidMapSetup(stored.mapStyle, teamMode, n) ? stored.mapStyle : null;
+      const mapStyle = stored.mapStyle !== null && isValidMapSetup(stored.mapStyle, teamMode, n, this.draftSizes(teamMode)) ? stored.mapStyle : null;
       return ok({ mapStyle, teamMode });
     }
-    if (mapStyleIn !== null && (!isMapStyle(mapStyleIn) || !isValidMapSetup(mapStyleIn, teamMode, n))) {
-      const valid = validMapStyles(n, teamMode);
-      const forWhat = isMapStyle(mapStyleIn) && isValidMapSetup(mapStyleIn, 'ffa', n) ? `${n} players in ${teamModeLabel(teamMode, n)}` : `${n} players`;
+    const sizes = this.draftSizes(teamMode);
+    if (mapStyleIn !== null && (!isMapStyle(mapStyleIn) || !isValidMapSetup(mapStyleIn, teamMode, n, sizes))) {
+      const valid = validMapStyles(n, teamMode, sizes);
+      const forWhat = isMapStyle(mapStyleIn) && isValidMapSetup(mapStyleIn, 'ffa', n) ? `${n} players in ${teamModeLabel(teamMode, n, sizes)}` : `${n} players`;
       return fail('BAD_MAP_STYLE', `Map style ${JSON.stringify(mapStyleIn)} doesn't work for ${forWhat}.`, {
         hint: `Pick one of: ${valid.join(', ')} (or null for the default).`,
         details: { players: n, teamMode, valid },
@@ -263,7 +277,7 @@ export class TeamsService {
       this.game.notifier.toast(
         { admin: true },
         'info',
-        `Map reset to auto (${auto}): ${MAP_STYLE_INFO[before.mapStyle].label} doesn't suit ${teamModeLabel(checked.data.teamMode, n)}`,
+        `Map reset to auto (${auto}): ${MAP_STYLE_INFO[before.mapStyle].label} doesn't suit ${teamModeLabel(checked.data.teamMode, n, this.draftSizes(checked.data.teamMode))}`,
       );
     }
     this.m.setup = { ...checked.data, ...switchesOf(reveal.data ?? before.revealNames === true, walls.data ?? before.wallsAllowed !== false) };
@@ -293,6 +307,43 @@ export class TeamsService {
   }
 
   /**
+   * POST /admin/teams/move {playerId, teamId} (LOBBY, team-mode draft only):
+   * move a player to another team, so the host can make any split (e.g.
+   * 4v2). Every team keeps ≥ 1 player (LAST_MEMBER). Kept until the roster or
+   * the mode changes, like swaps. A draft Lanes / Islands map that no longer
+   * suits the (now unequal) teams is reset to auto with a toast.
+   */
+  move(playerId: unknown, teamId: unknown): Result<{ teams: TeamDTO[] }> {
+    if (this.m.phase !== 'LOBBY') {
+      return fail('PHASE_CLOSED', 'Teams are fixed once the match has started.', { details: { phase: this.m.phase, opensIn: 'LOBBY' } });
+    }
+    if (typeof playerId !== 'string' || typeof teamId !== 'number' || !Number.isInteger(teamId)) {
+      return fail('BAD_REQUEST', 'Send {playerId, teamId} (a player id and a team number from 0).');
+    }
+    const r = moveTeamPlayer(this.m.teams, playerId, teamId);
+    if (!r.ok) {
+      const text = {
+        NO_TEAMS: 'There are no teams: pick a team mode first.',
+        NOT_FOUND: 'That player is not on a team.',
+        BAD_TEAM: `There is no team ${teamId + 1}.`,
+        SAME_TEAM: 'That player is already on that team.',
+        LAST_MEMBER: 'That player is the last one on their team: every team needs at least 1 player.',
+      }[r.code];
+      return fail(r.code === 'BAD_TEAM' ? 'BAD_REQUEST' : r.code, text);
+    }
+    this.m.teams = r.teams;
+    const style = this.m.setup.mapStyle;
+    const n = Math.min(Math.max(this.game.players.list().length, MIN_PLAYERS), MAX_PLAYERS);
+    if (style !== null && !isValidMapSetup(style, this.m.setup.teamMode, n, teamSizesOf(r.teams))) {
+      this.m.setup = { ...this.m.setup, mapStyle: null };
+      const auto = MAP_STYLE_INFO[resolveMapStyle(null, n).style].label;
+      this.game.notifier.toast({ admin: true }, 'info', `Map changed to ${auto}: ${MAP_STYLE_INFO[style].label} needs equal teams`);
+    }
+    this.changed();
+    return ok({ teams: this.publicTeams()! });
+  }
+
+  /**
    * Start match (§10.3): check `mapStyle` (undefined = the draft's, or the
    * default when the draft's no longer fits; null = default) and `teamMode`
    * (undefined = the draft's, free-for-all when it no longer fits) against
@@ -316,7 +367,8 @@ export class TeamsService {
     }
     const revealNames = reveal.data ?? this.revealNames;
     const wallsAllowed = walls.data ?? this.wallsAllowed;
-    return ok({ mapStyle, style: resolveMapStyle(mapStyle, ids.length, teamMode).style, teamMode, teams, players: ids.length, revealNames, wallsAllowed });
+    const style = resolveMapStyle(mapStyle, ids.length, teamMode, teams ? teamSizesOf(teams) : undefined).style;
+    return ok({ mapStyle, style, teamMode, teams, players: ids.length, revealNames, wallsAllowed });
   }
 
   /** Fix the resolved setup for the match (team mode: map and teams; free-for-all: per PLACEMENT). */
@@ -341,7 +393,7 @@ export class TeamsService {
     const P = m.phase === 'LOBBY' ? this.game.players.list().length : this.game.players.active().length;
     if (P < 1) return null;
     const n = Math.min(P, MAX_PLAYERS);
-    return mapFor(resolveMapStyle(m.setup.mapStyle, n, m.phase === 'LOBBY' ? m.setup.teamMode : 'ffa').style, n);
+    return mapFor(resolveMapStyle(m.setup.mapStyle, n, m.phase === 'LOBBY' ? m.setup.teamMode : 'ffa', m.phase === 'LOBBY' ? this.draftSizes() : undefined).style, n);
   }
 
   /** The preview map for the setup DTO (at least the 2-player map). */
@@ -349,7 +401,7 @@ export class TeamsService {
     const cur = this.m.map;
     if (cur) return mapDTO(mapFor(cur.style, cur.players));
     const n = Math.min(Math.max(this.setupPlayers(), MIN_PLAYERS), MAX_PLAYERS);
-    return mapDTO(mapFor(resolveMapStyle(this.m.setup.mapStyle, n, this.m.setup.teamMode).style, n));
+    return mapDTO(mapFor(resolveMapStyle(this.m.setup.mapStyle, n, this.m.setup.teamMode, this.draftSizes()).style, n));
   }
 
   setupDTO(): MatchSetupDTO {
@@ -361,7 +413,7 @@ export class TeamsService {
       wallsAllowed: this.wallsAllowed,
       map: this.previewMap(),
       teams: this.publicTeams(),
-      validStyles: validMapStyles(n, this.m.setup.teamMode),
+      validStyles: validMapStyles(n, this.m.setup.teamMode, this.draftSizes()),
       validTeamModes: validTeamModes(n),
     };
   }

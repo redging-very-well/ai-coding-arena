@@ -193,6 +193,8 @@ export const api = {
     setMatchSetup: (setup: { mapStyle?: MapStyle | null; teamMode?: TeamMode; revealNames?: boolean; wallsAllowed?: boolean }) => request<MatchSetupDTO>('PUT', '/admin/match/setup', setup),
     /** Swap two players on different draft teams (LOBBY only). */
     swapTeams: (playerA: string, playerB: string) => request<{ teams: TeamDTO[] }>('POST', '/admin/teams/swap', { playerA, playerB }),
+    /** Move a player to another draft team (LOBBY only; every team keeps ≥ 1 player). */
+    moveTeam: (playerId: string, teamId: number) => request<{ teams: TeamDTO[] }>('POST', '/admin/teams/move', { playerId, teamId }),
     newMatch: () => request<GameStateDTO>('POST', '/admin/match/new'),
     nextPhase: () => request<GameStateDTO>('POST', '/admin/phase/next'),
     skipPhase: () => request<GameStateDTO>('POST', '/admin/phase/skip'),
