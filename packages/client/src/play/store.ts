@@ -13,9 +13,11 @@ import {
   FRAME_FLAGS,
   type BattleEndDTO,
   type BattleRevealDTO,
+  type ClaudeSeatAssignDTO,
   type ClaudeSeatsDTO,
   type FrameDTO,
   type GameStateDTO,
+  type LoginResponse,
   type MeResponse,
   type PlayerDTO,
   type PrivateStateDTO,
@@ -40,13 +42,15 @@ import {
   OLD_SEAT_KEY,
   badgeReducer,
   initialDisplaced,
+  joinSeatRequest,
   newPaneId,
   nextDisplaced,
   parseSeat,
   parseSeatQuery,
   reloadOnRecovery,
   rosterChanges,
-  seatAction,
+  seatActionAfterJoin,
+  seatOffText,
   seatTakenText,
   type BadgeEvent,
   type GameBadges,
@@ -320,11 +324,25 @@ export class PlayStore {
     this.set({ laptopSeat: laptop });
   }
 
-  /** After login: apply the seat card's seat (claim, or ask when the player has another one). */
-  private applySeatCard(mySeat: number | null): void {
+  /** What join / login send as `claudeSeat`: this laptop's seat (preferred), else 'auto' (§11.2 c). */
+  joinSeatRequest(): number | 'auto' {
+    return joinSeatRequest(this.state.laptopSeat);
+  }
+
+  /**
+   * After login: apply the seat card's seat (claim, or ask when the player
+   * has another one). After an auto-assigning join (`assigned`), only a kept
+   * seat can lead to the ask (no free seat: the picker says so itself).
+   */
+  private applySeatCard(mySeat: number | null, assigned?: ClaudeSeatAssignDTO): void {
     const card = this.cardSeat;
     this.cardSeat = null;
-    const a = seatAction(mySeat, card);
+    // A laptop without a seat card learns its seat from the first auto-assignment.
+    if (assigned?.seat != null && this.state.laptopSeat === null) {
+      writeLocal(LAPTOP_SEAT_KEY, String(assigned.seat));
+      this.set({ laptopSeat: assigned.seat });
+    }
+    const a = seatActionAfterJoin(mySeat, card, assigned?.how);
     if (a.kind === 'claim') void this.claimSeat(a.seat);
     else if (a.kind === 'ask') this.set({ seatAsk: { seat: a.seat, current: a.current } });
   }
@@ -350,6 +368,9 @@ export class PlayStore {
       if (err instanceof ApiError && err.code === 'CLAUDE_SEAT_TAKEN') {
         const d = err.details as { seat?: number; takenBy?: string } | undefined;
         this.set({ seatAsk: null, seatError: seatTakenText(d?.seat ?? seat ?? 0, d?.takenBy) });
+        void this.loadClaudeSeats();
+      } else if (err instanceof ApiError && err.code === 'CLAUDE_SEAT_OFF') {
+        this.set({ seatAsk: null, seatError: seatOffText(seat ?? 0) });
         void this.loadClaudeSeats();
       } else if (err instanceof ApiError) {
         this.set({ seatError: err.playerMessage });
@@ -447,13 +468,13 @@ export class PlayStore {
   }
 
   /** After create/login: remember who we are and reconnect the socket with the new cookie. */
-  onLoggedIn(me: MeResponse): void {
+  onLoggedIn(me: MeResponse, assigned?: ClaudeSeatAssignDTO): void {
     this.set({ auth: 'in', me, player: me.player, seatError: null });
     // Until the socket's `terminal` push: start loading the terminal right away (no picker flash).
     if (!this.state.terminal && me.claudeSeat != null) {
       this.set({ terminal: { seat: me.claudeSeat, status: 'unknown', boxReady: true, live: null } });
     }
-    this.applySeatCard(me.claudeSeat ?? null);
+    this.applySeatCard(me.claudeSeat ?? null, assigned);
     this.arena.setOptions({ highlightSeat: me.player.seat });
     // Reconnect first: the new socket carries the session cookie and says
     // hello as 'player' once open (a hello on the old socket would be refused).
@@ -461,9 +482,10 @@ export class PlayStore {
     this.socket.setRole('player');
   }
 
-  async afterJoin(): Promise<void> {
+  /** After join / login; `res` carries the auto-assigned AI seat (§11.2 c). */
+  async afterJoin(res?: LoginResponse): Promise<void> {
     const me = await api.me();
-    this.onLoggedIn(me);
+    this.onLoggedIn(me, res?.claudeSeat);
     void this.refreshState();
   }
 

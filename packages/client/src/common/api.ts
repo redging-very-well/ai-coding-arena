@@ -145,8 +145,14 @@ export const api = {
   /** The unit guide (§10.3): the rulebook for units from the live config. */
   guide: () => request<GuideDTO>('GET', '/guide'),
   state: () => request<GameStateDTO>('GET', '/state'),
-  join: (name: string, pin: string) => request<LoginResponse>('POST', '/players', { name, pin }),
-  login: (name: string, pin: string) => request<LoginResponse>('POST', '/login', { name, pin }),
+  /**
+   * Create / log in. With `claudeSeat` ('auto', or this laptop's seat 1-8 as
+   * the preference) the server also assigns an AI seat (§11.2 c).
+   */
+  join: (name: string, pin: string, claudeSeat?: number | 'auto') =>
+    request<LoginResponse>('POST', '/players', { name, pin, ...(claudeSeat !== undefined ? { claudeSeat } : {}) }),
+  login: (name: string, pin: string, claudeSeat?: number | 'auto') =>
+    request<LoginResponse>('POST', '/login', { name, pin, ...(claudeSeat !== undefined ? { claudeSeat } : {}) }),
   logout: () => request<{ ok: true }>('POST', '/logout'),
   replay: (round: number | 'latest') => request<ReplayDTO>('GET', `/battles/${round}/replay`),
   /** URLs for downloads (use as <a href>, not fetch). */
@@ -225,6 +231,8 @@ export const api = {
     /** Assign a Claude seat to a player (moves them, unassigns the seat's holder); null unassigns. */
     assignClaudeSeat: (seat: number, playerId: string | null) => request<AdminClaudeSeatsDTO>('PUT', `/admin/claude-seats/${seat}`, { playerId }),
     checkClaudeSeats: () => request<AdminClaudeSeatsDTO>('POST', '/admin/claude-seats/check'),
+    /** Turn an AI seat on or off (§11.2 c); off moves its player to another free seat. */
+    setClaudeSeatEnabled: (seat: number, enabled: boolean) => request<AdminClaudeSeatsDTO>('PUT', `/admin/claude-seats/${seat}/enabled`, { enabled }),
   },
 } as const;
 

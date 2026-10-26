@@ -3,7 +3,7 @@
 
 import { Router } from 'express';
 import QRCode from 'qrcode';
-import { SESSION_COOKIE, type HealthDTO, type JoinInfoDTO } from '@pixel-clash/shared';
+import { SESSION_COOKIE, ok, type HealthDTO, type JoinInfoDTO, type LoginResponse, type Result } from '@pixel-clash/shared';
 import type { Game } from '../services/game.js';
 import { kitZipName, parseKitAgent, safeHost, writeKitZip } from '../services/kit.js';
 import { buildGuide } from '../services/guide.js';
@@ -60,7 +60,10 @@ export function publicRoutes(game: Game): Router {
     wrap(async (req, res) => {
       const b = body(req);
       const result = await game.players.create(b.name, b.pin);
-      if (result.ok) res.cookie(SESSION_COOKIE, game.auth.createSession(result.data.player.id), COOKIE_OPTS);
+      if (result.ok) {
+        res.cookie(SESSION_COOKIE, game.auth.createSession(result.data.player.id), COOKIE_OPTS);
+        return send(res, withAutoSeat(game, result.data, b));
+      }
       send(res, result);
     }),
   );
@@ -70,10 +73,21 @@ export function publicRoutes(game: Game): Router {
     wrap(async (req, res) => {
       const b = body(req);
       const result = await game.players.login(b.name, b.pin);
-      if (result.ok) res.cookie(SESSION_COOKIE, game.auth.createSession(result.data.player.id), COOKIE_OPTS);
+      if (result.ok) {
+        res.cookie(SESSION_COOKIE, game.auth.createSession(result.data.player.id), COOKIE_OPTS);
+        return send(res, withAutoSeat(game, result.data, b));
+      }
       send(res, result);
     }),
   );
+
+  // The Claude box's agent-loop (§11.2 e): the seat's player token -> that
+  // player's login, so the AI helper starts logged in. Basic auth with the
+  // seat password; never reachable with a player's or admin's cookie alone.
+  r.post('/seat-login', (req, res) => {
+    const b = body(req);
+    send(res, game.claudeSeats.seatLogin(req.headers.authorization, b.seat, b.token, req.ip ?? req.socket.remoteAddress ?? '?'));
+  });
 
   r.post('/logout', (req, res) => {
     game.auth.endSession(cookieOf(req, SESSION_COOKIE));
@@ -137,4 +151,16 @@ export function publicRoutes(game: Game): Router {
   });
 
   return r;
+}
+
+/**
+ * /play's join and login ask for an AI seat with `claudeSeat: 'auto' | 1-8`
+ * (this laptop's seat, preferred): assign one right away (§11.2 c). Other
+ * callers (scripts, bots, older pages) send nothing and get no seat.
+ */
+function withAutoSeat(game: Game, data: LoginResponse, b: Record<string, unknown>): Result<LoginResponse> {
+  if (!('claudeSeat' in b)) return ok(data);
+  const player = game.players.get(data.player.id);
+  if (!player) return ok(data);
+  return ok({ ...data, claudeSeat: game.claudeSeats.autoAssign(player, b.claudeSeat) });
 }

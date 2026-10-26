@@ -4,8 +4,12 @@ A new player has just sat down at this Pixel Clash seat.
    pixel-clash MCP server: call get_rules, get_unit_contract and
    get_game_state. The host can change numbers at any time, so use what
    these return, not anything you remember.
-2. Then greet the player in one short, friendly line and ask for their
-   Pixel Clash player name and 4-digit PIN. When they answer, call login
-   and save the result to .pixel-clash/player.json.
+2. Then read .pixel-clash/player.json. If it is there, the player is
+   already logged in: use its apiKey on every pixel-clash call and greet
+   them by its name in one short, friendly line. Only if it is missing
+   (or the server says the apiKey is invalid), greet the player in one
+   short, friendly line and ask for their Pixel Clash player name and
+   4-digit PIN. When they answer, call login and save the result to
+   .pixel-clash/player.json.
 
 Keep it brief, and don't start making units until they ask.

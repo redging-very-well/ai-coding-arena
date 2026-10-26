@@ -252,11 +252,47 @@ first_prompt() {
   sed -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" "$src"
 }
 
+# Log the seat's player in for their agent (plan §11.2 e): trade the token
+# for {name, apiKey} at the game server's POST /api/seat-login (Basic auth with
+# the seat password, passed to curl on stdin, never in argv) and write it to
+# .pixel-clash/player.json, so the agent never has to ask for a name and PIN.
+# Best effort: any problem leaves things as they were (the agent then asks).
+# Only a well-formed answer is written.
+seat_login() { # <validated token>
+  local token="$1" host out file tmp
+  [ -n "${TTYD_PASS:-}" ] || return 0
+  [[ "$SEAT" =~ ^[1-8]$ ]] || return 0
+  host="$(kit_host 2>/dev/null)" || return 0
+  file="$KIT_DIR/.pixel-clash/player.json"
+  if ! out="$(printf 'user = "player:%s"\n' "$TTYD_PASS" | curl -fsS --max-time 5 --retry 2 --retry-delay 1 -K - \
+      -H 'Content-Type: application/json' \
+      --data "{\"seat\":${SEAT},\"token\":\"${token}\"}" \
+      "http://${host}/api/seat-login" 2>/dev/null)"; then
+    log "could not log the player in automatically (the agent will ask for their name and PIN)"
+    return 0
+  fi
+  if ! [[ "$out" =~ ^\{\"name\":\"[^\"\\]{1,64}\",\"apiKey\":\"[A-Za-z0-9_-]{8,128}\"\}$ ]]; then
+    log "unexpected answer from seat-login; the agent will ask for the player's name and PIN"
+    return 0
+  fi
+  mkdir -p "$(dirname "$file")"
+  tmp="$(mktemp "${file}.XXXXXX")"
+  printf '%s\n' "$out" >"$tmp"
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$file"
+  log "player logged in automatically (.pixel-clash/player.json)"
+}
+
 # Start mode for this connection, after acting on a new player. Sets MODE and PROMPT.
 begin_agent() { # [token]
   MODE="$(seat_start_mode "${1:-}")"
   PROMPT=''
   if [ "$MODE" = new-player ]; then switch_player "$1"; fi
+  # A valid token = the seat's player through /play: refresh their login (a
+  # PIN reset gives them a new key). seat_start_mode dropped a malformed one.
+  if [ -n "${1:-}" ] && [[ "$1" =~ $PLAYER_TOKEN_RE ]]; then seat_login "$1"; fi
+  # The seat password stays with ttyd: the agent and its commands never see it.
+  unset TTYD_PASS
   if [ "$MODE" = new-player ] || [ "$MODE" = prompt ]; then
     PROMPT="$(first_prompt)"
     [ -n "$PROMPT" ] || MODE=fresh
@@ -342,7 +378,7 @@ check() {
   if [ -f "$KIT_DIR/.pixel-clash/player.json" ]; then
     echo "player:          logged in (.pixel-clash/player.json exists)"
   else
-    echo "player:          none yet (the player tells $AGENT_NAME their name + PIN)"
+    echo "player:          none yet (logged in automatically when they open the seat from /play)"
   fi
   if [ "$AGENT" = codex ]; then
     check_codex

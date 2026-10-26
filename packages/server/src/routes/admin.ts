@@ -242,6 +242,11 @@ export function adminRoutes(game: Game): Router {
     }),
   );
 
+  // Turn a seat on or off (§11.2 c). Registered before '/claude-seats/:seat'.
+  r.put('/claude-seats/:seat/enabled', (req, res) => {
+    send(res, game.claudeSeats.setEnabled(String(req.params.seat), body(req).enabled));
+  });
+
   r.put('/claude-seats/:seat', (req, res) => {
     const b = body(req);
     if (!('playerId' in b)) {

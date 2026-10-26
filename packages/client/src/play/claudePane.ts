@@ -5,7 +5,15 @@
 // shows (picker, not ready, the terminal, open in another tab), the Game-tab
 // badges and the PLACEMENT nudge.
 
-import { CLAUDE_SEATS, type Phase, type TerminalDTO, type TerminalLiveDTO, type UnitCardDTO } from '@pixel-clash/shared';
+import {
+  CLAUDE_SEATS,
+  type ClaudeSeatAssignHow,
+  type ClaudeSeatsDTO,
+  type Phase,
+  type TerminalDTO,
+  type TerminalLiveDTO,
+  type UnitCardDTO,
+} from '@pixel-clash/shared';
 
 /** localStorage: the laptop's Claude seat from its seat card QR (kept for the next player). */
 export const LAPTOP_SEAT_KEY = 'pc.laptopSeat';
@@ -57,6 +65,35 @@ export function seatAction(mySeat: number | null, cardSeat: number | null): Seat
   if (cardSeat === null || mySeat === cardSeat) return { kind: 'none' };
   if (mySeat === null) return { kind: 'claim', seat: cardSeat };
   return { kind: 'ask', seat: cardSeat, current: mySeat };
+}
+
+/**
+ * After join / login with auto-assignment (§11.2 c): the server already took
+ * the seat card's seat when it was free, so only a player who kept their own
+ * seat is asked about the card's seat. `how` undefined (a page load with a
+ * session) = the plain {@link seatAction}.
+ */
+export function seatActionAfterJoin(mySeat: number | null, cardSeat: number | null, how: ClaudeSeatAssignHow | undefined): SeatAction {
+  if (how !== undefined && how !== 'kept') return { kind: 'none' };
+  return seatAction(mySeat, cardSeat);
+}
+
+/** What /play sends on join / login: this laptop's seat as the preference, else any free seat. */
+export function joinSeatRequest(laptopSeat: number | null): number | 'auto' {
+  return laptopSeat ?? 'auto';
+}
+
+/** The picker's list has no free seat (every seat that is on is someone's). */
+export function noFreeSeat(seats: ClaudeSeatsDTO | null | undefined): boolean {
+  return !!seats && seats.seats.every((s) => s.takenBy !== null && !s.mine);
+}
+
+/** The player-facing text when no AI seat could be given. */
+export const NO_FREE_SEAT_TEXT = 'Every AI seat is in use right now. Ask a grown-up to free one up.';
+
+/** The player-facing text of a CLAUDE_SEAT_OFF answer. */
+export function seatOffText(seat: number): string {
+  return `AI seat ${seat} is turned off today. Pick another seat, or ask a grown-up.`;
 }
 
 /** The player-facing text of a CLAUDE_SEAT_TAKEN conflict. */

@@ -2,9 +2,8 @@
 // injected basic auth, and the request/response header rules shared by the
 // HTTP proxy, the WebSocket relay and the seat probe.
 
-import { createHash } from 'node:crypto';
 import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http';
-import { CLAUDE_SEAT_BASE_PORT } from '../services/claudeSeats.js';
+import { CLAUDE_SEAT_BASE_PORT, seatPlayerToken } from '../services/claudeSeats.js';
 
 export interface Upstream {
   host: string;
@@ -22,17 +21,8 @@ export const TTYD_USER = 'player';
 /** What the proxy answers on `/terminal/N/token` instead of ttyd's base64 `user:password`. */
 export const PLACEHOLDER_TOKEN = 'pixel-clash';
 
-/**
- * Which player a seat's terminal serves (plan §11.2 e): 32 hex digits, a hash
- * of the seat and the player's id. The proxy appends `?arg=<token>` to the
- * ttyd WebSocket only for the seat's assigned player; ttyd (`-a`) passes it to
- * the seat's agent-loop, which starts a fresh conversation with the first
- * prompt when the token differs from the last one it saw. Deterministic, so a
- * reload or the same player coming back resumes their conversation.
- */
-export function seatPlayerToken(seat: number, playerId: string): string {
-  return createHash('sha256').update(`pixel-clash seat player\n${seat}\n${playerId}`).digest('hex').slice(0, 32);
-}
+// The player token (§11.2 e) lives in services/claudeSeats.ts (POST /api/seat-login checks it too).
+export { seatPlayerToken };
 
 /** ttyd's WebSocket path for seat N, with the player token for the seat's player only. */
 export function upstreamWsPath(seat: number, playerId: string | null): string {

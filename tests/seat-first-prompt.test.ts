@@ -7,7 +7,7 @@
 // between players, and that a token never reaches a shell.
 
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -26,6 +26,7 @@ const B = 'b'.repeat(16) + '0123456789abcdef';
 const FAKE = `#!/usr/bin/env bash
 printf '%s\\x1f' "$(basename "$0")" "$@" >>"$FAKE_LOG"
 printf '\\x1e' >>"$FAKE_LOG"
+[ -n "\${FAKE_ENV_LOG:-}" ] && printf '%s' "\${TTYD_PASS-<unset>}" >"$FAKE_ENV_LOG"
 if [ "$(basename "$0")" = claude ]; then
   d="$CLAUDE_CONFIG_DIR/projects/$(printf '%s' "$PWD" | sed 's/[^A-Za-z0-9]/-/g')"
   mkdir -p "$d" && touch "$d/chat.jsonl"
@@ -36,6 +37,15 @@ n=$(tr -cd '\\036' <"$FAKE_LOG" | wc -c)
 [ "$n" -ge "\${FAKE_STOP_AFTER:-1}" ] && kill -TERM "$PPID"
 exit 0
 `;
+
+// A fake curl for the seat login (§11.2 e): records argv and stdin, answers $FAKE_CURL_OUT.
+const FAKE_CURL = `#!/usr/bin/env bash
+printf '%s\\x1f' "$@" >"$FAKE_CURL_ARGS"
+cat >"$FAKE_CURL_STDIN"
+printf '%s' "$FAKE_CURL_OUT"
+exit "\${FAKE_CURL_STATUS:-0}"
+`;
+const SECRET = 'otter-lamp-quartz-ninety';
 
 let dir: string;
 let kit: string;
@@ -85,6 +95,8 @@ beforeEach(() => {
     writeFileSync(join(dir, 'bin', name), FAKE);
     chmodSync(join(dir, 'bin', name), 0o755);
   }
+  writeFileSync(join(dir, 'bin', 'curl'), FAKE_CURL);
+  chmodSync(join(dir, 'bin', 'curl'), 0o755);
   mkdirSync(join(kit, '.pixel-clash'), { recursive: true });
   mkdirSync(claudeDir);
 });
@@ -184,5 +196,59 @@ describe('first prompt for a new player (§11.2 e)', () => {
     expect(loop([B], { AGENT: 'codex' })).toEqual([['codex', 'resume', '--last', ...codexArgs]]);
     expect(loop([], { AGENT: 'codex' })).toEqual([['codex', 'resume', '--last', ...codexArgs]]);
     expect(loop([A], { AGENT: 'codex' })).toEqual([['codex', ...codexArgs, PROMPT]]);
+  });
+});
+
+describe('the AI helper starts logged in (§11.2 e seat login)', () => {
+  const player = () => join(kit, '.pixel-clash/player.json');
+  const env = (extra: Record<string, string> = {}) => ({
+    TTYD_PASS: SECRET,
+    FAKE_CURL_ARGS: join(dir, 'curl-args'),
+    FAKE_CURL_STDIN: join(dir, 'curl-stdin'),
+    FAKE_ENV_LOG: join(dir, 'agent-env'),
+    FAKE_CURL_OUT: '{"name":"Ninja Sam","apiKey":"pc_ABCDEFGH234567"}',
+    ...extra,
+  });
+  const curlArgs = () => (existsSync(join(dir, 'curl-args')) ? readFileSync(join(dir, 'curl-args'), 'utf8').split('\x1f').slice(0, -1) : null);
+
+  it('a new player: trades the token for their login, writes player.json, keeps the password out of argv and the agent', () => {
+    login();
+    expect(loop([A], env())).toEqual([['claude', PROMPT]]);
+    expect(readFileSync(player(), 'utf8')).toBe('{"name":"Ninja Sam","apiKey":"pc_ABCDEFGH234567"}\n');
+    expect(statSync(player()).mode & 0o777).toBe(0o600);
+    const args = curlArgs()!;
+    expect(args.at(-1)).toBe('http://192.168.8.10:8080/api/seat-login');
+    expect(args).toContain(`{"seat":3,"token":"${A}"}`);
+    expect(args.join(' ')).not.toContain(SECRET);
+    expect(readFileSync(join(dir, 'curl-stdin'), 'utf8')).toBe(`user = "player:${SECRET}"\n`);
+    // The agent never sees the seat password.
+    expect(readFileSync(join(dir, 'agent-env'), 'utf8')).toBe('<unset>');
+  });
+
+  it('the same player again refreshes the login; no token never asks the server', () => {
+    loop([A], env());
+    expect(loop([A], env({ FAKE_CURL_OUT: '{"name":"Ninja Sam","apiKey":"pc_NEWKEY2345678"}' }))).toEqual([['claude', '--continue']]);
+    expect(readFileSync(player(), 'utf8')).toContain('pc_NEWKEY2345678');
+    rmSync(join(dir, 'curl-args'));
+    expect(loop([], env())).toEqual([['claude', '--continue']]);
+    expect(curlArgs()).toBeNull();
+    expect(readFileSync(player(), 'utf8')).toContain('pc_NEWKEY2345678');
+  });
+
+  it('a failed or odd answer writes nothing (the agent asks for name and PIN as before)', () => {
+    for (const out of ['', '{"error":{"code":"NOT_FOUND"}}', '{"name":"x","apiKey":"$(touch /tmp/pwn)"}', '{"name":"a\\"b","apiKey":"pc_ABCDEFGH234567"}', '{"name":"x","apiKey":"pc_ABCDEFGH234567"}\nmore']) {
+      rmSync(join(kit, '.pixel-clash/last-player'), { force: true });
+      expect(loop([A], env({ FAKE_CURL_OUT: out })), out).toEqual([['claude', PROMPT]]);
+      expect(existsSync(player()), out).toBe(false);
+    }
+    rmSync(join(kit, '.pixel-clash/last-player'), { force: true });
+    expect(loop([A], env({ FAKE_CURL_STATUS: '22' }))).toEqual([['claude', PROMPT]]);
+    expect(existsSync(player())).toBe(false);
+    // No seat password (old compose file): no call at all.
+    rmSync(join(kit, '.pixel-clash/last-player'), { force: true });
+    rmSync(join(dir, 'curl-args'), { force: true });
+    const { TTYD_PASS: _drop, ...noPass } = env();
+    expect(loop([A], noPass)).toEqual([['claude', PROMPT]]);
+    expect(curlArgs()).toBeNull();
   });
 });

@@ -17,8 +17,11 @@
 // REST (JSON, prefix /api). Errors: HTTP 4xx/5xx with ApiErrorBody; a failed
 // unit validation is HTTP 422 with the §7 ValidationFailure body.
 //   GET    /health                    -> HealthDTO
-//   POST   /players      {name,pin}   -> LoginResponse (+ cookie)   NAME_TAKEN GAME_FULL BAD_PIN_FORMAT BAD_NAME_FORMAT
-//   POST   /login        {name,pin}   -> LoginResponse (+ cookie)   BAD_LOGIN RATE_LIMITED
+//   POST   /players      {name,pin,claudeSeat?} -> LoginResponse (+ cookie)   NAME_TAKEN GAME_FULL BAD_PIN_FORMAT BAD_NAME_FORMAT
+//   POST   /login        {name,pin,claudeSeat?} -> LoginResponse (+ cookie)   BAD_LOGIN RATE_LIMITED
+//                                        claudeSeat: 'auto' | 1-8 (this laptop's seat, preferred) = also
+//                                        auto-assign an AI seat (§11.2 c); the answer then has `claudeSeat`
+//   POST   /seat-login   {seat,token} + Basic player:<seat password> -> SeatLoginDTO (the Claude box only, §11.2 e)
 //   POST   /logout                    -> {ok:true}
 //   GET    /me                        -> MeResponse
 //   GET    /rules                     -> RulesDTO
@@ -44,7 +47,7 @@
 //   GET    /setup                     -> SetupInfoDTO (no auth: LAN/play URL + QR, seat cards; never the seat password)
 //   GET    /claude-seats              -> ClaudeSeatsDTO (player; the Claude seat picker, §11.2)
 //   PUT    /me/claude-seat {seat: 1-8 | null} -> {claudeSeat} (player, any phase, 1/s;
-//                                        BAD_CLAUDE_SEAT, CLAUDE_SEAT_TAKEN 409 with details {seat, takenBy})
+//                                        BAD_CLAUDE_SEAT, CLAUDE_SEAT_OFF, CLAUDE_SEAT_TAKEN 409 with details {seat, takenBy})
 // Admin (cookie pc_admin):
 //   POST /admin/login {password}      -> {ok:true}
 //   POST /admin/logout                -> {ok:true}
@@ -83,7 +86,9 @@
 //   PUT  /admin/setup {claudeBoxHost?, preferredUrl?, seatSecret?} (null/"" clears) -> SetupInfoDTO & {seatSecretSet}
 //                                        (BAD_SEAT_SECRET: 12-64 of A-Z a-z 0-9 . _ ~ -)
 //   GET  /admin/claude-seats[?details=1] -> AdminClaudeSeatsDTO (seatSecret + directUrl only with details=1)
-//   PUT  /admin/claude-seats/:seat {playerId | null} -> AdminClaudeSeatsDTO (assign/move/unassign; BAD_CLAUDE_SEAT, NOT_FOUND)
+//   PUT  /admin/claude-seats/:seat {playerId | null} -> AdminClaudeSeatsDTO (assign/move/unassign; BAD_CLAUDE_SEAT, CLAUDE_SEAT_OFF, NOT_FOUND)
+//   PUT  /admin/claude-seats/:seat/enabled {enabled: boolean} -> AdminClaudeSeatsDTO (turn a seat on/off; off releases
+//                                        its player, who is moved to the lowest free seat that is on, if any)
 //   POST /admin/claude-seats/check    -> AdminClaudeSeatsDTO (probes every seat now)
 //
 // Seat terminal proxy (§11.2, same origin, not under /api; cookie auth: the
@@ -177,6 +182,26 @@ export interface PlayerStatusDTO extends PlayerDTO {
 /** POST /players, POST /login, MCP login. */
 export interface LoginResponse {
   player: PlayerDTO;
+  apiKey: string;
+  /** Only when the request asked for it (`claudeSeat` in the body): the AI seat auto-assigned on join/login (§11.2 c). */
+  claudeSeat?: ClaudeSeatAssignDTO;
+}
+
+/**
+ * How an AI seat was auto-assigned (§11.2 c): `kept` = the player's own seat,
+ * `preferred` = this laptop's seat, `lowest` = the lowest free seat that is
+ * on, `none` = no seat is free (the picker shows).
+ */
+export type ClaudeSeatAssignHow = 'kept' | 'preferred' | 'lowest' | 'none';
+
+export interface ClaudeSeatAssignDTO {
+  seat: number | null;
+  how: ClaudeSeatAssignHow;
+}
+
+/** POST /seat-login (the Claude box's agent-loop, §11.2 e): written as is to /kit/.pixel-clash/player.json. */
+export interface SeatLoginDTO {
+  name: string;
   apiKey: string;
 }
 
@@ -1285,11 +1310,14 @@ export interface TerminalDTO {
 export interface ClaudeSeatsDTO {
   mySeat: number | null;
   boxReady: boolean;
+  /** Seats that are on (the admin can turn seats off, §11.2 c); off seats are left out. */
   seats: Array<{ seat: number; takenBy: string | null; mine: boolean; status: PlayerClaudeSeatStatus }>;
 }
 
 export interface AdminClaudeSeatDTO {
   seat: number;
+  /** Off = never auto-assigned or pickable (§11.2 c). Default on. */
+  enabled: boolean;
   playerId: string | null;
   playerName: string | null;
   status: ClaudeSeatStatus;

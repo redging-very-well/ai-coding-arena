@@ -37,9 +37,10 @@ export function Join() {
     setBusy(true);
     setError(null);
     try {
-      if (mode === 'new') await api.join(name.trim(), pin);
-      else await api.login(name.trim(), pin);
-      await store.afterJoin();
+      // The server picks an AI seat at the same time (this laptop's, if free), so the terminal opens right away.
+      const seat = store.joinSeatRequest();
+      const res = mode === 'new' ? await api.join(name.trim(), pin, seat) : await api.login(name.trim(), pin, seat);
+      await store.afterJoin(res);
     } catch (err) {
       const e = err instanceof ApiError ? err : null;
       const msg =
@@ -148,7 +149,7 @@ export function Join() {
             {error}
           </p>
         )}
-        {mode === 'new' && <p class="dim small">Remember your PIN! You (and your AI helper) need it to log in.</p>}
+        {mode === 'new' && <p class="dim small">Remember your PIN! You need it to log in again.</p>}
       </div>
       {st.laptopSeat !== null && <p class="dim small">This laptop is AI seat {st.laptopSeat}.</p>}
     </main>

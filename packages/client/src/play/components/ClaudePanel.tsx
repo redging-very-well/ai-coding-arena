@@ -2,7 +2,9 @@
 // through the game server's proxy (/terminal/N/), in an iframe that stays
 // mounted across tab switches and breakpoints (not under the "open in another
 // tab" overlay, and not before the first `terminal` push says nobody else
-// holds the seat: loading it takes the seat over). Pane states: seat picker, not
+// holds the seat: loading it takes the seat over). Join / login assign a seat
+// by themselves (§11.2 c), so the picker is the fallback (no seat free, or
+// "Change seat"). Pane states: seat picker, not
 // ready, the terminal (with a "box down" strip), and "open in another tab"
 // with "Use it here instead". "Open in new tab" opens the same terminal as its
 // own browser tab.
@@ -10,7 +12,9 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { cx } from '../../common/ui.js';
 import {
+  NO_FREE_SEAT_TEXT,
   claudeView,
+  noFreeSeat,
   terminalPath,
   terminalTabName,
   viewHasFrame,
@@ -212,11 +216,17 @@ function SeatPicker() {
   const laptop = st.laptopSeat;
   const laptopRow = laptop === null ? undefined : seats.find((s) => s.seat === laptop);
   const offerLaptop = laptopRow && !laptopRow.takenBy;
+  const full = noFreeSeat(st.claudeSeats);
 
   return (
     <div class="seat-pick">
-      <h2>Which number is on your laptop's card?</h2>
-      <p class="dim">That's your AI seat. Your AI helper terminal then opens right here.</p>
+      <h2>Pick an AI seat</h2>
+      <p class="dim">Your AI helper terminal then opens right here.</p>
+      {full && !st.seatError && (
+        <p class="note" role="status">
+          {NO_FREE_SEAT_TEXT}
+        </p>
+      )}
       {offerLaptop && (
         <button class="btn big-link" onClick={() => void store.claimSeat(laptop)}>
           Use AI seat {laptop}

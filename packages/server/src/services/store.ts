@@ -257,6 +257,11 @@ export type PersistedMatchState = Omit<MatchState, 'armory'> & {
  */
 export interface SetupRecord extends SetupSettingsDTO {
   seatSecret: string | null;
+  /**
+   * AI seats the admin turned off (§11.2 c), ascending. Venue state like the
+   * box address, so it survives a wipe. Empty (the default) = every seat on.
+   */
+  disabledClaudeSeats: number[];
 }
 
 export interface PersistedState {
@@ -324,7 +329,7 @@ export class Store {
   adminPassword: string | undefined;
   configPatch: DeepPartial<GameConfig> = {};
   /** /setup settings; kept across a wipe (they describe the venue, not the game). */
-  setup: SetupRecord = { claudeBoxHost: null, preferredUrl: null, seatSecret: null };
+  setup: SetupRecord = { claudeBoxHost: null, preferredUrl: null, seatSecret: null, disabledClaudeSeats: [] };
   /** Monotonic counter for join order. */
   private joinSeq = 0;
 
@@ -455,10 +460,11 @@ export class Store {
         claudeBoxHost: data.setup.claudeBoxHost ?? null,
         preferredUrl: data.setup.preferredUrl ?? null,
         seatSecret: typeof data.setup.seatSecret === 'string' ? data.setup.seatSecret : null,
+        disabledClaudeSeats: normalizeSeatList(data.setup.disabledClaudeSeats),
       };
     }
-    // Claude seats are unique (§11.2 c): drop duplicates and junk from an edited file.
-    const claudeSeats = new Set<number>();
+    // Claude seats are unique (§11.2 c): drop duplicates and junk from an edited file, and seats that are off.
+    const claudeSeats = new Set<number>(this.setup.disabledClaudeSeats);
     for (const p of this.players.values()) {
       const s = p.claudeSeat;
       if (p.kicked || typeof s !== 'number' || !Number.isInteger(s) || s < 1 || s > 8 || claudeSeats.has(s)) p.claudeSeat = null;
@@ -623,4 +629,12 @@ export class Store {
 /** data/armory file name of an entry's frozen code (one file per version). */
 export function armoryFileName(armoryId: string, version: number): string {
   return `${armoryId}.v${version}.compiled.cjs`;
+}
+
+/** A stored list of AI seat numbers: 1-8, unique, ascending; junk dropped. */
+export function normalizeSeatList(v: unknown): number[] {
+  if (!Array.isArray(v)) return [];
+  const seats = new Set<number>();
+  for (const n of v) if (typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 8) seats.add(n);
+  return [...seats].sort((a, b) => a - b);
 }

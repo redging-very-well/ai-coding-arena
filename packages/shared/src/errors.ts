@@ -127,6 +127,8 @@ export const SERVICE_ERROR_CODES = [
   // Claude seats and the seat terminal proxy (§11.2).
   'BAD_CLAUDE_SEAT',
   'CLAUDE_SEAT_TAKEN',
+  // The admin turned that AI seat off (§11.2 c): never assigned or pickable.
+  'CLAUDE_SEAT_OFF',
   'BAD_SEAT_SECRET',
   'TERMINAL_LOGIN_REQUIRED',
   'CLAUDE_SEAT_NOT_YOURS',
@@ -256,6 +258,7 @@ export function httpStatusFor(code: ErrorCode): number {
     case 'TEMPLATE_WOULD_BREAK':
     case 'UNIT_CHANGED':
     case 'CLAUDE_SEAT_TAKEN':
+    case 'CLAUDE_SEAT_OFF':
       return 409;
     case 'RATE_LIMITED':
       return 429;

@@ -1,8 +1,10 @@
 // Claude seats panel (plan §12.3, §11.2): the Claude box address, the shared
 // seat password (the value only with "Show details" on, since this page may be
-// on the projector), the seats 1-8 with live status, assigned player
-// (reassign / Unassign), who holds the live terminal, and "Open terminal"
-// (rescue: the seat's terminal through the proxy, in its own tab).
+// on the projector), the seats 1-8 with an On switch (off = never assigned or
+// pickable; turning off a held seat moves its player to another free seat),
+// live status, assigned player (reassign / Unassign), who holds the live
+// terminal, and "Open terminal" (rescue: the seat's terminal through the
+// proxy, in its own tab).
 
 import { useEffect, useState } from 'preact/hooks';
 import type { AdminClaudeSeatDTO, AdminClaudeSeatsDTO, ClaudeSeatStatus } from '@pixel-clash/shared';
@@ -138,6 +140,7 @@ export function ClaudeSeats() {
           <thead>
             <tr>
               <th>Seat</th>
+              <th>On</th>
               <th>Status</th>
               <th>Player</th>
               <th>Live terminal</th>
@@ -147,9 +150,25 @@ export function ClaudeSeats() {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.seat}>
+              <tr key={r.seat} style={r.enabled ? undefined : { opacity: 0.55 }}>
                 <td>
                   <b class="claude-seat-num">{r.seat}</b>
+                </td>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={r.enabled}
+                    disabled={busy}
+                    aria-label={`AI seat ${r.seat} on`}
+                    title={r.enabled ? 'Turn this seat off: nobody gets it' : 'Turn this seat on'}
+                    onChange={(e) => {
+                      const on = e.currentTarget.checked;
+                      const moved = !on && r.playerName ? ` (${r.playerName} moves to another free seat)` : '';
+                      void act(() => api.admin.setClaudeSeatEnabled(r.seat, on), on ? `AI seat ${r.seat} is on` : `AI seat ${r.seat} is off${moved}`).then(
+                        (d) => d && setSeats(d),
+                      );
+                    }}
+                  />
                 </td>
                 <td title={r.checkedAt ? `checked ${ago(r.checkedAt, now)}` : 'not checked yet'}>
                   <span class={cx('status-dot', `st-${r.status}`)} aria-hidden="true" /> {STATUS_TEXT[r.status]}
@@ -158,7 +177,7 @@ export function ClaudeSeats() {
                 <td>
                   <select
                     value={r.playerId ?? ''}
-                    disabled={busy}
+                    disabled={busy || !r.enabled}
                     aria-label={`Player on AI seat ${r.seat}`}
                     onChange={(e) => {
                       const id = e.currentTarget.value || null;
@@ -210,7 +229,8 @@ export function ClaudeSeats() {
         </table>
       </div>
       <p class="dim small">
-        One live terminal per seat: the newest wins. "Open terminal" takes over the player's terminal until they press "Use it here
+        Players get a free seat by themselves when they join (their laptop's seat if free, else the lowest free one). Seats that are
+        off are never given out. One live terminal per seat: the newest wins. "Open terminal" takes over the player's terminal until they press "Use it here
         instead" on /play.
         {showDetails && ' Direct URLs bypass this server (user "player" + the seat password): the grown-ups\' fallback.'}
       </p>
