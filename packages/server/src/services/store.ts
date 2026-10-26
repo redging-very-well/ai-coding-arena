@@ -259,15 +259,15 @@ export type PersistedMatchState = Omit<MatchState, 'armory'> & {
 export interface SetupRecord extends SetupSettingsDTO {
   seatSecret: string | null;
   /**
-   * AI seats the admin turned off (§11.2 c), ascending. Venue state like the
-   * box address, so it survives a wipe. Empty (the default) = every seat on.
+   * AI seats the admin turned off (§11.2 c), ascending. Venue state like the AI session
+   * host address, so it survives a wipe. Empty (the default) = every seat on.
    */
   disabledClaudeSeats: number[];
   /**
    * The shared agent logins pasted in /admin (§11.2 f): venue state like the
    * seat password, so they survive a wipe and restarts. Write-only: never in
    * any payload (admins see only the last 4 characters); handed only to the
-   * Claude box by POST /api/seat-login.
+   * AI session host by POST /api/seat-login.
    */
   agentCredentials: AgentCredentials;
 }
@@ -308,7 +308,7 @@ export interface PersistedState {
   adminSessions: string[];
   adminPassword?: string;
   configPatch: DeepPartial<GameConfig>;
-  /** /setup settings (Claude box address, preferred LAN URL, seat password). */
+  /** /setup settings (AI session host address, preferred LAN URL, seat password). */
   setup?: Partial<SetupRecord>;
 }
 

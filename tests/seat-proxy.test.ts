@@ -273,7 +273,7 @@ describe('seat terminal proxy', () => {
     }
   });
 
-  it('is not configured until the Claude box address and the seat password are set', async () => {
+  it('is not configured until the AI session host address and the seat password are set', async () => {
     expect((await sam.client.put('/me/claude-seat', { seat: 1 })).body).toEqual({ claudeSeat: 1 });
     const page = await raw(srv.url, '/terminal/1/', { headers: { ...HTML, cookie: sam.client.cookieHeader() } });
     expect(page.status).toBe(503);
@@ -587,7 +587,7 @@ describe('seat terminal proxy', () => {
     after.ws.close();
   }, T);
 
-  it('closes the browser with 1011 when the Claude box drops the terminal (ttyd reconnects)', async () => {
+  it('closes the browser with 1011 when the AI session host drops the terminal (ttyd reconnects)', async () => {
     const term = await openOk(srv.url, 1, sam.client.cookieHeader());
     await sleep(50);
     term.ws.send('die');
@@ -595,7 +595,7 @@ describe('seat terminal proxy', () => {
     expect(term.closeCode).toBe(1011);
   });
 
-  it('shows a friendly page when the Claude box is down', async () => {
+  it('shows a friendly page when the AI session host is down', async () => {
     const kim = await newPlayer(srv.url, 'Kim');
     expect((await kim.client.put('/me/claude-seat', { seat: 8 })).body).toEqual({ claudeSeat: 8 });
     const t0 = Date.now();
@@ -613,7 +613,7 @@ describe('seat terminal proxy', () => {
     expect(mine.seats[7]).toMatchObject({ seat: 8, mine: true, status: 'down', takenBy: 'Kim' });
   });
 
-  it("surfaces a seat password that doesn't match the Claude box", async () => {
+  it("surfaces a seat password that doesn't match the AI session host", async () => {
     expect((await admin.put('/admin/setup', { seatSecret: 'wrong-wrong-wrong-wrong' })).status).toBe(200);
     const page = await raw(srv.url, '/terminal/1/', { headers: { ...HTML, cookie: sam.client.cookieHeader() } });
     expect(page.status).toBe(502);

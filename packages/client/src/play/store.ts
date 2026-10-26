@@ -136,7 +136,7 @@ export interface PlayState {
   seatError: string | null;
   /** The laptop's Claude seat from its seat card (localStorage), for the picker. */
   laptopSeat: number | null;
-  /** Claude box address (public /setup), for the grown-ups' direct link. */
+  /** AI session host address (public /setup), for the grown-ups' direct link. */
   boxHost: string | null;
   /** Game-tab badges while Claude shows. */
   badges: GameBadges;
@@ -397,7 +397,7 @@ export class PlayStore {
     }
   }
 
-  /** The Claude box address for the grown-ups' direct link (public /setup; it holds no secret). */
+  /** The AI session host address for the grown-ups' direct link (public /setup; it holds no secret). */
   async loadBoxHost(): Promise<void> {
     try {
       const i = await request<SetupInfoDTO>('GET', '/setup');
@@ -425,7 +425,7 @@ export class PlayStore {
     }
     const lastHolder = t.live && t.live.pane !== this.pane ? t.live.by : this.state.lastHolder;
     if (reloadOnRecovery(prev, t, displaced)) {
-      // The Claude box is back: a fresh iframe connects again (ttyd's own page gave up).
+      // The AI session host is back: a fresh iframe connects again (ttyd's own page gave up).
       this.claimingUntil = Date.now() + CLAIM_GRACE_MS;
       this.set({ terminal: t, displaced, lastHolder, holderKnown: true, frameSeq: this.state.frameSeq + 1 });
     } else this.set({ terminal: t, displaced, lastHolder, holderKnown: true });

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# Pixel Clash "Claude box" seat image (plan §11.1, §11.3).
+# Pixel Clash "AI session host" seat image (plan §11.1, §11.3).
 #
 # One container per seat runs ttyd, which starts the seat's coding agent
 # (Claude Code, or OpenAI Codex CLI with AGENT=codex) straight in the seat's

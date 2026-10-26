@@ -1,21 +1,21 @@
-# Pixel Clash Claude box (`sessions/`)
+# Pixel Clash AI session host (`sessions/`)
 
 One Docker container per seat (plan §11.1). Each container runs **ttyd**, which runs the seat's coding agent straight inside that seat's kit folder `/kit`: **Claude Code** by default, or the **OpenAI Codex CLI** on seats set to `AGENT=codex` (plan §11.3, section 2b). The terminal opens straight into the agent, and if it exits it starts again. Both agents get the same kit instructions (CLAUDE.md for Claude, the same text as AGENTS.md for Codex) and the same game tools over MCP.
 
-**Players never open the Claude box directly.** The game server reverse-proxies each seat at `http://<game-server>:8080/terminal/N/` (plan §11.2) and shows it inside `/play`, next to the game (or as an "AI helper" tab on small screens). A player can only reach the AI seat assigned to them (picked once on /play, or set by the seat card's `/play?seat=N` QR), and an "Open in new tab" button opens the same terminal as its own browser tab. The proxy adds the seat password itself, so **players never see or type it**. Each ttyd runs with the base path `-b /terminal/N` so the same paths work behind the proxy and directly.
+**Players never open the AI session host directly.** The game server reverse-proxies each seat at `http://<game-server>:8080/terminal/N/` (plan §11.2) and shows it inside `/play`, next to the game (or as an "AI helper" tab on small screens). A player can only reach the AI seat assigned to them (picked once on /play, or set by the seat card's `/play?seat=N` QR), and an "Open in new tab" button opens the same terminal as its own browser tab. The proxy adds the seat password itself, so **players never see or type it**. Each ttyd runs with the base path `-b /terminal/N` so the same paths work behind the proxy and directly.
 
 **The container is the security boundary, not the ttyd loop.** Claude Code's `!` prefix runs any typed command in the container as user `player`, and a player can accept any approval prompt Claude raises. So treat each seat as "a player with a shell inside this container": they can reach `/kit`, the seat's own Claude state, and whatever the network allows, but not other seats, the host or the game server's files. In particular, **each seat can read its own Claude login** (`/home/player/.claude/.credentials.json`): use a dedicated event account and sign it out of all sessions after the event (§5). The image ships a root-owned `/etc/claude-code/managed-settings.json` that player-writable settings can't override: it turns off `bypassPermissions` mode and denies Claude reading the credentials file (the `!` prefix still can).
 
 | Seat | Host port | Direct URL (adults' fallback, user `player` / `SEAT_SECRET`) | Volumes |
 |---|---|---|---|
-| 1 | 7781 | `http://<claude-box>:7781/terminal/1/` | `kit1`, `claude1`, `codex1` |
-| 2 | 7782 | `http://<claude-box>:7782/terminal/2/` | `kit2`, `claude2`, `codex2` |
-| 3 | 7783 | `http://<claude-box>:7783/terminal/3/` | `kit3`, `claude3`, `codex3` |
-| 4 | 7784 | `http://<claude-box>:7784/terminal/4/` | `kit4`, `claude4`, `codex4` |
-| 5 | 7785 | `http://<claude-box>:7785/terminal/5/` | `kit5`, `claude5`, `codex5` |
-| 6 | 7786 | `http://<claude-box>:7786/terminal/6/` | `kit6`, `claude6`, `codex6` |
-| 7 | 7787 | `http://<claude-box>:7787/terminal/7/` | `kit7`, `claude7`, `codex7` |
-| 8 | 7788 | `http://<claude-box>:7788/terminal/8/` | `kit8`, `claude8`, `codex8` |
+| 1 | 7781 | `http://<ai-session-host>:7781/terminal/1/` | `kit1`, `claude1`, `codex1` |
+| 2 | 7782 | `http://<ai-session-host>:7782/terminal/2/` | `kit2`, `claude2`, `codex2` |
+| 3 | 7783 | `http://<ai-session-host>:7783/terminal/3/` | `kit3`, `claude3`, `codex3` |
+| 4 | 7784 | `http://<ai-session-host>:7784/terminal/4/` | `kit4`, `claude4`, `codex4` |
+| 5 | 7785 | `http://<ai-session-host>:7785/terminal/5/` | `kit5`, `claude5`, `codex5` |
+| 6 | 7786 | `http://<ai-session-host>:7786/terminal/6/` | `kit6`, `claude6`, `codex6` |
+| 7 | 7787 | `http://<ai-session-host>:7787/terminal/7/` | `kit7`, `claude7`, `codex7` |
+| 8 | 7788 | `http://<ai-session-host>:7788/terminal/8/` | `kit8`, `claude8`, `codex8` |
 
 - `kitN` → `/kit`: the rendered starter kit (CLAUDE.md, `.mcp.json`, `.claude/settings.json`, `units/`) plus `.pixel-clash/player.json` (the player's apiKey, written by Claude after login) and `.pixel-clash/last-player` (which player the seat last served, see "A new player sits down").
 - `claudeN` → `/home/player/.claude`: all Claude Code state (`CLAUDE_CONFIG_DIR`): the login, folder trust, `.claude.json` and chat history.
@@ -37,7 +37,7 @@ Needs Docker with Compose v2 and BuildKit (any current Docker Engine or Docker D
 
 **Sizing.** Each seat runs one Claude Code process (more if a player opens extra tabs). For all 8 seats plan on about **8 cores and 16 GB RAM**; 4 seats need about 4 cores / 8 GB, 2 seats about 2 cores / 4 GB. Each container is capped at 1.5 GB RAM and 1 CPU (limits, not reservations: a seat typically uses well under 1 GB and under 1 core), so 8 seats at their cap still leave ~4 GB for the host on a 16 GB box. On Docker Desktop, give the Docker VM that much memory and CPU in its settings.
 
-**`.env` needs two values**, and the game server has both: on the game server open **/admin → AI seats → Claude box setup** and press **Copy** (turn on **Show details** to see it). Run the command in the repo root on the Claude box:
+**`.env` needs two values**, and the game server has both: on the game server open **/admin → AI seats → AI session host setup** and press **Copy** (turn on **Show details** to see it). Run the command in the repo root on the AI session host:
 
 ```sh
 make seats PIXEL_CLASH_URL=http://192.168.8.10:8080 SEAT_SECRET=otter-lamp-quartz-ninety   # the copied command
@@ -46,25 +46,25 @@ docker compose ps        # all eight seats "running (healthy)" after ~30 s
 
 It creates `sessions/.env` from `.env.example` (owner-only), sets `PIXEL_CLASH_URL` (the game server's LAN address as the game server sees it; containers can't use localhost) and `SEAT_SECRET` (the seat password the game server made up on its first start), keeps every other line, then runs `docker compose up -d --build`. Bad values are refused before anything is written. Later runs need only `make seats`. By hand instead: `cp .env.example .env`, set both values, `docker compose up -d --build`. Without `.env` values, compose stops and points back to /admin.
 
-Allow inbound TCP 7781-7788 on the Claude box firewall (at least from the game server; to allow **only** the game server, see section 8). Turn off sleep.
+Allow inbound TCP 7781-7788 on the AI session host firewall (at least from the game server; to allow **only** the game server, see section 8). Turn off sleep.
 
-### Tell the game server where the Claude box is
+### Tell the game server where the AI session host is
 
 On the game server, open **/admin → AI seats** (turn on **Show details** to see secrets; keep it off while /admin is on the projector):
 
-1. **Claude box address**: the Claude box's LAN IP or name, e.g. `192.168.8.20` (no port: the proxy uses 778N per seat).
+1. **AI session host address**: the AI session host's LAN IP or name, e.g. `192.168.8.20` (no port: the proxy uses 778N per seat).
 2. **Seat password**: already set. The game server makes one up on its first start (four random words) and saves it in `data/state.json` (it survives a game wipe); the setup command above carries it. It is shown only with "Show details" on. You can still replace it (**Change**, e.g. with a value an older `sessions/.env` already has).
-3. Every running seat should go **up** (green) within a few seconds; press **Check now** to re-test. **Wrong password** means the two values differ (run the setup command again); **down** means the seat isn't running or the box address is wrong.
+3. Every running seat should go **up** (green) within a few seconds; press **Check now** to re-test. **Wrong password** means the two values differ (run the setup command again); **down** means the seat isn't running or the AI session host address is wrong.
 
-To change the password later: **Change** it in /admin, then copy the new setup command and run it on the Claude box (the seats restart; conversations reopen). Editing `SEAT_SECRET` in `.env` + `docker compose up -d` and entering the same value in /admin works too.
+To change the password later: **Change** it in /admin, then copy the new setup command and run it on the AI session host (the seats restart; conversations reopen). Editing `SEAT_SECRET` in `.env` + `docker compose up -d` and entering the same value in /admin works too.
 
 ### Seat cards
 
-Print one card per laptop from the game server's **/setup** page: the big Claude seat number and the `/play?seat=N` URL + QR. Cards carry **no terminal URL and no password**: scanning the QR opens /play, which remembers that the laptop is Claude seat N and shows that seat's terminal once the player has joined.
+Print one card per laptop from the game server's **/setup** page: the big AI seat number and the `/play?seat=N` URL + QR. Cards carry **no terminal URL and no password**: scanning the QR opens /play, which remembers that the laptop is AI seat N and shows that seat's terminal once the player has joined.
 
 ### Upgrading from per-seat passwords (`TTYD_PASS_1..8`)
 
-The compose file now needs `SEAT_SECRET` and ignores `TTYD_PASS_N`, so an old `.env` stops with `SEAT_SECRET is not set. Run the command from the game server /admin -> AI seats -> Claude box setup …` instead of half-working. Add a `SEAT_SECRET=…` line (or run the setup command from /admin; delete the 8 `TTYD_PASS_N` lines; leftovers are harmless), run `docker compose up -d` (it rebuilds: `pull_policy: build`; the new entrypoint adds the base path `-b /terminal/N`), enter the same value in /admin, and reprint the seat cards (QR only).
+The compose file now needs `SEAT_SECRET` and ignores `TTYD_PASS_N`, so an old `.env` stops with `SEAT_SECRET is not set. Run the command from the game server /admin -> AI seats -> AI session host setup …` instead of half-working. Add a `SEAT_SECRET=…` line (or run the setup command from /admin; delete the 8 `TTYD_PASS_N` lines; leftovers are harmless), run `docker compose up -d` (it rebuilds: `pull_policy: build`; the new entrypoint adds the base path `-b /terminal/N`), enter the same value in /admin, and reprint the seat cards (QR only).
 
 ### Running fewer seats (games are 2-8 players)
 
@@ -76,7 +76,7 @@ docker compose up -d seat5 seat6                        # add two seats later
 docker compose stop seat5 seat6                         # park them again (volumes, login and kit are kept)
 ```
 
-A shortcut for "seats 1 to N" (here N = 6): `docker compose up -d $(seq -f seat%g 1 6)`. `docker compose ps` lists only the seats that exist. For a 3-player game run seats 1-3 and put seat cards 1-3 on those three laptops. The Claude seat number (laptop, card, container) is separate from the player's game seat (colour, zone): /play links them when the player scans the card or picks the number. Seats you aren't running can also be turned off in /admin → AI seats (the **On** checkbox), so players are never given them. You only need to log in (step 2) the seats you'll use, but logging in all 8 the day before means any seat can be started on the day.
+A shortcut for "seats 1 to N" (here N = 6): `docker compose up -d $(seq -f seat%g 1 6)`. `docker compose ps` lists only the seats that exist. For a 3-player game run seats 1-3 and put seat cards 1-3 on those three laptops. The AI seat number (laptop, card, container) is separate from the player's game seat (colour, zone): /play links them when the player scans the card or picks the number. Seats you aren't running can also be turned off in /admin → AI seats (the **On** checkbox), so players are never given them. You only need to log in (step 2) the seats you'll use, but logging in all 8 the day before means any seat can be started on the day.
 
 On start, each seat renders `/kit` from `packages/starter-kit/` with `{{HOST}}` taken from `PIXEL_CLASH_URL`. CLAUDE.md, `.mcp.json`, `.claude/settings.json` and PROMPTS.md are re-rendered on every start, and `.claude/settings.local.json` (where Claude Code saves "Yes, and don't ask again" approvals) is deleted, so the rendered template is the only allowlist; `.pixel-clash/player.json` and existing files in `units/` are never overwritten (except that a new player sitting down removes the previous player's `player.json`, see below). `packages/starter-kit/FIRST_PROMPT.md.tmpl` is not copied into `/kit`: it is the seat's first message for a new player.
 
@@ -92,7 +92,7 @@ How it works: the game server's proxy adds `?arg=<token>` to the ttyd WebSocket 
 | The same player again (reload, new tab, "Use it here instead", coming back later) | Resumes their conversation (`claude --continue` / `codex resume --last`), no prompt. If their conversation is gone, it starts fresh with the prompt. |
 | The agent exits and the loop restarts it | Resumes, no prompt. |
 | An admin rescue from /admin | No token: resumes the player's conversation (or a plain fresh one if there is none). Never prompts, never clears anything. |
-| A direct `http://<box>:778N/terminal/N/` tab (seat password) | Same as an admin rescue. To send the prompt by hand, paste it (`docker compose exec seatN pixel-clash-seat first-prompt` prints it). |
+| A direct `http://<ai-session-host>:778N/terminal/N/` tab (seat password) | Same as an admin rescue. To send the prompt by hand, paste it (`docker compose exec seatN pixel-clash-seat first-prompt` prints it). |
 | After `docker compose run --rm seatN new-player` | `/kit` is emptied (including `last-player`), so the next player to open the terminal through /play, even the same one, gets a fresh conversation and the prompt. |
 
 The units in `/kit/units/` stay between players on a seat (their designs are on the game server anyway); run `new-player` to clear everything.
@@ -176,7 +176,7 @@ docker compose run --rm seatN check
 
 prints the seat's agent, the Claude Code, Codex and ttyd versions, the game server URL, whether the kit is rendered, whether a player is saved, whether the agent looks logged in and trusted (Codex: also whether its sandbox works here), and whether the container can reach the game server (`/api/health`) and Anthropic (or OpenAI on a Codex seat).
 
-Then, from a player laptop: scan seat card N (or open `http://<game-server>:8080/play?seat=N`), join with a test name and PIN, and in the AI helper pane ask "Are you connected to Pixel Clash?". There must be **no approval prompts** and **no password box**. Press **Open in new tab**: the terminal opens as its own tab (titled "Pixel Clash · Claude · seat N", or "· Codex ·" on a Codex seat) and the pane in /play says it is open in another tab; **Use it here instead** brings it back. Without the game server, an adult can open the direct URL `http://<claude-box>:778N/terminal/N/` (user `player`, password `SEAT_SECRET`).
+Then, from a player laptop: scan seat card N (or open `http://<game-server>:8080/play?seat=N`), join with a test name and PIN, and in the AI helper pane ask "Are you connected to Pixel Clash?". There must be **no approval prompts** and **no password box**. Press **Open in new tab**: the terminal opens as its own tab (titled "Pixel Clash · Claude · seat N", or "· Codex ·" on a Codex seat) and the pane in /play says it is open in another tab; **Use it here instead** brings it back. Without the game server, an adult can open the direct URL `http://<ai-session-host>:778N/terminal/N/` (user `player`, password `SEAT_SECRET`).
 
 Isolation check (dress rehearsal), so facilitators know what a player can reach from a seat:
 
@@ -237,7 +237,7 @@ sudo iptables -I DOCKER-USER 1 -i pcseats -p udp --dport 53 -j ACCEPT          #
 sudo iptables -I DOCKER-USER 1 -i pcseats -p tcp --dport 53 -j ACCEPT
 sudo iptables -I DOCKER-USER 1 -i pcseats -d 192.168.8.10 -p tcp --dport 8080 -j ACCEPT  # game server
 sudo iptables -I DOCKER-USER 1 -i pcseats -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT  # replies (MUST end up first)
-# Seats talking to the Claude box itself (e.g. another seat's ttyd port):
+# Seats talking to the AI session host itself (e.g. another seat's ttyd port):
 sudo iptables -I INPUT 1 -i pcseats -m conntrack --ctstate NEW -p tcp --dport 7781:7788 -j REJECT
 ```
 
@@ -247,7 +247,7 @@ Check with `docker compose run --rm seat1 check` (game server and Anthropic must
 
 With this rule the game server's proxy is the only way into a seat, so even someone who learns `SEAT_SECRET` can't use it from a player laptop. Everything works without it. The direct fallback URL then only works from the game server laptop itself (or after removing the rule).
 
-Skip this if the game server and the Claude box are the **same machine**: then the proxy connects locally and the box address in /admin is `127.0.0.1`.
+Skip this if the game server and the AI session host are the **same machine**: then the proxy connects locally and the AI session host address in /admin is `127.0.0.1`.
 
 **Linux (iptables).** Docker's published ports are forwarded through the `DOCKER-USER` chain, not `INPUT`, and after Docker's port mapping every seat's destination port is 7781, so match the port the client originally dialled with `--ctorigdstport`. Example with the game server at `192.168.8.10`:
 
@@ -256,7 +256,7 @@ sudo iptables -I DOCKER-USER 1 -o pcseats -p tcp -m conntrack --ctstate NEW \
   --ctorigdstport 7781:7788 ! -s 192.168.8.10 -j REJECT --reject-with tcp-reset
 ```
 
-It only matches NEW connections, so it can sit anywhere relative to the egress rules in section 7. Check it: in /admin → AI seats all seats stay **up**, and from a player laptop `curl -m 3 http://<claude-box>:7781/terminal/1/` fails (connection refused). Like section 7, the rule is gone after a reboot unless saved (`iptables-save`/`netfilter-persistent`). If the LAN uses IPv6, add the same rule with `ip6tables` (and the game server's IPv6 address) or keep the Claude box IPv4-only. Remove it with the same command and `-D DOCKER-USER` instead of `-I DOCKER-USER 1`.
+It only matches NEW connections, so it can sit anywhere relative to the egress rules in section 7. Check it: in /admin → AI seats all seats stay **up**, and from a player laptop `curl -m 3 http://<ai-session-host>:7781/terminal/1/` fails (connection refused). Like section 7, the rule is gone after a reboot unless saved (`iptables-save`/`netfilter-persistent`). If the LAN uses IPv6, add the same rule with `ip6tables` (and the game server's IPv6 address) or keep the AI session host IPv4-only. Remove it with the same command and `-D DOCKER-USER` instead of `-I DOCKER-USER 1`.
 
 **Linux (ufw).** `ufw deny 7781:7788` has **no effect** on Docker's published ports (Docker's iptables rules run before ufw's). Put the rule in `/etc/ufw/after.rules` instead, at the end of the file:
 
@@ -291,10 +291,10 @@ then `sudo ufw reload` and run the check above. `ufw reload` resets `DOCKER-USER
 |---|---|
 | `docker compose` says `set PIXEL_CLASH_URL` / `set SEAT_SECRET` | Create `.env` from `.env.example` in this folder (an old `.env` with only `TTYD_PASS_1..8` needs a `SEAT_SECRET=` line now, see "Upgrading" in section 1). |
 | A seat keeps restarting | `docker compose logs seatN`. The entrypoint prints a clear `ERROR:` (bad `PIXEL_CLASH_URL`, missing or too short `SEAT_SECRET`, characters other than `A-Z a-z 0-9 . _ ~ -`). |
-| Seat shows `Up (healthy)` but `curl http://<claude-box>:778N/terminal/N/` is refused, and `docker compose exec seatN curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7781/terminal/N/` prints `000` | The container runs an image built from older `sessions/` files (e.g. before the port moved from 768x to 778x). `docker compose up -d --build --force-recreate`. Logins and kits are kept in the volumes. The compose file sets `pull_policy: build`, so a plain `up -d` rebuilds from now on. |
+| Seat shows `Up (healthy)` but `curl http://<ai-session-host>:778N/terminal/N/` is refused, and `docker compose exec seatN curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7781/terminal/N/` prints `000` | The container runs an image built from older `sessions/` files (e.g. before the port moved from 768x to 778x). `docker compose up -d --build --force-recreate`. Logins and kits are kept in the volumes. The compose file sets `pull_policy: build`, so a plain `up -d` rebuilds from now on. |
 | /admin shows every seat **wrong password** (red banner) | The seat password in /admin differs from `SEAT_SECRET` in `.env`. Type it again in /admin (Show details on), or if `.env` changed, check the seats were restarted (`docker compose up -d`). |
-| /admin shows a seat **down**, or the player's pane says Claude "isn't answering" | `docker compose ps`: is `seatN` running? Is the Claude box address in /admin right (IP only, no port)? From the game server: `curl -s -o /dev/null -w '%{http_code}\n' http://<claude-box>:778N/terminal/N/` must print `401`. `000` = not reachable (seat stopped, box firewall, or the section 8 rule doesn't allow the game server's current IP). |
-| The direct URL `http://<claude-box>:778N/` gives 404 or a blank page | ttyd now lives under its base path: use `http://<claude-box>:778N/terminal/N/` (with the trailing `/terminal/N/`). |
+| /admin shows a seat **down**, or the player's pane says Claude "isn't answering" | `docker compose ps`: is `seatN` running? Is the AI session host address in /admin right (IP only, no port)? From the game server: `curl -s -o /dev/null -w '%{http_code}\n' http://<ai-session-host>:778N/terminal/N/` must print `401`. `000` = not reachable (seat stopped, AI session host firewall, or the section 8 rule doesn't allow the game server's current IP). |
+| The direct URL `http://<ai-session-host>:778N/` gives 404 or a blank page | ttyd now lives under its base path: use `http://<ai-session-host>:778N/terminal/N/` (with the trailing `/terminal/N/`). |
 | Direct URL asks again and again for a password | Wrong password: user `player`, password `SEAT_SECRET` from `.env`. (Through /play there is never a password box; if a player sees one, tell the game server's admin.) |
 | The pane in /play says "open in another tab" | That seat's terminal was opened in a newer tab (the player's "Open in new tab", or an adult from /admin). Press **Use it here instead**, or close the other tab. Only one terminal per seat is live through the game server. |
 | Player sees "not your seat" or someone else's AI helper | Their AI seat in /play doesn't match the laptop. Fix it in /admin → AI seats (reassign), or have them pick the number on their seat card. |
@@ -306,9 +306,9 @@ then `sudo ufw reload` and run the check above. `ufw reload` resets `DOCKER-USER
 | Codex asks "Do you trust this folder?" or doesn't list the pixel-clash tools | The image is older than the Codex support (no `/etc/codex/config.toml`): `docker compose up -d --build`. In the seat, `/mcp` lists Codex's MCP servers. |
 | Codex asks to approve a pixel-clash tool or a file edit | Check `CODEX_SANDBOX`/`CODEX_APPROVAL` in `.env` (defaults `danger-full-access`/`never`) and that `/kit/.codex/config.toml` has `default_tools_approval_mode = "approve"` (`docker compose run --rm seatN render` re-renders it). |
 | Codex says commands fail with `bwrap: No permissions to create a new namespace` | `CODEX_SANDBOX=workspace-write` is set but the container has no user namespaces: set it back to `danger-full-access` (section 2b). |
-| `openai api: NOT reachable` | As for Anthropic: the Claude box needs internet to `api.openai.com` (and `chatgpt.com` for a ChatGPT login). |
-| `anthropic api: NOT reachable` | The Claude box or router has no internet uplink (venue Wi-Fi with captive portal?). |
+| `openai api: NOT reachable` | As for Anthropic: the AI session host needs internet to `api.openai.com` (and `chatgpt.com` for a ChatGPT login). |
+| `anthropic api: NOT reachable` | The AI session host or router has no internet uplink (venue Wi-Fi with captive portal?). |
 | `game server: NOT reachable` | Wrong IP in `.env`, the game server isn't running on `0.0.0.0`, or its firewall blocks 8080. Containers can't reach a game server that only listens on `localhost`. |
 | Build fails at `sha256sum` | The ttyd download changed or was corrupted: don't skip the check; retry, or re-pin `TTYD_VERSION` with the new release's `SHA256SUMS`. |
 | Build fails with `Unsupported TARGETARCH` | Use BuildKit (default in current Docker; or `DOCKER_BUILDKIT=1`). Only amd64 and arm64 are supported. |
-| Seat is slow / killed | `docker stats`: each seat is capped at 1.5 GB RAM and 1 CPU. If one seat really needs more, raise `mem_limit`/`memswap_limit`/`cpus` in `x-seat` (all seats share it) and make sure the box still has room: seats running × limit, plus ~4 GB for the host. Also check the box isn't swapping (`free -h`) with all seats running; if it is, run fewer seats. Close extra direct `778N` tabs on that seat (each runs its own Claude; tabs through the game server are limited to one per seat). |
+| Seat is slow / killed | `docker stats`: each seat is capped at 1.5 GB RAM and 1 CPU. If one seat really needs more, raise `mem_limit`/`memswap_limit`/`cpus` in `x-seat` (all seats share it) and make sure the AI session host still has room: seats running × limit, plus ~4 GB for the host. Also check the AI session host isn't swapping (`free -h`) with all seats running; if it is, run fewer seats. Close extra direct `778N` tabs on that seat (each runs its own Claude; tabs through the game server are limited to one per seat). |

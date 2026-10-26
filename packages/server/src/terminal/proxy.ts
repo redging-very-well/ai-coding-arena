@@ -5,7 +5,7 @@
 // seat password.
 //
 //   /terminal/<N>          → 301 /terminal/<N>/
-//   /terminal/<N>/         → http://<box>:778N/terminal/<N>/ (GET/HEAD only; also index.html)
+//   /terminal/<N>/         → http://<ai-session-host>:778N/terminal/<N>/ (GET/HEAD only; also index.html)
 //   /terminal/<N>/token    → answered here (ttyd's answer is base64 user:password)
 //   anything else          → 404 here, never forwarded: libwebsockets percent-decodes
 //                            and collapses `//`, `/./`, `/../` before ttyd matches its

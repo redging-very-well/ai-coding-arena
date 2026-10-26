@@ -78,7 +78,7 @@ export class Relay {
     upstream.on('close', (code) => {
       if (!this.closing && browser.readyState === browser.OPEN) {
         // ttyd's page reconnects on anything but 1000: a restarted seat comes back by itself.
-        browser.close(1011, 'claude box closed');
+        browser.close(1011, 'AI session host closed');
       }
       this.finish(this.closeReason ?? `upstream closed (${code})`);
     });

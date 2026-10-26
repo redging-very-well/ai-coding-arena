@@ -1,6 +1,6 @@
 // /setup info (plan §11 "/setup page", §12.3 server info): the join URL + QR,
 // the seat cards (`/play?seat=N` + QR for Claude seats 1-8, §11.2), and the
-// facilitator's settings: the Claude box address and the shared seat password
+// facilitator's settings: the AI session host address and the shared seat password
 // (`seatSecret`, §11.2 a), which never appears in any public payload.
 
 import { randomInt } from 'node:crypto';
@@ -15,7 +15,7 @@ import { safeHost } from './kit.js';
 
 /** ttyd host port of seat index 0 (index i → 7781 + i = Claude seat i + 1, §11.1). */
 export const SEAT_TERMINAL_BASE_PORT = 7781;
-/** Claude seats on the box (seat1..seat8). */
+/** AI seats on the AI session host (seat1..seat8). */
 export const SEAT_COUNT = CLAUDE_SEATS;
 
 /** Host name or IPv4 (no scheme, port or path). */
@@ -64,8 +64,8 @@ export function generateSeatSecret(): string {
 }
 
 /**
- * The Claude box setup command shown in /admin → AI seats (details only): run
- * in the repo on the Claude box, it writes both values into sessions/.env and
+ * The AI session host setup command shown in /admin → AI seats (details only): run
+ * in the repo on the AI session host, it writes both values into sessions/.env and
  * starts the seats. Both values are validated (URL shape, secret charset), so
  * the command needs no quoting. Null when either is unusable.
  */
@@ -87,7 +87,7 @@ export class SetupService {
     if (this.game.store.setup.seatSecret) return false;
     this.game.store.setup = { ...this.game.store.setup, seatSecret: generateSeatSecret() };
     this.game.store.save();
-    log.info('[setup] made up a seat password for the Claude box (see /admin → AI seats → Claude box setup)');
+    log.info('[setup] made up a seat password for the AI session host (see /admin → AI seats → AI session host setup)');
     return true;
   }
 
@@ -117,7 +117,7 @@ export class SetupService {
         if (!h) {
           return {
             ok: false,
-            error: { code: 'BAD_REQUEST', message: 'The Claude box address must be a host name or IP, like 192.168.8.20.' },
+            error: { code: 'BAD_REQUEST', message: 'The AI session host address must be a host name or IP, like 192.168.8.20.' },
           };
         }
         next.claudeBoxHost = h;
@@ -141,7 +141,7 @@ export class SetupService {
             error: {
               code: 'BAD_SEAT_SECRET',
               message: 'The seat password must be 12-64 letters, digits, ".", "_", "~" or "-" (no spaces or ":").',
-              hint: 'Use the same value as SEAT_SECRET in sessions/.env on the Claude box, e.g. otter-lamp-quartz-ninety.',
+              hint: 'Use the same value as SEAT_SECRET in sessions/.env on the AI session host, e.g. otter-lamp-quartz-ninety.',
             },
           };
         }

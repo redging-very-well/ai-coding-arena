@@ -3,10 +3,10 @@
 # The game server (npm scripts in package.json) and the AI seats (Docker
 # Compose in sessions/) usually run on DIFFERENT machines: run the server
 # targets on the game server laptop and the seats-* / seat-* targets on the
-# Claude box. See README.md and sessions/README.md.
+# AI session host. See README.md and sessions/README.md.
 #
-# First run on the Claude box: copy the command from the game server's
-# /admin -> AI seats -> Claude box setup, e.g.
+# First run on the AI session host: copy the command from the game server's
+# /admin -> AI seats -> AI session host setup, e.g.
 #   make seats PIXEL_CLASH_URL=http://192.168.8.10:8080 SEAT_SECRET=otter-lamp-quartz-ninety
 # It saves both values in sessions/.env; later runs need only `make seats`.
 #
@@ -34,7 +34,7 @@ endif
 endif
 
 # PIXEL_CLASH_URL / SEAT_SECRET / AGENT (claude or codex) given on the make
-# command line (the command /admin -> AI seats -> Claude box setup shows) are written into sessions/.env
+# command line (the command /admin -> AI seats -> AI session host setup shows) are written into sessions/.env
 # by sessions/set-env.sh before compose runs. Only the NAMES go into the shell
 # command; the script reads the (validated) values from the environment, where
 # make puts command-line variables. Values from your shell environment are
@@ -50,7 +50,7 @@ ifeq ($(origin AGENT),command line)
 SET_ENV_NAMES += AGENT
 endif
 SET_ENV = $(if $(strip $(SET_ENV_NAMES)),sh sessions/set-env.sh sessions/.env $(strip $(SET_ENV_NAMES)),true)
-ENV_HINT = echo "sessions/.env is missing. On the game server open /admin -> AI seats -> Claude box setup, copy the command" && \
+ENV_HINT = echo "sessions/.env is missing. On the game server open /admin -> AI seats -> AI session host setup, copy the command" && \
 	echo "(make seats PIXEL_CLASH_URL=... SEAT_SECRET=...) and run it here in the repo folder."
 
 # Per-seat targets need SEAT=n.
@@ -67,7 +67,7 @@ help: ## Show this list
 	@echo "Game server (run on the game server laptop):"
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z][a-zA-Z0-9_-]*:.*## / && !/^(seat|new-player)/ {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
-	@echo "AI seats (run on the Claude box; wraps docker compose in sessions/):"
+	@echo "AI seats (run on the AI session host; wraps docker compose in sessions/):"
 	@awk 'BEGIN {FS = ":.*## "} /^(seat|new-player)[a-zA-Z0-9_-]*:.*## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
 	@echo "Pick seats with SEAT=3 (one), N=6 (seats 1-6) or SEATS=\"1 2 5\"; default all 8."
@@ -108,7 +108,7 @@ seats-env: ## Create/update sessions/.env (PIXEL_CLASH_URL=... SEAT_SECRET=... [
 	@$(SET_ENV)
 	@if [ -f sessions/.env ]; then [ -n "$(strip $(SET_ENV_NAMES))" ] || echo "sessions/.env already exists"; \
 	else umask 077 && cp sessions/.env.example sessions/.env && \
-	echo "Created sessions/.env. Fill it in with the command from the game server's /admin -> AI seats -> Claude box setup"; fi
+	echo "Created sessions/.env. Fill it in with the command from the game server's /admin -> AI seats -> AI session host setup"; fi
 
 seats-build: ## Build the seat image (docker compose build)
 	$(COMPOSE) build

@@ -1,5 +1,5 @@
 // Server info (plan §12.3, §11): LAN URLs + QR (pick the preferred interface),
-// sandbox mode and the wipe button (type WIPE). The Claude box address and
+// sandbox mode and the wipe button (type WIPE). The AI session host address and
 // the seat password live in the Claude seats panel (ClaudeSeats.tsx).
 
 import { useState } from 'preact/hooks';

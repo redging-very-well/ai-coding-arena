@@ -872,10 +872,10 @@ export function stuckPrompts(report: Pick<BattleReportDTO, 'types' | 'hints'> | 
 // ---------------------------------------------------------------------------
 
 export const TTYD_BASE_PORT = 7780;
-/** Seat containers on the Claude box: seat1..seat8 on ports 7781-7788 (§11.1, §11.2). */
+/** Seat containers on the AI session host: seat1..seat8 on ports 7781-7788 (§11.1, §11.2). */
 export const CLAUDE_SEATS = 8;
 
-/** Host part of a Claude box address ("192.168.8.20", "http://box:8080/x" → "box"). */
+/** Host part of an AI session host address ("192.168.8.20", "http://box:8080/x" → "box"). */
 export function claudeBoxHost(address: string | null | undefined): string | null {
   if (!address) return null;
   let s = address.trim();
@@ -890,8 +890,8 @@ export function claudeBoxHost(address: string | null | undefined): string | null
 }
 
 /**
- * `http://<box>:778N/terminal/N/` for Claude seat 1-8: ttyd directly on the
- * Claude box, bypassing the game server's proxy. It asks for the seat password,
+ * `http://<ai-session-host>:778N/terminal/N/` for Claude seat 1-8: ttyd directly on the
+ * AI session host, bypassing the game server's proxy. It asks for the seat password,
  * so it is only the grown-ups' fallback; players use /terminal/N/ inside /play.
  */
 export function claudeTerminalUrl(address: string | null | undefined, claudeSeat: number): string | null {

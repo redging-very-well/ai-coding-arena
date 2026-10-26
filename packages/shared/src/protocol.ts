@@ -21,7 +21,7 @@
 //   POST   /login        {name,pin,claudeSeat?} -> LoginResponse (+ cookie)   BAD_LOGIN RATE_LIMITED
 //                                        claudeSeat: 'auto' | 1-8 (this laptop's seat, preferred) = also
 //                                        auto-assign an AI seat (§11.2 c); the answer then has `claudeSeat`
-//   POST   /seat-login   {seat,token?,agent?} + Basic player:<seat password> -> SeatLoginDTO (the Claude box only, §11.2 e).
+//   POST   /seat-login   {seat,token?,agent?} + Basic player:<seat password> -> SeatLoginDTO (the AI session host only, §11.2 e).
 //                        With `agent` ('claude'|'codex'): also `credential`, the shared agent login from /admin
 //                        (§11.2 f), and a missing or stale token is not an error (credential only).
 //   POST   /logout                    -> {ok:true}
@@ -205,7 +205,7 @@ export interface ClaudeSeatAssignDTO {
 }
 
 /**
- * POST /seat-login (the Claude box's agent-loop, §11.2 e): `name` + `apiKey`
+ * POST /seat-login (the AI session host's agent-loop, §11.2 e): `name` + `apiKey`
  * go to /kit/.pixel-clash/player.json. Without a valid token (an admin
  * rescue, a stale token) and with `agent` sent, only `credential`. Key order
  * is fixed (the entrypoint matches it strictly): name, apiKey, credential.
@@ -1234,7 +1234,7 @@ export interface AdminArmoryEntryDTO {
 
 /** Facilitator settings for /setup (persisted; survive a wipe). */
 export interface SetupSettingsDTO {
-  /** Claude box host or IP (no scheme/port); seat N's ttyd is http://<host>:778N (§11.1). */
+  /** AI session host host or IP (no scheme/port); seat N's ttyd is http://<host>:778N (§11.1). */
   claudeBoxHost: string | null;
   /** Preferred base URL (`http://ip:port`) for the join QR when there are several interfaces. */
   preferredUrl: string | null;
@@ -1247,7 +1247,7 @@ export interface SetupSettingsDTO {
 export interface SeatTerminalDTO {
   /** Index 0-7 (Claude seat `seat + 1`). */
   seat: number;
-  /** `http://<claude-box>:778N/terminal/N/` */
+  /** `http://<ai-session-host>:778N/terminal/N/` */
   url: string;
   /** QR code of `url` as an SVG document (server-generated). */
   qrSvg: string;
@@ -1274,7 +1274,7 @@ export interface SetupInfoDTO {
   /** QR code of playUrl as an SVG document. */
   playQrSvg: string;
   settings: SetupSettingsDTO;
-  /** @deprecated Empty until the facilitator sets the Claude box address. Use `seatCards`. */
+  /** @deprecated Empty until the facilitator sets the AI session host address. Use `seatCards`. */
   seatTerminals: SeatTerminalDTO[];
   /** Seat cards for Claude seats 1-8 (`/play?seat=N` + QR). Never contains the seat password. */
   seatCards: SeatCardDTO[];
@@ -1301,12 +1301,12 @@ export interface ApiErrorBody {
 // Claude seats and the embedded terminal (§11.2)
 // ---------------------------------------------------------------------------
 
-/** Claude seats 1-8 (containers seat1..seat8 on the Claude box, ports 7781-7788). */
+/** Claude seats 1-8 (containers seat1..seat8 on the AI session host, ports 7781-7788). */
 export const CLAUDE_SEATS = 8;
 
 /**
  * Seat status for adults. `unknown` = not probed yet; `no-box` / `no-password`
- * = the Claude box address / seat password is not set in /admin.
+ * = the AI session host address / seat password is not set in /admin.
  */
 export type ClaudeSeatStatus = 'up' | 'down' | 'wrong-password' | 'no-box' | 'no-password' | 'unknown';
 
@@ -1326,7 +1326,7 @@ export interface TerminalDTO {
   /** Own Claude seat 1-8, or null (show the picker). */
   seat: number | null;
   status: PlayerClaudeSeatStatus;
-  /** The Claude box address and the seat password are both set in /admin. */
+  /** The AI session host address and the seat password are both set in /admin. */
   boxReady: boolean;
   /** The seat's live terminal, or null. */
   live: TerminalLiveDTO | null;
@@ -1352,7 +1352,7 @@ export interface AdminClaudeSeatDTO {
   /** ms epoch of the last probe, or null. */
   checkedAt: number | null;
   live: (TerminalLiveDTO & { playerName?: string }) | null;
-  /** `http://<box>:778N/terminal/N/` (details=1 only). */
+  /** `http://<ai-session-host>:778N/terminal/N/` (details=1 only). */
   directUrl?: string;
   /**
    * The shared agent login this seat's last terminal start fetched (§11.2 f),
@@ -1368,7 +1368,7 @@ export interface AdminClaudeSeatsDTO {
   /** The shared seat password (`?details=1` only). */
   seatSecret?: string | null;
   /**
-   * `?details=1` only: the command to run in the repo on the Claude box,
+   * `?details=1` only: the command to run in the repo on the AI session host,
    * `make seats PIXEL_CLASH_URL=<this server> SEAT_SECRET=<seatSecret>` (it
    * writes sessions/.env and starts the seats). Null without a seat password.
    */

@@ -25,11 +25,11 @@ export const CHECKLIST: readonly ChecklistSection[] = [
     ],
   },
   {
-    title: 'Claude box (sessions/)',
+    title: 'AI session host (sessions/)',
     items: [
       {
         id: 'box-env',
-        title: 'Run the Claude box setup command from /admin → AI seats in the repo folder on the Claude box',
+        title: 'Run the AI session host setup command from /admin → AI seats in the repo folder on the AI session host',
         detail: 'make seats PIXEL_CLASH_URL=… SEAT_SECRET=…: it writes this server\'s address and the seat password (made up by this server; players never see it) into sessions/.env and starts the seats.',
       },
       {
@@ -51,12 +51,12 @@ export const CHECKLIST: readonly ChecklistSection[] = [
       },
       {
         id: 'box-admin',
-        title: 'In /admin → AI seats, enter the Claude box address',
+        title: 'In /admin → AI seats, enter the AI session host address',
         detail: 'Turn on Show details first (not on the projector). Every running seat should turn green (up).',
       },
       {
         id: 'box-firewall',
-        title: 'Claude box allows inbound 7781-7788 from the game server; sleep is disabled',
+        title: 'AI session host allows inbound 7781-7788 from the game server; sleep is disabled',
         detail: 'Optional hardening: allow 7781-7788 only from the game server IP (sessions/README.md).',
       },
     ],
@@ -77,7 +77,7 @@ export const CHECKLIST: readonly ChecklistSection[] = [
     title: 'After the event',
     items: [
       { id: 'wipe-server', title: 'Wipe the game server (admin Wipe, or npm run wipe)' },
-      { id: 'wipe-box', title: 'Wipe the Claude box (kits, keys, chats, logins)', command: 'docker compose down -v' },
+      { id: 'wipe-box', title: 'Wipe the AI session host (kits, keys, chats, logins)', command: 'docker compose down -v' },
     ],
   },
 ];

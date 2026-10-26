@@ -1,4 +1,4 @@
-// No required settings in sessions/.env (plan §11.1 "Claude box setup",
+// No required settings in sessions/.env (plan §11.1 "AI session host setup",
 // §11.2 a): the game server makes up the seat password on its first start
 // (persisted, never replaced), /admin gets a ready-to-copy
 // `make seats PIXEL_CLASH_URL=… SEAT_SECRET=…` (admin + details only), and
@@ -81,7 +81,7 @@ describe('the seat password is made up on the first start', () => {
     expect((await third.get<AdminClaudeSeatsDTO>('/admin/claude-seats?details=1')).body.seatSecret).toBe('my-own-seat-password');
   }, T);
 
-  it('shows the Claude box setup command to the admin only, with details', async () => {
+  it('shows the AI session host setup command to the admin only, with details', async () => {
     const anon = await new Client(srv.url).get('/admin/claude-seats?details=1');
     expect(anon.status).toBe(403);
     expect(anon.body.error.code).toBe('ADMIN_REQUIRED');

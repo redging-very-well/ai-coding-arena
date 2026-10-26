@@ -1,5 +1,5 @@
 // /setup info and the facilitator's setup settings (plan §11 /setup page,
-// §12.3 server info): join URL + QR, seat terminal links from the Claude box
+// §12.3 server info): join URL + QR, seat terminal links from the AI session host
 // address, seat cards for Claude seats 1-8, persistence across a restart,
 // and admin-only updates.
 
@@ -35,7 +35,7 @@ describe('GET /api/setup and PUT /api/admin/setup', () => {
     removeDir(dir);
   });
 
-  it('serves the join URL and QR without auth, with no terminals until the Claude box is set', async () => {
+  it('serves the join URL and QR without auth, with no terminals until the AI session host is set', async () => {
     const info = (await new Client(srv.url).get<SetupInfoDTO>('/setup')).body;
     expect(info.playUrl).toBe(`${info.baseUrl}/play`);
     expect(info.playQrSvg).toContain('<svg');

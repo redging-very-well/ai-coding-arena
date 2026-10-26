@@ -5,7 +5,7 @@
 // holds the seat: loading it takes the seat over). Join / login assign a seat
 // by themselves (§11.2 c), so the picker is the fallback (no seat free, or
 // "Change seat"). Pane states: seat picker, not
-// ready, the terminal (with a "box down" strip), and "open in another tab"
+// ready, the terminal (with a "host down" strip), and "open in another tab"
 // with "Use it here instead". "Open in new tab" opens the same terminal as its
 // own browser tab.
 
@@ -284,7 +284,7 @@ function DownStrip({ seat }: { seat: number }) {
   );
 }
 
-/** The adults' fallback: ttyd directly on the Claude box (asks for the seat password). */
+/** The adults' fallback: ttyd directly on the AI session host (asks for the seat password). */
 function GrownUps({ url }: { url: string }) {
   return (
     <details class="grown-ups">

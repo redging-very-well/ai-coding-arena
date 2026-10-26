@@ -212,8 +212,8 @@ export function claudeView(t: TerminalDTO | null, displaced: boolean, lastHolder
 /**
  * The seat came back up (down → up) and nobody holds it: reload the iframe.
  * ttyd's page retries a dropped connection only once, right away; while the
- * box is still down that fails and it waits for Enter ("Press ⏎ to
- * Reconnect"), so without this the player would be stuck after a box restart.
+ * AI session host is still down that fails and it waits for Enter ("Press ⏎ to
+ * Reconnect"), so without this the player would be stuck after an AI session host restart.
  */
 export function reloadOnRecovery(prev: TerminalDTO | null, next: TerminalDTO, displaced: boolean): boolean {
   return !!prev && prev.seat !== null && prev.seat === next.seat && next.boxReady && !displaced && prev.status === 'down' && next.status === 'up' && !next.live;

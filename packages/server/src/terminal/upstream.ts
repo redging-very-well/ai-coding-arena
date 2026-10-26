@@ -31,7 +31,7 @@ export function upstreamWsPath(seat: number, playerId: string | null): string {
 }
 
 export interface TerminalTimeouts {
-  /** TCP connect to the Claude box. */
+  /** TCP connect to the AI session host. */
   connectMs: number;
   /** First response byte of an HTTP request. */
   responseMs: number;
@@ -139,7 +139,7 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
 
 /**
  * ttyd's response headers for the browser: no hop-by-hop headers, no
- * Set-Cookie (the box never sets cookies on the game origin), no
+ * Set-Cookie (the AI session host never sets cookies on the game origin), no
  * WWW-Authenticate (no browser password dialog), framing allowed only by the
  * game's own pages.
  */

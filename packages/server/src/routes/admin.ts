@@ -257,7 +257,7 @@ export function adminRoutes(game: Game): Router {
   );
 
   // Claude seats (§11.2): assignments, live terminals and the seat probe.
-  // The seat password, the Claude box setup command and direct URLs only with
+  // The seat password, the AI session host setup command and direct URLs only with
   // ?details=1 ("Show details").
   r.get('/claude-seats', (req, res) => {
     const details = req.query.details === '1';

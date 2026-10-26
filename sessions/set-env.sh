@@ -7,7 +7,7 @@
 # The arguments after the file are the NAMES to set; their values come from the
 # environment (never from the command line, so make never pastes a value into a
 # shell command). The repo Makefile runs it for `make seats PIXEL_CLASH_URL=…
-# SEAT_SECRET=… [AGENT=codex]` (the command /admin → AI seats → Claude box setup
+# SEAT_SECRET=… [AGENT=codex]` (the command /admin → AI seats → AI session host setup
 # shows; the /admin setup wizard adds AGENT=… for the agent picked there).
 #
 # - Creates the file from .env.example next to it if it is missing.

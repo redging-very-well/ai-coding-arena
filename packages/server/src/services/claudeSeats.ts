@@ -1,5 +1,5 @@
 // Claude seats (plan §11.2 c): which player sits at which Claude laptop (seat
-// 1-8 = container seatN on the Claude box, port 778N, proxy path
+// 1-8 = container seatN on the AI session host, port 778N, proxy path
 // /terminal/N/). Independent of the game seat (colour/zone). Unique across
 // players, persisted on the player record, freed by kick and wipe, kept across
 // logout, PIN reset, New match and restarts.
@@ -47,7 +47,7 @@ export const SEAT_SECRET_RE = /^[A-Za-z0-9._~-]{12,64}$/;
 
 export type LiveTerminal = TerminalLiveDTO & { playerName?: string };
 
-/** What the probe knows about a seat (the proxy's view of the Claude box). */
+/** What the probe knows about a seat (the proxy's view of the AI session host). */
 export interface ProbeStatus {
   status: 'up' | 'down' | 'wrong-password' | 'unknown';
   reason?: string;
@@ -165,7 +165,7 @@ export class ClaudeSeatsService {
   private readonly changeLimiter = new RateLimiter(1, 1000);
   /** Failed seat logins per client address: 20 per minute. */
   private readonly seatLoginFails = new RateLimiter(20, 60_000);
-  /** Every seat login per client address (one per terminal open; 8 seats share the box's address): 120 per minute. */
+  /** Every seat login per client address (one per terminal open; 8 seats share the AI session host's address): 120 per minute. */
   private readonly seatLoginCalls = new RateLimiter(120, 60_000);
   /** Which shared login each seat last fetched (§11.2 f; memory only, for /admin). */
   private readonly sharedLogins = new Map<number, { env: SeatCredentialEnv; at: number }>();
@@ -198,7 +198,7 @@ export class ClaudeSeatsService {
     });
   }
 
-  /** The Claude box address and the seat password are both set. */
+  /** The AI session host address and the seat password are both set. */
   boxReady(): boolean {
     const s = this.game.store.setup;
     return !!s.claudeBoxHost && !!s.seatSecret;
@@ -334,7 +334,7 @@ export class ClaudeSeatsService {
   /**
    * POST /api/seat-login (§11.2 e, f): a seat's agent-loop trades its player
    * token for that player's login, so the AI helper starts logged in. Only
-   * the Claude box can ask (Basic auth with the seat password, constant
+   * the AI session host can ask (Basic auth with the seat password, constant
    * time), and only for the seat's current player.
    *
    * With `agent` ('claude' | 'codex', sent by entrypoints that know about

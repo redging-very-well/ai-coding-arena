@@ -55,7 +55,7 @@ describe('admin overview refetch key', () => {
 });
 
 describe('setup checklist', () => {
-  it('has unique ids and covers the Claude box steps (§11.1)', () => {
+  it('has unique ids and covers the AI session host steps (§11.1)', () => {
     const items = CHECKLIST.flatMap((s) => s.items);
     expect(new Set(items.map((i) => i.id)).size).toBe(items.length);
     expect(items.some((i) => i.command === 'docker compose up -d')).toBe(true);

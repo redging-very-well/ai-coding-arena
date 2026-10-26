@@ -15,7 +15,7 @@
 # Environment:
 #   PIXEL_CLASH_URL   game server base URL, e.g. http://192.168.8.10:8080 (required)
 #   TTYD_PASS         the shared seat password (SEAT_SECRET in sessions/.env, the
-#                     same value as /admin -> Claude seats); required for serve
+#                     same value as /admin -> AI seats); required for serve
 #   TTYD_USER         basic-auth user (default: player)
 #   SEAT              seat number 1-8: ttyd base path /terminal/$SEAT and the title
 #   AGENT             claude (default) or codex: which coding agent this seat runs (§11.3)
@@ -206,7 +206,7 @@ last_player_file() { printf '%s/.pixel-clash/last-player' "$KIT_DIR"; }
 #   prompt      same player, but no conversation exists: fresh with FIRST_PROMPT.md
 #   resume      reopen the last conversation (CLAUDE_CONTINUE=1 and one exists)
 #   fresh       new conversation, no prompt
-# No token (admin rescue, a direct box:778N tab, the restart after the agent
+# No token (admin rescue, a direct <ai-session-host>:778N tab, the restart after the agent
 # exits) never prompts: resume or fresh as before.
 seat_start_mode() { # [token]
   local token="${1:-}" last='' file
@@ -550,7 +550,7 @@ check_codex() {
   if curl -sS -o /dev/null --max-time 5 https://api.openai.com/ 2>/dev/null; then
     echo "openai api:      reachable"
   else
-    echo "openai api:      NOT reachable (check the Claude box's internet)"
+    echo "openai api:      NOT reachable (check the AI session host's internet)"
   fi
 }
 
@@ -570,7 +570,7 @@ check_claude() {
   if curl -sS -o /dev/null --max-time 5 https://api.anthropic.com/ 2>/dev/null; then
     echo "anthropic api:   reachable"
   else
-    echo "anthropic api:   NOT reachable (check the Claude box's internet)"
+    echo "anthropic api:   NOT reachable (check the AI session host's internet)"
   fi
 }
 

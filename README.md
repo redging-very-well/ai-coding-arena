@@ -42,7 +42,7 @@ After the last round comes an awards ceremony on the projector.
                  │ terminal traffic (ttyd, :778N)    │ MCP tools (submit_unit, ...)
                  ▼                                   │
   ┌─────────────────────────────────────────────────────────────────┐
-  │ Claude box (Docker): one container per seat 1-8                 │
+  │ AI session host (Docker): one container per seat 1-8                 │
   │ ttyd -> Claude Code or Codex in that seat's kit folder /kit     │
   └──────────────┬──────────────────────────────────────────────────┘
                  ▼ internet
@@ -52,8 +52,8 @@ After the last round comes an awards ceremony on the projector.
 - Player laptops only need a browser and the LAN. The AI helper's terminal is
   shown inside /play through the game server's proxy, so players never see a
   seat password.
-- The game server needs no internet. Only the Claude box does.
-- The server, the Claude box and the player laptops are usually separate
+- The game server needs no internet. Only the AI session host does.
+- The server, the AI session host and the player laptops are usually separate
   machines on a router you bring. For a try-out everything can run on one.
 
 The full design is in [plan.md](plan.md) (§2 architecture, §3 game flow).
@@ -66,7 +66,7 @@ The full design is in [plan.md](plan.md) (§2 architecture, §3 game flow).
 | `packages/server/` | Game server: Express, REST + MCP + WebSocket, validator, sandbox (isolated-vm), battle sim, seat proxy |
 | `packages/client/` | Web pages (Vite + Preact, Canvas 2D arena): `play`, `screen`, `admin`, `setup`, `guide` |
 | `packages/starter-kit/` | Templates for each seat's kit folder: the AI helper's instructions, MCP config, starter units, first prompt |
-| `sessions/` | The Claude box: Dockerfile, `docker-compose.yml` (seats 1-8), `entrypoint.sh` |
+| `sessions/` | The AI session host: Dockerfile, `docker-compose.yml` (seats 1-8), `entrypoint.sh` |
 | `config/default.json` | All game tunables (costs, caps, budget, timers, points); also editable live in /admin |
 | `scripts/` | Dev/start launchers, bots, balance tools |
 | `tests/` | Vitest suites, fixtures, load test |
@@ -79,7 +79,7 @@ The full design is in [plan.md](plan.md) (§2 architecture, §3 game flow).
   refused by `engines` and a preflight check, e.g. Node 26 has no isolated-vm build). A C++ toolchain (Xcode
   Command Line Tools / VS Build Tools) is good insurance for isolated-vm. Run it
   on the host OS, not in a dev container (its ports only forward to localhost).
-- **Claude box:** Docker with Compose v2 and BuildKit. About 1 core and 2 GB RAM
+- **AI session host:** Docker with Compose v2 and BuildKit. About 1 core and 2 GB RAM
   per seat (8 cores / 16 GB for all 8). Internet access, plus a Claude account
   for the event (and/or an OpenAI login for Codex seats).
 - **Player laptops:** a browser.
@@ -98,13 +98,13 @@ make start          # prints the LAN URLs, a /play QR and the admin password
 
 Open `http://localhost:8080/admin` (password from the start output, or set
 `ADMIN_PASSWORD`), `/screen` in another window and `/play` in a third. Without
-the Claude box, /play still works (join, pick, place, battle) with the starter
+the AI session host, /play still works (join, pick, place, battle) with the starter
 units and the built-in code editor; `make bots PLAYERS=3` adds bot players so
 you can start a match alone.
 
 To add AI seats on the same machine, follow the event-day steps below with
 `PIXEL_CLASH_URL` set to the machine's **LAN IP** (containers can't reach the
-server through `localhost`) and the Claude box address `127.0.0.1` in /admin.
+server through `localhost`) and the AI session host address `127.0.0.1` in /admin.
 
 For development, `make dev` runs the server under `tsx watch` with the Vite dev
 server (hot reload).
@@ -123,10 +123,10 @@ make start          # note the LAN URL and the admin password
 
 Allow Node through the OS firewall (TCP 8080) and turn off sleep.
 
-**Claude box (the day before):**
+**AI session host (the day before):**
 
 ```sh
-# Copy the command from the game server's /admin -> AI seats -> Claude box setup:
+# Copy the command from the game server's /admin -> AI seats -> AI session host setup:
 make seats PIXEL_CLASH_URL=http://<game-server-LAN-IP>:8080 SEAT_SECRET=<from /admin>
 #   writes both into sessions/.env and starts all 8 seats (add N=4 for seats 1-4);
 #   later runs need only: make seats
@@ -137,7 +137,7 @@ make seats-restart            # so every terminal starts logged in
 make seat-check SEAT=1        # versions, login, game server + API reachable
 ```
 
-**Connect them:** in /admin → AI seats enter the Claude box's address (IP only).
+**Connect them:** in /admin → AI seats enter the AI session host's address (IP only).
 The seat password is already shared (the game server made it up and the setup
 command carried it). Every running seat should turn green.
 
@@ -150,7 +150,7 @@ player; `make seats-restart SEAT=n` unsticks a terminal; `make seats-logs SEAT=n
 shows what a seat is doing.
 
 **After the event:** `make wipe` on the game server (or Wipe in /admin) and
-`make seats-wipe` on the Claude box (deletes all seat volumes, including the
+`make seats-wipe` on the AI session host (deletes all seat volumes, including the
 logins). Then sign the event account out of all sessions (and revoke any OpenAI
 key): any seat could read its own login.
 
@@ -173,7 +173,7 @@ key): any seat could read its own login.
   changes, replay, New match.
 - **Players:** kick, reset PIN, validate or submit a unit on a player's behalf
   (the fallback when the AI helper is down).
-- **AI seats:** Claude box address and seat password, live status per seat,
+- **AI seats:** AI session host address and seat password, live status per seat,
   turn seats on/off, reassign players, open a seat's terminal to help out.
 - **Config editor** for costs, caps, budget, timers and points (units are
   re-priced on save), server info with LAN URLs and QR codes, and Wipe.
@@ -200,7 +200,7 @@ Notes and results: [docs/balance.md](docs/balance.md),
 ## More reading
 
 - [plan.md](plan.md): the full spec (unit contract §5, economy §6, sandbox §8,
-  simulation §9, API and MCP §10, starter kit and Claude box §11, UI §12,
+  simulation §9, API and MCP §10, starter kit and AI session host §11, UI §12,
   ops and event day §15, decisions log §17).
-- [sessions/README.md](sessions/README.md): the Claude box in depth.
+- [sessions/README.md](sessions/README.md): the AI session host in depth.
 - [docs/](docs/): balance, load and QA reports.

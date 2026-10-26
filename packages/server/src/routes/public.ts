@@ -81,7 +81,7 @@ export function publicRoutes(game: Game): Router {
     }),
   );
 
-  // The Claude box's agent-loop (§11.2 e): the seat's player token -> that
+  // The AI session host's agent-loop (§11.2 e): the seat's player token -> that
   // player's login, so the AI helper starts logged in. Basic auth with the
   // seat password; never reachable with a player's or admin's cookie alone.
   // With `agent`, also the shared agent login from /admin (§11.2 f).

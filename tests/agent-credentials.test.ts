@@ -2,7 +2,7 @@
 // token (`claude setup-token`), optionally an Anthropic API key, and an OpenAI
 // key for Codex seats into /admin → AI seats. Write-only: the browser only ever
 // gets "…last 4" back; the value reaches nothing but POST /api/seat-login
-// (the Claude box, Basic auth with the seat password), and survives restarts
+// (the AI session host, Basic auth with the seat password), and survives restarts
 // and wipes like the seat password. The entrypoint side is in
 // seat-first-prompt.test.ts.
 

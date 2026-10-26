@@ -1,8 +1,8 @@
-// Claude seats panel (plan §12.3, §11.2): the Claude box address, the shared
+// Claude seats panel (plan §12.3, §11.2): the AI session host address, the shared
 // seat password (the value only with "Show details" on, since this page may be
-// on the projector), the "Claude box setup" command (`make seats
-// PIXEL_CLASH_URL=… SEAT_SECRET=…`, which writes sessions/.env on the Claude
-// box; shown only with "Show details", copyable either way), the seats 1-8 with an On switch (off = never assigned or
+// on the projector), the "AI session host setup" command (`make seats
+// PIXEL_CLASH_URL=… SEAT_SECRET=…`, which writes sessions/.env on the AI
+// session host; shown only with "Show details", copyable either way), the seats 1-8 with an On switch (off = never assigned or
 // pickable; turning off a held seat moves its player to another free seat),
 // live status, assigned player (reassign / Unassign), who holds the live
 // terminal, and "Open terminal" (rescue: the seat's terminal through the
@@ -29,7 +29,7 @@ export const STATUS_TEXT: Readonly<Record<ClaudeSeatStatus, string>> = {
   up: 'up',
   down: 'down',
   'wrong-password': 'wrong password',
-  'no-box': 'no box address',
+  'no-box': 'no host address',
   'no-password': 'no seat password',
   unknown: 'not checked yet',
 };
@@ -77,7 +77,7 @@ export function useSaveSetup() {
   };
 }
 
-/** The Claude box address field + Save. */
+/** The AI session host address field + Save. */
 export function BoxAddress() {
   const { setup, busy } = useAdmin();
   const saveSetup = useSaveSetup();
@@ -96,12 +96,12 @@ export function BoxAddress() {
       onSubmit={(e) => {
         e.preventDefault();
         const v = boxHost.trim();
-        void saveSetup({ claudeBoxHost: v || null }, v ? 'Claude box address saved' : 'Claude box address cleared');
+        void saveSetup({ claudeBoxHost: v || null }, v ? 'AI session host address saved' : 'AI session host address cleared');
       }}
     >
       <input
         placeholder="e.g. 192.168.8.20"
-        aria-label="Claude box address"
+        aria-label="AI session host address"
         value={boxHost}
         onInput={(e) => setBoxHost(e.currentTarget.value)}
       />
@@ -123,7 +123,7 @@ export function ClaudeSeats() {
     return () => clearInterval(t);
   }, []);
 
-  // The secret fields only while "Show details" is on; refetched when the box or password changes.
+  // The secret fields only while "Show details" is on; refetched when the host address or password changes.
   const secretKey = `${seats?.boxHost ?? ''}|${seats?.seatSecretSet ?? false}`;
   useEffect(() => {
     if (!showDetails) {
@@ -169,14 +169,14 @@ export function ClaudeSeats() {
       </div>
       {wrong.length > 0 && (
         <div class="banner-bad" role="alert">
-          The seat password here doesn't match SEAT_SECRET on the Claude box (seat {wrong.join(', ')}). Run the Claude box setup command below on the
-          Claude box again, or enter the value from its sessions/.env below.
+          The seat password here doesn't match SEAT_SECRET on the AI session host (seat {wrong.join(', ')}). Run the AI session host setup command below on the
+          AI session host again, or enter the value from its sessions/.env below.
         </div>
       )}
 
       <p class="dim small">Each seat runs Claude Code or Codex (AGENT in sessions/.env).</p>
 
-      <h3>Claude box</h3>
+      <h3>AI session host</h3>
       <p class="dim small">
         The machine running the seat containers. Players reach their seat's terminal through this server at /terminal/N/, inside /play.
       </p>
@@ -321,7 +321,7 @@ function OpenTerminal({ row }: { row: AdminClaudeSeatDTO }) {
 }
 
 /**
- * The one command the Claude box needs (§11.1): run in the repo there, it
+ * The one command the AI session host needs (§11.1): run in the repo there, it
  * writes PIXEL_CLASH_URL and SEAT_SECRET into sessions/.env and starts the
  * seats. It carries the seat password, so the text shows only with "Show
  * details"; Copy works either way (it fetches the details just for the copy).
@@ -336,14 +336,14 @@ export function BoxSetup(props: { command: string | null; show: boolean; secretS
       const cmd = shown ?? withAgent((await api.admin.claudeSeats(true)).setupCommand);
       if (!cmd) throw new Error('No seat password yet: set one below first.');
       if (!(await copyText(cmd))) throw new Error("Couldn't copy: turn on Show details and copy the command by hand.");
-    }, 'Setup command copied: paste it in the repo folder on the Claude box');
+    }, 'Setup command copied: paste it in the repo folder on the AI session host');
   return (
     <div class="box-setup">
       {props.children ?? (
         <>
-          <h3>Claude box setup</h3>
+          <h3>AI session host setup</h3>
           <p class="dim small">
-            Run this in the Pixel Clash repo folder on the Claude box: it saves this server's address and the seat password in sessions/.env and
+            Run this in the Pixel Clash repo folder on the AI session host: it saves this server's address and the seat password in sessions/.env and
             starts the seats (add N=4 for seats 1-4 only, AGENT=codex for Codex). Later starts need only <code>make seats</code>.
           </p>
         </>
@@ -376,8 +376,8 @@ function SeatPassword(props: { set: boolean; value: string | null; show: boolean
     <div class="seat-secret">
       <h3>Seat password</h3>
       <p class="dim small">
-        The same value as SEAT_SECRET in sessions/.env on the Claude box (this server made one up on its first start; the setup command above
-        carries it). Players never see it: this server adds it for them. After changing it, run the setup command on the Claude box again.
+        The same value as SEAT_SECRET in sessions/.env on the AI session host (this server made one up on its first start; the setup command above
+        carries it). Players never see it: this server adds it for them. After changing it, run the setup command on the AI session host again.
       </p>
       {!editing ? (
         <div class="btn-row">

@@ -185,7 +185,7 @@ describe('auto-assignment, seats on/off and seat login on the server', () => {
     expect((await admin.put('/admin/claude-seats/2/enabled', { enabled: true })).body.seats[1].enabled).toBe(true);
   }, T);
 
-  it("seat login: the Claude box trades the seat's player token for that player's login", async () => {
+  it("seat login: the AI session host trades the seat's player token for that player's login", async () => {
     const zed = (await adminSeats()).find((s) => s.playerName === 'Zed')!;
     const token = seatPlayerToken(zed.seat, zed.playerId!);
     const raw = (auth: string | undefined, b: unknown) =>

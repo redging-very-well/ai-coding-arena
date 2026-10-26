@@ -248,7 +248,7 @@ aarch64 static binary from the GitHub release, checked against `TTYD_SHA256_ARM6
   -c player:<secret> -t fontSize=18 -t titleFixed=… -t disableLeaveAlert=true`). Instead of Claude,
   each one ran a fake `claude`, a `read`/`echo` loop that prints `ECHO[N]: <line>`.
 - **Game server:** built with `npm run build`, run on :18080 with a fresh data dir. `/admin` was set
-  to Claude box `127.0.0.1` with the matching seat password.
+  to AI session host `127.0.0.1` with the matching seat password.
 - **Browser:** Playwright Chromium, installed outside the repo. Terminal text was read from ttyd's
   `window.term` buffer, so "typing round-trips" means the echo line appeared in xterm.
 - **Scripts and screenshots:**
@@ -590,7 +590,7 @@ Chromium pages.
 
 ### How it was run
 
-- A built server (`npm run build`) on port 18170 with a fresh data dir. The Claude box address and
+- A built server (`npm run build`) on port 18170 with a fresh data dir. The AI session host address and
   seat password were set in /admin, but no ttyd was running, so the iframe showed the friendly
   "Waking up Claude…" page (the 502s in the console come from that).
 - Playwright 1.63 Chromium, scripts outside the repo (`scratchpad/guide/shot.cjs`, `extra.cjs`).
