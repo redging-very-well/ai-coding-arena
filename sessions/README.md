@@ -29,7 +29,7 @@ Inside every container ttyd listens on 7781; compose publishes seat N on host po
 
 All commands below run in this `sessions/` folder.
 
-**Shortcuts:** the repo root `Makefile` wraps the common commands (run `make` in the repo root to list them): `make seats PIXEL_CLASH_URL=… SEAT_SECRET=…` (the first run: writes both into `.env` via `set-env.sh`, then starts the seats), `make seats-env`, `make seats` (or `make seats N=4`, `SEATS="1 2 5"`), `make seats-ps`, `make seat-login SEAT=n` (`seat-login-codex` for Codex), `make seats-restart [SEAT=n]`, `make seat-check SEAT=n`, `make new-player SEAT=n` (runs `new-player`, then restarts the seat), `make seats-logs [SEAT=n]`, `make seats-stop`, `make seats-down` and `make seats-wipe` (`down -v`). The commands below are what they run.
+**Shortcuts:** the repo root `Makefile` wraps the common commands (run `make` in the repo root to list them): `make seats PIXEL_CLASH_URL=… SEAT_SECRET=…` (the first run: writes both into `.env` via `set-env.sh`, then starts the seats), `make seats-env`, `make seats` (or `make seats N=4`, `SEATS="1 2 5"`), `make seats-ps`, `make seat-login SEAT=n` (`seat-login-codex` for Codex; optional, only when no shared agent login is pasted in /admin), `make seats-restart [SEAT=n]`, `make seat-check SEAT=n`, `make new-player SEAT=n` (runs `new-player`, then restarts the seat), `make seats-logs [SEAT=n]`, `make seats-stop`, `make seats-down` and `make seats-wipe` (`down -v`). The commands below are what they run.
 
 ## 1. Set up (day before)
 

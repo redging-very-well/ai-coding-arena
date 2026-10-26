@@ -131,9 +131,11 @@ make seats PIXEL_CLASH_URL=http://<game-server-LAN-IP>:8080 SEAT_SECRET=<from /a
 #   writes both into sessions/.env and starts all 8 seats (add N=4 for seats 1-4);
 #   later runs need only: make seats
 make seats-ps                 # all "running (healthy)" after ~30 s
-make seat-login SEAT=1        # once per seat: /login with the event account, trust /kit, /exit
-# ... repeat for each seat in use (Codex seats: make seat-login-codex SEAT=n)
-make seats-restart            # so every terminal starts logged in
+# Optional: only if you did NOT paste a shared agent login into
+# /admin -> AI seats -> Agent login. Logs one seat in by hand:
+# make seat-login SEAT=1      # /login with the event account, trust /kit, /exit
+#                             # repeat per seat (Codex: make seat-login-codex SEAT=n)
+# make seats-restart          # then restart so every terminal starts logged in
 make seat-check SEAT=1        # versions, login, game server + API reachable
 ```
 

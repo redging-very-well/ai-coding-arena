@@ -71,7 +71,7 @@ help: ## Show this list
 	@awk 'BEGIN {FS = ":.*## "} /^(seat|new-player)[a-zA-Z0-9_-]*:.*## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
 	@echo "Pick seats with SEAT=3 (one), N=6 (seats 1-6) or SEATS=\"1 2 5\"; default all 8."
-	@echo "Examples: make seats N=4   make seat-login SEAT=2   make new-player SEAT=5"
+	@echo "Examples: make seats N=4   make seat-check SEAT=2   make new-player SEAT=5"
 
 # ---------------------------------------------------------------- game server
 
@@ -138,12 +138,12 @@ seats-ps: ## List the seat containers and their health
 seats-wipe: ## After the event: remove containers AND all volumes (logins, kits, chats)
 	$(COMPOSE) down -v
 
-seat-login: ## Log in Claude Code on one seat (SEAT=n): /login, trust /kit, /exit
+seat-login: ## Optional (no shared login in /admin): log in Claude Code on one seat (SEAT=n): /login, trust /kit, /exit
 	$(need_seat)
 	$(COMPOSE) run --rm seat$(SEAT) claude
 	@echo "Now restart the running seat: make seats-restart SEAT=$(SEAT)"
 
-seat-login-codex: ## Log in Codex on one Codex seat (SEAT=n), device code flow
+seat-login-codex: ## Optional (no shared login in /admin): log in Codex on one Codex seat (SEAT=n), device code flow
 	$(need_seat)
 	$(COMPOSE) run --rm seat$(SEAT) codex login --device-auth
 	@echo "Now restart the running seat: make seats-restart SEAT=$(SEAT)"
