@@ -19,7 +19,7 @@ or paste code by hand.
 
 ## 3D and 2D battle views
 
-The battle can be watched as a 3D voxel (Minecraft-style) world, the default on `/screen` and `/play`, or in the original 2D isometric pixel-art view. Each pixel of a unit's sprite becomes a block in 3D, and fire, ice and lightning shots, auras, healing and splash all look different.
+The battle can be watched as a 3D voxel world, the default on `/screen` and `/play`, or in the original 2D isometric pixel-art view. Each pixel of a unit's sprite becomes a block in 3D, and fire, ice and lightning shots, auras, healing and splash all look different.
 
 <table>
   <tr>

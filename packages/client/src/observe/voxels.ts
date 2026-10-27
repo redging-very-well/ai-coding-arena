@@ -1,6 +1,6 @@
 // Voxel geometry for the 3D observer prototype. Every sprite pixel becomes a
 // cube, extruded to a few voxels of depth, so a player's pixel-art unit turns
-// into a Minecraft-style figure. Faces hidden by a neighbouring voxel are
+// into a blocky 3D figure. Faces hidden by a neighbouring voxel are
 // skipped and every unit frame ends up as one vertex-coloured BufferGeometry.
 //
 // A sprite is drawn facing right, so a model's local +x is its front; the

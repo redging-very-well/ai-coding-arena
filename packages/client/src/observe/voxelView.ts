@@ -1,4 +1,4 @@
-// The 3D voxel (Minecraft-style) battle view, drawn with three.js.
+// The 3D voxel battle view, drawn with three.js.
 //
 // It is a second renderer for the shared ArenaRenderer, not a second game
 // client: the arena keeps doing everything it does for the 2D view (live frame
