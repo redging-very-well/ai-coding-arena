@@ -12,15 +12,16 @@
 import {
   AmbientLight, BoxGeometry, BufferGeometry, Color, DirectionalLight, DoubleSide, Fog, Group, HemisphereLight,
   InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, PCFSoftShadowMap,
-  PerspectiveCamera, PlaneGeometry, Raycaster, Scene, Vector2, Vector3, WebGLRenderer, CylinderGeometry,
+  PerspectiveCamera, PlaneGeometry, Raycaster, Scene, Vector2, Vector3, WebGLRenderer, CylinderGeometry, OctahedronGeometry, RingGeometry, CircleGeometry,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { FRAME_FLAGS, zoneRect, type FrameEvent, type ReplayDTO, type StatsSnapshot } from '@pixel-clash/shared';
+import { FRAME_FLAGS, elementOf, isAuraKind, minionElementOf, splashOf, supportOf, zoneRect, type AuraKind, type Element, type FrameEvent, type ReplayDTO, type StatsSnapshot } from '@pixel-clash/shared';
 import '../common/theme.css';
 import { api } from '../common/api.js';
 import { FrameBuffer, PlaybackClock, TICKS_PER_SECOND } from '../common/render/playback.js';
 import { resolveSprite, type AnimState } from '../common/render/sprites.js';
 import { minionFactoryId } from '../common/render/buildings.js';
+import { AURA_COLOR, CLEANSE_COLOR, ELEMENT_COLOR, HEAL_COLOR } from '../common/render/effects.js';
 import { seatStyle } from '../common/seats.js';
 import { formatClock } from '../common/ui.js';
 import { boxVoxels, spriteVoxels, voxelGeometry, type Voxel } from './voxels.js';
@@ -38,6 +39,10 @@ interface Def {
   stats: Pick<StatsSnapshot, 'maxHealth' | 'size' | 'color' | 'type' | 'shape'>;
   kind: Kind;
   sprite: ReturnType<typeof resolveSprite>;
+  /** What its shots look like and what it radiates (the 2D renderer's combatLook). */
+  element: Element;
+  splash: number;
+  aura: { kind: AuraKind; range: number } | null;
 }
 
 interface Body {
@@ -48,6 +53,8 @@ interface Body {
   material: MeshLambertMaterial;
   bar: Group;
   barFill: Mesh;
+  /** Ground ring of an aura unit (haste / might / shield), pulsing. */
+  aura: Mesh | null;
   height: number;
   heading: number;
   px: number;
@@ -83,7 +90,15 @@ function buildDefs(replay: ReplayDTO): Map<string, Def> {
     for (const inst of p.instances) {
       const u = units.get(inst.unitId);
       if (!u) continue;
-      defs.set(inst.instanceId, { seat: p.seat, name: u.name, stats: u.stats, kind: u.stats.type, sprite: resolveSprite(u) });
+      const kind = u.stats.type;
+      const plain = kind === 'wall' || kind === 'factory';
+      const sup = plain ? null : supportOf(u.stats);
+      defs.set(inst.instanceId, {
+        seat: p.seat, name: u.name, stats: u.stats, kind, sprite: resolveSprite(u),
+        element: plain ? 'normal' : elementOf(u.stats),
+        splash: plain ? 0 : splashOf(u.stats),
+        aura: sup && isAuraKind(sup.kind) ? { kind: sup.kind, range: sup.range ?? 0 } : null,
+      });
     }
   }
   return defs;
@@ -93,7 +108,10 @@ function buildDefs(replay: ReplayDTO): Map<string, Def> {
 function minionDef(factory: Def, replay: ReplayDTO): Def {
   const m = replay.reveal.minion?.stats;
   const stats = { maxHealth: m?.maxHealth ?? 40, size: m?.size ?? 8, color: factory.stats.color, type: 'soldier' as const, shape: 'circle' as const };
-  return { seat: factory.seat, name: 'Minion', stats, kind: 'minion', sprite: resolveSprite({ sprite: null, stats }) };
+  return {
+    seat: factory.seat, name: 'Minion', stats, kind: 'minion', sprite: resolveSprite({ sprite: null, stats }),
+    element: minionElementOf(factory.stats as StatsSnapshot), splash: 0, aura: null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -361,8 +379,19 @@ async function main(): Promise<void> {
     bar.position.y = height + 8;
     bar.visible = false;
     group.add(bar);
+    let aura: Mesh | null = null;
+    if (def.aura) {
+      // Edge to edge: the unit's radius plus the aura's reach. A flat translucent ring on the ground.
+      const r = def.stats.size + def.aura.range;
+      aura = new Mesh(new RingGeometry(r - 2.5, r, 64), new MeshBasicMaterial({ color: AURA_COLOR[def.aura.kind], transparent: true, opacity: 0.7, side: DoubleSide, depthWrite: false }));
+      const fill = new Mesh(new CircleGeometry(r, 64), new MeshBasicMaterial({ color: AURA_COLOR[def.aura.kind], transparent: true, opacity: 0.12, side: DoubleSide, depthWrite: false }));
+      aura.add(fill);
+      aura.rotation.x = -Math.PI / 2;
+      aura.position.y = 0.8;
+      group.add(aura);
+    }
     world.add(group);
-    return { id, def, group, mesh, material, bar, barFill, height, heading: def.seat % 2 ? Math.PI : 0, px: NaN, py: NaN, geoKey: '' };
+    return { id, def, group, mesh, material, bar, barFill, aura, height, heading: NaN, px: NaN, py: NaN, geoKey: '' };
   };
 
   // Particles: voxel debris, sparks and flames from one pooled InstancedMesh.
@@ -375,6 +404,7 @@ async function main(): Promise<void> {
   const pVel = new Float32Array(MAX_P * 3);
   const pLife = new Float32Array(MAX_P);
   const pSize = new Float32Array(MAX_P);
+  const pGrav = new Float32Array(MAX_P);
   let pNext = 0;
   const zero = new Matrix4().makeScale(0, 0, 0);
   for (let i = 0; i < MAX_P; i++) parts.setMatrixAt(i, zero);
@@ -386,9 +416,21 @@ async function main(): Promise<void> {
       pPos.set([x, y, z], i * 3);
       pVel.set([(rnd() - 0.5) * power, (0.4 + rnd()) * power * up, (rnd() - 0.5) * power], i * 3);
       pLife[i] = 0.5 + rnd() * 0.7;
+      pGrav[i] = 1;
       pSize[i] = size * (0.6 + rnd() * 0.8);
       parts.setColorAt(i, c.clone().multiplyScalar(0.8 + rnd() * 0.4));
     }
+    if (parts.instanceColor) parts.instanceColor.needsUpdate = true;
+  };
+  /** One particle with its own velocity, life and gravity (bolts, beams and rings use gravity 0). */
+  const dot = (x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, size: number, color: string, grav = 0): void => {
+    const i = pNext++ % MAX_P;
+    pPos.set([x, y, z], i * 3);
+    pVel.set([vx, vy, vz], i * 3);
+    pLife[i] = life;
+    pGrav[i] = grav;
+    pSize[i] = size;
+    parts.setColorAt(i, new Color(color));
     if (parts.instanceColor) parts.instanceColor.needsUpdate = true;
   };
   const tmp = new Matrix4();
@@ -400,9 +442,9 @@ async function main(): Promise<void> {
         parts.setMatrixAt(i, zero);
         continue;
       }
-      pVel[i * 3 + 1]! -= 260 * dt;
+      pVel[i * 3 + 1]! -= 260 * pGrav[i]! * dt;
       for (let a = 0; a < 3; a++) pPos[i * 3 + a]! += pVel[i * 3 + a]! * dt;
-      if (pPos[i * 3 + 1]! < 0) {
+      if (pGrav[i]! > 0 && pPos[i * 3 + 1]! < 0) {
         pPos[i * 3 + 1] = 0;
         pVel[i * 3 + 1] = Math.abs(pVel[i * 3 + 1]!) * 0.3;
         pVel[i * 3] = pVel[i * 3]! * 0.6;
@@ -416,9 +458,26 @@ async function main(): Promise<void> {
   };
 
   // Projectiles and the sudden-death wall.
-  const shots = new Map<number, Mesh>();
-  const shotGeo = new BoxGeometry(3.5, 3.5, 3.5);
-  const shotMat = new MeshBasicMaterial({ color: '#fff1a8' });
+  const shots = new Map<number, { mesh: Mesh; element: Element; dist: number }>();
+  const shotGeos = {
+    normal: new BoxGeometry(3.5, 3.5, 3.5),
+    fire: new BoxGeometry(5.5, 5.5, 5.5),
+    ice: new OctahedronGeometry(4.6),
+    lightning: new BoxGeometry(1.6, 1.6, 8),
+  };
+  const shotMats = new Map<string, MeshBasicMaterial>();
+  const shotMat = (color: string): MeshBasicMaterial => {
+    let m = shotMats.get(color);
+    if (!m) shotMats.set(color, (m = new MeshBasicMaterial({ color })));
+    return m;
+  };
+  /** A fireball (orange with a yellow core), an ice shard, a yellow spark, or a cube in the shooter's colour. */
+  const shotMesh = (element: Element, color: string): Mesh => {
+    const mesh = new Mesh(shotGeos[element], shotMat(element === 'normal' ? color : element === 'fire' ? '#ff5a1f' : ELEMENT_COLOR[element]));
+    if (element === 'fire') mesh.add(new Mesh(new BoxGeometry(3, 3, 3), shotMat('#ffe14a')));
+    if (element === 'ice') mesh.add(new Mesh(new OctahedronGeometry(2.6), shotMat('#ffffff')));
+    return mesh;
+  };
   const zoneRing = new Mesh(new CylinderGeometry(1, 1, 80, 72, 1, true), new MeshBasicMaterial({ color: '#ff4d4d', transparent: true, opacity: 0.2, side: DoubleSide, depthWrite: false }));
   zoneRing.position.set(S / 2, 40, S / 2);
   zoneRing.visible = false;
@@ -506,6 +565,61 @@ async function main(): Promise<void> {
   const lastTarget = new Vector3(S / 2, 0, S / 2);
   const lerpAngle = (a: number, b: number, f: number): number => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * f;
 
+  /** Voxel dots along a line (bolts and heal beams): `jit` = sideways wobble. */
+  const trail = (ax: number, ay: number, az: number, bx: number, by: number, bz: number, color: string, steps: number, jit: number, life: number, size: number): void => {
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const w = i === 0 || i === steps ? 0 : jit;
+      dot(ax + (bx - ax) * t + (rnd() - 0.5) * w, ay + (by - ay) * t + (rnd() - 0.5) * w, az + (bz - az) * t + (rnd() - 0.5) * w, 0, 0, 0, life, size, color);
+    }
+  };
+  const chest = (id: string, pos: Map<string, { x: number; y: number }>): Vector3 | null => {
+    const p = pos.get(id);
+    const b = bodies.get(id);
+    return p && b ? new Vector3(p.x, b.height * 0.55, p.y) : null;
+  };
+  const lastFire = new Map<string, string>();
+
+  const onEvent = (ev: FrameEvent, pos: Map<string, { x: number; y: number }>): void => {
+    if (ev.type === 'fire') {
+      target.set(ev.instanceId, ev.targetId);
+      lastFire.set(ev.targetId, ev.instanceId);
+    } else if (ev.type === 'hit') {
+      const t = bodies.get(ev.targetId);
+      const p = pos.get(ev.targetId);
+      if (!t || !p) return;
+      const col = ev.element === 'fire' ? '#ff7a1a' : ev.element === 'ice' ? '#8fe3ff' : ev.element === 'lightning' ? '#fff27a' : '#ffffff';
+      burst(p.x, t.height * 0.6, p.y, col, 4, 70, 2.6);
+    } else if (ev.type === 'death') {
+      const b = bodies.get(ev.instanceId);
+      if (b) burst(b.px, b.height * 0.4, b.py, b.def.stats.color, Math.min(40, 10 + b.def.stats.size * 2), 120, Math.max(2.4, b.def.stats.size / 3.2));
+    } else if (ev.type === 'crumble') {
+      for (const id of ev.ids) {
+        const b = bodies.get(id);
+        if (b) burst(b.px, 12, b.py, '#8a8d92', 14, 90, 4);
+      }
+    } else if (ev.type === 'arc') {
+      // Lightning hopping from the struck body to each of its neighbours: a jagged chain of yellow voxels.
+      let from = chest(ev.from, pos);
+      for (const id of ev.to) {
+        const to = chest(id, pos);
+        if (from && to) trail(from.x, from.y, from.z, to.x, to.y, to.z, ELEMENT_COLOR.lightning, 12, 9, 0.28, 2.2);
+        from = to ?? from;
+      }
+    } else if (ev.type === 'splash') {
+      for (let k = 0; k < 28; k++) {
+        const a = (k / 28) * Math.PI * 2;
+        dot(ev.x, 3, ev.y, (Math.cos(a) * ev.r) / 0.25, 0, (Math.sin(a) * ev.r) / 0.25, 0.25, 2.8, ELEMENT_COLOR[ev.element]);
+      }
+    } else if (ev.type === 'heal' || ev.type === 'cleanse') {
+      const color = ev.type === 'heal' ? HEAL_COLOR : CLEANSE_COLOR;
+      const from = chest(ev.from, pos);
+      const to = chest(ev.to, pos);
+      if (from && to) trail(from.x, from.y, from.z, to.x, to.y, to.z, color, 10, 0, 0.35, 1.8);
+      if (to) for (let k = 0; k < 5; k++) dot(to.x + (rnd() - 0.5) * 10, to.y + (rnd() - 0.5) * 8, to.z + (rnd() - 0.5) * 10, 0, 34, 0, 0.8, 2.6, color);
+    }
+  };
+
   const frame = (now: number): void => {
     const dtMs = now - last;
     last = now;
@@ -527,7 +641,12 @@ async function main(): Promise<void> {
         const attacking = (u.flags & FRAME_FLAGS.ATTACKING) !== 0;
         const foe = attacking ? pos.get(target.get(u.id) ?? '') : undefined;
         if (b.def.kind !== 'wall') {
-          if (foe && Math.hypot(foe.x - u.x, foe.y - u.y) > 0.5) b.heading = lerpAngle(b.heading, Math.atan2(foe.y - u.y, foe.x - u.x), 0.35);
+          // Only soldiers and minions turn; towers and factories keep facing the middle of the arena.
+          const mobile = b.def.kind === 'soldier' || b.def.kind === 'minion';
+          if (Number.isNaN(b.heading)) b.heading = mobile ? (b.def.seat % 2 ? Math.PI : 0) : Math.atan2(S / 2 - u.y, S / 2 - u.x);
+          if (!mobile) {
+            // no turning
+          } else if (foe && Math.hypot(foe.x - u.x, foe.y - u.y) > 0.5) b.heading = lerpAngle(b.heading, Math.atan2(foe.y - u.y, foe.x - u.x), 0.35);
           else if (moved > 0.05) b.heading = lerpAngle(b.heading, Math.atan2(u.y - b.py, u.x - b.px), 0.25);
           alive.set(b.def.seat, (alive.get(b.def.seat) ?? 0) + 1);
           const state: AnimState = attacking ? 'attack' : (u.flags & FRAME_FLAGS.MOVING) !== 0 ? 'walk' : 'idle';
@@ -546,6 +665,13 @@ async function main(): Promise<void> {
         const burning = (u.flags & FRAME_FLAGS.BURNING) !== 0;
         const frozen = (u.flags & FRAME_FLAGS.FROZEN) !== 0;
         b.material.emissive.set(burning ? '#ff6a00' : frozen ? '#4fc3ff' : '#000000').multiplyScalar(burning || frozen ? 0.35 : 0);
+        if (b.aura) (b.aura.material as MeshBasicMaterial).opacity = 0.5 + 0.3 * Math.sin(now / 280 + b.px * 0.05);
+        // Under a haste / might / shield aura: a few motes of its colour rise off the body.
+        const buff: AuraKind | null = u.flags & FRAME_FLAGS.HASTED ? 'haste' : u.flags & FRAME_FLAGS.MIGHTY ? 'might' : u.flags & FRAME_FLAGS.SHIELDED ? 'shield' : null;
+        if (buff && simDt > 0 && rnd() < 0.08) {
+          const sz = b.def.stats.size;
+          dot(u.x + (rnd() - 0.5) * sz * 1.6, 2, u.y + (rnd() - 0.5) * sz * 1.6, 0, 26, 0, 0.8, 2.2, AURA_COLOR[buff]);
+        }
         if (burning && simDt > 0 && rnd() < 0.5) burst(u.x, b.height * 0.6, u.y, rnd() < 0.5 ? '#ff7a1a' : '#ffd23f', 1, 22, 2.4);
         // HP bar: only while damaged (walls and minions) or always (everything else), facing the camera.
         const ratio = Math.max(0, Math.min(1, u.hp / b.def.stats.maxHealth));
@@ -562,51 +688,47 @@ async function main(): Promise<void> {
       for (const [id, b] of bodies) if (!seen.has(id)) b.group.visible = false;
       for (const el of legend.querySelectorAll<HTMLElement>('[data-alive]')) el.textContent = `(${alive.get(Number(el.dataset.alive)) ?? 0})`;
 
-      // Projectiles.
+      // Events first (a shot's shooter is learned from its `fire` event), not across a seek.
+      if (tick >= prevTick && tick - prevTick < 120) {
+        for (const { event } of buffer.eventsBetween(prevTick, tick)) onEvent(event, pos);
+      }
+      prevTick = tick;
+
+      // Projectiles: look by the shooter's element (normal cube, fireball, ice shard, lightning spark); splash shots are bigger.
       const live = new Set<number>();
       for (const p of sample.projectiles) {
         live.add(p.id);
-        let m = shots.get(p.id);
-        if (!m) {
-          m = new Mesh(shotGeo, shotMat);
-          shots.set(p.id, m);
-          scene.add(m);
+        let sh = shots.get(p.id);
+        const foe = pos.get(p.targetId);
+        if (!sh) {
+          const shooter = bodies.get(lastFire.get(p.targetId) ?? '')?.def;
+          const element = shooter?.element ?? 'normal';
+          sh = { mesh: shotMesh(element, shooter?.stats.color ?? '#ffffff'), element, dist: Math.max(1, foe ? Math.hypot(foe.x - p.x, foe.y - p.y) : 1) };
+          if ((shooter?.splash ?? 0) > 0) sh.mesh.scale.setScalar(1.8);
+          shots.set(p.id, sh);
+          scene.add(sh.mesh);
         }
-        m.position.set(p.x, 13, p.y);
+        const remaining = foe ? Math.hypot(foe.x - p.x, foe.y - p.y) : 0;
+        const prog = Math.max(0, Math.min(1, 1 - remaining / sh.dist));
+        const y = 10 + 4 * prog * (1 - prog) * Math.min(36, sh.dist * 0.25);
+        sh.mesh.position.set(p.x, y, p.y);
+        if (sh.element === 'ice') sh.mesh.rotation.set(tick * 0.12, tick * 0.17, 0);
+        if (sh.element === 'lightning') sh.mesh.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
+        if (simDt > 0) {
+          if (sh.element === 'fire' && rnd() < 0.6) dot(p.x, y, p.y, (rnd() - 0.5) * 30, 14, (rnd() - 0.5) * 30, 0.35, 2.4, rnd() < 0.5 ? '#ffb347' : '#ff5a1f');
+          else if (sh.element === 'ice' && rnd() < 0.4) dot(p.x, y, p.y, (rnd() - 0.5) * 12, -6, (rnd() - 0.5) * 12, 0.4, 1.8, '#e8fbff');
+          else if (sh.element === 'lightning' && rnd() < 0.7) dot(p.x + (rnd() - 0.5) * 6, y + (rnd() - 0.5) * 6, p.y + (rnd() - 0.5) * 6, 0, 0, 0, 0.18, 1.8, ELEMENT_COLOR.lightning);
+        }
       }
-      for (const [id, m] of shots) {
+      for (const [id, sh] of shots) {
         if (live.has(id)) continue;
-        scene.remove(m);
+        scene.remove(sh.mesh);
         shots.delete(id);
       }
 
       const r = sample.safeZoneRadius;
       zoneRing.visible = r > 0 && r < S * 0.69;
       zoneRing.scale.set(r, 1, r);
-
-      // Events since the last frame (not across a seek).
-      if (tick >= prevTick && tick - prevTick < 120) {
-        for (const { event } of buffer.eventsBetween(prevTick, tick)) onEvent(event, pos);
-      }
-      prevTick = tick;
-    }
-    function onEvent(ev: FrameEvent, pos: Map<string, { x: number; y: number }>): void {
-      if (ev.type === 'fire') target.set(ev.instanceId, ev.targetId);
-      else if (ev.type === 'hit') {
-        const t = bodies.get(ev.targetId);
-        const p = pos.get(ev.targetId);
-        if (!t || !p) return;
-        const col = ev.element === 'fire' ? '#ff7a1a' : ev.element === 'ice' ? '#8fe3ff' : ev.element === 'lightning' ? '#fff27a' : '#ffffff';
-        burst(p.x, t.height * 0.6, p.y, col, 4, 70, 2.6);
-      } else if (ev.type === 'death') {
-        const b = bodies.get(ev.instanceId);
-        if (b) burst(b.px, b.height * 0.4, b.py, b.def.stats.color, Math.min(40, 10 + b.def.stats.size * 2), 120, Math.max(2.4, b.def.stats.size / 3.2));
-      } else if (ev.type === 'crumble') {
-        for (const id of ev.ids) {
-          const b = bodies.get(id);
-          if (b) burst(b.px, 12, b.py, '#8a8d92', 14, 90, 4);
-        }
-      }
     }
 
     stepParticles(simDt);
