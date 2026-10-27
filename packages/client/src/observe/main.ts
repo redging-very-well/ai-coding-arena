@@ -347,7 +347,7 @@ async function main(): Promise<void> {
 
     const bar = new Group();
     const back = new Mesh(barGeo, barBack);
-    const fillMat = new MeshBasicMaterial({ color: '#4ade80', side: DoubleSide, depthTest: false });
+    const fillMat = new MeshBasicMaterial({ color: '#4ade80', side: DoubleSide, depthTest: false, transparent: true });
     const barFill = new Mesh(barGeo, fillMat);
     const bw = Math.max(18, def.stats.size * 2.6);
     back.scale.set(bw + 1.6, 4.2, 1);
