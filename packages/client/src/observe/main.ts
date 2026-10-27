@@ -4,6 +4,7 @@
 //
 //   /observe?round=N   a stored battle (default: the latest)
 //   /observe?demo      the canned dev replay (needs `npm run dev`)
+//   /observe?demo=showcase   the same with elemental, aura and healer units (scripts/demo-replay.ts --showcase)
 //
 // Reused from the 2D renderer: FrameBuffer / PlaybackClock (interpolation,
 // walls carried between frames), resolveSprite (a unit's own pixel art or the
@@ -72,7 +73,8 @@ async function loadReplay(): Promise<ReplayDTO> {
   const params = new URLSearchParams(location.search);
   if (params.has('demo')) {
     // Only the Vite dev server (default :5173) serves this file; the game server's built client does not.
-    const res = await fetch('/src/common/render/__demo/replay.json');
+    const file = params.get('demo') === 'showcase' ? 'replay-showcase.json' : 'replay.json';
+    const res = await fetch(`/src/common/render/__demo/${file}`);
     const type = res.headers.get('content-type') ?? '';
     if (!res.ok || !type.includes('json')) {
       throw new Error(`the demo replay is only served by the Vite dev server (npm run dev, usually http://localhost:5173/observe?demo; got ${res.status} here). On the game server use /observe?round=N.`);
