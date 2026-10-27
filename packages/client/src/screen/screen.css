@@ -1950,3 +1950,52 @@ canvas.arena {
     animation: none;
   }
 }
+
+/* ------------------------------------------------------- battle layout */
+/* BATTLE: the arena fills the stage; the army values are a small translucent
+   overlay in its top-left corner instead of a side column. */
+
+.battle-layout .body {
+  grid-template-columns: 1fr;
+  padding: 10px 14px 14px;
+}
+.score-overlay {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  width: 300px;
+  z-index: 4;
+  pointer-events: none;
+}
+.score-overlay .panel {
+  padding: 8px 12px 2px;
+  border-width: 2px;
+  background: rgba(13, 15, 26, 0.74);
+}
+.score-overlay .armies .army {
+  margin-bottom: 9px;
+}
+.score-overlay .armies .army-head {
+  font-size: 17px;
+}
+.score-overlay .armies .army-head .val {
+  font-size: 13px;
+}
+.score-overlay .armies .army-head .name {
+  max-width: 120px;
+}
+.score-overlay .armies .bar {
+  height: 11px;
+  margin-top: 3px;
+  border-width: 2px;
+}
+.score-overlay .armies.dense .cnt {
+  margin: 0 6px;
+  font-size: 12px;
+}
+.score-overlay .armies.teams .army-head {
+  font-size: 17px;
+}
+.score-overlay .panel h2 {
+  display: none;
+}

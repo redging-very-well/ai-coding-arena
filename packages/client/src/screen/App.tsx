@@ -230,11 +230,13 @@ export function App() {
   // In play (PLAN, PLACEMENT, BATTLE) the arena takes most of the stage and the
   // side becomes a narrow strip; LOBBY and the results keep the wide side.
   const playLayout = phase === 'PLAN' || phase === 'PLACEMENT' || phase === 'BATTLE';
+  // BATTLE: no side column at all. The arena takes the whole stage and the army values become a small overlay on it.
+  const battleLayout = phase === 'BATTLE';
 
   return (
     <div class="viewport">
       <div
-        class={cx('stage', `phase-${phase.toLowerCase()}`, playLayout && 'play-layout')}
+        class={cx('stage', `phase-${phase.toLowerCase()}`, playLayout && 'play-layout', battleLayout && 'battle-layout')}
         style={{ transform: `translate(-50%, -50%) scale(${scale})` }}
       >
         <Header snap={snap} ctrl={ctrl} now={now} />
@@ -242,8 +244,13 @@ export function App() {
           <section class="arena-panel">
             <canvas ref={attach} class="arena pixelated" />
             {snap && ctrl && <ArenaOverlays snap={snap} ctrl={ctrl} now={now} controls={controls} actions={actions} />}
+            {battleLayout && snap && ctrl && (
+              <div class="score-overlay">
+                <ArmyBars snap={snap} ctrl={ctrl} overlay />
+              </div>
+            )}
           </section>
-          <aside class="side">{snap && ctrl && <Sidebar snap={snap} ctrl={ctrl} now={now} />}</aside>
+          {!battleLayout && <aside class="side">{snap && ctrl && <Sidebar snap={snap} ctrl={ctrl} now={now} />}</aside>}
         </main>
         {snap && phase === 'MATCH_RESULTS' && state && ceremonyPos && !ceremonyHidden && (
           <Ceremony state={state} pos={ceremonyPos} steps={steps} isAdmin={isAdmin} />
@@ -699,7 +706,7 @@ function PlayerTile({ p, state }: { p: PlayerStatusDTO; state: GameStateDTO }) {
   );
 }
 
-function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController }) {
+function ArmyBars({ snap, ctrl, overlay = false }: { snap: ScreenSnapshot; ctrl: ScreenController; overlay?: boolean }) {
   const reveal = snap.reveal;
   const started = ctrl.arena.instanceIds.length > 0;
   let values: ArmyValue[] = [];
@@ -716,10 +723,10 @@ function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController
   const max = Math.max(1, ...values.map((v) => v.start));
   const sorted = [...values].sort((a, b) => a.seat - b.seat);
   // 7-8 players: the unit count moves into the name row so every bar fits the column.
-  const dense = sorted.length > 6;
+  const dense = overlay || sorted.length > 6;
   return (
     <div class={cx('panel armies', sorted.length > 4 && 'compact', dense && 'dense')}>
-      <h2 class="pixel">Army value</h2>
+      {!overlay && <h2 class="pixel">Army value</h2>}
       {!reveal && <p class="muted">Get ready…</p>}
       {sorted.map((v) => {
         const seat = seatStyle(v.seat);
@@ -749,7 +756,7 @@ function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController
           </div>
         );
       })}
-      {wallsCaption(reveal) && <p class="muted walls-caption">{WALLS_CAPTION}</p>}
+      {!overlay && wallsCaption(reveal) && <p class="muted walls-caption">{WALLS_CAPTION}</p>}
     </div>
   );
 }
