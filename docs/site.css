@@ -307,3 +307,6 @@ dialog.lightbox button {
 }
 dialog.lightbox button:hover { border-color: var(--accent); }
 @media (max-width: 480px) { .term pre { font-size: 12.5px; padding: 12px; } }
+
+.step-note { color: var(--text-dim); font-size: 14px; margin: 12px 0 0; }
+.step-note b { color: var(--text); }
