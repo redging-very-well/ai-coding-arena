@@ -17,6 +17,17 @@ or paste code by hand.
 
 **Website:** [redging-very-well.github.io/ai-coding-arena](https://redging-very-well.github.io/ai-coding-arena/), a one-page showcase (served by GitHub Pages from `docs/index.html`).
 
+## 3D battle view
+
+The battle can be watched as a 3D voxel (Minecraft-style) world, the default view on `/screen` and `/play` with a one-click switch back to the 2D isometric view. Each pixel of a unit's sprite becomes a block; fire, ice and lightning shots, auras, healing and splash all look different. Drag to orbit, scroll to zoom, click a unit to follow it (`V` cycles follow and chase cameras, `N` picks the next unit, `Esc` lets go). `?view=2d` or `?view=3d` overrides the choice for one visit, and `/observe` replays any stored battle in 3D.
+
+<table>
+  <tr>
+    <td width="50%" valign="top"><img src="docs/images/battle1.png" width="420" alt="The 3D battle view of the whole arena, with a small army-value overlay"><br><b>3D</b> · the whole arena, with the scores in a small overlay</td>
+    <td width="50%" valign="top"><img src="docs/images/battle2.png" width="420" alt="A close-up of the 3D battle: voxel units, health bars and aura rings"><br><b>3D</b> · zoomed in on the fight: health bars, aura rings, sparks</td>
+  </tr>
+</table>
+
 ## Screenshots
 
 A round, in order (the battle is the picture above):
