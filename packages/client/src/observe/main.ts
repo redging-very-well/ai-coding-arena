@@ -23,8 +23,11 @@ import { FrameBuffer, PlaybackClock, TICKS_PER_SECOND } from '../common/render/p
 import { resolveSprite, type AnimState } from '../common/render/sprites.js';
 import { minionFactoryId } from '../common/render/buildings.js';
 import { AURA_COLOR, CLEANSE_COLOR, ELEMENT_COLOR, HEAL_COLOR } from '../common/render/effects.js';
+import { SoundEngine } from '../common/audio.js';
 import { seatStyle } from '../common/seats.js';
+import { shotPitch } from '../common/sfx.js';
 import { formatClock } from '../common/ui.js';
+import { isBigHit } from '../common/render/fx.js';
 import { boxVoxels, spriteVoxels, voxelGeometry, type Voxel } from './voxels.js';
 
 /** Edge of one ground block in arena px (the sim is 800-1200 px wide). */
@@ -37,7 +40,7 @@ type Kind = 'soldier' | 'tower' | 'wall' | 'factory' | 'minion';
 interface Def {
   seat: number;
   name: string;
-  stats: Pick<StatsSnapshot, 'maxHealth' | 'size' | 'color' | 'type' | 'shape'>;
+  stats: Pick<StatsSnapshot, 'maxHealth' | 'size' | 'color' | 'type' | 'shape' | 'range'>;
   kind: Kind;
   sprite: ReturnType<typeof resolveSprite>;
   /** What its shots look like and what it radiates (the 2D renderer's combatLook). */
@@ -109,7 +112,7 @@ function buildDefs(replay: ReplayDTO): Map<string, Def> {
 /** Minions are never in the reveal: they take their factory's seat and colour. */
 function minionDef(factory: Def, replay: ReplayDTO): Def {
   const m = replay.reveal.minion?.stats;
-  const stats = { maxHealth: m?.maxHealth ?? 40, size: m?.size ?? 8, color: factory.stats.color, type: 'soldier' as const, shape: 'circle' as const };
+  const stats = { maxHealth: m?.maxHealth ?? 40, size: m?.size ?? 8, range: m?.range ?? 20, color: factory.stats.color, type: 'soldier' as const, shape: 'circle' as const };
   return {
     seat: factory.seat, name: 'Minion', stats, kind: 'minion', sprite: resolveSprite({ sprite: null, stats }),
     element: minionElementOf(factory.stats as StatsSnapshot), splash: 0, aura: null,
@@ -234,6 +237,7 @@ async function main(): Promise<void> {
       <input id="scrub" type="range" min="0" max="1" value="0" step="1" />
       <span id="time">0:00</span>
       <button id="view">View: orbit</button>
+      <button id="sound">Sound: on</button>
     </div>
     <div class="legend" id="legend"></div>
     <div class="pick" id="pick" hidden></div>
@@ -524,6 +528,21 @@ async function main(): Promise<void> {
   };
   scrub.onchange = () => (scrubbing = false);
 
+  // Sound: the game's synthesized effects. Browsers start audio only after a click or key press.
+  const sound = new SoundEngine('pixel-clash:observe-muted', false);
+  sound.installUnlock();
+  const syncSound = (): void => {
+    $('#sound').textContent = sound.muted ? 'Sound: off' : sound.state === 'running' ? 'Sound: on' : 'Sound: click to enable';
+  };
+  sound.subscribe(syncSound);
+  syncSound();
+  $('#sound').onclick = () => (sound.state === 'locked' && !sound.muted ? sound.unlock() : sound.toggleMuted());
+  /** Louder near the camera: a battle on the far side of the arena is a murmur. */
+  const near = (x: number, y: number): number => {
+    const d = Math.hypot(camera.position.x - x, camera.position.z - y);
+    return Math.max(0.12, Math.min(1, 1 / (1 + (d / (S * 0.45)) ** 2)));
+  };
+
   const living = (): string[] => [...bodies.values()].filter((b) => b.group.visible && b.def.kind !== 'wall').map((b) => b.id).sort();
   addEventListener('keydown', (e) => {
     if (e.key === ' ') {
@@ -586,16 +605,36 @@ async function main(): Promise<void> {
     if (ev.type === 'fire') {
       target.set(ev.instanceId, ev.targetId);
       lastFire.set(ev.targetId, ev.instanceId);
+      const def = bodies.get(ev.instanceId)?.def;
+      const at = pos.get(ev.instanceId);
+      if (def && at) {
+        const gain = near(at.x, at.y);
+        if (def.element === 'fire') sound.play('fireShot', { gain });
+        else if (def.element === 'ice') sound.play('iceShot', { gain });
+        else if (def.element === 'lightning') sound.play('zapShot', { gain });
+        else if (ev.melee) sound.play('swing', { gain });
+        else sound.play('shoot', { gain, pitch: shotPitch({ type: def.kind === 'minion' ? 'soldier' : def.kind, range: def.stats.range ?? 100 }) });
+      }
     } else if (ev.type === 'hit') {
       const t = bodies.get(ev.targetId);
       const p = pos.get(ev.targetId);
       if (!t || !p) return;
       const col = ev.element === 'fire' ? '#ff7a1a' : ev.element === 'ice' ? '#8fe3ff' : ev.element === 'lightning' ? '#fff27a' : '#ffffff';
       burst(p.x, t.height * 0.6, p.y, col, 4, 70, 2.6);
+      // Burn ticks, splash and zap hits are silent: the shot, the blast or the arc already sounded.
+      if (ev.kind !== 'burn' && ev.kind !== 'splash' && ev.kind !== 'zap') {
+        sound.play(t.def.kind === 'wall' ? 'wallHit' : isBigHit(ev.damage, t.def.stats.maxHealth) ? 'bigHit' : 'hit', { gain: near(p.x, p.y) });
+      }
+    } else if (ev.type === 'shatter') {
+      const p = pos.get(ev.id);
+      if (p) sound.play('shatter', { gain: near(p.x, p.y) });
     } else if (ev.type === 'death') {
       const b = bodies.get(ev.instanceId);
+      if (b) sound.play(b.def.kind === 'wall' ? 'crumble' : 'death', { gain: near(b.px, b.py) });
       if (b) burst(b.px, b.height * 0.4, b.py, b.def.stats.color, Math.min(40, 10 + b.def.stats.size * 2), 120, Math.max(2.4, b.def.stats.size / 3.2));
     } else if (ev.type === 'crumble') {
+      const first = bodies.get(ev.ids[0] ?? '');
+      if (first) sound.play('crumble', { gain: near(first.px, first.py) });
       for (const id of ev.ids) {
         const b = bodies.get(id);
         if (b) burst(b.px, 12, b.py, '#8a8d92', 14, 90, 4);
@@ -603,12 +642,14 @@ async function main(): Promise<void> {
     } else if (ev.type === 'arc') {
       // Lightning hopping from the struck body to each of its neighbours: a jagged chain of yellow voxels.
       let from = chest(ev.from, pos);
+      if (from) sound.play('zap', { gain: near(from.x, from.z) });
       for (const id of ev.to) {
         const to = chest(id, pos);
         if (from && to) trail(from.x, from.y, from.z, to.x, to.y, to.z, ELEMENT_COLOR.lightning, 12, 9, 0.28, 2.2);
         from = to ?? from;
       }
     } else if (ev.type === 'splash') {
+      sound.play('boom', { gain: near(ev.x, ev.y) });
       for (let k = 0; k < 28; k++) {
         const a = (k / 28) * Math.PI * 2;
         dot(ev.x, 3, ev.y, (Math.cos(a) * ev.r) / 0.25, 0, (Math.sin(a) * ev.r) / 0.25, 0.25, 2.8, ELEMENT_COLOR[ev.element]);
@@ -617,6 +658,7 @@ async function main(): Promise<void> {
       const color = ev.type === 'heal' ? HEAL_COLOR : CLEANSE_COLOR;
       const from = chest(ev.from, pos);
       const to = chest(ev.to, pos);
+      if (to) sound.play('heal', { gain: near(to.x, to.z) });
       if (from && to) trail(from.x, from.y, from.z, to.x, to.y, to.z, color, 10, 0, 0.35, 1.8);
       if (to) for (let k = 0; k < 5; k++) dot(to.x + (rnd() - 0.5) * 10, to.y + (rnd() - 0.5) * 8, to.z + (rnd() - 0.5) * 10, 0, 34, 0, 0.8, 2.6, color);
     }

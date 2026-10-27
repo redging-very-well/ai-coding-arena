@@ -32,6 +32,11 @@ export type SfxName =
   | 'zap'
   | 'shatter'
   | 'heal'
+  /** Elemental shots (the 3D observer): a fireball's whoosh and crackle, an ice shard's glassy ting, a lightning spark's snap, and a splash blast's boom. */
+  | 'fireShot'
+  | 'iceShot'
+  | 'zapShot'
+  | 'boom'
   /** The awards ceremony: a snare roll crescendo ending in a cymbal, a per-award sting and the victory tune. */
   | 'drumroll'
   | 'sting'
@@ -183,6 +188,10 @@ export const SFX: Readonly<Record<SfxName, readonly SfxStep[]>> = {
   zap: [noise('highpass', 3200, 0, 0.09, 0.12), note('sawtooth', 1600, 0, 0.08, 0.05, 700)],
   shatter: [noise('highpass', 4200, 0, 0.18, 0.16), note('triangle', 2400, 0, 0.12, 0.1, 3400), note('triangle', 1800, 0.06, 0.1, 0.08, 2600)],
   heal: [note('sine', 880, 0, 0.12, 0.08, 1320)],
+  fireShot: [noise('lowpass', 1100, 0, 0.16, 0.16), note('sawtooth', 240, 0, 0.14, 0.05, 110), noise('highpass', 3400, 0.05, 0.04, 0.07)],
+  iceShot: [note('triangle', 1900, 0, 0.1, 0.06, 2700), note('sine', 2500, 0.04, 0.12, 0.05, 3300)],
+  zapShot: [noise('highpass', 3800, 0, 0.06, 0.1), note('sawtooth', 2100, 0, 0.07, 0.05, 900)],
+  boom: [noise('lowpass', 520, 0, 0.24, 0.26), note('sine', 95, 0, 0.26, 0.26, 42)],
   drumroll: drumrollSteps(),
   sting: STING,
   fanfare: tuneSteps(),
@@ -257,6 +266,10 @@ export const SFX_MIN_GAP_MS: Partial<Record<SfxName, number>> = {
   zap: 70,
   shatter: 120,
   heal: 90,
+  fireShot: 60,
+  iceShot: 60,
+  zapShot: 60,
+  boom: 110,
   // Ceremony: never two on top of each other (a re-render or a double mount).
   drumroll: 2500,
   sting: 400,
@@ -276,6 +289,10 @@ export const SFX_PER_SECOND: Partial<Record<SfxName, number>> = {
   zap: 8,
   shatter: 4,
   heal: 6,
+  fireShot: 10,
+  iceShot: 10,
+  zapShot: 10,
+  boom: 6,
 };
 
 /** Decides whether a sound may play now (min gap + per-second budget per name). DOM-free. */
