@@ -75,7 +75,14 @@ export function voxelGeometry(voxels: readonly Voxel[], cell: number, noise = 0.
  */
 export function spriteVoxels(spec: SpriteSpec, rows: SpriteFrame, depth: number): Voxel[] {
   const palette = new Map<string, Color>();
-  for (const [key, hex] of Object.entries(spec.palette)) palette.set(key, new Color(hex));
+  // Seen from above, a thin slab shows mostly its outline colour, which sprites make near-black:
+  // lift very dark entries to a mid grey so the figure reads as shaded, not black.
+  const dark = new Color(0.18, 0.18, 0.18);
+  for (const [key, hex] of Object.entries(spec.palette)) {
+    const c = new Color(hex);
+    if (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b < 0.05) c.lerp(dark, 0.6);
+    palette.set(key, c);
+  }
   const grid = spec.grid;
   const voxels: Voxel[] = [];
   for (let r = 0; r < grid; r++) {
