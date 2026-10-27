@@ -64,8 +64,12 @@ const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document): T =
 async function loadReplay(): Promise<ReplayDTO> {
   const params = new URLSearchParams(location.search);
   if (params.has('demo')) {
+    // Only the Vite dev server (default :5173) serves this file; the game server's built client does not.
     const res = await fetch('/src/common/render/__demo/replay.json');
-    if (!res.ok) throw new Error('No demo replay: run `npm run dev` and scripts/demo-replay.ts first.');
+    const type = res.headers.get('content-type') ?? '';
+    if (!res.ok || !type.includes('json')) {
+      throw new Error(`the demo replay is only served by the Vite dev server (npm run dev, usually http://localhost:5173/observe?demo; got ${res.status} here). On the game server use /observe?round=N.`);
+    }
     return (await res.json()) as ReplayDTO;
   }
   const round = params.get('round');
