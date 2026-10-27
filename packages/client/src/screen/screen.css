@@ -1999,3 +1999,12 @@ canvas.arena {
 .score-overlay .panel h2 {
   display: none;
 }
+
+/* The 3D arena canvas sits exactly over the 2D one (it is hidden until 3D is on). */
+.arena-panel canvas.arena3d {
+  position: absolute;
+  inset: 0;
+}
+.view-btn {
+  font-family: var(--font-pixel, inherit);
+}

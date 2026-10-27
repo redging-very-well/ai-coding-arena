@@ -30,6 +30,7 @@ import {
 import { ApiError, api, request } from '../common/api.js';
 import { SoundEngine } from '../common/audio.js';
 import { ArenaRenderer } from '../common/render/arena.js';
+import { attach3D, type Arena3D } from '../common/view3d.js';
 import { minionFactoryId } from '../common/render/buildings.js';
 import { DEFAULT_PLAY_CAPS, capsFromRules, capsWithLiveCopyCaps, type PlayCaps } from './logic.js';
 import { MUTE_KEY_PLAY, countdownCue, revealCue } from '../common/sfx.js';
@@ -188,6 +189,9 @@ export class PlayStore {
   /** Arena for the battle mini-view; its canvas is moved into whichever panel shows it. */
   readonly arenaCanvas: HTMLCanvasElement;
   readonly arena: ArenaRenderer;
+  /** The 3D view's canvas (shown over the 2D one while 3D is on) and the view itself, created when the arena is first shown. */
+  readonly arenaCanvas3d: HTMLCanvasElement;
+  view3d: Arena3D | null = null;
   /** UI sounds: muted until the player presses the unmute button (remembered on this device). */
   readonly sound = new SoundEngine(MUTE_KEY_PLAY, true);
   private readonly listeners = new Set<Listener>();
@@ -203,10 +207,19 @@ export class PlayStore {
     this.arenaCanvas = document.createElement('canvas');
     this.arenaCanvas.className = 'arena-canvas';
     this.arena = new ArenaRenderer(this.arenaCanvas, { fit: { margin: 4, pad: 24 }, rallyFlags: 'mine' });
+    this.arenaCanvas3d = document.createElement('canvas');
+    this.arenaCanvas3d.className = 'arena-canvas arena-canvas3d';
     this.socket = new GameSocket('screen');
     this.sound.installUnlock();
     this.sound.subscribe(() => this.set({}));
     this.wire();
+  }
+
+  /** Start the 3D view (the player's remembered choice, default 3D). Loads three.js on first use. */
+  ensureView3d(): Arena3D {
+    // Players' laptops: a small shadow map and a capped pixel ratio keep it smooth.
+    this.view3d ??= attach3D(this.arena, this.arenaCanvas3d, { shadowMapSize: 1024, maxPixelRatio: 1.5 });
+    return this.view3d;
   }
 
   // -------------------------------------------------------------------------

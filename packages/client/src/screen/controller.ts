@@ -24,6 +24,7 @@ import {
 import { api, request } from '../common/api.js';
 import { SoundEngine, type AudioState } from '../common/audio.js';
 import { ArenaRenderer, bodyOf, prefersReducedMotion } from '../common/render/arena.js';
+import { attach3D, type Arena3D, type ViewPref } from '../common/view3d.js';
 import { isBigHit } from '../common/render/fx.js';
 import { MUTE_KEY_SCREEN, countdownCue, revealCue, shotPitch } from '../common/sfx.js';
 import { GameSocket, type WsStatus } from '../common/ws.js';
@@ -78,6 +79,8 @@ export interface ScreenSnapshot {
   /** Sound: muted flag (remembered) and whether the browser let audio start yet. */
   muted: boolean;
   audio: AudioState;
+  /** The arena view being shown: the 3D voxel view or the 2D isometric one. */
+  view: ViewPref;
 }
 
 const PRE_BATTLE: readonly Phase[] = ['LOBBY', 'PLAN', 'PLACEMENT'];
@@ -87,6 +90,8 @@ export { prefersReducedMotion };
 
 export class ScreenController {
   readonly arena: ArenaRenderer;
+  /** The optional 3D view of the arena (null when the page gave no canvas for it). */
+  readonly view3d: Arena3D | null = null;
   /** Projector sound: on by default, unlocked by the first click or key. */
   readonly sound = new SoundEngine(MUTE_KEY_SCREEN, false);
   readonly replays: ReplayController;
@@ -110,6 +115,7 @@ export class ScreenController {
     setup: null,
     muted: false,
     audio: 'locked',
+    view: '2d',
   };
   private readonly listeners = new Set<() => void>();
   private pendingFrames: FrameDTO[] | null = null;
@@ -123,7 +129,7 @@ export class ScreenController {
   private lastCount: { key: string; secs: number | null } = { key: '', secs: null };
   private readonly offUnlock: () => void;
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, canvas3d: HTMLCanvasElement | null = null) {
     this.arena = new ArenaRenderer(canvas, {
       fit: { margin: 16 },
       fx: true,
@@ -138,6 +144,10 @@ export class ScreenController {
     });
     this.neutralZones();
     this.arena.start();
+    if (canvas3d) {
+      this.view3d = attach3D(this.arena, canvas3d, { shadowMapSize: 4096 });
+      this.view3d.subscribe(() => this.set({ view: this.view3d!.mode }));
+    }
 
     const arena = this.arena;
     this.replays = new ReplayController({
@@ -204,6 +214,7 @@ export class ScreenController {
   }
 
   destroy(): void {
+    this.view3d?.dispose();
     this.sock.close();
     this.arena.stop();
     this.offUnlock();
@@ -304,8 +315,14 @@ export class ScreenController {
     switch (ev.type) {
       case 'fire': {
         const info = arena.instance(ev.instanceId);
-        if (ev.melee) this.sound.play('swing');
-        else this.sound.play('shoot', { pitch: info ? shotPitch(info.stats) : 440 });
+        const at = this.arena.currentSample?.units.find((u) => u.id === ev.instanceId);
+        const gain = at ? (this.view3d?.near(at.x, at.y) ?? 1) : 1;
+        // Elemental shots sound like their element, whatever the range.
+        if (info?.element === 'fire') this.sound.play('fireShot', { gain });
+        else if (info?.element === 'ice') this.sound.play('iceShot', { gain });
+        else if (info?.element === 'lightning') this.sound.play('zapShot', { gain });
+        else if (ev.melee) this.sound.play('swing', { gain });
+        else this.sound.play('shoot', { gain, pitch: info ? shotPitch(info.stats) : 440 });
         break;
       }
       case 'hit': {
@@ -332,6 +349,9 @@ export class ScreenController {
         break;
       case 'arc':
         this.sound.play('zap');
+        break;
+      case 'splash':
+        this.sound.play('boom');
         break;
       case 'shatter':
         this.sound.play('shatter');
@@ -370,6 +390,11 @@ export class ScreenController {
 
   toggleMuted(): void {
     this.sound.toggleMuted();
+  }
+
+  /** Switch the arena between the 3D and the 2D view (remembered on this device). */
+  toggleView(): void {
+    this.view3d?.toggle();
   }
 
   // -------------------------------------------------------------------------

@@ -102,6 +102,8 @@ How the system works is in [architecture.md](architecture.md).
 - A "Set up AI seats" wizard until the seats work, with a ready-to-copy `make seats …` command (2026-10-26).
 - The facilitator can submit or validate on a player's behalf (the fallback when a helper is down) and hide any sprite.
 - /screen shows the battle and results; an admin session there can START and control replays.
+- The battle has an optional 3D voxel (Minecraft-style, three.js) view on /screen and /play, the default view (2026-10-27). It is another renderer for the same arena: the sim, protocol and server are unchanged. The choice is per device (the 3D/2D button, V on /screen, `?view=2d|3d`) and a browser without WebGL stays on 2D.
+- On /screen during BATTLE the arena fills the stage and the army values are a small overlay in its corner; there is no side column (2026-10-27).
 
 ## Ops and repo
 

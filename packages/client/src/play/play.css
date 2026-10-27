@@ -523,8 +523,22 @@ main.join {
 .battle-clock.urgent { color: var(--bad); }
 .battle-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 1rem; }
 .arena-box { position: relative; }
-.arena-host { width: 100%; aspect-ratio: 16 / 10; border-radius: 10px; overflow: hidden; border: 2px solid var(--border); background: #0d0f1a; }
+.arena-host { position: relative; width: 100%; aspect-ratio: 16 / 10; border-radius: 10px; overflow: hidden; border: 2px solid var(--border); background: #0d0f1a; }
 .arena-canvas { display: block; width: 100%; height: 100%; }
+.arena-canvas3d { position: absolute; inset: 0; }
+.view-toggle {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  z-index: 3;
+  font: 700 12px system-ui, sans-serif;
+  padding: 4px 9px;
+  color: var(--text);
+  background: rgba(13, 15, 26, 0.75);
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
 .arena-overlay {
   position: absolute;
   inset: 0;

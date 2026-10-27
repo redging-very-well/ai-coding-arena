@@ -75,7 +75,9 @@ function useController(): [ScreenController | null, ScreenSnapshot | null, (c: H
   const ref = useRef<ScreenController | null>(null);
   const attach = (canvas: HTMLCanvasElement | null) => {
     if (!canvas || ref.current) return;
-    ref.current = new ScreenController(canvas);
+    // The 3D view's canvas is the arena canvas's sibling (rendered just after it).
+    const canvas3d = canvas.parentElement?.querySelector<HTMLCanvasElement>('canvas.arena3d') ?? null;
+    ref.current = new ScreenController(canvas, canvas3d);
     setCtrl(ref.current);
   };
   useEffect(() => {
@@ -196,6 +198,7 @@ export function App() {
       if (e.key === 'p' || e.key === 'P' || e.key === 'q' || e.key === 'Q') return ctrl.setPoster();
       if (e.key === 'Escape') return ctrl.setPoster(false);
       if (e.key === 'm' || e.key === 'M') return ctrl.toggleMuted();
+      if (e.key === 'v' || e.key === 'V') return ctrl.toggleView();
       const phase = ctrl.snapshot.state?.phase;
       if (phase === 'MATCH_RESULTS') {
         // The ceremony: facilitator only (an /admin session in this browser).
@@ -243,6 +246,7 @@ export function App() {
         <main class="body">
           <section class="arena-panel">
             <canvas ref={attach} class="arena pixelated" />
+            <canvas class="arena arena3d" />
             {snap && ctrl && <ArenaOverlays snap={snap} ctrl={ctrl} now={now} controls={controls} actions={actions} />}
             {battleLayout && snap && ctrl && (
               <div class="score-overlay">
@@ -518,6 +522,11 @@ function SoundControl({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenContro
   return (
     <div class="sound-ctl">
       {locked && <span class="sound-hint pixel">🔈 Click anywhere to enable sound</span>}
+      {ctrl.view3d && !ctrl.view3d.unavailable && (
+        <button class="btn small view-btn" title="Switch between the 3D and 2D arena (V)" onClick={() => ctrl.toggleView()}>
+          {snap.view === '3d' ? '3D' : '2D'}
+        </button>
+      )}
       <button
         class={cx('btn small sound-btn', snap.muted && 'off')}
         title={snap.muted ? 'Sound off (M)' : 'Sound on (M)'}
