@@ -178,7 +178,7 @@ function buildWorld(scene: Scene, replay: ReplayDTO, S: number): void {
   const clouds: Mesh[] = [];
   for (let i = 0; i < 9; i++) {
     const c = new Mesh(cloudGeo, cloudMat);
-    c.position.set(rand() * S * 2 - S / 2, 330 + rand() * 80, rand() * S * 2 - S / 2);
+    c.position.set(rand() * S * 2 - S / 2, S * 0.95 + rand() * 80, rand() * S * 2 - S / 2);
     scene.add(c);
     clouds.push(c);
   }
@@ -578,7 +578,7 @@ async function main(): Promise<void> {
       }
 
       const r = sample.safeZoneRadius;
-      zoneRing.visible = r > 0 && r < S * 0.72;
+      zoneRing.visible = r > 0 && r < S * 0.69;
       zoneRing.scale.set(r, 1, r);
 
       // Events since the last frame (not across a seek).
@@ -608,7 +608,7 @@ async function main(): Promise<void> {
 
     stepParticles(simDt);
     const clouds = scene.userData.clouds as Mesh[];
-    for (const c of clouds) c.position.x = ((c.position.x + simDt * 6 + S) % (S * 2)) - S / 2;
+    for (const c of clouds) c.position.x = ((c.position.x + simDt * 6 + S / 2) % (S * 2)) - S / 2;
 
     // Camera.
     const sel = selected ? bodies.get(selected) : undefined;
