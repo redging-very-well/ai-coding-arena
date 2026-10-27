@@ -23,9 +23,11 @@
     "@lezer/lr": "1.4.11",
     "@marijn/find-cluster-break": "1.0.4",
     "@pixel-clash/shared": "0.1.0",
+    "@types/three": "0.186.0",
     "crelt": "1.0.7",
     "preact": "10.29.8",
     "style-mod": "4.1.4",
+    "three": "0.186.1",
     "w3c-keyname": "2.2.8"
   },
   "devDependencies": {
