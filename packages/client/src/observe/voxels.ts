@@ -90,6 +90,12 @@ export function spriteVoxels(spec: SpriteSpec, rows: SpriteFrame, depth: number)
     for (let c = 0; c < grid; c++) {
       const base = palette.get(row[c] ?? '.');
       if (!base) continue;
+      // A pixel with no opaque neighbour is a spark or an ember: one small cube, not a bar of full depth.
+      const lone = ![[-1, 0], [1, 0], [0, -1], [0, 1]].some(([dc, dr]) => palette.has(rows[r + dr!]?.[c + dc!] ?? '.'));
+      if (lone) {
+        voxels.push({ x: c - grid / 2, y: grid - 1 - r, z: -0.5, color: base.clone() });
+        continue;
+      }
       for (let z = 0; z < depth; z++) {
         const color = base.clone();
         const edge = Math.min(z, depth - 1 - z);
