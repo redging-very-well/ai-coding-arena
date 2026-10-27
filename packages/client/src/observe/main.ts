@@ -182,30 +182,19 @@ function buildWorld(scene: Scene, replay: ReplayDTO, S: number): void {
   ];
   const treeGeo = voxelGeometry(treeVoxels, 5);
   const treeMat = new MeshLambertMaterial({ vertexColors: true });
-  for (let i = 0; i < 26; i++) {
-    const a = rand() * Math.PI * 2;
-    const d = S * 0.5 * Math.SQRT2 + 40 + rand() * 90;
-    const x = S / 2 + Math.cos(a) * d;
-    const z = S / 2 + Math.sin(a) * d;
-    if (Math.abs(x - S / 2) < S / 2 + 20 && Math.abs(z - S / 2) < S / 2 + 20) continue;
+  // The rim is 180 wide all round the arena (the island box below): keep trees on it, never over the water.
+  const RIM = 180;
+  for (let placed = 0; placed < 26; ) {
+    const x = -RIM + 20 + rand() * (S + 2 * RIM - 40);
+    const z = -RIM + 20 + rand() * (S + 2 * RIM - 40);
+    if (x > -24 && x < S + 24 && z > -24 && z < S + 24) continue;
     const t = new Mesh(treeGeo, treeMat);
     t.position.set(x, -4, z);
     t.rotation.y = rand() * Math.PI;
     t.castShadow = true;
     scene.add(t);
+    placed++;
   }
-
-  // Clouds drift slowly (animated in the render loop through scene.userData).
-  const cloudGeo = voxelGeometry(boxVoxels(9, 2, 5, () => new Color('#ffffff')), 22, 0.02);
-  const cloudMat = new MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.92 });
-  const clouds: Mesh[] = [];
-  for (let i = 0; i < 9; i++) {
-    const c = new Mesh(cloudGeo, cloudMat);
-    c.position.set(rand() * S * 2 - S / 2, S * 0.95 + rand() * 80, rand() * S * 2 - S / 2);
-    scene.add(c);
-    clouds.push(c);
-  }
-  scene.userData.clouds = clouds;
 }
 
 // ---------------------------------------------------------------------------
@@ -776,8 +765,6 @@ async function main(): Promise<void> {
     }
 
     stepParticles(simDt);
-    const clouds = scene.userData.clouds as Mesh[];
-    for (const c of clouds) c.position.x = ((c.position.x + simDt * 6 + S / 2) % (S * 2)) - S / 2;
 
     // Camera.
     const sel = selected ? bodies.get(selected) : undefined;
