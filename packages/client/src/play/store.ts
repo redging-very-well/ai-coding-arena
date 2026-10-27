@@ -218,7 +218,7 @@ export class PlayStore {
   /** Start the 3D view (the player's remembered choice, default 3D). Loads three.js on first use. */
   ensureView3d(): Arena3D {
     // Players' laptops: a small shadow map and a capped pixel ratio keep it smooth.
-    this.view3d ??= attach3D(this.arena, this.arenaCanvas3d, { shadowMapSize: 1024, maxPixelRatio: 1.5 });
+    this.view3d ??= attach3D(this.arena, this.arenaCanvas3d, { shadowMapSize: 1024, maxPixelRatio: 1.5, interactive: true, keys: 'canvas' });
     return this.view3d;
   }
 

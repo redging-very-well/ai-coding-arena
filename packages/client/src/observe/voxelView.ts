@@ -35,8 +35,14 @@ const RIM = 180;
 export type ViewMode = 'orbit' | 'follow' | 'chase';
 
 export interface VoxelViewOptions {
-  /** Click a unit to follow it, V / Tab / Esc for the follow and chase cameras (the /observe page). Default false: orbit only. */
+  /** Click a unit to follow it; V cycles orbit / follow / chase, N or Tab picks the next unit, Esc lets go. Default false: orbit only. */
   interactive?: boolean;
+  /**
+   * Where the keys are heard when interactive: 'window' (a page nobody types on: /screen, /observe) or
+   * 'canvas' (only while the canvas has focus, which a click gives it: /play, which has a code editor).
+   * Tab is only taken in 'window' mode, so keyboard users can always tab past the canvas.
+   */
+  keys?: 'window' | 'canvas';
   /** Shadow map edge in px (default 2048; 4096 is crisper but heavier). */
   shadowMapSize?: number;
   /** Cap on the device pixel ratio (default 2). */
@@ -556,7 +562,10 @@ export function createVoxelView(canvas: HTMLCanvasElement, arena: ArenaRenderer,
   const ray = new Raycaster();
   const ndc = new Vector2();
   let down: { x: number; y: number } | null = null;
-  const onDown = (e: PointerEvent): void => void (down = { x: e.clientX, y: e.clientY });
+  const onDown = (e: PointerEvent): void => {
+    down = { x: e.clientX, y: e.clientY };
+    if (keysOnCanvas) canvas.focus({ preventScroll: true });
+  };
   const onUp = (e: PointerEvent): void => {
     if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4) return;
     const r = canvas.getBoundingClientRect();
@@ -565,11 +574,15 @@ export function createVoxelView(canvas: HTMLCanvasElement, arena: ArenaRenderer,
     const hit = ray.intersectObjects([...bodies.values()].filter((b) => b.group.visible && b.def.kind !== 'wall').map((b) => b.mesh), false)[0];
     select((hit?.object.userData.bodyId as string | undefined) ?? null);
   };
+  const keysOnCanvas = opts.keys === 'canvas';
   const onKey = (e: KeyboardEvent): void => {
-    if (!enabled) return;
+    if (!enabled || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target as HTMLElement | null;
+    if (!keysOnCanvas && t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.closest?.('.cm-editor'))) return;
     if (e.key === 'v' || e.key === 'V') cycleViewMode();
+    else if (e.key === 'n' || e.key === 'N') selectNext();
     else if (e.key === 'Escape') select(null);
-    else if (e.key === 'Tab') {
+    else if (e.key === 'Tab' && !keysOnCanvas) {
       e.preventDefault();
       selectNext();
     }
@@ -578,7 +591,11 @@ export function createVoxelView(canvas: HTMLCanvasElement, arena: ArenaRenderer,
   if (opts.interactive) {
     canvas.addEventListener('pointerdown', onDown);
     canvas.addEventListener('pointerup', onUp);
-    addEventListener('keydown', onKey);
+    if (keysOnCanvas) {
+      canvas.tabIndex = 0;
+      canvas.style.outline = 'none';
+      canvas.addEventListener('keydown', onKey);
+    } else addEventListener('keydown', onKey);
   }
 
   // ---------------------------------------------------------------------------
@@ -806,6 +823,7 @@ export function createVoxelView(canvas: HTMLCanvasElement, arena: ArenaRenderer,
       if (opts.interactive) {
         canvas.removeEventListener('pointerdown', onDown);
         canvas.removeEventListener('pointerup', onUp);
+        canvas.removeEventListener('keydown', onKey);
         removeEventListener('keydown', onKey);
       }
       controls.dispose();

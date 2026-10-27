@@ -198,7 +198,7 @@ export function App() {
       if (e.key === 'p' || e.key === 'P' || e.key === 'q' || e.key === 'Q') return ctrl.setPoster();
       if (e.key === 'Escape') return ctrl.setPoster(false);
       if (e.key === 'm' || e.key === 'M') return ctrl.toggleMuted();
-      if (e.key === 'v' || e.key === 'V') return ctrl.toggleView();
+      if (e.key === 'd' || e.key === 'D') return ctrl.toggleView();
       const phase = ctrl.snapshot.state?.phase;
       if (phase === 'MATCH_RESULTS') {
         // The ceremony: facilitator only (an /admin session in this browser).
@@ -248,6 +248,12 @@ export function App() {
             <canvas ref={attach} class="arena pixelated" />
             <canvas class="arena arena3d" />
             {snap && ctrl && <ArenaOverlays snap={snap} ctrl={ctrl} now={now} controls={controls} actions={actions} />}
+            {snap?.view === '3d' && snap.follow && (
+              <div class="follow-hint pixel">
+                {snap.follow.mode === 'chase' ? '🎥 Chasing' : '🎥 Following'} {snap.follow.name}
+                <small>V camera · N next · Esc release</small>
+              </div>
+            )}
             {battleLayout && snap && ctrl && (
               <div class="score-overlay">
                 <ArmyBars snap={snap} ctrl={ctrl} overlay />
@@ -523,7 +529,7 @@ function SoundControl({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenContro
     <div class="sound-ctl">
       {locked && <span class="sound-hint pixel">🔈 Click anywhere to enable sound</span>}
       {ctrl.view3d && !ctrl.view3d.unavailable && (
-        <button class="btn small view-btn" title="Switch between the 3D and 2D arena (V)" onClick={() => ctrl.toggleView()}>
+        <button class="btn small view-btn" title="Switch between the 3D and 2D arena (D)" onClick={() => ctrl.toggleView()}>
           {snap.view === '3d' ? '3D' : '2D'}
         </button>
       )}

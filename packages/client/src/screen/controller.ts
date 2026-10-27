@@ -24,7 +24,7 @@ import {
 import { api, request } from '../common/api.js';
 import { SoundEngine, type AudioState } from '../common/audio.js';
 import { ArenaRenderer, bodyOf, prefersReducedMotion } from '../common/render/arena.js';
-import { attach3D, type Arena3D, type ViewPref } from '../common/view3d.js';
+import { attach3D, type Arena3D, type Following, type ViewPref } from '../common/view3d.js';
 import { isBigHit } from '../common/render/fx.js';
 import { MUTE_KEY_SCREEN, countdownCue, revealCue, shotPitch } from '../common/sfx.js';
 import { GameSocket, type WsStatus } from '../common/ws.js';
@@ -81,6 +81,8 @@ export interface ScreenSnapshot {
   audio: AudioState;
   /** The arena view being shown: the 3D voxel view or the 2D isometric one. */
   view: ViewPref;
+  /** The unit the 3D camera follows (click a unit, V / N / Tab / Esc), or null. */
+  follow: Following | null;
 }
 
 const PRE_BATTLE: readonly Phase[] = ['LOBBY', 'PLAN', 'PLACEMENT'];
@@ -116,6 +118,7 @@ export class ScreenController {
     muted: false,
     audio: 'locked',
     view: '2d',
+    follow: null,
   };
   private readonly listeners = new Set<() => void>();
   private pendingFrames: FrameDTO[] | null = null;
@@ -145,8 +148,9 @@ export class ScreenController {
     this.neutralZones();
     this.arena.start();
     if (canvas3d) {
-      this.view3d = attach3D(this.arena, canvas3d, { shadowMapSize: 4096 });
-      this.view3d.subscribe(() => this.set({ view: this.view3d!.mode }));
+      // Nobody types on the projector page, so the camera keys work anywhere on it.
+      this.view3d = attach3D(this.arena, canvas3d, { shadowMapSize: 4096, interactive: true, keys: 'window' });
+      this.view3d.subscribe(() => this.set({ view: this.view3d!.mode, follow: this.view3d!.following }));
     }
 
     const arena = this.arena;

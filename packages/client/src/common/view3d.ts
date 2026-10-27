@@ -38,7 +38,19 @@ function rememberPref(p: ViewPref): void {
   }
 }
 
+/** What the 3D camera is following (or null: the free orbit camera). */
+export interface Following {
+  name: string;
+  /** Owner seat. */
+  seat: number;
+  kind: string;
+  mode: 'follow' | 'chase';
+}
+
 export interface ViewOptions {
+  /** Click a unit to follow it, with V / N / Tab / Esc (see VoxelViewOptions). */
+  interactive?: boolean;
+  keys?: 'window' | 'canvas';
   /** Shadow map edge in px (the projector can afford more than a player's laptop). */
   shadowMapSize?: number;
   /** Cap on the device pixel ratio. */
@@ -50,6 +62,12 @@ export interface Arena3D {
   readonly mode: ViewPref;
   /** 3D could not start (no WebGL, or the chunk failed to load): the 2D view stays. */
   readonly unavailable: boolean;
+  /** The unit the camera follows, if any. */
+  readonly following: Following | null;
+  /** Cycle orbit / follow / chase and pick the next unit (the keys' actions, for buttons). */
+  cycleCamera(): void;
+  selectNext(): void;
+  release(): void;
   /** Switch (and remember the choice on this device). */
   set(pref: ViewPref): void;
   toggle(): void;
@@ -70,6 +88,8 @@ export function attach3D(arena: ArenaRenderer, canvas3d: HTMLCanvasElement, opts
   let mode: ViewPref = '2d';
   let unavailable = false;
   let disposed = false;
+  let pick: { name: string; owner: number; kind: string } | null = null;
+  let camMode: 'orbit' | 'follow' | 'chase' = 'orbit';
   const listeners = new Set<() => void>();
   const emit = (): void => {
     for (const fn of listeners) fn();
@@ -80,7 +100,20 @@ export function attach3D(arena: ArenaRenderer, canvas3d: HTMLCanvasElement, opts
     loading ??= import('../observe/voxelView.js')
       .then(({ createVoxelView }) => {
         if (disposed) return null;
-        const v = createVoxelView(canvas3d, arena, { shadowMapSize: opts.shadowMapSize ?? 2048, maxPixelRatio: opts.maxPixelRatio ?? 2 });
+        const v = createVoxelView(canvas3d, arena, {
+          shadowMapSize: opts.shadowMapSize ?? 2048,
+          maxPixelRatio: opts.maxPixelRatio ?? 2,
+          interactive: opts.interactive ?? false,
+          keys: opts.keys ?? 'window',
+          onPick: (p) => {
+            pick = p;
+            emit();
+          },
+          onViewMode: (m) => {
+            camMode = m;
+            emit();
+          },
+        });
         view = v;
         return v;
       })
@@ -114,6 +147,18 @@ export function attach3D(arena: ArenaRenderer, canvas3d: HTMLCanvasElement, opts
     },
     get unavailable() {
       return unavailable;
+    },
+    get following() {
+      return pick && camMode !== 'orbit' ? { name: pick.name, seat: pick.owner, kind: pick.kind, mode: camMode } : null;
+    },
+    cycleCamera() {
+      view?.cycleViewMode();
+    },
+    selectNext() {
+      view?.selectNext();
+    },
+    release() {
+      view?.select(null);
     },
     set(pref) {
       rememberPref(pref);

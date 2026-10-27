@@ -9,7 +9,7 @@ import { getStore, useStore, type MyBattleUnit } from '../store.js';
 /** Mounts the store's arena canvas and runs the render loop while visible. */
 export function ArenaView(props: { class?: string }) {
   const host = useRef<HTMLDivElement>(null);
-  const [view, setView] = useState<{ mode: '2d' | '3d'; unavailable: boolean }>({ mode: '2d', unavailable: false });
+  const [view, setView] = useState<{ mode: '2d' | '3d'; unavailable: boolean; follow: string | null }>({ mode: '2d', unavailable: false, follow: null });
   useEffect(() => {
     const store = getStore();
     const el = host.current;
@@ -19,7 +19,7 @@ export function ArenaView(props: { class?: string }) {
     store.arena.resize(true);
     store.arena.start();
     const v = store.ensureView3d();
-    const sync = () => setView({ mode: v.mode, unavailable: v.unavailable });
+    const sync = () => setView({ mode: v.mode, unavailable: v.unavailable, follow: v.following ? `${v.following.mode === 'chase' ? 'Chasing' : 'Following'} ${v.following.name}` : null });
     sync();
     const off = v.subscribe(sync);
     return () => {
@@ -40,6 +40,17 @@ export function ArenaView(props: { class?: string }) {
         >
           {view.mode === '3d' ? '3D' : '2D'}
         </button>
+      )}
+      {view.mode === '3d' && (
+        <div class="view-hint">
+          {view.follow ? (
+            <>
+              🎥 {view.follow} · <kbd>V</kbd> camera · <kbd>N</kbd> next · <kbd>Esc</kbd> release
+            </>
+          ) : (
+            'Click a unit to follow it'
+          )}
+        </div>
       )}
     </div>
   );
