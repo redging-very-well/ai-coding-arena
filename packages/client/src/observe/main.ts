@@ -302,11 +302,14 @@ async function main(): Promise<void> {
   /** One voxel model per (sprite, state, frame, size): built once, shared by every copy. */
   const geometryFor = (def: Def, state: AnimState, tick: number): { geo: BufferGeometry; key: string; height: number } => {
     const spec = def.sprite;
-    const frames = spec.frames[state] ?? spec.frames.idle;
-    const i = Math.floor((tick / TICKS_PER_SECOND) * ANIM_FPS) % frames.length;
     const big = def.kind === 'tower' || def.kind === 'factory';
+    // A tower never moves, and its sprite's idle/attack frames are mostly flame flicker and muzzle sparks that
+    // read as flashing cubes once extruded: hold its first idle frame (the projectile shows the shot).
+    const still = def.kind === 'tower';
+    const frames = still ? spec.frames.idle : (spec.frames[state] ?? spec.frames.idle);
+    const i = still ? 0 : Math.floor((tick / TICKS_PER_SECOND) * ANIM_FPS) % frames.length;
     const cell = (def.stats.size * (big ? 3.1 : 2.6)) / spec.grid;
-    const key = `${state}:${i}:${cell.toFixed(2)}`;
+    const key = `${still ? 'idle' : state}:${i}:${cell.toFixed(2)}`;
     let per = geoCache.get(spec);
     if (!per) geoCache.set(spec, (per = new Map()));
     let geo = per.get(key);
