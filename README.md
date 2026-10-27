@@ -1,5 +1,7 @@
 # Pixel Clash
 
+Like my work? [Buy me a coffee ☕](https://buymeacoffee.com/redging.very.well)
+
 A LAN auto-battler for 2-8 players, built for a Kids Coding Day. Players design
 their own units (soldiers, towers, walls, factories) by **prompting an AI helper**
 (Claude Code, or the OpenAI Codex CLI) in their browser. The helper writes the
@@ -246,3 +248,5 @@ How the test passes and the balance tools work:
 - [sessions/README.md](sessions/README.md): the AI session host in depth.
 - [packages/starter-kit/](packages/starter-kit/): what the AI helpers read
   (`CLAUDE.md.tmpl`) and the prompt ideas for players (`PROMPTS.md`).
+
+<a href="https://buymeacoffee.com/redging.very.well"><img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=redging.very.well&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" alt="Buy me a coffee" height="50"></a>
