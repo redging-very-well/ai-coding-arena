@@ -9,7 +9,7 @@
   <meta property="og:title" content="Pixel Clash">
   <meta property="og:description" content="A LAN auto-battler where players prompt an AI helper to write JavaScript units, then watch them fight on the big screen.">
   <meta property="og:type" content="website">
-  <meta property="og:image" content="https://redging-very-well.github.io/ai-coding-arena/images/fight-screen.png">
+  <meta property="og:image" content="https://redging-very-well.github.io/ai-coding-arena/images/battle1.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">
@@ -52,11 +52,11 @@
         <a class="btn" href="https://buymeacoffee.com/redging.very.well">Buy me a coffee ☕</a>
       </div>
       <figure class="shot">
-        <button type="button" data-full="images/fight-screen.png" aria-label="Enlarge: a battle on the projector">
-          <img src="images/fight-screen.png" width="1716" height="977" fetchpriority="high"
-               alt="The projector during a battle: an isometric pixel-art arena with two players' armies clashing in the middle, a CLASH! banner, the battle timer and an army value bar for each player">
+        <button type="button" data-full="images/battle1.png" aria-label="Enlarge: a battle on the projector in the 3D view">
+          <img src="images/battle1.png" width="3266" height="1822" fetchpriority="high"
+               alt="The projector during a battle in the 3D view: a voxel island with two armies clashing in the middle of the arena, rings showing support auras, the battle timer and a small army-value overlay in the corner">
         </button>
-        <figcaption>A battle on the projector (/screen)</figcaption>
+        <figcaption>A battle on the projector (/screen), in the 3D view</figcaption>
       </figure>
     </div>
   </section>
@@ -116,17 +116,25 @@
           <div class="step-text">
             <span class="step-num">3</span>
             <h3>Battle</h3>
-            <p>The units fight on their own, running the code the AI helper wrote. The battle plays live on the projector and on every player's /play.</p>
+            <p>The units fight on their own, running the code the AI helper wrote. The battle plays live on the projector and on every player's /play, in 3D by default, or in the original 2D isometric view, one click away.</p>
           </div>
-          <div class="step-shots one">
+          <div class="step-shots">
             <figure class="shot">
-              <button type="button" data-full="images/fight-screen.png" aria-label="Enlarge: a battle in progress">
+              <button type="button" data-full="images/fight-screen.png" aria-label="Enlarge: the 2D battle view">
                 <img src="images/fight-screen.png" width="1716" height="977" loading="lazy"
-                     alt="A battle in progress on the projector, with damage numbers and an OVERLOAD! effect in the middle of the arena">
+                     alt="The 2D isometric pixel-art battle view, with damage numbers and an OVERLOAD! effect in the middle of the arena">
               </button>
-              <figcaption>/screen: the battle</figcaption>
+              <figcaption>2D: the original isometric pixel-art view</figcaption>
+            </figure>
+            <figure class="shot">
+              <button type="button" data-full="images/battle2.png" aria-label="Enlarge: the 3D battle view, close up">
+                <img src="images/battle2.png" width="3322" height="1799" loading="lazy"
+                     alt="A close-up of the 3D battle view: blocky voxel units with health bars inside overlapping coloured aura rings, with sparks and debris from the fighting">
+              </button>
+              <figcaption>3D: zoomed in on the fight</figcaption>
             </figure>
           </div>
+          <p class="step-note"><b>Switch views</b> with the 3D / 2D button on /screen and /play (or <kbd>D</kbd> on /screen, or <code>?view=2d</code> / <code>?view=3d</code> in the address). <b>In 3D</b>: drag to orbit, scroll to zoom, click a unit to follow it, <kbd>V</kbd> cycles the follow and chase cameras, <kbd>N</kbd> picks the next unit (<kbd>Tab</kbd> too on /screen), <kbd>Esc</kbd> lets go. On /play the keys work after clicking the arena, so typing in the code editor is never affected.</p>
         </li>
         <li class="step" style="--c:var(--good)">
           <div class="step-text">

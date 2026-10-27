@@ -14,7 +14,7 @@ import { publicRoutes } from './routes/public.js';
 import { log } from './util/log.js';
 import { defaultPublicDir } from './util/paths.js';
 
-export const PAGES = ['play', 'screen', 'admin', 'setup', 'guide'] as const;
+export const PAGES = ['play', 'screen', 'admin', 'setup', 'guide', 'observe'] as const;
 
 export interface HttpOptions {
   /** The built client (default packages/server/dist/public). */

@@ -4,7 +4,11 @@
 // included), isolated-vm runners and the BattleEngine, and the result is
 // written as a ReplayDTO.
 //
-//   npx tsx --no-node-snapshot --conditions=source scripts/demo-replay.ts [seed]
+//   npx tsx --no-node-snapshot --conditions=source scripts/demo-replay.ts [seed] [--showcase]
+//
+// --showcase swaps in the units of scripts/demo-showcase (fire / ice / lightning
+// shots, splash, haste / might / shield auras, healers) and writes
+// replay-showcase.json, for the 3D observer: /observe?demo=showcase.
 //
 // Then `npm run dev` and open http://localhost:5173/src/common/render/__demo/
 
@@ -27,7 +31,8 @@ import { BattleEngine, buildInstances, createBattleRunners, designFor, type Batt
 const root = new URL('../', import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, root), 'utf8');
 const config = DEFAULT_CONFIG;
-const seed = Number(process.argv[2] ?? 4242);
+const showcase = process.argv.includes('--showcase');
+const seed = Number(process.argv.slice(2).find((a) => !a.startsWith('--')) ?? 4242);
 
 interface Design {
   reveal: RevealedUnitDTO;
@@ -48,7 +53,7 @@ async function design(path: string): Promise<Design> {
 
 const SOLDIER = 'packages/starter-kit/units/basic_soldier.js';
 const TOWER = 'packages/starter-kit/units/basic_tower.js';
-const roster = [
+const roster: Array<{ playerId: string; name: string; files: string[] }> = [
   { playerId: 'p-ada', name: 'Ada', files: [SOLDIER, TOWER] },
   { playerId: 'p-ben', name: 'Ben', files: ['tests/fixtures/units/good/speedy_scout.js', TOWER] },
   { playerId: 'p-cy', name: 'Cy', files: ['tests/fixtures/units/good/big_tank.js', 'tests/fixtures/units/good/sniper_tower.js'] },
@@ -72,6 +77,15 @@ function placements(designs: Design[]): PlacementDTO[] {
   });
   return out;
 }
+
+const SHOW = 'scripts/demo-showcase/';
+const showcaseRoster = [
+  { playerId: 'p-ada', name: 'Ada', files: [SHOW + 'fire_soldier.js', SHOW + 'field_medic.js', SHOW + 'lightning_tower.js'] },
+  { playerId: 'p-ben', name: 'Ben', files: [SHOW + 'frost_soldier.js', SHOW + 'haste_soldier.js', SHOW + 'frost_tower.js'] },
+  { playerId: 'p-cy', name: 'Cy', files: [SHOW + 'might_tank.js', SHOW + 'shield_soldier.js', SHOW + 'fire_tower.js'] },
+  { playerId: 'p-dee', name: 'Dee', files: [SHOW + 'storm_soldier.js', SHOW + 'combat_medic.js', SHOW + 'shield_tower.js'] },
+];
+if (showcase) roster.splice(0, roster.length, ...showcaseRoster);
 
 const zones = assignZones(roster.map((r) => r.playerId), 0);
 const players = await Promise.all(
@@ -131,7 +145,7 @@ const replay: ReplayDTO = { round: 1, reveal, frames: engine.frames, end };
 
 const outDir = new URL('packages/client/src/common/render/__demo/', root);
 mkdirSync(outDir, { recursive: true });
-const outFile = new URL('replay.json', outDir);
+const outFile = new URL(showcase ? 'replay-showcase.json' : 'replay.json', outDir);
 writeFileSync(outFile, JSON.stringify(replay));
 console.log(
   `[demo-replay] ${engine.frames.length} frames, ${result.endTick} ticks (${result.endReason}); ` +

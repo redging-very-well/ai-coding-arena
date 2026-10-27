@@ -173,6 +173,13 @@ export interface ArenaOptions {
   rallyFlags?: 'all' | 'mine' | 'none';
   /** Extra drawing after the units (fx layer: damage numbers, particles…). */
   overlay?: (ctx: CanvasRenderingContext2D, view: IsoView, arena: ArenaRenderer, now: number) => void;
+  /**
+   * Run the whole view model (playback, instances, events, projectiles) but draw
+   * nothing: another renderer (the 3D voxel view) reads this arena's state instead.
+   */
+  headless?: boolean;
+  /** Called every frame right after the state has been advanced (and before drawing, unless headless). */
+  onStep?: (arena: ArenaRenderer, now: number) => void;
 }
 
 /** What the renderer knows about one placed copy. */
@@ -507,8 +514,38 @@ export class ArenaRenderer {
     return this.map;
   }
 
+  /** The zones being drawn (tinted bases). */
+  get currentZones(): readonly ArenaZone[] {
+    return this.zones;
+  }
+
+  /** The interpolated battle state of this frame, or null before the first frame. */
+  get currentSample(): FrameSample | null {
+    return this.sample;
+  }
+
+  /** The seat whose units are highlighted (own units on /play), or null. */
+  get highlightSeat(): number | null {
+    return this.options.highlightSeat ?? null;
+  }
+
+  /** Changes every time the battle is forgotten or revealed anew, so another renderer knows to start over. */
+  get battleGeneration(): number {
+    return this.generation;
+  }
+
+  private generation = 0;
+  private readonly eventListeners = new Set<(event: FrameEvent) => void>();
+
+  /** Listen to every battle event as playback passes it (in addition to options.onEvent). Returns an unsubscribe function. */
+  subscribeEvents(fn: (event: FrameEvent) => void): () => void {
+    this.eventListeners.add(fn);
+    return () => this.eventListeners.delete(fn);
+  }
+
   /** Forget the battle (back to an empty, tinted arena). */
   clearBattle(): void {
+    this.generation++;
     this.buffer.clear();
     this.instances.clear();
     this.projectiles.clear();
@@ -742,7 +779,8 @@ export class ArenaRenderer {
     // getBoundingClientRect would force a layout. Only a DPR change is polled.
     if (!this.resizeObserver || this.dprChanged()) this.resize();
     this.step(dt, now);
-    this.draw(now);
+    this.options.onStep?.(this, now);
+    if (!this.options.headless) this.draw(now);
   }
 
   private dprChanged(): boolean {
@@ -833,6 +871,7 @@ export class ArenaRenderer {
     if (this.options.fx) this.eventFx(event, now);
     if (!this.options.fx && (event.type === 'arc' || event.type === 'splash' || event.type === 'heal' || event.type === 'cleanse')) this.effectFx(event, now);
     this.options.onEvent?.(event, this);
+    for (const fn of this.eventListeners) fn(event);
   }
 
   /** M8.8: flames, frost glints and legend lines from a body's status flags. */

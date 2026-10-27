@@ -75,7 +75,9 @@ function useController(): [ScreenController | null, ScreenSnapshot | null, (c: H
   const ref = useRef<ScreenController | null>(null);
   const attach = (canvas: HTMLCanvasElement | null) => {
     if (!canvas || ref.current) return;
-    ref.current = new ScreenController(canvas);
+    // The 3D view's canvas is the arena canvas's sibling (rendered just after it).
+    const canvas3d = canvas.parentElement?.querySelector<HTMLCanvasElement>('canvas.arena3d') ?? null;
+    ref.current = new ScreenController(canvas, canvas3d);
     setCtrl(ref.current);
   };
   useEffect(() => {
@@ -196,6 +198,7 @@ export function App() {
       if (e.key === 'p' || e.key === 'P' || e.key === 'q' || e.key === 'Q') return ctrl.setPoster();
       if (e.key === 'Escape') return ctrl.setPoster(false);
       if (e.key === 'm' || e.key === 'M') return ctrl.toggleMuted();
+      if (e.key === 'd' || e.key === 'D') return ctrl.toggleView();
       const phase = ctrl.snapshot.state?.phase;
       if (phase === 'MATCH_RESULTS') {
         // The ceremony: facilitator only (an /admin session in this browser).
@@ -230,20 +233,34 @@ export function App() {
   // In play (PLAN, PLACEMENT, BATTLE) the arena takes most of the stage and the
   // side becomes a narrow strip; LOBBY and the results keep the wide side.
   const playLayout = phase === 'PLAN' || phase === 'PLACEMENT' || phase === 'BATTLE';
+  // BATTLE: no side column at all. The arena takes the whole stage and the army values become a small overlay on it.
+  const battleLayout = phase === 'BATTLE';
 
   return (
     <div class="viewport">
       <div
-        class={cx('stage', `phase-${phase.toLowerCase()}`, playLayout && 'play-layout')}
+        class={cx('stage', `phase-${phase.toLowerCase()}`, playLayout && 'play-layout', battleLayout && 'battle-layout')}
         style={{ transform: `translate(-50%, -50%) scale(${scale})` }}
       >
         <Header snap={snap} ctrl={ctrl} now={now} />
         <main class="body">
           <section class="arena-panel">
             <canvas ref={attach} class="arena pixelated" />
+            <canvas class="arena arena3d" />
             {snap && ctrl && <ArenaOverlays snap={snap} ctrl={ctrl} now={now} controls={controls} actions={actions} />}
+            {snap?.view === '3d' && snap.follow && (
+              <div class="follow-hint pixel">
+                {snap.follow.mode === 'chase' ? '🎥 Chasing' : '🎥 Following'} {snap.follow.name}
+                <small>V camera · N next · Esc release</small>
+              </div>
+            )}
+            {battleLayout && snap && ctrl && (
+              <div class="score-overlay">
+                <ArmyBars snap={snap} ctrl={ctrl} overlay />
+              </div>
+            )}
           </section>
-          <aside class="side">{snap && ctrl && <Sidebar snap={snap} ctrl={ctrl} now={now} />}</aside>
+          {!battleLayout && <aside class="side">{snap && ctrl && <Sidebar snap={snap} ctrl={ctrl} now={now} />}</aside>}
         </main>
         {snap && phase === 'MATCH_RESULTS' && state && ceremonyPos && !ceremonyHidden && (
           <Ceremony state={state} pos={ceremonyPos} steps={steps} isAdmin={isAdmin} />
@@ -511,6 +528,11 @@ function SoundControl({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenContro
   return (
     <div class="sound-ctl">
       {locked && <span class="sound-hint pixel">🔈 Click anywhere to enable sound</span>}
+      {ctrl.view3d && !ctrl.view3d.unavailable && (
+        <button class="btn small view-btn" title="Switch between the 3D and 2D arena (D)" onClick={() => ctrl.toggleView()}>
+          {snap.view === '3d' ? '3D' : '2D'}
+        </button>
+      )}
       <button
         class={cx('btn small sound-btn', snap.muted && 'off')}
         title={snap.muted ? 'Sound off (M)' : 'Sound on (M)'}
@@ -699,7 +721,7 @@ function PlayerTile({ p, state }: { p: PlayerStatusDTO; state: GameStateDTO }) {
   );
 }
 
-function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController }) {
+function ArmyBars({ snap, ctrl, overlay = false }: { snap: ScreenSnapshot; ctrl: ScreenController; overlay?: boolean }) {
   const reveal = snap.reveal;
   const started = ctrl.arena.instanceIds.length > 0;
   let values: ArmyValue[] = [];
@@ -716,10 +738,10 @@ function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController
   const max = Math.max(1, ...values.map((v) => v.start));
   const sorted = [...values].sort((a, b) => a.seat - b.seat);
   // 7-8 players: the unit count moves into the name row so every bar fits the column.
-  const dense = sorted.length > 6;
+  const dense = overlay || sorted.length > 6;
   return (
     <div class={cx('panel armies', sorted.length > 4 && 'compact', dense && 'dense')}>
-      <h2 class="pixel">Army value</h2>
+      {!overlay && <h2 class="pixel">Army value</h2>}
       {!reveal && <p class="muted">Get ready…</p>}
       {sorted.map((v) => {
         const seat = seatStyle(v.seat);
@@ -749,7 +771,7 @@ function ArmyBars({ snap, ctrl }: { snap: ScreenSnapshot; ctrl: ScreenController
           </div>
         );
       })}
-      {wallsCaption(reveal) && <p class="muted walls-caption">{WALLS_CAPTION}</p>}
+      {!overlay && wallsCaption(reveal) && <p class="muted walls-caption">{WALLS_CAPTION}</p>}
     </div>
   );
 }

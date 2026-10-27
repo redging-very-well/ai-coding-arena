@@ -57,7 +57,7 @@ Where this file and the code disagree, the code wins.
 |---|---|
 | `packages/shared/src` | Code used by server and client: `contract.ts` (the unit contract), `config.ts` (zod schema + `DEFAULT_CONFIG`), `cost.ts` / `budget.ts` (prices, copy ramp), `bounds.ts` (stat checks), `buildings.ts`, `errors.ts` (validation codes and texts), `maps.ts`, `teams.ts`, `geometry.ts`, `sprite.ts`, `awards.ts`, `guide.ts`, `protocol.ts` (every REST/WS/MCP DTO, with a route reference at the top) |
 | `packages/server/src` | `index.ts` (boot), `server.ts` / `http.ts` (Express app), `routes/` (`public`, `player`, `admin`), `mcp.ts`, `ws.ts`, `services/` (the service layer), `validator/`, `sandbox/`, `sim/`, `terminal/` (seat proxy), `util/` |
-| `packages/client/src` | Vite + Preact multi-page app: `play/`, `screen/`, `admin/`, `setup/`, `guide/`, and `common/` (API and WS clients, Canvas 2D isometric renderer in `common/render/`, sounds). Builds into `packages/server/dist/public` |
+| `packages/client/src` | Vite + Preact multi-page app: `play/`, `screen/`, `admin/`, `setup/`, `guide/`, and `common/` (API and WS clients, Canvas 2D isometric renderer in `common/render/`, sounds, `view3d.ts`), and `observe/` (the 3D voxel view and the /observe replay page). Builds into `packages/server/dist/public` |
 | `packages/starter-kit` | Seat kit templates: `CLAUDE.md.tmpl` (agent instructions), `FIRST_PROMPT.md.tmpl` (first message for a new player), `PROMPTS.md` (prompt ideas for players), `units/basic_*.js` (starter templates) |
 | `sessions/` | AI session host: `Dockerfile`, `docker-compose.yml` (seat1-8), `entrypoint.sh` (kit rendering, agent loop, seat login, `check`, `new-player`), `set-env.sh` |
 | `config/default.json` | All game tunables; mirrors `DEFAULT_CONFIG` |
@@ -331,7 +331,8 @@ list with request and response types is the comment at the top of
 | Page | Contents |
 |---|---|
 | `/play` | Join (name + PIN), the AI helper terminal pane beside the game (split view or tabs), My Units (roster, picks, cost), Ready, placement grid, live battle, results and per-unit reports, past battles and replays, unit guide overlay, in-browser code editor |
-| `/screen` | Projector: arena canvas, timers, join QR, ready ticks, reveal and battle, scoreboard, awards ceremony. With an admin cookie it can also START and control replays |
+| `/observe` | A stored battle (`?round=N`, default the latest) in the 3D voxel view with orbit, follow and chase cameras, scrubbing and sound |
+| `/screen` | Projector: arena canvas (3D by default, 2D optional), timers, join QR, ready ticks, reveal and battle, scoreboard, awards ceremony. With an admin cookie it can also START and control replays |
 | `/admin` | Phase controls on top; tabs Match (setup in LOBBY), Players (kick, PIN reset, submit on behalf, details toggle), Game rules (config editor), AI seats (host address, seat password, agent login, per-seat status and on/off, open a terminal), Server (LAN URLs, QR, wipe) |
 | `/setup` | Join URL and QR, LAN addresses, setup checklist |
 | `/guide` | The unit guide, built from the live config (`GET /api/guide`, `services/guide.ts`) |
@@ -406,3 +407,15 @@ Other env vars: `PORT`, `HOST`, `ADMIN_PASSWORD`.
   Every process that loads isolated-vm needs `--no-node-snapshot` (the
   launchers and vitest's `execArgv` pass it). Don't copy `node_modules`
   between machines or Node versions: run `npm ci` there.
+
+## 3D view
+
+`observe/voxelView.ts` (three.js) draws the arena in 3D: each sprite pixel becomes a cube,
+elemental shots, auras, heals, splash, lightning and sudden death come from the same frame
+data and events as the 2D view. It is a second renderer for `ArenaRenderer`, not a second
+client: the arena runs headless (`headless` option: all state and events, no 2D drawing) and
+the view reads its `currentSample`, instances, zones and event stream every frame (`onStep`),
+so live battles, replays, the reveal and seeking all work with no server change.
+`common/view3d.ts` attaches it to an arena on /screen and /play: three.js loads on first use
+(its own chunk), 3D is the default, the choice is remembered per device, `?view=2d|3d`
+overrides it for one visit, and a failure to start (no WebGL) leaves the 2D view.

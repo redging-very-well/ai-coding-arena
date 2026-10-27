@@ -11,11 +11,36 @@ plays on the projector. Players only describe what they want; they never write
 or paste code by hand.
 
 <p align="center">
-  <img src="docs/images/fight-screen.png" width="860" alt="A battle on the projector (/screen): units from every player fighting in the arena">
-  <br><em>A battle on the projector (/screen)</em>
+  <img src="docs/images/battle1.png" width="860" alt="A battle on the projector (/screen) in the 3D view: a voxel island with two armies fighting in the middle, and a small army-value overlay">
+  <br><em>A battle on the projector (/screen), in the 3D view</em>
 </p>
 
 **Website:** [redging-very-well.github.io/ai-coding-arena](https://redging-very-well.github.io/ai-coding-arena/), a one-page showcase (served by GitHub Pages from `docs/index.html`).
+
+## 3D and 2D battle views
+
+The battle can be watched as a 3D voxel world, the default on `/screen` and `/play`, or in the original 2D isometric pixel-art view. Each pixel of a unit's sprite becomes a block in 3D, and fire, ice and lightning shots, auras, healing and splash all look different.
+
+<table>
+  <tr>
+    <td width="50%" valign="top"><img src="docs/images/fight-screen.png" width="420" alt="The 2D isometric battle view with damage numbers and effects"><br><b>2D</b> · the original isometric pixel-art view</td>
+    <td width="50%" valign="top"><img src="docs/images/battle2.png" width="420" alt="A close-up of the 3D battle: voxel units, health bars and aura rings"><br><b>3D</b> · zoomed in on the fight: health bars, aura rings, sparks</td>
+  </tr>
+</table>
+
+**Switching.** Use the 3D / 2D button on `/screen` and `/play` (or `D` on `/screen`). The choice is remembered per device. `?view=2d` or `?view=3d` in the address overrides it for one visit, and a browser without WebGL stays on 2D. `/observe` replays any stored battle in 3D (`/observe?round=N`).
+
+**In 3D:**
+
+| Key / action | What it does |
+|---|---|
+| Drag, scroll, right-drag | Orbit, zoom, pan |
+| Click a unit | Follow it |
+| `V` | Cycle orbit, follow and chase cameras |
+| `N` (also `Tab` on `/screen`) | Next unit |
+| `Esc` | Let go |
+
+On `/screen` the keys work anywhere on the page. On `/play` they work after clicking the arena, so typing in the code editor is never affected.
 
 ## Screenshots
 

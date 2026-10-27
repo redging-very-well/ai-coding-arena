@@ -2,26 +2,58 @@
 // highlighted) and a list of my units with HP and status (napping 💤 / KO).
 // Also used in RESULTS to watch the replay of the last battle.
 
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { formatClock, ticksToSeconds } from '../../common/ui.js';
 import { getStore, useStore, type MyBattleUnit } from '../store.js';
 
 /** Mounts the store's arena canvas and runs the render loop while visible. */
 export function ArenaView(props: { class?: string }) {
   const host = useRef<HTMLDivElement>(null);
+  const [view, setView] = useState<{ mode: '2d' | '3d'; unavailable: boolean; follow: string | null }>({ mode: '2d', unavailable: false, follow: null });
   useEffect(() => {
     const store = getStore();
     const el = host.current;
     if (!el) return;
     el.appendChild(store.arenaCanvas);
+    el.appendChild(store.arenaCanvas3d);
     store.arena.resize(true);
     store.arena.start();
+    const v = store.ensureView3d();
+    const sync = () => setView({ mode: v.mode, unavailable: v.unavailable, follow: v.following ? `${v.following.mode === 'chase' ? 'Chasing' : 'Following'} ${v.following.name}` : null });
+    sync();
+    const off = v.subscribe(sync);
     return () => {
+      off();
       store.arena.stop();
       store.arenaCanvas.remove();
+      store.arenaCanvas3d.remove();
     };
   }, []);
-  return <div ref={host} class={`arena-host ${props.class ?? ''}`} />;
+  return (
+    <div ref={host} class={`arena-host ${props.class ?? ''}`}>
+      {!view.unavailable && (
+        <button
+          type="button"
+          class="view-toggle"
+          title="Switch between the 3D and 2D arena"
+          onClick={() => getStore().view3d?.toggle()}
+        >
+          {view.mode === '3d' ? '3D' : '2D'}
+        </button>
+      )}
+      {view.mode === '3d' && (
+        <div class="view-hint">
+          {view.follow ? (
+            <>
+              🎥 {view.follow} · <kbd>V</kbd> camera · <kbd>N</kbd> next · <kbd>Esc</kbd> release
+            </>
+          ) : (
+            'Click a unit to follow it'
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function UnitRow({ u }: { u: MyBattleUnit }) {

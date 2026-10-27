@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { defaultClientConditions, defineConfig, type Plugin } from 'vite';
 
 const page = (name: string) => fileURLToPath(new URL(`./${name}.html`, import.meta.url));
-const PAGES = ['play', 'screen', 'admin', 'setup', 'guide'];
+const PAGES = ['play', 'screen', 'admin', 'setup', 'guide', 'observe'];
 
 /** The game server the dev server proxies to (`npm run dev` starts it on 8080). */
 const target = `http://localhost:${process.env.PORT ?? 8080}`;
@@ -48,6 +48,7 @@ export default defineConfig({
         admin: page('admin'),
         setup: page('setup'),
         guide: page('guide'),
+        observe: page('observe'),
       },
     },
   },
